@@ -1,0 +1,17 @@
+node_modules
+dist
+.git
+.gitignore
+.vscode
+*.log
+docker-compose*.yml
+e2e
+playwright-report
+test-results
+coverage
+docs
+docs-new
+.env
+.env.*
+!.env.example
+!.env.qa.example

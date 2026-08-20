@@ -15,6 +15,17 @@ O proxy local encaminha `/api` para `http://127.0.0.1:3000`. Para apontar a outr
 VITE_ADMIN_API_BASE_URL=http://127.0.0.1:3000/api/v1 npm run dev
 ```
 
+## Docker (QA)
+
+O painel sobe em `https://edenbowls.com/qa-admin`, atrás do Caddy público.
+
+```bash
+cp .env.qa.example .env
+docker compose --env-file .env -f docker-compose.admin.yml up -d --build
+```
+
+O reverse proxy deve encaminhar `https://edenbowls.com/qa-admin/*` para `127.0.0.1:4174`. `VITE_*` entra na imagem no build: se mudar `.env`, use `--build`.
+
 ## Autenticação
 
 - Login: `POST /api/v1/auth/token` com `{ username, password }` (`username` é o e-mail)

@@ -1,7 +1,14 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 
+function resolveAppBasePath() {
+  const raw = process.env.VITE_APP_BASE_PATH?.trim() || '/'
+  const withLeadingSlash = raw.startsWith('/') ? raw : `/${raw}`
+  return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`
+}
+
 export default defineConfig({
+  base: resolveAppBasePath(),
   plugins: [react()],
   test: {
     environment: 'jsdom',

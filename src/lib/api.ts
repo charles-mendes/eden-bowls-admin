@@ -3,7 +3,12 @@ const JWT_AUTH_INVALID_TOKEN_CODE = 'jwt_auth_invalid_token'
 const COOKIE_AUTH_PATHS = new Set(['/auth/token', '/auth/refresh', '/auth/logout'])
 
 export function getApiBaseUrl() {
-  return import.meta.env.VITE_ADMIN_API_BASE_URL ?? DEFAULT_API_BASE_URL
+  const configured = import.meta.env.VITE_ADMIN_API_BASE_URL?.trim()
+  if (configured) {
+    return configured.replace(/\/$/, '')
+  }
+
+  return DEFAULT_API_BASE_URL
 }
 
 export function buildQueryString(params: Record<string, string | number | boolean | undefined | null>) {
