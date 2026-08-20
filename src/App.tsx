@@ -6,7 +6,6 @@ import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
-import { PricingPage } from './pages/PricingPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { OnboardingSessionPage } from './pages/OnboardingSessionPage'
 import { BillingPage } from './pages/BillingPage'
@@ -42,7 +41,6 @@ function App() {
           <Route path="/nutrition/simulate" element={<NutritionSimulatePage />} />
           <Route path="/catalog/products" element={<ProductsPage />} />
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
-          <Route path="/catalog/pricing" element={<PricingPage />} />
           <Route path="/onboarding/sessions" element={<OnboardingPage />} />
           <Route path="/onboarding/sessions/:id" element={<OnboardingSessionPage />} />
           <Route path="/billing" element={<BillingPage />} />

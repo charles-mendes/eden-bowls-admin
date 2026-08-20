@@ -449,6 +449,37 @@ h3 {
   font-size: var(--text-sm);
 }
 
+.filter-field {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+}
+
+.filters-bar .filter-field input,
+.filters-bar .filter-field select {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
+}
+
+.filter-clear {
+  flex: 0 0 auto;
+  width: 38px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.filter-clear:hover {
+  color: var(--text-strong);
+  background: var(--surface-muted);
+}
+
 .filters-bar input,
 .filters-bar select,
 .editor-card input,

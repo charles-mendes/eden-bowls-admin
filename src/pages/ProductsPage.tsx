@@ -46,12 +46,20 @@ const emptyCreateForm = {
   variantPrice: '',
 }
 
+function FilterClearButton({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <button type="button" className="filter-clear" aria-label={label} onClick={onClear}>
+      ×
+    </button>
+  )
+}
+
 export function ProductsPage() {
   const { token, hasPermission } = useAuth()
   const navigate = useNavigate()
   const [data, setData] = useState<ProductsResponse | null>(null)
   const [search, setSearch] = useState('')
-  const [market, setMarket] = useState('BR')
+  const [market, setMarket] = useState('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
   const [error, setError] = useState('')
@@ -204,15 +212,33 @@ export function ProductsPage() {
         </Section>
       ) : null}
 
-      <Section title="Filtros" description="Busca textual e recorte por mercado.">
+      <Section title="Filtros" description="A lista abre sem filtro. Preencha busca ou mercado quando quiser recortar.">
         <FiltersBar>
           <label>
             Busca
-            <input value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="slug, nome pt ou en" />
+            <span className="filter-field">
+              <input
+                value={search}
+                onChange={(event) => { setSearch(event.target.value); setPage(1) }}
+                placeholder="slug, nome pt ou en"
+              />
+              {search ? (
+                <FilterClearButton label="Limpar busca" onClear={() => { setSearch(''); setPage(1) }} />
+              ) : null}
+            </span>
           </label>
           <label>
             Mercado
-            <input value={market} onChange={(event) => { setMarket(event.target.value.toUpperCase()); setPage(1) }} placeholder="BR" />
+            <span className="filter-field">
+              <select value={market} onChange={(event) => { setMarket(event.target.value); setPage(1) }}>
+                <option value="">Selecionar</option>
+                <option value="BR">BR</option>
+                <option value="US">US</option>
+              </select>
+              {market ? (
+                <FilterClearButton label="Limpar mercado" onClear={() => { setMarket(''); setPage(1) }} />
+              ) : null}
+            </span>
           </label>
           <label>
             Por página

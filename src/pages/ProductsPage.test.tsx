@@ -15,7 +15,7 @@ describe('ProductsPage', () => {
     vi.restoreAllMocks()
   })
 
-  it('loads the product list with market and pagination query', async () => {
+  it('loads the product list without search or market filters', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorUser)
     renderAuthedPage(<ProductsPage />, '/catalog/products')
@@ -26,8 +26,42 @@ describe('ProductsPage', () => {
 
     const listCall = findCall(calls, 'GET', '/admin/catalog/products')
     expect(listCall?.authorization).toBe('Bearer access-token')
-    expect(listCall?.search).toContain('market=BR')
     expect(listCall?.search).toContain('page=1')
+    expect(listCall?.search).not.toContain('market=')
+    expect(listCall?.search).not.toContain('search=')
+    expect(screen.getByPlaceholderText('slug, nome pt ou en')).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'Mercado' })).toHaveValue('')
+    expect(screen.queryByRole('button', { name: 'Limpar busca' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Limpar mercado' })).not.toBeInTheDocument()
+  })
+
+  it('clears search and market filters with the side X', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorUser)
+    renderAuthedPage(<ProductsPage />, '/catalog/products')
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'Bowl Adulto' })).toBeInTheDocument()
+    })
+
+    await user.type(screen.getByPlaceholderText('slug, nome pt ou en'), 'bowl')
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Mercado' }), 'BR')
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.method === 'GET' && call.search.includes('search=bowl') && call.search.includes('market=BR'))).toBe(true)
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Limpar busca' }))
+    await user.click(screen.getByRole('button', { name: 'Limpar mercado' }))
+
+    await waitFor(() => {
+      const lastList = [...calls].reverse().find((call) => call.method === 'GET' && call.path.includes('/admin/catalog/products'))
+      expect(lastList?.search).not.toContain('search=')
+      expect(lastList?.search).not.toContain('market=')
+    })
+    expect(screen.getByPlaceholderText('slug, nome pt ou en')).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'Mercado' })).toHaveValue('')
   })
 
   it('creates a product and opens the detail to add variations', async () => {
