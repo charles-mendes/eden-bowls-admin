@@ -245,6 +245,10 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     }
 
     if (path === '/api/v1/admin/catalog/products/prod-1' && method === 'PATCH') {
+      const currentVariant = { id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }
+      const variants = Array.isArray(body?.variants)
+        ? body.variants.map((item: { id?: string }) => ({ ...currentVariant, ...item }))
+        : [currentVariant]
       await fulfillJson(route, {
         id: 'prod-1',
         slug: 'bowl-adulto',
@@ -253,7 +257,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         active: body?.active ?? false,
         planCountry: body?.planCountry ?? 'BR',
         planDays: body?.planDays ?? 28,
-        variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }],
+        variants,
       })
       return
     }

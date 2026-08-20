@@ -515,6 +515,36 @@ h3 {
   min-width: 0;
 }
 
+.form-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.form-toolbar .form-grid {
+  flex: 1 1 16rem;
+  margin-bottom: 0;
+}
+
+.form-toolbar .inline-actions {
+  flex: 0 0 auto;
+}
+
+.form-toolbar .primary-button,
+.form-toolbar .ghost-button {
+  width: auto;
+  min-height: 38px;
+}
+
+input:disabled,
+select:disabled,
+textarea:disabled {
+  color: var(--text-soft);
+  background: var(--surface-muted);
+  cursor: not-allowed;
+}
+
 .simulate-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: start;
@@ -662,6 +692,20 @@ pre {
 
 .table-scroll {
   overflow-x: auto;
+}
+
+.table-shell input,
+.table-shell select {
+  width: 100%;
+  min-width: 8rem;
+}
+
+.table-shell .ghost-button {
+  width: auto;
+}
+
+.warning-text {
+  color: var(--warning-text);
 }
 
 table {

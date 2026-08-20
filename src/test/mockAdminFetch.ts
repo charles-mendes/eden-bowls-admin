@@ -111,7 +111,23 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'PATCH') {
-      return jsonResponse({ ...productDetail, ...body, active: body.active ?? productDetail.active })
+      const variants = Array.isArray(body?.variants)
+        ? body.variants.map((item: { id?: string; sku?: string; name?: string; regularPrice?: number | null }) => {
+            const current = productDetail.variants.find((row) => row.id === item.id) || {
+              stripeProductId: null,
+              stripePriceId: null,
+              syncStatus: 'not_synced',
+              requiresSync: true,
+            }
+            return { ...current, ...item }
+          })
+        : productDetail.variants
+      return jsonResponse({
+        ...productDetail,
+        ...body,
+        active: body.active ?? productDetail.active,
+        variants,
+      })
     }
 
     if (path === '/api/v1/admin/catalog/sync' && method === 'POST') {

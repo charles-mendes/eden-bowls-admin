@@ -3,10 +3,12 @@ import { type ReactNode } from 'react'
 export function Section({
   title,
   description,
+  actions,
   children,
 }: {
   title: string
   description?: string
+  actions?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -16,6 +18,7 @@ export function Section({
           <h3>{title}</h3>
           {description ? <p className="muted">{description}</p> : null}
         </div>
+        {actions || null}
       </div>
       {children}
     </section>
