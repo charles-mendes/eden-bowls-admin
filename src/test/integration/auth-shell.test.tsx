@@ -11,8 +11,16 @@ function mockAdminApi(profile: typeof operatorUser | typeof nutritionistUser) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
 
-    if (url.endsWith('/auth/token')) {
+    if (url.includes('/auth/token')) {
       return jsonResponse({ token: 'session-token' })
+    }
+
+    if (url.endsWith('/auth/refresh')) {
+      return jsonResponse({ code: 'refresh_token_invalid', message: 'Authentication is required.' }, 401)
+    }
+
+    if (url.endsWith('/auth/logout')) {
+      return jsonResponse(null, 204)
     }
 
     if (url.includes('/admin/me')) {

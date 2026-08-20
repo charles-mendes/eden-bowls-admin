@@ -51,6 +51,14 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
       return jsonResponse({ token: 'access-token' })
     }
 
+    if (path === '/api/v1/auth/refresh' && method === 'POST') {
+      return jsonResponse({ code: 'refresh_token_invalid', message: 'Authentication is required.' }, 401)
+    }
+
+    if (path === '/api/v1/auth/logout' && method === 'POST') {
+      return jsonResponse(null, 204)
+    }
+
     if (path === '/api/v1/admin/me' && method === 'GET') {
       return jsonResponse(profile)
     }

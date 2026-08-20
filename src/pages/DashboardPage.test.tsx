@@ -17,8 +17,15 @@ describe('DashboardPage', () => {
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
     await waitFor(() => {
-      expect(screen.getByText('Mapped: 10/10 · Gaps: nenhum')).toBeInTheDocument()
+      expect(screen.getByText('10 / 10')).toBeInTheDocument()
     })
+
+    expect(screen.getByRole('heading', { name: 'Preços Stripe no catálogo' })).toBeInTheDocument()
+    expect(screen.getByText('Completo')).toBeInTheDocument()
+    expect(screen.getByText(/As 10 variações do catálogo BR já têm um Price ID em BRL/)).toBeInTheDocument()
+    expect(screen.getByText('Com Price Stripe')).toBeInTheDocument()
+    expect(screen.getByText('Sem vínculo')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Ver produtos' })).toHaveAttribute('href', '/catalog/products')
 
     expect(calls.some((call) => call.path === '/api/v1/admin/onboarding/metrics' && call.authorization === 'Bearer access-token')).toBe(true)
     expect(calls.some((call) => call.path === '/api/v1/admin/catalog/sync/health' && call.search.includes('market=BR'))).toBe(true)

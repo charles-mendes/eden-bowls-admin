@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { MetricCard } from '../components/MetricCard'
 import { Section } from '../components/Section'
@@ -27,6 +28,56 @@ type SyncStatus = {
   status: string
   summary?: { scope?: string }
   scope?: string
+}
+
+const SYNC_STATUS_LABELS: Record<string, string> = {
+  idle: 'nenhum job em andamento',
+  queued: 'na fila',
+  completed: 'concluído',
+  completed_with_skips: 'concluído com variações ignoradas',
+}
+
+function catalogHealthCopy(health: SyncHealth | null) {
+  if (!health) {
+    return {
+      badgeClass: 'badge-info',
+      badgeLabel: 'Carregando',
+      summary: 'Consultando as variações do catálogo Brasil (BRL).',
+    }
+  }
+
+  const gapCount = health.gaps.length
+  const complete = health.totalExpected > 0 && gapCount === 0 && health.totalMapped === health.totalExpected
+
+  if (health.totalExpected === 0) {
+    return {
+      badgeClass: 'badge-info',
+      badgeLabel: 'Sem variações',
+      summary: 'Não há variações no mercado BR. Confira se os produtos têm país do plano = BR.',
+    }
+  }
+
+  if (complete) {
+    return {
+      badgeClass: 'badge-success',
+      badgeLabel: 'Completo',
+      summary: `As ${health.totalMapped} variações do catálogo BR já têm um Price ID em BRL. O checkout pode cobrar essas opções.`,
+    }
+  }
+
+  return {
+    badgeClass: 'badge-warning',
+    badgeLabel: `${gapCount} sem Price`,
+    summary: `Faltam Price IDs em ${gapCount} de ${health.totalExpected} variações. Sem esse vínculo o checkout BR não consegue cobrar essas opções.`,
+  }
+}
+
+function formatSyncJobStatus(status?: string) {
+  if (!status) {
+    return 'nenhum sync disparado nesta sessão do servidor'
+  }
+
+  return SYNC_STATUS_LABELS[status] ?? status
 }
 
 export function DashboardPage() {
@@ -64,6 +115,9 @@ export function DashboardPage() {
     void load()
   }, [token])
 
+  const coverage = catalogHealthCopy(syncHealth)
+  const gapIds = syncHealth?.gaps ?? []
+
   return (
     <PageFrame
       title="Dashboard"
@@ -78,10 +132,49 @@ export function DashboardPage() {
         <MetricCard label="Com simplificado" value={metrics?.withSimplified ?? '—'} />
       </div>
 
-      <Section title="Catálogo Stripe" description="Consulta de /admin/catalog/sync/health com market BR e currency BRL.">
-        <div className="stack-tight">
-          <p>Mapped: {syncHealth?.totalMapped ?? '—'}/{syncHealth?.totalExpected ?? '—'} · Gaps: {syncHealth?.gaps.length ? syncHealth.gaps.join(', ') : 'nenhum'}</p>
-          <p className="muted">Último sync: {syncStatus?.status ?? 'sem job'} · {syncStatus?.summary?.scope ?? syncStatus?.scope ?? '—'}</p>
+      <Section
+        title="Preços Stripe no catálogo"
+        description="Cada variação vendável (sabor/peso) precisa de um Price ID no Stripe. Este recorte é o mercado Brasil em BRL."
+      >
+        <div className="stack">
+          <div className="inline-actions">
+            <span className={coverage.badgeClass}>{coverage.badgeLabel}</span>
+            <span>{coverage.summary}</span>
+          </div>
+
+          <div className="grid cards-3">
+            <MetricCard
+              label="Com Price Stripe"
+              value={syncHealth ? `${syncHealth.totalMapped} / ${syncHealth.totalExpected}` : '—'}
+              hint="Variações já vinculadas em BRL"
+            />
+            <MetricCard
+              label="No catálogo"
+              value={syncHealth?.totalExpected ?? '—'}
+              hint="Variações esperadas neste mercado"
+            />
+            <MetricCard
+              label="Sem vínculo"
+              value={syncHealth?.gaps.length ?? '—'}
+              hint="Gaps: variação sem Price ID"
+            />
+          </div>
+
+          {gapIds.length > 0 ? (
+            <div className="warning">
+              Variações sem Price: {gapIds.join(', ')}. Abra o produto e rode o sync para criar os prices faltantes.
+            </div>
+          ) : null}
+
+          <p className="muted">
+            Último sync: {formatSyncJobStatus(syncStatus?.status)}
+            {syncStatus?.summary?.scope || syncStatus?.scope ? ` · escopo ${syncStatus.summary?.scope ?? syncStatus.scope}` : ''}
+          </p>
+
+          <div className="inline-actions">
+            <Link className="ghost-button" to="/catalog/products">Ver produtos</Link>
+            <Link className="ghost-button" to="/billing">Sync e assinantes</Link>
+          </div>
         </div>
       </Section>
     </PageFrame>
