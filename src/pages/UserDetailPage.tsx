@@ -9,6 +9,8 @@ type UserDetail = {
   id: string
   email: string
   status: string
+  roles?: string[]
+  lockedByAllowlist?: boolean
   profile: { fullName: string | null; phone: string | null } | null
   delivery: {
     address: string
@@ -68,9 +70,11 @@ export function UserDetailPage() {
       <Section title="Identidade">
         <p>{data?.profile?.fullName ?? '-'} · {data?.status}</p>
         <p className="muted">{data?.profile?.phone || 'sem telefone'}</p>
+        <p>Papel: {data?.roles?.filter((role) => role !== 'customer').join(', ') || 'cliente'}{data?.lockedByAllowlist ? ' (ADMIN_EMAILS)' : ''}</p>
         <div className="inline-actions">
           <Link className="ghost-button" to={`/onboarding/sessions/${userId}`}>Onboarding 360</Link>
           <Link className="ghost-button" to={`/orders/${userId}`}>Checkout</Link>
+          {hasPermission('users.roles.write') ? <Link className="ghost-button" to="/users/roles">Alterar papéis</Link> : null}
         </div>
       </Section>
 

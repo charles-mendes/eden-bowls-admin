@@ -1,7 +1,8 @@
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react'
 import { apiRequest } from '../lib/api'
+import { isOperationalUser, type AdminRole } from '../lib/roles'
 
-export type AdminRole = 'admin' | 'operator' | 'nutritionist' | 'readonly' | 'customer'
+export type { AdminRole }
 
 export type AdminUser = {
   userId: string
@@ -22,30 +23,57 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
-const TOKEN_KEY = 'eden-bowls-admin-token'
-const OPERATIONAL_ROLES: AdminRole[] = ['admin', 'operator', 'nutritionist', 'readonly']
+export const TOKEN_KEY = 'eden-bowls-admin-token'
 
-export function isOperationalUser(user: AdminUser | null) {
-  return Boolean(user && user.roles.some((role) => OPERATIONAL_ROLES.includes(role)))
+function readStoredToken() {
+  try {
+    return localStorage.getItem(TOKEN_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeStoredToken(token: string) {
+  try {
+    localStorage.setItem(TOKEN_KEY, token)
+  } catch {
+    // private browsing / quota
+  }
+}
+
+function clearStoredToken() {
+  try {
+    localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    // private browsing
+  }
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem(TOKEN_KEY))
+  const [token, setToken] = useState<string | null>(() => readStoredToken())
   const [user, setUser] = useState<AdminUser | null>(null)
   const [isReady, setIsReady] = useState(false)
 
   useEffect(() => {
     const bootstrap = async () => {
       if (!token) {
+        setUser(null)
         setIsReady(true)
         return
       }
 
       try {
         const me = await apiRequest<AdminUser>('/admin/me', { token })
+        if (!isOperationalUser(me.roles)) {
+          clearStoredToken()
+          setToken(null)
+          setUser(null)
+          return
+        }
+
         setUser(me)
       } catch {
-        localStorage.removeItem(TOKEN_KEY)
+        clearStoredToken()
         setToken(null)
         setUser(null)
       } finally {
@@ -66,19 +94,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: { username: email, password },
       })
 
-      localStorage.setItem(TOKEN_KEY, result.token)
       const me = await apiRequest<AdminUser>('/admin/me', { token: result.token })
-      if (!isOperationalUser(me)) {
-        localStorage.removeItem(TOKEN_KEY)
+      if (!isOperationalUser(me.roles)) {
+        clearStoredToken()
         throw new Error('Esta conta não tem acesso ao painel administrativo.')
       }
 
+      writeStoredToken(result.token)
       setToken(result.token)
       setUser(me)
       return me
     },
     logout: () => {
-      localStorage.removeItem(TOKEN_KEY)
+      clearStoredToken()
       setToken(null)
       setUser(null)
     },
@@ -96,3 +124,5 @@ export function useAuth() {
   }
   return context
 }
+
+export { isOperationalUser }

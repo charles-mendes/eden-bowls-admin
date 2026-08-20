@@ -10,8 +10,8 @@ export function MetricCard({
   return (
     <article className="stat-card">
       <span className="eyebrow">{label}</span>
-      <strong>{value}</strong>
-      {hint ? <span>{hint}</span> : null}
+      <strong className="stat-card-value">{value}</strong>
+      {hint ? <span className="muted">{hint}</span> : null}
     </article>
   )
 }

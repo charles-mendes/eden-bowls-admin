@@ -15,6 +15,7 @@ import { CouponsPage } from './pages/CouponsPage'
 import { ShippingPage } from './pages/ShippingPage'
 import { NutritionSimulatePage } from './pages/NutritionSimulatePage'
 import { UsersPage } from './pages/UsersPage'
+import { RolesPage } from './pages/RolesPage'
 import { UserDetailPage } from './pages/UserDetailPage'
 import { OrdersPage } from './pages/OrdersPage'
 import { OrderDetailPage } from './pages/OrderDetailPage'
@@ -50,6 +51,7 @@ function App() {
           <Route path="/config/shipping" element={<ShippingPage />} />
           <Route path="/config/business-rules" element={<Navigate to="/config/shipping" replace />} />
           <Route path="/users" element={<UsersPage />} />
+          <Route path="/users/roles" element={<RolesPage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/orders/:orderId" element={<OrderDetailPage />} />

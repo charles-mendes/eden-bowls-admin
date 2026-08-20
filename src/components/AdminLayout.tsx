@@ -1,43 +1,45 @@
 import { type ReactNode } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { adminMenu } from '../lib/menu'
+import { groupedMenuItems } from '../lib/menu'
 import { useAuth } from '../contexts/AuthContext'
 
 export function AdminLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-
-  const visibleMenu = adminMenu.filter((item) => {
-    if (!user) return false
-    return item.roles.some((role) => user.roles.includes(role))
-  })
+  const menuGroups = groupedMenuItems(user?.roles ?? [])
 
   return (
     <div className="admin-shell">
       <aside className="sidebar">
-        <div>
-          <div className="brand-mark">EB</div>
+        <div className="brand">
+          <div className="brand-mark" aria-hidden="true">EB</div>
           <div className="brand-copy">
-            <strong>Eden Bowls Admin</strong>
-            <span>Painel operacional</span>
+            <strong>Eden Bowls</strong>
+            <span>Admin</span>
           </div>
         </div>
 
-        <nav className="menu">
-          {visibleMenu.map((item) => (
-            <NavLink key={item.href} to={item.href} className={({ isActive }) => (isActive ? 'menu-link active' : 'menu-link')}>
-              {item.label}
-            </NavLink>
+        <nav className="menu" aria-label="Seções do painel">
+          {menuGroups.map((group) => (
+            <div className="menu-group" key={group.group}>
+              <p className="menu-group-label">{group.group}</p>
+              {group.items.map((item) => (
+                <NavLink
+                  key={item.href}
+                  to={item.href}
+                  className={({ isActive }) => (isActive ? 'menu-link active' : 'menu-link')}
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </div>
           ))}
         </nav>
       </aside>
 
       <main className="main-panel">
         <header className="topbar">
-          <div>
-            <p className="eyebrow">Administração</p>
-            <h1>Painel operacional</h1>
-          </div>
+          <h1>Painel administrativo</h1>
           <div className="topbar-actions">
             <div className="user-chip">
               <span>{user?.email ?? 'sem usuário'}</span>

@@ -13,6 +13,7 @@ type UserItem = {
   email: string
   status: string
   createdAt: string
+  roles?: string[]
   profile: { fullName: string | null; phone: string | null } | null
 }
 
@@ -70,6 +71,7 @@ export function UsersPage() {
               <tr>
                 <th>E-mail</th>
                 <th>Status</th>
+                <th>Papel</th>
                 <th>Nome</th>
                 <th>Telefone</th>
                 <th>Criado em</th>
@@ -80,6 +82,7 @@ export function UsersPage() {
                 <tr key={item.id}>
                   <td><Link className="table-link" to={`/users/${item.id}`}>{item.email}</Link></td>
                   <td>{item.status}</td>
+                  <td>{item.roles?.filter((role) => role !== 'customer').join(', ') || 'cliente'}</td>
                   <td>{item.profile?.fullName ?? '-'}</td>
                   <td>{item.profile?.phone ?? '-'}</td>
                   <td>{formatDate(item.createdAt)}</td>

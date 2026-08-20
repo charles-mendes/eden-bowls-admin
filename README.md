@@ -1,75 +1,36 @@
-# React + TypeScript + Vite
+# Eden Bowls Admin
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Painel operacional em React + TypeScript (Vite, porta 5174). Consome `eden-bowls-backend` em `/api/v1`.
 
-Currently, two official plugins are available:
+## Desenvolvimento
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+O proxy local encaminha `/api` para `http://127.0.0.1:3000`. Para apontar a outro host:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```bash
+VITE_ADMIN_API_BASE_URL=http://127.0.0.1:3000/api/v1 npm run dev
 ```
+
+## Autenticação
+
+- Login: `POST /api/v1/auth/token` com `{ username, password }` (`username` é o e-mail)
+- Perfil: `GET /api/v1/admin/me`
+- Token em `localStorage` na chave `eden-bowls-admin-token`
+- Contas só `customer` não entram no shell
+
+## Testes
+
+Nunca rode a suíte inteira depois de uma alteração pequena.
+
+```bash
+npx vitest run --related src/pages/UsersPage.tsx
+npx vitest run -t "should load admin session"
+npx vitest run --changed
+npx playwright test e2e/specs/admin-login.spec.ts --workers=4
+```
+
+`npm test` / `npm run test:e2e` só em alteração de alto impacto. Playwright usa `trace: retain-on-failure`, `screenshot: only-on-failure` e `video: off`.
