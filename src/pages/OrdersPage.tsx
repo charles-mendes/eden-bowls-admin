@@ -6,7 +6,7 @@ import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
-import { formatDate } from '../lib/format'
+import { formatDate, formatFrequency, formatStripeStatus } from '../lib/format'
 
 type CheckoutItem = {
   userId: string
@@ -52,8 +52,8 @@ export function OrdersPage() {
   }, [token, page, perPage, email])
 
   return (
-    <PageFrame title="Checkouts" description="Alias read-only da lista de onboarding 360. Não há máquina de status de pedido no Node.">
-      <Section title="Filtros" description="A operação de logística nativa do Woo não foi portada. Sem PATCH de status no MVP.">
+    <PageFrame title="Checkouts" description="Consulta dos checkouts concluídos, com status da Stripe e acesso ao onboarding do cliente.">
+      <Section title="Filtros" description="Filtre por e-mail para localizar um checkout.">
         <FiltersBar>
           <label>
             E-mail
@@ -87,8 +87,10 @@ export function OrdersPage() {
                     <div className="muted">{item.displayName}</div>
                   </td>
                   <td>{item.stripeSubscriptionId}</td>
-                  <td>{item.stripeStatus}</td>
-                  <td>{item.frequency ?? '-'}</td>
+                  <td title={item.stripeStatus === 'mixed' ? 'Cliente com mais de uma assinatura Stripe' : undefined}>
+                    {formatStripeStatus(item.stripeStatus)}
+                  </td>
+                  <td>{formatFrequency(item.frequency)}</td>
                   <td>{formatDate(item.updatedAt)}</td>
                   <td><Link className="ghost-button" to={`/onboarding/sessions/${item.userId}`}>360</Link></td>
                 </tr>

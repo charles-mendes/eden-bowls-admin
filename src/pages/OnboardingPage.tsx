@@ -6,8 +6,8 @@ import { MetricCard } from '../components/MetricCard'
 import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
 import { useAuth } from '../contexts/AuthContext'
-import { apiRequest, buildQueryString } from '../lib/api'
-import { formatDate } from '../lib/format'
+import { apiRequest, buildQueryString, getApiBaseUrl } from '../lib/api'
+import { formatDate, formatFrequency, formatStripeStatus, getBrowserTimeZone } from '../lib/format'
 
 type CheckoutItem = {
   userId: string
@@ -111,7 +111,11 @@ export function OnboardingPage() {
           type="button"
           onClick={async () => {
             if (!token) return
-            const response = await fetch(`${import.meta.env.VITE_ADMIN_API_BASE_URL ?? '/api/v1'}/admin/onboarding/checkouts.csv${buildQueryString({ email, link })}`, {
+            const response = await fetch(`${getApiBaseUrl()}/admin/onboarding/checkouts.csv${buildQueryString({
+              email,
+              link,
+              timezone: getBrowserTimeZone(),
+            })}`, {
               headers: { Authorization: `Bearer ${token}` },
             })
             const blob = await response.blob()
@@ -152,9 +156,11 @@ export function OnboardingPage() {
                   </td>
                   <td>{item.petCount}</td>
                   <td>{item.stripeSubscriptionId}</td>
-                  <td>{item.stripeStatus}</td>
+                  <td title={item.stripeStatus === 'mixed' ? 'Cliente com mais de uma assinatura Stripe' : undefined}>
+                    {formatStripeStatus(item.stripeStatus)}
+                  </td>
                   <td>{item.termMonths ? `${item.termMonths}m` : '-'}</td>
-                  <td>{item.frequency ?? '-'}</td>
+                  <td>{formatFrequency(item.frequency)}</td>
                   <td>{formatDate(item.updatedAt)}</td>
                 </tr>
               ))}

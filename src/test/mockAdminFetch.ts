@@ -91,6 +91,13 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
       return jsonResponse(checkoutList)
     }
 
+    if (path === '/api/v1/admin/onboarding/checkouts.csv' && method === 'GET') {
+      return new Response('userId,email\n', {
+        status: 200,
+        headers: { 'Content-Type': 'text/csv; charset=utf-8' },
+      })
+    }
+
     if (/^\/api\/v1\/admin\/onboarding\/checkouts\/[^/]+$/.test(path) && method === 'GET') {
       return jsonResponse(checkoutDetail)
     }

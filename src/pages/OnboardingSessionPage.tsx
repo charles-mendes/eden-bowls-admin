@@ -5,7 +5,7 @@ import { Section } from '../components/Section'
 import { MetricCard } from '../components/MetricCard'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest } from '../lib/api'
-import { formatDate, formatJson } from '../lib/format'
+import { formatDate, formatJson, formatStripeStatus } from '../lib/format'
 
 type CheckoutDetail = {
   userId: string
@@ -84,7 +84,7 @@ export function OnboardingSessionPage() {
               {data?.subscriptions.map((item) => (
                 <tr key={item.id}>
                   <td><Link className="table-link" to={`/billing/subscriptions/${item.id}`}>{item.stripeSubscriptionId}</Link></td>
-                  <td>{item.status}</td>
+                  <td>{formatStripeStatus(item.status)}</td>
                   <td>{item.planLabel ?? '-'}</td>
                   <td>{formatDate(item.currentPeriodEnd)}</td>
                   <td>{item.cancelAtPeriodEnd ? 'Sim' : 'Não'}</td>

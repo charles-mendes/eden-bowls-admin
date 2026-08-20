@@ -340,7 +340,6 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
             },
             us: { enabled: true, cost: 12.9, carrier: 'FedEx', delivery: '3–5 business days', label: 'FedEx 3–5 business days' },
           },
-          envOverrides: [],
         },
       })
       return

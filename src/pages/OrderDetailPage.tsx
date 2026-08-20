@@ -47,7 +47,7 @@ export function OrderDetailPage() {
   }, [token, orderId])
 
   return (
-    <PageFrame title={`Checkout ${data?.email ?? orderId ?? ''}`} description="Detalhe read-only do onboarding. Sem alteração de status.">
+    <PageFrame title={`Checkout ${data?.email ?? orderId ?? ''}`} description="Consulta do checkout: cliente, Stripe, plano e endereço.">
       {error ? <div className="alert">{error}</div> : null}
       {data?.empty ? <div className="warning">No onboarding data found for this checkout.</div> : null}
 
@@ -58,13 +58,13 @@ export function OrderDetailPage() {
         <MetricCard label="Itens" value={data?.lineItems.length ?? '—'} />
       </div>
 
-      <Section title="Resumo" description="Mesmo payload do Onboarding 360.">
+      <Section title="Resumo" description="Dados do onboarding deste checkout.">
         <p>{data?.displayName} · {data?.activationStatus}</p>
         <p className="muted">Criado em {formatDate(data?.createdAt)}</p>
         <Link className="ghost-button" to={`/onboarding/sessions/${data?.userId}`}>Abrir 360</Link>
       </Section>
 
-      <Section title="Stripe" description="N assinaturas do ledger.">
+      <Section title="Stripe" description="Assinaturas vinculadas a este checkout.">
         {data?.subscriptions.map((item) => (
           <p key={item.id}><Link className="table-link" to={`/billing/subscriptions/${item.id}`}>{item.stripeSubscriptionId}</Link> · {item.status} · {item.planLabel ?? '-'}</p>
         ))}

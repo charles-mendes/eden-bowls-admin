@@ -37,7 +37,6 @@ export function ShippingPage() {
   const { token, hasPermission } = useAuth()
   const [tab, setTab] = useState<'BR' | 'US'>('BR')
   const [settings, setSettings] = useState<ShippingSettings>(emptySettings)
-  const [envOverrides, setEnvOverrides] = useState<string[]>([])
   const [zipCode, setZipCode] = useState('')
   const [testResult, setTestResult] = useState('')
   const [message, setMessage] = useState('')
@@ -48,9 +47,8 @@ export function ShippingPage() {
     if (!token) return
     try {
       setError('')
-      const response = await apiRequest<{ success: boolean; data: { settings: ShippingSettings; envOverrides: string[] } }>('/admin/shipping/settings', { token })
+      const response = await apiRequest<{ success: boolean; data: { settings: ShippingSettings } }>('/admin/shipping/settings', { token })
       setSettings({ ...emptySettings(), ...response.data.settings })
-      setEnvOverrides(response.data.envOverrides || [])
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar frete')
     }
@@ -65,13 +63,12 @@ export function ShippingPage() {
     if (!token) return
     try {
       setError('')
-      const response = await apiRequest<{ success: boolean; data: { settings: ShippingSettings; envOverrides: string[] } }>('/admin/shipping/settings', {
+      const response = await apiRequest<{ success: boolean; data: { settings: ShippingSettings } }>('/admin/shipping/settings', {
         token,
         method: 'PUT',
         body: settings,
       })
       setSettings({ ...emptySettings(), ...response.data.settings })
-      setEnvOverrides(response.data.envOverrides || [])
       setMessage('Settings saved.')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar')
@@ -97,8 +94,7 @@ export function ShippingPage() {
   }
 
   return (
-    <PageFrame title="Frete" description="Configuração BR (por km) e US (taxa fixa). Env SHIPPING_* continua overlay de runtime.">
-      {envOverrides.length ? <div className="warning">Valor efetivo vem do ambiente: {envOverrides.join(', ')}</div> : null}
+    <PageFrame title="Frete" description="Configuração BR (por km) e US (taxa fixa), persistida no banco.">
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
 

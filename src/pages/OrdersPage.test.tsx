@@ -21,6 +21,8 @@ describe('OrdersPage', () => {
     })
 
     expect(screen.getByText('sub_123')).toBeInTheDocument()
+    expect(screen.getByText('Ativo')).toBeInTheDocument()
+    expect(screen.getByText('A cada 4 semanas')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Mudar status/i })).not.toBeInTheDocument()
     const listCall = findCall(calls, 'GET', '/admin/onboarding/checkouts')
     expect(listCall?.authorization).toBe('Bearer access-token')
