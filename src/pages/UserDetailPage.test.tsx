@@ -10,6 +10,7 @@ describe('UserDetailPage', () => {
   afterEach(() => {
     localStorage.clear()
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('loads customer detail and PATCHes delivery instructions', async () => {
@@ -22,11 +23,11 @@ describe('UserDetailPage', () => {
       expect(screen.getByText(/Ana Costa/)).toBeInTheDocument()
     })
 
-    expect(screen.getByText(/Rua Augusta 100/)).toBeInTheDocument()
+    expect(screen.getByDisplayValue('Rua Augusta 100')).toBeInTheDocument()
     expect(calls.some((call) => call.method === 'GET' && call.path === '/api/v1/admin/users/u-ana' && call.authorization === 'Bearer access-token')).toBe(true)
 
-    await user.clear(screen.getByRole('textbox'))
-    await user.type(screen.getByRole('textbox'), 'Portão 2')
+    await user.clear(screen.getByLabelText('Instruções'))
+    await user.type(screen.getByLabelText('Instruções'), 'Portão 2')
     await user.click(screen.getByRole('button', { name: 'Salvar instruções' }))
 
     await waitFor(() => {
@@ -36,6 +37,49 @@ describe('UserDetailPage', () => {
     const patch = calls.find((call) => call.method === 'PATCH' && call.path.endsWith('/delivery-instructions'))
     expect(patch?.body).toEqual({ deliveryInstructions: 'Portão 2' })
     expect(patch?.authorization).toBe('Bearer access-token')
+  })
+
+  it('saves the customer delivery address', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Rua Augusta 100')).toBeInTheDocument()
+    })
+
+    await user.clear(screen.getByLabelText('Endereço'))
+    await user.type(screen.getByLabelText('Endereço'), 'Rua Oscar Freire 200')
+    await user.click(screen.getByRole('button', { name: 'Salvar endereço' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Endereço salvo.')).toBeInTheDocument()
+    })
+
+    const patch = calls.find((call) => call.method === 'PATCH' && call.path.endsWith('/delivery') && !call.path.endsWith('/delivery-instructions'))
+    expect(patch?.body).toMatchObject({ address: 'Rua Oscar Freire 200', city: 'São Paulo', zipCode: '01310-100' })
+  })
+
+  it('deactivates a customer account after confirmation', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Desativar conta' })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Desativar conta' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Conta desativada.')).toBeInTheDocument()
+    })
+
+    const patch = calls.find((call) => call.method === 'PATCH' && call.path.endsWith('/status'))
+    expect(patch?.body).toEqual({ status: 'inactive' })
   })
 
   it('hides the delivery mutation from readonly accounts', async () => {
@@ -48,6 +92,8 @@ describe('UserDetailPage', () => {
     })
 
     expect(screen.queryByRole('button', { name: 'Salvar instruções' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Salvar endereço' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Desativar conta' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Alterar papéis' })).not.toBeInTheDocument()
   })
 })

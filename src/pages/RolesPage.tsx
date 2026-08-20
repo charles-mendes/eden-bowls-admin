@@ -47,6 +47,13 @@ function primaryRole(roles: string[] | undefined) {
   return 'customer'
 }
 
+function assignedRole(item: Pick<StaffUser, 'storedRoles' | 'roles' | 'lockedByAllowlist'>) {
+  if (item.lockedByAllowlist) return primaryRole(item.roles)
+  const stored = (item.storedRoles ?? []).filter((role) => role !== 'customer')
+  if (stored.length > 0) return primaryRole(stored)
+  return primaryRole(item.roles)
+}
+
 function roleLabel(role: string) {
   return ROLE_OPTIONS.find((option) => option.value === role)?.label ?? role
 }
@@ -96,28 +103,43 @@ export function RolesPage() {
 
   const chooseUser = (item: StaffUser) => {
     setSelected(item)
-    setRole(primaryRole(item.storedRoles?.length ? item.storedRoles : item.roles))
+    setRole(assignedRole(item))
     setMessage('')
   }
 
-  const save = async (event: FormEvent) => {
-    event.preventDefault()
+  const saveRole = async (nextRole: string) => {
     if (!token || !selected) return
     try {
       setError('')
       const response = await apiRequest<StaffUser>(`/admin/users/${selected.id}/roles`, {
         token,
         method: 'PUT',
-        body: { role },
+        body: { role: nextRole },
       })
       setSelected(response)
-      setRole(primaryRole(response.storedRoles?.length ? response.storedRoles : response.roles))
-      setMessage(`Papel atualizado para ${response.email}.`)
+      setRole(assignedRole(response))
+      setMessage(
+        nextRole === 'customer'
+          ? `Acesso ao painel removido de ${response.email}.`
+          : `Papel atualizado para ${response.email}.`,
+      )
       await loadStaff()
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar papel')
     }
   }
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault()
+    await saveRole(role)
+  }
+
+  const canRevokeSelected = Boolean(
+    selected
+    && selected.id !== user?.userId
+    && !selected.lockedByAllowlist
+    && assignedRole(selected) !== 'customer',
+  )
 
   if (!canWrite) {
     return (
@@ -136,11 +158,11 @@ export function RolesPage() {
         <form className="filters-bar" onSubmit={findUsers}>
           <label>
             E-mail ou nome
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ops@edenbowls.com" />
+            <span className="filter-field">
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="ops@edenbowls.com" />
+              <button className="ghost-button" type="submit">Buscar</button>
+            </span>
           </label>
-          <div className="inline-actions">
-            <button className="ghost-button" type="submit">Buscar</button>
-          </div>
         </form>
 
         {matches.length > 0 ? (
@@ -191,6 +213,11 @@ export function RolesPage() {
             </label>
             <div className="inline-actions">
               <button className="primary-button" type="submit">Salvar papel</button>
+              {canRevokeSelected ? (
+                <button className="danger-button" type="button" onClick={() => void saveRole('customer')}>
+                  Remover acesso
+                </button>
+              ) : null}
               {selected.id === user?.userId ? <span className="muted">Você não pode remover o próprio acesso.</span> : null}
             </div>
           </form>
@@ -228,9 +255,9 @@ export function RolesPage() {
                     <Link className="table-link" to={`/users/${item.id}`}>perfil</Link>
                   </td>
                   <td>{item.profile?.fullName || item.displayName || '-'}</td>
-                  <td>{item.storedRoles.map(roleLabel).join(' · ') || '-'}</td>
+                  <td>{(item.storedRoles ?? []).map(roleLabel).join(' · ') || '-'}</td>
                   <td>
-                    {item.roles.map(roleLabel).join(' · ')}
+                    {(item.roles ?? []).map(roleLabel).join(' · ')}
                     {item.lockedByAllowlist ? ' (allowlist)' : ''}
                   </td>
                 </tr>

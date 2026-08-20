@@ -21,6 +21,7 @@ export const WRITE_PERMISSIONS = [
   'billing.coupons.write',
   'users.read',
   'users.delivery.write',
+  'users.status.write',
   'users.roles.write',
 ] as const
 
@@ -363,6 +364,16 @@ export const promotionCodesList = {
         active: true,
         slot: 1,
         dashboard_url: 'https://dashboard.stripe.com/test/promotion_codes/promo_1m',
+      },
+      {
+        id: 'promo_open',
+        code: 'OPEN',
+        coupon_id: 'coupon_open',
+        percent_off: 5,
+        duration: null,
+        active: true,
+        slot: null,
+        dashboard_url: 'https://dashboard.stripe.com/test/promotion_codes/promo_open',
       },
     ],
   },

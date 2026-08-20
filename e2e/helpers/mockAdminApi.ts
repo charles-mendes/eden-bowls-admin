@@ -34,6 +34,7 @@ const WRITE_PERMISSIONS = [
   'billing.coupons.write',
   'users.read',
   'users.delivery.write',
+  'users.status.write',
   'users.roles.write',
 ]
 
@@ -260,6 +261,16 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
+    if (path === '/api/v1/admin/users/u-ana/delivery' && method === 'PATCH') {
+      await fulfillJson(route, { success: true, data: body })
+      return
+    }
+
+    if (path === '/api/v1/admin/users/u-ana/status' && method === 'PATCH') {
+      await fulfillJson(route, { ...userDetail, status: (body as { status?: string } | null)?.status || 'inactive' })
+      return
+    }
+
     if (path === '/api/v1/admin/users/u-ana' && method === 'GET') {
       await fulfillJson(route, userDetail)
       return
@@ -451,6 +462,66 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
             },
             us: { enabled: true, cost: 12.9, carrier: 'FedEx', delivery: '3–5 business days', label: 'FedEx 3–5 business days' },
           },
+        },
+      })
+      return
+    }
+
+    if (path === '/api/v1/admin/stripe/first-purchase-promos' && method === 'GET') {
+      await fulfillJson(route, {
+        complete: true,
+        missing_terms: [],
+        mapping: { 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m' },
+        misconfig_count: 0,
+      })
+      return
+    }
+
+    if (path === '/api/v1/admin/stripe/first-purchase-promos' && method === 'PUT') {
+      await fulfillJson(route, {
+        complete: true,
+        missing_terms: [],
+        mapping: body || { 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m' },
+        misconfig_count: 0,
+      })
+      return
+    }
+
+    if (path === '/api/v1/admin/stripe/first-purchase-promos/sync' && method === 'POST') {
+      await fulfillJson(route, {
+        complete: true,
+        missing_terms: [],
+        mapping: { 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m' },
+        misconfig_count: 0,
+        slots: { 1: { promotion_code_id: 'promo_1m', coupon_id: 'coupon_1', active: true, source: 'stored' } },
+        missing_in_stripe: [],
+        inactive: [],
+      })
+      return
+    }
+
+    if (path === '/api/v1/admin/stripe/first-purchase-coupons' && method === 'POST') {
+      await fulfillJson(route, {
+        success: true,
+        data: { created: true, mapped: true, coupon_id: 'coupon_new', promotion_code_id: 'promo_new', code: 'FIRST_1M', percent_off: 10 },
+      })
+      return
+    }
+
+    if (path === '/api/v1/admin/stripe/promotion-codes' && method === 'GET') {
+      await fulfillJson(route, {
+        success: true,
+        data: {
+          items: [{
+            id: 'promo_1m',
+            code: 'FIRST_1M',
+            coupon_id: 'coupon_1',
+            percent_off: 10,
+            duration: 'once',
+            active: true,
+            slot: 1,
+            dashboard_url: 'https://dashboard.stripe.com/test/promotion_codes/promo_1m',
+          }],
         },
       })
       return

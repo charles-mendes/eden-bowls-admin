@@ -20,6 +20,8 @@ test.describe('Admin readonly', () => {
     await openAuthed(page, '/users/u-ana', e2eProfiles.readonly)
     await expect(page.getByRole('heading', { name: 'ana@edenbowls.com' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Salvar instruções' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Salvar endereço' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Desativar conta' })).toHaveCount(0)
 
     await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.readonly)
     await expect(page.getByText('BOWL-1')).toBeVisible()

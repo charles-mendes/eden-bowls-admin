@@ -82,8 +82,23 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
       return jsonResponse({ ok: true })
     }
 
+    if (path.endsWith('/delivery') && method === 'PATCH') {
+      return jsonResponse({ success: true, data: body })
+    }
+
+    if (path.endsWith('/status') && method === 'PATCH') {
+      return jsonResponse({ ...userDetail, status: body?.status || 'inactive' })
+    }
+
     if (/^\/api\/v1\/admin\/users\/[^/]+\/roles$/.test(path) && method === 'PUT') {
-      return jsonResponse({ ...staffUser, storedRoles: [body.role], roles: [body.role] })
+      const nextRole = typeof body?.role === 'string' ? body.role : ''
+      const storedRoles = !nextRole || nextRole === 'customer' ? [] : [nextRole]
+      return jsonResponse({
+        ...staffUser,
+        storedRoles,
+        roles: storedRoles.length ? storedRoles : ['customer'],
+        lockedByAllowlist: false,
+      })
     }
 
     if (/^\/api\/v1\/admin\/users\/[^/]+$/.test(path) && method === 'GET') {
@@ -246,6 +261,49 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
         success: true,
         data: { distance: 8.2, shipping: 12.5, delivery_days: 2, distance_source: 'haversine' },
       })
+    }
+
+    if (path === '/api/v1/admin/stripe/first-purchase-promos' && method === 'GET') {
+      return jsonResponse(firstPurchasePromoHealth)
+    }
+
+    if (path === '/api/v1/admin/stripe/first-purchase-promos' && method === 'PUT') {
+      return jsonResponse({
+        ...firstPurchasePromoHealth,
+        mapping: {
+          1: body?.[1] || firstPurchasePromoHealth.mapping[1],
+          3: body?.[3] || firstPurchasePromoHealth.mapping[3],
+          6: body?.[6] || firstPurchasePromoHealth.mapping[6],
+        },
+      })
+    }
+
+    if (path === '/api/v1/admin/stripe/first-purchase-promos/sync' && method === 'POST') {
+      return jsonResponse({
+        ...firstPurchasePromoHealth,
+        slots: { 1: { promotion_code_id: 'promo_1m', coupon_id: 'coupon_1', active: true, source: 'stored' } },
+        missing_in_stripe: [],
+        inactive: [],
+      })
+    }
+
+    if (path === '/api/v1/admin/stripe/first-purchase-coupons' && method === 'POST') {
+      return jsonResponse({
+        success: true,
+        data: {
+          created: true,
+          mapped: true,
+          coupon_id: 'coupon_new',
+          promotion_code_id: 'promo_new',
+          code: body?.code,
+          percent_off: 10,
+          health: firstPurchasePromoHealth,
+        },
+      })
+    }
+
+    if (path === '/api/v1/admin/stripe/promotion-codes' && method === 'GET') {
+      return jsonResponse(promotionCodesList)
     }
 
     if (path === '/api/v1/admin/nutrition/simulate' && method === 'POST') {

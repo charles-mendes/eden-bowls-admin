@@ -1,8 +1,9 @@
 import { screen, waitFor } from '@testing-library/react'
 import { fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UsersPage } from './UsersPage'
-import { operatorUser } from '../test/fixtures'
+import { operatorUser, operatorWriteUser } from '../test/fixtures'
 import { findCall, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -10,6 +11,7 @@ describe('UsersPage', () => {
   afterEach(() => {
     localStorage.clear()
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('loads the customer list with Bearer and page/perPage', async () => {
@@ -42,5 +44,27 @@ describe('UsersPage', () => {
     await waitFor(() => {
       expect(calls.some((call) => call.path.endsWith('/admin/users') && call.search.includes('q=ana'))).toBe(true)
     })
+  })
+
+  it('deactivates a customer from the list', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<UsersPage />, '/users')
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Desativar' })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Desativar' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/Conta de ana@edenbowls.com desativada/)).toBeInTheDocument()
+    })
+
+    const patch = calls.find((call) => call.method === 'PATCH' && call.path.endsWith('/status'))
+    expect(patch?.body).toEqual({ status: 'inactive' })
+    expect(patch?.authorization).toBe('Bearer access-token')
   })
 })

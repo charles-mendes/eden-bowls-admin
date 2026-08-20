@@ -28,4 +28,18 @@ test.describe('Admin billing', () => {
     await expect(page.getByRole('heading', { name: 'sub_123' })).toBeVisible()
     await expect(page.getByText('ana@edenbowls.com')).toBeVisible()
   })
+
+  test('syncs first-purchase coupons with Stripe', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/billing/coupons', e2eProfiles.operatorWrite)
+
+    await expect(page.getByRole('heading', { name: 'Cupons de 1ª compra' })).toBeVisible()
+    await expect(page.getByLabel('1 mês(es) — 10%')).toHaveValue('promo_1m')
+    await expect(page.getByText(/Slots também definidos via env/)).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Sincronizar com Stripe' }).click()
+    await expect(page.getByText('Slots sincronizados com a Stripe.')).toBeVisible()
+    await expect.poll(() => captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/stripe/first-purchase-promos/sync')).toMatchObject({
+      authorization: 'Bearer e2e-access-token',
+    })
+  })
 })

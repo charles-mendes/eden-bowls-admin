@@ -48,6 +48,11 @@ function mappingFromHealth(health: PromoHealth) {
   }
 }
 
+function formatPromoDuration(duration: string | null | undefined) {
+  const raw = String(duration || '').trim()
+  return raw || 'Não expira'
+}
+
 export function CouponsPage() {
   const { token } = useAuth()
   const [health, setHealth] = useState<PromoHealth | null>(null)
@@ -176,37 +181,47 @@ export function CouponsPage() {
       {message ? <div className="success">{noticeCopy[message] || message}</div> : null}
 
       <Section title="Mapear slots" description="IDs persistidos no banco precisam começar com promo_ e existir na Stripe.">
-        <div className="inline-actions">
-          <button className="ghost-button" type="button" onClick={() => void syncStripe()} disabled={syncing}>
-            {syncing ? 'Sincronizando…' : 'Sincronizar com Stripe'}
-          </button>
+        <div className="page-stack">
+          <div className="inline-actions">
+            <button className="ghost-button" type="button" onClick={() => void syncStripe()} disabled={syncing}>
+              {syncing ? 'Sincronizando…' : 'Sincronizar com Stripe'}
+            </button>
+          </div>
+          <form className="form-toolbar" onSubmit={saveMap}>
+            <div className="form-grid">
+              <label>1 mês(es) — 10%<input value={mapping[1]} onChange={(event) => setMapping((current) => ({ ...current, 1: event.target.value }))} placeholder="promo_..." /></label>
+              <label>3 mês(es) — 25%<input value={mapping[3]} onChange={(event) => setMapping((current) => ({ ...current, 3: event.target.value }))} placeholder="promo_..." /></label>
+              <label>6 mês(es) — 40%<input value={mapping[6]} onChange={(event) => setMapping((current) => ({ ...current, 6: event.target.value }))} placeholder="promo_..." /></label>
+            </div>
+            <div className="inline-actions">
+              <button className="primary-button" type="submit">Salvar mapa</button>
+            </div>
+          </form>
         </div>
-        <form className="form-grid" onSubmit={saveMap}>
-          <label>1 mês(es) — 10%<input value={mapping[1]} onChange={(event) => setMapping((current) => ({ ...current, 1: event.target.value }))} placeholder="promo_..." /></label>
-          <label>3 mês(es) — 25%<input value={mapping[3]} onChange={(event) => setMapping((current) => ({ ...current, 3: event.target.value }))} placeholder="promo_..." /></label>
-          <label>6 mês(es) — 40%<input value={mapping[6]} onChange={(event) => setMapping((current) => ({ ...current, 6: event.target.value }))} placeholder="promo_..." /></label>
-          <button className="primary-button" type="submit">Salvar mapa</button>
-        </form>
       </Section>
 
       <Section title="Criar na Stripe" description="Cria Coupon duration=once + Promotion Code first_time_transaction=true e grava o slot no banco. Percentual não é editável.">
-        <form className="form-grid" onSubmit={createCoupon}>
-          <label>
-            Prazo
-            <select value={term} onChange={(event) => setTerm(Number(event.target.value))}>
-              <option value={1}>1 mês — 10%</option>
-              <option value={3}>3 meses — 25%</option>
-              <option value={6}>6 meses — 40%</option>
-            </select>
-          </label>
-          <label>Code<input value={code} onChange={(event) => setCode(event.target.value)} required /></label>
-          <label>Name<input value={name} onChange={(event) => setName(event.target.value)} placeholder={`First purchase ${term}m (${percent}%)`} /></label>
-          <label>Max redemptions<input type="number" min={0} value={maxRedemptions} onChange={(event) => setMaxRedemptions(Number(event.target.value))} /></label>
-          <label className="checkbox-field">
-            <input type="checkbox" checked={assignSlot} onChange={(event) => setAssignSlot(event.target.checked)} />
-            Assign first purchase slot
-          </label>
-          <button className="primary-button" type="submit">Criar</button>
+        <form className="form-toolbar" onSubmit={createCoupon}>
+          <div className="form-grid">
+            <label>
+              Prazo
+              <select value={term} onChange={(event) => setTerm(Number(event.target.value))}>
+                <option value={1}>1 mês — 10%</option>
+                <option value={3}>3 meses — 25%</option>
+                <option value={6}>6 meses — 40%</option>
+              </select>
+            </label>
+            <label>Code<input value={code} onChange={(event) => setCode(event.target.value)} required /></label>
+            <label>Name<input value={name} onChange={(event) => setName(event.target.value)} placeholder={`First purchase ${term}m (${percent}%)`} /></label>
+            <label>Max redemptions<input type="number" min={0} value={maxRedemptions} onChange={(event) => setMaxRedemptions(Number(event.target.value))} /></label>
+            <label className="checkbox-field">
+              <input type="checkbox" checked={assignSlot} onChange={(event) => setAssignSlot(event.target.checked)} />
+              Assign first purchase slot
+            </label>
+          </div>
+          <div className="inline-actions">
+            <button className="primary-button" type="submit">Criar</button>
+          </div>
         </form>
       </Section>
 
@@ -230,9 +245,9 @@ export function CouponsPage() {
                 <tr key={item.id}>
                   <td>{item.code}</td>
                   <td>{item.id}</td>
-                  <td>{item.coupon_id ?? '-'}</td>
-                  <td>{item.percent_off ?? '-'}</td>
-                  <td>{item.duration ?? '-'}</td>
+                  <td>{item.coupon_id || '-'}</td>
+                  <td>{item.percent_off == null ? '-' : `${item.percent_off}%`}</td>
+                  <td>{formatPromoDuration(item.duration)}</td>
                   <td>{item.active ? 'Sim' : 'Não'}</td>
                   <td>{item.slot ? `${item.slot}m` : '-'}</td>
                   <td><a className="table-link" href={item.dashboard_url} target="_blank" rel="noreferrer">Abrir</a></td>
