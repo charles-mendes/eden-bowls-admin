@@ -15,6 +15,22 @@ test.describe('Admin catalog', () => {
     ))).toBe(true)
   })
 
+  test('creates a product from the catalog list', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/catalog/products', e2eProfiles.operatorWrite)
+
+    await page.getByPlaceholder('Ex.: Plano Adulto BR').fill('Plano novo')
+    await page.getByRole('button', { name: 'Criar produto' }).click()
+    await expect.poll(() => captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/catalog/products')).toMatchObject({
+      authorization: 'Bearer e2e-access-token',
+      body: {
+        name: 'Plano novo',
+        planCountry: 'BR',
+        planDays: 30,
+      },
+    })
+    await expect(page.getByRole('button', { name: 'Adicionar variação' })).toBeVisible()
+  })
+
   test('saves product plan fields', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
 

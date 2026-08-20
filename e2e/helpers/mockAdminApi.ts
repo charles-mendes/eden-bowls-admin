@@ -230,16 +230,46 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
-    if (path === '/api/v1/admin/catalog/products/prod-1' && method === 'GET') {
+    if (path === '/api/v1/admin/catalog/products' && method === 'POST') {
       await fulfillJson(route, {
-        id: 'prod-1',
-        slug: 'bowl-adulto',
-        namePt: 'Bowl Adulto',
-        nameEn: 'Adult Bowl',
+        id: '301',
+        slug: 'plano-novo',
+        namePt: body?.name || 'Plano novo',
+        nameEn: body?.name || 'Plano novo',
+        active: false,
+        planCountry: body?.planCountry || 'BR',
+        planDays: body?.planDays || 30,
+        stripeProductId: 'prod_live_301',
+        variants: [],
+      })
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'GET') {
+      const id = path.split('/').pop() || 'prod-1'
+      if (id === 'prod-1') {
+        await fulfillJson(route, {
+          id: 'prod-1',
+          slug: 'bowl-adulto',
+          namePt: 'Bowl Adulto',
+          nameEn: 'Adult Bowl',
+          active: false,
+          planCountry: 'BR',
+          planDays: 28,
+          variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }],
+        })
+        return
+      }
+      await fulfillJson(route, {
+        id,
+        slug: 'plano-novo',
+        namePt: 'Plano novo',
+        nameEn: 'Plano novo',
         active: false,
         planCountry: 'BR',
-        planDays: 28,
-        variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }],
+        planDays: 30,
+        stripeProductId: 'prod_live_301',
+        variants: [],
       })
       return
     }

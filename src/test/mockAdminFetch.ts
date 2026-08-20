@@ -106,6 +106,20 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
       return jsonResponse(productsList)
     }
 
+    if (path === '/api/v1/admin/catalog/products' && method === 'POST') {
+      return jsonResponse({
+        id: '301',
+        slug: 'plano-novo',
+        namePt: body?.name || 'Plano novo',
+        nameEn: body?.name || 'Plano novo',
+        active: false,
+        planCountry: body?.planCountry || 'BR',
+        planDays: body?.planDays || 30,
+        stripeProductId: 'prod_live_301',
+        variants: [],
+      })
+    }
+
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'GET') {
       return jsonResponse(productDetail)
     }

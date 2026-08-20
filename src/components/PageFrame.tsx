@@ -3,10 +3,12 @@ import { type ReactNode } from 'react'
 export function PageFrame({
   title,
   description,
+  actions,
   children,
 }: {
   title: string
   description: string
+  actions?: ReactNode
   children?: ReactNode
 }) {
   return (
@@ -16,6 +18,7 @@ export function PageFrame({
           <h2>{title}</h2>
           <p className="muted">{description}</p>
         </div>
+        {actions || null}
       </div>
       {children}
     </section>
