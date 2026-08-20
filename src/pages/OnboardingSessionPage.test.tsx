@@ -17,10 +17,16 @@ describe('OnboardingSessionPage', () => {
     renderAuthedPage(<OnboardingSessionPage />, '/onboarding/sessions/u-ana', '/onboarding/sessions/:id')
 
     await waitFor(() => {
-      expect(screen.getByText(/Luna/)).toBeInTheDocument()
+      expect(screen.getByText('Cliente já possui compra anterior')).toBeInTheDocument()
     })
 
     expect(screen.getByRole('link', { name: 'Ver cliente' })).toHaveAttribute('href', '/users/u-ana')
+    expect(screen.getByText('Não elegível')).toBeInTheDocument()
+    expect(screen.getByText('Rua Aristeu de Castro Fernandes, 941')).toBeInTheDocument()
+    expect(screen.getByText('Entrega Eden Bowl')).toBeInTheDocument()
+    expect(screen.getByText('Bovino × 5, Peixe × 5')).toBeInTheDocument()
+    expect(screen.getByText('Pago')).toBeInTheDocument()
+    expect(screen.queryByText('HAS_PREVIOUS_PURCHASE')).not.toBeInTheDocument()
     expect(calls.some((call) => call.method === 'GET' && call.path === '/api/v1/admin/onboarding/checkouts/u-ana')).toBe(true)
   })
 })

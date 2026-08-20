@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   formatCurrency,
   formatDate,
+  formatDiscountReason,
+  formatFlavor,
   formatFrequency,
   formatJson,
+  formatPostalCode,
   formatStripeStatus,
+  formatTermMonths,
 } from './format'
 
 describe('format helpers', () => {
@@ -38,5 +42,12 @@ describe('format helpers', () => {
 
   it('pretty-prints JSON payloads', () => {
     expect(formatJson({ ok: true })).toContain('"ok": true')
+  })
+
+  it('translates checkout snapshot labels to portuguese', () => {
+    expect(formatDiscountReason('HAS_PREVIOUS_PURCHASE')).toBe('Cliente já possui compra anterior')
+    expect(formatFlavor('beef')).toBe('Bovino')
+    expect(formatTermMonths(1)).toBe('1 mês')
+    expect(formatPostalCode('83331160')).toBe('83331-160')
   })
 })

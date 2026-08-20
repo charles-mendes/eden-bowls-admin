@@ -4,12 +4,21 @@ import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest } from '../lib/api'
 
+type PromoSlot = {
+  promotion_code_id?: string | null
+  coupon_id?: string | null
+  active?: boolean
+  source?: 'stored' | 'stripe'
+}
+
 type PromoHealth = {
   complete: boolean
   missing_terms: number[]
   mapping: Record<string, string | null>
   misconfig_count: number
-  envSlots?: number[]
+  slots?: Record<string, PromoSlot>
+  missing_in_stripe?: number[]
+  inactive?: number[]
 }
 
 type PromoCode = {
@@ -23,10 +32,26 @@ type PromoCode = {
   dashboard_url: string
 }
 
+const emptyMapping = { 1: '', 3: '', 6: '' }
+
+const noticeCopy: Record<string, string> = {
+  mapped: 'Mapa salvo no banco.',
+  created: 'Cupom criado na Stripe e gravado no banco.',
+  synced: 'Slots sincronizados com a Stripe.',
+}
+
+function mappingFromHealth(health: PromoHealth) {
+  return {
+    1: health.mapping?.[1] || health.mapping?.['1'] || '',
+    3: health.mapping?.[3] || health.mapping?.['3'] || '',
+    6: health.mapping?.[6] || health.mapping?.['6'] || '',
+  }
+}
+
 export function CouponsPage() {
   const { token } = useAuth()
   const [health, setHealth] = useState<PromoHealth | null>(null)
-  const [mapping, setMapping] = useState({ 1: '', 3: '', 6: '' })
+  const [mapping, setMapping] = useState(emptyMapping)
   const [codes, setCodes] = useState<PromoCode[]>([])
   const [term, setTerm] = useState(1)
   const [code, setCode] = useState('')
@@ -35,6 +60,12 @@ export function CouponsPage() {
   const [assignSlot, setAssignSlot] = useState(true)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [syncing, setSyncing] = useState(false)
+
+  const applyHealth = (nextHealth: PromoHealth) => {
+    setHealth(nextHealth)
+    setMapping(mappingFromHealth(nextHealth))
+  }
 
   const load = async () => {
     if (!token) return
@@ -44,12 +75,7 @@ export function CouponsPage() {
         apiRequest<PromoHealth>('/admin/stripe/first-purchase-promos', { token }),
         apiRequest<{ success?: boolean; data?: { items: PromoCode[] }; message?: string }>('/admin/stripe/promotion-codes', { token }),
       ])
-      setHealth(healthResponse)
-      setMapping({
-        1: healthResponse.mapping?.[1] || '',
-        3: healthResponse.mapping?.[3] || '',
-        6: healthResponse.mapping?.[6] || '',
-      })
+      applyHealth(healthResponse)
       setCodes(codesResponse.data?.items || [])
       if (codesResponse.success === false && codesResponse.message) {
         setError(codesResponse.message)
@@ -67,15 +93,39 @@ export function CouponsPage() {
     event.preventDefault()
     if (!token) return
     try {
+      setError('')
       const response = await apiRequest<PromoHealth>('/admin/stripe/first-purchase-promos', {
         token,
         method: 'PUT',
         body: mapping,
       })
-      setHealth(response)
+      applyHealth(response)
       setMessage('mapped')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao mapear')
+    }
+  }
+
+  const syncStripe = async () => {
+    if (!token) return
+    try {
+      setError('')
+      setSyncing(true)
+      const response = await apiRequest<PromoHealth>('/admin/stripe/first-purchase-promos/sync', {
+        token,
+        method: 'POST',
+      })
+      applyHealth(response)
+      setMessage('synced')
+      const codesResponse = await apiRequest<{ success?: boolean; data?: { items: PromoCode[] }; message?: string }>('/admin/stripe/promotion-codes', { token })
+      setCodes(codesResponse.data?.items || [])
+      if (codesResponse.success === false && codesResponse.message) {
+        setError(codesResponse.message)
+      }
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao sincronizar com a Stripe')
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -83,6 +133,7 @@ export function CouponsPage() {
     event.preventDefault()
     if (!token) return
     try {
+      setError('')
       await apiRequest('/admin/stripe/first-purchase-coupons', {
         token,
         method: 'POST',
@@ -105,7 +156,7 @@ export function CouponsPage() {
   const percent = term === 6 ? 40 : term === 3 ? 25 : 10
 
   return (
-    <PageFrame title="Cupons de 1ª compra" description="Stripe é a fonte de verdade. O app só mapeia prazo → promo_.">
+    <PageFrame title="Cupons de 1ª compra" description="O mapa prazo → promo_ fica no banco. A Stripe continua sendo a fonte do cupom cobrado.">
       <div className="muted-panel">
         Desconto de 1ª compra aplica-se somente à primeira fatura mensal. Nos planos de 3 e 6 meses, os meses seguintes cobram o preço cheio. O percentual maior (25%/40%) é benefício de compromisso, não desconto sobre o valor total do contrato.
       </div>
@@ -115,11 +166,21 @@ export function CouponsPage() {
       {health && health.misconfig_count > 0 ? (
         <div className="warning">Misconfig count: {health.misconfig_count}</div>
       ) : null}
-      {health?.envSlots?.length ? <div className="warning">Slots também definidos via env: {health.envSlots.join(', ')}m</div> : null}
+      {health?.missing_in_stripe?.length ? (
+        <div className="warning">Não encontrados na Stripe: {health.missing_in_stripe.map((item) => `${item}m`).join(', ')}</div>
+      ) : null}
+      {health?.inactive?.length ? (
+        <div className="warning">Inativos na Stripe: {health.inactive.map((item) => `${item}m`).join(', ')}</div>
+      ) : null}
       {error ? <div className="alert">{error}</div> : null}
-      {message ? <div className="success">{message}</div> : null}
+      {message ? <div className="success">{noticeCopy[message] || message}</div> : null}
 
-      <Section title="Mapear slots" description="IDs persistidos precisam começar com promo_.">
+      <Section title="Mapear slots" description="IDs persistidos no banco precisam começar com promo_ e existir na Stripe.">
+        <div className="inline-actions">
+          <button className="ghost-button" type="button" onClick={() => void syncStripe()} disabled={syncing}>
+            {syncing ? 'Sincronizando…' : 'Sincronizar com Stripe'}
+          </button>
+        </div>
         <form className="form-grid" onSubmit={saveMap}>
           <label>1 mês(es) — 10%<input value={mapping[1]} onChange={(event) => setMapping((current) => ({ ...current, 1: event.target.value }))} placeholder="promo_..." /></label>
           <label>3 mês(es) — 25%<input value={mapping[3]} onChange={(event) => setMapping((current) => ({ ...current, 3: event.target.value }))} placeholder="promo_..." /></label>
@@ -128,7 +189,7 @@ export function CouponsPage() {
         </form>
       </Section>
 
-      <Section title="Criar na Stripe" description="Coupon duration=once e first_time_transaction=true. Percentual não é editável.">
+      <Section title="Criar na Stripe" description="Cria Coupon duration=once + Promotion Code first_time_transaction=true e grava o slot no banco. Percentual não é editável.">
         <form className="form-grid" onSubmit={createCoupon}>
           <label>
             Prazo

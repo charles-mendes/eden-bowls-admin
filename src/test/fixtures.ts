@@ -109,12 +109,72 @@ export const checkoutDetail = {
   ],
   pets: [{ id: 'pet-1', name: 'Luna', breed: 'Vira-lata', ageYears: 4, ageMonths: 0, weightInput: 12, weightUnit: 'kg', activityLevel: 'BAIXO', petCondition: 'ADEQUADO', neutered: true }],
   recurrence: { frequency: 'every_4_weeks' },
-  planSelection: { plan: 'adult' },
-  address: { city: 'São Paulo' },
-  shipping: { method: 'eden' },
-  discount: { promotionCodeId: null, eligibilityReason: 'ineligible' },
-  lineItems: [{ sku: 'bowl-1' }],
-  checkoutReference: { id: 'co_1' },
+  planSelection: {
+    pets: [{ pet_id: 'pet-1', enabled: true, pet_name: 'Luna', flavor_weights: [5, 5], selected_flavors: ['beef', 'fish'] }],
+    country: 'BR',
+    currency: 'BRL',
+    updated_at: '2026-08-19T02:11:04.327Z',
+    catalog_pricing: {
+      currency: 'BRL',
+      subtotal: 550,
+      line_items: [
+        { flavor: 'beef', pet_name: 'Luna', quantity: 5, line_total: 225, unit_price: 45, pack_size_label: '500 g', currency: 'BRL' },
+        { flavor: 'fish', pet_name: 'Luna', quantity: 5, line_total: 325, unit_price: 65, pack_size_label: '500 g', currency: 'BRL' },
+      ],
+      discounted_first_month_total: 550,
+    },
+    subscription_term_months: 1,
+  },
+  address: {
+    city: 'Pinhais',
+    phone: '(41) 99890-5819',
+    state: 'PR',
+    number: '941',
+    street: 'Rua Aristeu de Castro Fernandes',
+    country: 'BR',
+    zipcode: '83331160',
+    complement: 'Apt 1',
+    neighborhood: 'Maria Antonieta',
+    delivery_instructions: 'Coloca perto da porta',
+  },
+  shipping: {
+    cost: 7,
+    label: 'Entrega Eden Bowl',
+    total: 7,
+    per_km: 0.95,
+    zipcode: '83331-160',
+    distance: 7.37,
+    quoted_at: '2026-08-19T02:27:18.786Z',
+    delivery_days: 2,
+    estimate_label: '2 business days',
+    distance_source: 'osrm',
+  },
+  discount: { promotionCodeId: null, percent: 0, eligibilityReason: 'HAS_PREVIOUS_PURCHASE', amountPaid: null },
+  lineItems: [
+    { flavor: 'beef', pet_name: 'Luna', quantity: 5, line_total: 225, unit_price: 45, pack_size_label: '500 g', currency: 'BRL' },
+    { flavor: 'fish', pet_name: 'Luna', quantity: 5, line_total: 325, unit_price: 65, pack_size_label: '500 g', currency: 'BRL' },
+  ],
+  checkoutReference: {
+    total: 557,
+    status: 'incomplete',
+    billing: { email: 'ana@edenbowls.com', first_name: 'Ana', last_name: 'Costa', phone: '' },
+    currency: 'BRL',
+    subtotal: 557,
+    checkout_mode: 'subscription_first',
+    payment_state: 'paid',
+    shipping_total: 7,
+    has_payment_method: true,
+    stripe_customer_id: 'cus_123',
+    discount_eligibility: { reason: 'HAS_PREVIOUS_PURCHASE', eligible: false, validated: true },
+    stripe_discount_amount: 0,
+    stripe_subscription_id: 'sub_123',
+    payment_acknowledged_at: '2026-08-19T02:27:34.178Z',
+    stripe_discount_percent: 0,
+    discount_applied_percent: 0,
+    stripe_payment_intent_id: 'pi_123',
+    stripe_subscription_status: 'incomplete',
+    stripe_payment_intent_status: 'succeeded',
+  },
   paymentReference: { id: 'pi_1' },
 }
 
@@ -281,4 +341,29 @@ export const staffList = {
   totalPages: 1,
   items: [staffUser],
   bootstrapEmails: ['admin@edenbowls.com'],
+}
+
+export const firstPurchasePromoHealth = {
+  complete: true,
+  missing_terms: [],
+  mapping: { 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m' },
+  misconfig_count: 0,
+}
+
+export const promotionCodesList = {
+  success: true,
+  data: {
+    items: [
+      {
+        id: 'promo_1m',
+        code: 'FIRST_1M',
+        coupon_id: 'coupon_1',
+        percent_off: 10,
+        duration: 'once',
+        active: true,
+        slot: 1,
+        dashboard_url: 'https://dashboard.stripe.com/test/promotion_codes/promo_1m',
+      },
+    ],
+  },
 }

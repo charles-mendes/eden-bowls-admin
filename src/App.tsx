@@ -1,4 +1,4 @@
-import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
+import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom'
 import { AdminLayout } from './components/AdminLayout'
 import { AuthProvider } from './contexts/AuthContext'
 import { RequireAuth } from './routes/RequireAuth'
@@ -16,9 +16,12 @@ import { NutritionSimulatePage } from './pages/NutritionSimulatePage'
 import { UsersPage } from './pages/UsersPage'
 import { RolesPage } from './pages/RolesPage'
 import { UserDetailPage } from './pages/UserDetailPage'
-import { OrdersPage } from './pages/OrdersPage'
-import { OrderDetailPage } from './pages/OrderDetailPage'
 import { NotFoundPage } from './pages/NotFoundPage'
+
+function LegacyCheckoutRedirect() {
+  const { orderId } = useParams()
+  return <Navigate to={orderId ? `/onboarding/sessions/${orderId}` : '/onboarding/sessions'} replace />
+}
 
 function ProtectedShell() {
   return (
@@ -51,8 +54,8 @@ function App() {
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/roles" element={<RolesPage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />
-          <Route path="/orders" element={<OrdersPage />} />
-          <Route path="/orders/:orderId" element={<OrderDetailPage />} />
+          <Route path="/orders" element={<Navigate to="/onboarding/sessions" replace />} />
+          <Route path="/orders/:orderId" element={<LegacyCheckoutRedirect />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

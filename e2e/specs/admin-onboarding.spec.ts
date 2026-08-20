@@ -14,7 +14,10 @@ test.describe('Admin onboarding 360', () => {
   test('loads the 360 checkout detail', async ({ page }) => {
     await openAuthed(page, '/onboarding/sessions/u-ana', e2eProfiles.operator)
 
-    await expect(page.getByText('Luna')).toBeVisible()
     await expect(page.getByRole('link', { name: 'Ver cliente' })).toBeVisible()
+    await expect(page.getByText('Cliente já possui compra anterior')).toBeVisible()
+    await expect(page.getByText('Rua Aristeu de Castro Fernandes, 941')).toBeVisible()
+    await expect(page.getByText('Entrega Eden Bowl')).toBeVisible()
+    await expect(page.getByText('Bovino × 5, Peixe × 5')).toBeVisible()
   })
 })

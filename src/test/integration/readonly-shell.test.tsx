@@ -29,6 +29,7 @@ describe('readonly admin shell', () => {
 
     expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Clientes' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Onboarding 360' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Checkouts' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Frete' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Cupons 1ª compra' })).not.toBeInTheDocument()
