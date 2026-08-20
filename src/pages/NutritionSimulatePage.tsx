@@ -6,6 +6,9 @@ import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 
 type Breed = { id?: number; name: string; slug?: string }
+type Country = 'BR' | 'US'
+type AgeUnit = 'years' | 'months'
+type WeightUnit = 'kg' | 'lb'
 
 type SimulateResult = {
   success: boolean
@@ -22,6 +25,20 @@ type SimulateResult = {
   }
 }
 
+const KG_TO_LB = 2.2046226218
+
+const ACTIVITY_OPTIONS = [
+  { value: 'BAIXO', BR: 'BAIXO', US: 'Low' },
+  { value: 'MODERADO', BR: 'MODERADO', US: 'Moderate' },
+  { value: 'ALTO', BR: 'ALTO', US: 'High' },
+] as const
+
+const SCORE_OPTIONS = [
+  { value: 'ABAIXO', BR: 'ABAIXO', US: 'Underweight' },
+  { value: 'ADEQUADO', BR: 'ADEQUADO', US: 'Ideal' },
+  { value: 'ACIMA', BR: 'ACIMA', US: 'Overweight' },
+] as const
+
 const labels = {
   BR: {
     title: 'Simulador nutricional',
@@ -34,10 +51,16 @@ const labels = {
     puppy: 'Filhote',
     adult: 'Adulto',
     senior: 'Sênior',
-    age: 'Idade (anos)',
+    age: 'Idade',
+    ageUnit: 'Unidade da idade',
+    ageYears: 'Anos',
+    ageMonths: 'Meses',
+    ageHint: 'Ex.: filhote de 2 meses',
     weight: 'Peso (kg)',
     breed: 'Raça',
     neutered: 'Castrado',
+    yes: 'Sim',
+    no: 'Não',
     activity: 'Nível de atividade',
     score: 'Score corporal',
     submit: 'Calcular',
@@ -53,23 +76,53 @@ const labels = {
     puppy: 'Puppy',
     adult: 'Adult',
     senior: 'Senior',
-    age: 'Age (years)',
-    weight: 'Weight (kg)',
+    age: 'Age',
+    ageUnit: 'Age unit',
+    ageYears: 'Years',
+    ageMonths: 'Months',
+    ageHint: 'Ex.: 2-month-old puppy',
+    weight: 'Weight (lb)',
     breed: 'Breed',
     neutered: 'Neutered',
+    yes: 'Yes',
+    no: 'No',
     activity: 'Activity level',
     score: 'Body score',
     submit: 'Calculate',
   },
 }
 
+function weightUnitFor(country: Country): WeightUnit {
+  return country === 'BR' ? 'kg' : 'lb'
+}
+
+function convertWeight(value: number, from: WeightUnit, to: WeightUnit) {
+  if (from === to) return value
+  const converted = from === 'kg' ? value * KG_TO_LB : value / KG_TO_LB
+  return Math.round(converted * 10) / 10
+}
+
+function toAgePayload(age: number, unit: AgeUnit) {
+  const value = Math.max(0, Math.floor(Number(age) || 0))
+  if (unit === 'years') {
+    return { age: value, age_years: value, age_months: 0 }
+  }
+
+  return {
+    age: Math.floor(value / 12),
+    age_years: Math.floor(value / 12),
+    age_months: value % 12,
+  }
+}
+
 export function NutritionSimulatePage() {
   const { token } = useAuth()
-  const [country, setCountry] = useState<'BR' | 'US'>('US')
+  const [country, setCountry] = useState<Country>('US')
   const [name, setName] = useState('')
   const [type, setType] = useState<'dog' | 'cat'>('dog')
   const [lifeStage, setLifeStage] = useState<'puppy' | 'adult' | 'senior'>('adult')
   const [age, setAge] = useState(4)
+  const [ageUnit, setAgeUnit] = useState<AgeUnit>('years')
   const [weight, setWeight] = useState(20)
   const [breed, setBreed] = useState('')
   const [neutered, setNeutered] = useState(true)
@@ -80,6 +133,7 @@ export function NutritionSimulatePage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const copy = labels[country]
+  const weightUnit = weightUnitFor(country)
 
   useEffect(() => {
     const loadBreeds = async () => {
@@ -98,6 +152,12 @@ export function NutritionSimulatePage() {
     void loadBreeds()
   }, [country])
 
+  function handleCountryChange(next: Country) {
+    if (next === country) return
+    setWeight((current) => convertWeight(current, weightUnitFor(country), weightUnitFor(next)))
+    setCountry(next)
+  }
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!token) return
@@ -111,7 +171,16 @@ export function NutritionSimulatePage() {
         method: 'POST',
         body: {
           country,
-          pet: { name, type, life_stage: lifeStage, age, weight, breed, neutered },
+          pet: {
+            name,
+            type,
+            life_stage: lifeStage,
+            ...toAgePayload(age, ageUnit),
+            weight,
+            weight_unit: weightUnit,
+            breed,
+            neutered,
+          },
           questionnaire: { nivel_atividade: activity, score_corporal: score },
         },
       })
@@ -128,10 +197,10 @@ export function NutritionSimulatePage() {
       {error ? <div className="alert">{error}</div> : null}
 
       <form className="editor-card" onSubmit={handleSubmit}>
-        <div className="form-grid">
+        <div className="form-grid simulate-grid">
           <label>
             {copy.country}
-            <select value={country} onChange={(event) => setCountry(event.target.value === 'BR' ? 'BR' : 'US')}>
+            <select value={country} onChange={(event) => handleCountryChange(event.target.value === 'BR' ? 'BR' : 'US')}>
               <option value="US">US</option>
               <option value="BR">BR</option>
             </select>
@@ -155,10 +224,28 @@ export function NutritionSimulatePage() {
               <option value="senior">{copy.senior}</option>
             </select>
           </label>
-          <label>
-            {copy.age}
-            <input type="number" min={0} value={age} onChange={(event) => setAge(Number(event.target.value))} />
-          </label>
+          <div className="field">
+            <label htmlFor="nutrition-age">{copy.age}</label>
+            <div className="split-input">
+              <input
+                id="nutrition-age"
+                type="number"
+                min={0}
+                value={age}
+                onChange={(event) => setAge(Number(event.target.value))}
+                aria-describedby="nutrition-age-hint"
+              />
+              <select
+                aria-label={copy.ageUnit}
+                value={ageUnit}
+                onChange={(event) => setAgeUnit(event.target.value === 'months' ? 'months' : 'years')}
+              >
+                <option value="years">{copy.ageYears}</option>
+                <option value="months">{copy.ageMonths}</option>
+              </select>
+            </div>
+            <p id="nutrition-age-hint" className="field-hint">{copy.ageHint}</p>
+          </div>
           <label>
             {copy.weight}
             <input type="number" min={0} step="0.1" value={weight} onChange={(event) => setWeight(Number(event.target.value))} required />
@@ -172,24 +259,27 @@ export function NutritionSimulatePage() {
               ))}
             </select>
           </label>
-          <label className="checkbox-field">
-            <input type="checkbox" checked={neutered} onChange={(event) => setNeutered(event.target.checked)} />
+          <label className="boolean-field">
             {copy.neutered}
+            <span className="boolean-control">
+              <input type="checkbox" checked={neutered} onChange={(event) => setNeutered(event.target.checked)} />
+              <span className="boolean-value">{neutered ? copy.yes : copy.no}</span>
+            </span>
           </label>
           <label>
             {copy.activity}
             <select value={activity} onChange={(event) => setActivity(event.target.value)}>
-              <option value="BAIXO">BAIXO</option>
-              <option value="MODERADO">MODERADO</option>
-              <option value="ALTO">ALTO</option>
+              {ACTIVITY_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option[country]}</option>
+              ))}
             </select>
           </label>
           <label>
             {copy.score}
             <select value={score} onChange={(event) => setScore(event.target.value)}>
-              <option value="ABAIXO">ABAIXO</option>
-              <option value="ADEQUADO">ADEQUADO</option>
-              <option value="ACIMA">ACIMA</option>
+              {SCORE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option[country]}</option>
+              ))}
             </select>
           </label>
         </div>
