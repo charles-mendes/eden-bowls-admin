@@ -8,7 +8,6 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const navigate = useNavigate()
 
   const visibleMenu = adminMenu.filter((item) => {
-    if (!item.roles) return true
     if (!user) return false
     return item.roles.some((role) => user.roles.includes(role))
   })

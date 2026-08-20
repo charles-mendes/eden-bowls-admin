@@ -13,7 +13,7 @@ export function PageFrame({
     <section className="page-frame">
       <div className="page-heading">
         <div>
-          <p className="eyebrow">Blueprint</p>
+          <p className="eyebrow">Portal</p>
           <h2>{title}</h2>
           <p className="muted">{description}</p>
         </div>

@@ -6,10 +6,11 @@ import { useAuth } from '../contexts/AuthContext'
 import { apiRequest } from '../lib/api'
 import { formatDate } from '../lib/format'
 
-type OnboardingMetrics = {
-  totalSessions: number
-  byStatus: Record<string, number>
-  expiringIn24h: number
+type CheckoutMetrics = {
+  totalCheckouts: number
+  linkedToStripe: number
+  stripeActive: number
+  withSimplified: number
   generatedAt: string
 }
 
@@ -24,17 +25,13 @@ type SyncHealth = {
 type SyncStatus = {
   syncJobId: string
   status: string
-  summary: {
-    scope: string
-    market?: string
-    currency?: string
-    productId?: string
-  }
+  summary?: { scope?: string }
+  scope?: string
 }
 
 export function DashboardPage() {
   const { token } = useAuth()
-  const [metrics, setMetrics] = useState<OnboardingMetrics | null>(null)
+  const [metrics, setMetrics] = useState<CheckoutMetrics | null>(null)
   const [syncHealth, setSyncHealth] = useState<SyncHealth | null>(null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
   const [error, setError] = useState('')
@@ -46,15 +43,15 @@ export function DashboardPage() {
       setError('')
       try {
         const [metricsResponse, syncHealthResponse] = await Promise.all([
-          apiRequest<OnboardingMetrics>('/admin/onboarding/metrics', { token }),
-          apiRequest<SyncHealth>('/billing/catalog/sync/health?market=BR&currency=BRL', { token }),
+          apiRequest<CheckoutMetrics>('/admin/onboarding/metrics', { token }),
+          apiRequest<SyncHealth>('/admin/catalog/sync/health?market=BR&currency=BRL', { token }),
         ])
 
         setMetrics(metricsResponse)
         setSyncHealth(syncHealthResponse)
 
         try {
-          const syncStatusResponse = await apiRequest<SyncStatus>('/billing/catalog/sync/status', { token })
+          const syncStatusResponse = await apiRequest<SyncStatus>('/admin/catalog/sync/status', { token })
           setSyncStatus(syncStatusResponse)
         } catch {
           setSyncStatus(null)
@@ -70,32 +67,21 @@ export function DashboardPage() {
   return (
     <PageFrame
       title="Dashboard"
-      description="Resumo operacional para onboarding, catálogo, billing e qualidade de integrações."
+      description="Checkouts de onboarding, vínculo Stripe e saúde do catálogo."
     >
       {error ? <div className="alert">{error}</div> : null}
 
       <div className="grid cards-4">
-        <MetricCard label="Sessões" value={metrics?.totalSessions ?? '—'} hint={`Gerado em ${formatDate(metrics?.generatedAt)}`} />
-        <MetricCard label="Expiram em 24h" value={metrics?.expiringIn24h ?? '—'} hint="Onboarding aberto" />
-        <MetricCard label="Sync health" value={`${syncHealth?.totalMapped ?? '—'}/${syncHealth?.totalExpected ?? '—'}`} hint={`Gaps: ${syncHealth?.gaps.length ?? '—'}`} />
-        <MetricCard label="Último sync" value={syncStatus?.status ?? 'sem job'} hint={syncStatus?.summary.scope ?? '—'} />
+        <MetricCard label="Checkouts" value={metrics?.totalCheckouts ?? '—'} hint={`Gerado em ${formatDate(metrics?.generatedAt)}`} />
+        <MetricCard label="Vinculados Stripe" value={metrics?.linkedToStripe ?? '—'} />
+        <MetricCard label="Stripe ativos" value={metrics?.stripeActive ?? '—'} />
+        <MetricCard label="Com simplificado" value={metrics?.withSimplified ?? '—'} />
       </div>
 
-      <Section title="Sessões por status" description="Indicadores vindos de /admin/onboarding/metrics.">
-        <div className="status-grid">
-          {Object.entries(metrics?.byStatus ?? {}).map(([status, value]) => (
-            <div key={status} className="status-pill">
-              <strong>{status}</strong>
-              <span>{value}</span>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section title="Saúde do catálogo Stripe" description="Consulta de /billing/catalog/sync/health com market BR e currency BRL.">
+      <Section title="Catálogo Stripe" description="Consulta de /admin/catalog/sync/health com market BR e currency BRL.">
         <div className="stack-tight">
-          <p>Mercado: {syncHealth?.market ?? '—'} · Moeda: {syncHealth?.currency ?? '—'}</p>
-          <p>Gaps de mapeamento: {syncHealth?.gaps.length ? syncHealth.gaps.join(', ') : 'nenhum gap encontrado'}</p>
+          <p>Mapped: {syncHealth?.totalMapped ?? '—'}/{syncHealth?.totalExpected ?? '—'} · Gaps: {syncHealth?.gaps.length ? syncHealth.gaps.join(', ') : 'nenhum'}</p>
+          <p className="muted">Último sync: {syncStatus?.status ?? 'sem job'} · {syncStatus?.summary?.scope ?? syncStatus?.scope ?? '—'}</p>
         </div>
       </Section>
     </PageFrame>

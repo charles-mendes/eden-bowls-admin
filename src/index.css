@@ -294,6 +294,108 @@ button {
   color: #ffd9dd;
 }
 
+.success {
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: rgba(90, 200, 140, 0.12);
+  border: 1px solid rgba(90, 200, 140, 0.25);
+  color: #d4f5e2;
+}
+
+.warning {
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: rgba(255, 191, 95, 0.12);
+  border: 1px solid rgba(255, 191, 95, 0.25);
+  color: #ffe3b0;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.tab {
+  cursor: pointer;
+  border-radius: 12px;
+  padding: 10px 14px;
+  color: var(--text-soft);
+  background: transparent;
+  border: 1px solid var(--border);
+}
+
+.tab.active {
+  color: var(--text-strong);
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+
+.form-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 16px;
+}
+
+.form-grid label,
+.editor-card label,
+.stack label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-soft);
+}
+
+.checkbox-field {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-grid input,
+.form-grid select,
+.form-grid textarea,
+.editor-card input,
+.editor-card textarea,
+.editor-card select,
+.stack textarea,
+.inline-actions input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-strong);
+  padding: 11px 12px;
+}
+
+pre {
+  overflow: auto;
+  max-height: 280px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.stack-tight {
+  display: grid;
+  gap: 8px;
+}
+
+.badge-success { color: #9be7c4; }
+.badge-warning { color: #ffd58b; }
+.badge-error { color: #ffb3bc; }
+
+
 .table-shell {
   border-radius: 20px;
   overflow: hidden;

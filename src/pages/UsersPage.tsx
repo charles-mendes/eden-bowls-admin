@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
 import { useAuth } from '../contexts/AuthContext'
-import { apiRequest } from '../lib/api'
+import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate } from '../lib/format'
 
 type UserItem = {
@@ -17,8 +18,9 @@ type UserItem = {
 
 type UsersResponse = {
   total: number
-  skip: number
-  take: number
+  page: number
+  perPage: number
+  totalPages: number
   items: UserItem[]
 }
 
@@ -27,6 +29,7 @@ export function UsersPage() {
   const [data, setData] = useState<UsersResponse | null>(null)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
+  const [query, setQuery] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -35,7 +38,7 @@ export function UsersPage() {
     const load = async () => {
       try {
         setError('')
-        const response = await apiRequest<UsersResponse>(`/admin/users?skip=${(page - 1) * perPage}&take=${perPage}`, { token })
+        const response = await apiRequest<UsersResponse>(`/admin/users${buildQueryString({ page, perPage, q: query || undefined })}`, { token })
         setData(response)
       } catch (requestError) {
         setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar usuários')
@@ -43,15 +46,16 @@ export function UsersPage() {
     }
 
     void load()
-  }, [token, page, perPage])
+  }, [token, page, perPage, query])
 
   return (
-    <PageFrame
-      title="Usuários"
-      description="Consulta administrativa para suporte e operação."
-    >
-      <Section title="Filtros" description="A listagem usa skip/take para paginar o retorno administrativo.">
+    <PageFrame title="Clientes" description="Lista administrativa com busca por e-mail ou nome.">
+      <Section title="Filtros" description="Paginação unificada em page/perPage.">
         <FiltersBar>
+          <label>
+            Busca
+            <input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1) }} placeholder="e-mail ou nome" />
+          </label>
           <label>
             Por página
             <input type="number" min={1} max={100} value={perPage} onChange={(event) => { setPerPage(Number(event.target.value)); setPage(1) }} />
@@ -74,7 +78,7 @@ export function UsersPage() {
             <tbody>
               {data?.items.map((item) => (
                 <tr key={item.id}>
-                  <td>{item.email}</td>
+                  <td><Link className="table-link" to={`/users/${item.id}`}>{item.email}</Link></td>
                   <td>{item.status}</td>
                   <td>{item.profile?.fullName ?? '-'}</td>
                   <td>{item.profile?.phone ?? '-'}</td>
@@ -86,8 +90,8 @@ export function UsersPage() {
         </div>
 
         <Pager
-          page={page}
-          totalPages={Math.max(1, Math.ceil((data?.total ?? 0) / perPage))}
+          page={data?.page ?? page}
+          totalPages={data?.totalPages ?? 1}
           onPrev={() => setPage((current) => Math.max(1, current - 1))}
           onNext={() => setPage((current) => current + 1)}
         />

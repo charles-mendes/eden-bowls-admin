@@ -41,5 +41,14 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
     throw new Error(typeof message === 'string' ? message : 'request_failed')
   }
 
-  return (await response.json()) as T
+  if (response.status === 204) {
+    return null as T
+  }
+
+  const text = await response.text()
+  if (!text) {
+    return null as T
+  }
+
+  return JSON.parse(text) as T
 }

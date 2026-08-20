@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { Pager } from '../components/Pager'
@@ -98,7 +99,7 @@ export function ProductsPage() {
               {data?.items.map((item) => (
                 <tr key={item.id}>
                   <td>
-                    <strong>{item.namePt}</strong>
+                    <Link className="table-link" to={`/catalog/products/${item.id}`}>{item.namePt}</Link>
                     <div className="muted">{item.nameEn}</div>
                   </td>
                   <td>{item.category?.namePt ?? '-'}<div className="muted">{item.category?.nameEn ?? '-'}</div></td>
