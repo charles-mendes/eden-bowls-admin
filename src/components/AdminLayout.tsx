@@ -23,15 +23,17 @@ export function AdminLayout({ children }: { children: ReactNode }) {
           {menuGroups.map((group) => (
             <div className="menu-group" key={group.group}>
               <p className="menu-group-label">{group.group}</p>
-              {group.items.map((item) => (
-                <NavLink
-                  key={item.href}
-                  to={item.href}
-                  className={({ isActive }) => (isActive ? 'menu-link active' : 'menu-link')}
-                >
-                  {item.label}
-                </NavLink>
-              ))}
+              <div className="menu-sub">
+                {group.items.map((item) => (
+                  <NavLink
+                    key={item.href}
+                    to={item.href}
+                    className={({ isActive }) => (isActive ? 'menu-link active' : 'menu-link')}
+                  >
+                    {item.label}
+                  </NavLink>
+                ))}
+              </div>
             </div>
           ))}
         </nav>
