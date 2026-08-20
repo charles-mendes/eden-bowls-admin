@@ -127,6 +127,29 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
   const profile = options.profile ?? operatorProfile
   const tokenStatus = options.tokenStatus ?? 200
   const captured: CapturedAdminRequest[] = []
+  const catalog = {
+    items: [{
+      id: 'prod-1',
+      slug: 'bowl-adulto',
+      namePt: 'Bowl Adulto',
+      nameEn: 'Adult Bowl',
+      active: true,
+      category: { namePt: 'Alimentação', nameEn: 'Food' },
+      marketConfigs: [{ marketCountry: 'BR', currency: 'BRL', active: true }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', variantPrices: [{ id: 'price-1' }] }],
+      createdAt: '2026-08-01T12:00:00.000Z',
+    }],
+    detail: {
+      id: 'prod-1',
+      slug: 'bowl-adulto',
+      namePt: 'Bowl Adulto',
+      nameEn: 'Adult Bowl',
+      active: false,
+      planCountry: 'BR',
+      planDays: 28,
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }],
+    },
+  }
 
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
@@ -134,7 +157,12 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     const url = new URL(request.url())
     const path = url.pathname
     const authorization = request.headers().authorization ?? ''
-    const body = method === 'GET' ? null : request.postDataJSON()
+    let body: unknown = null
+    try {
+      body = method === 'GET' ? null : request.postDataJSON()
+    } catch {
+      body = null
+    }
 
     captured.push({ method, path, search: url.search, authorization, body })
 
@@ -212,20 +240,10 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
 
     if (path === '/api/v1/admin/catalog/products' && method === 'GET') {
       await fulfillJson(route, {
-        total: 1,
+        total: catalog.items.length,
         page: 1,
         perPage: 20,
-        items: [{
-          id: 'prod-1',
-          slug: 'bowl-adulto',
-          namePt: 'Bowl Adulto',
-          nameEn: 'Adult Bowl',
-          active: true,
-          category: { namePt: 'Alimentação', nameEn: 'Food' },
-          marketConfigs: [{ marketCountry: 'BR', currency: 'BRL', active: true }],
-          variants: [{ id: 'var-1', sku: 'BOWL-1', variantPrices: [{ id: 'price-1' }] }],
-          createdAt: '2026-08-01T12:00:00.000Z',
-        }],
+        items: catalog.items,
       })
       return
     }
@@ -245,19 +263,32 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/variations\/[^/]+$/.test(path) && method === 'DELETE') {
+      const variationId = path.split('/').pop() || ''
+      catalog.detail = {
+        ...catalog.detail,
+        variants: catalog.detail.variants.filter((item) => item.id !== variationId),
+      }
+      catalog.items = catalog.items.map((item) => (
+        item.id === catalog.detail.id
+          ? { ...item, variants: catalog.detail.variants.map((variant) => ({ id: variant.id, sku: variant.sku, variantPrices: [] })) }
+          : item
+      ))
+      await fulfillJson(route, catalog.detail)
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'DELETE') {
+      const id = path.split('/').pop() || ''
+      catalog.items = catalog.items.filter((item) => item.id !== id)
+      await fulfillJson(route, { deleted: true, id })
+      return
+    }
+
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'GET') {
       const id = path.split('/').pop() || 'prod-1'
       if (id === 'prod-1') {
-        await fulfillJson(route, {
-          id: 'prod-1',
-          slug: 'bowl-adulto',
-          namePt: 'Bowl Adulto',
-          nameEn: 'Adult Bowl',
-          active: false,
-          planCountry: 'BR',
-          planDays: 28,
-          variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }],
-        })
+        await fulfillJson(route, catalog.detail)
         return
       }
       await fulfillJson(route, {
@@ -275,20 +306,18 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     }
 
     if (path === '/api/v1/admin/catalog/products/prod-1' && method === 'PATCH') {
-      const currentVariant = { id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }
+      const currentVariant = catalog.detail.variants[0] || { id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }
       const variants = Array.isArray(body?.variants)
         ? body.variants.map((item: { id?: string }) => ({ ...currentVariant, ...item }))
-        : [currentVariant]
-      await fulfillJson(route, {
-        id: 'prod-1',
-        slug: 'bowl-adulto',
-        namePt: 'Bowl Adulto',
-        nameEn: 'Adult Bowl',
-        active: body?.active ?? false,
-        planCountry: body?.planCountry ?? 'BR',
-        planDays: body?.planDays ?? 28,
+        : catalog.detail.variants
+      catalog.detail = {
+        ...catalog.detail,
+        active: body?.active ?? catalog.detail.active,
+        planCountry: body?.planCountry ?? catalog.detail.planCountry,
+        planDays: body?.planDays ?? catalog.detail.planDays,
         variants,
-      })
+      }
+      await fulfillJson(route, catalog.detail)
       return
     }
 

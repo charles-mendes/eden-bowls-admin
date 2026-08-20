@@ -12,6 +12,7 @@ describe('ProductsPage', () => {
   afterEach(() => {
     localStorage.clear()
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('loads the product list with market and pagination query', async () => {
@@ -61,5 +62,25 @@ describe('ProductsPage', () => {
       planCountry: 'BR',
       planDays: 30,
     })
+  })
+
+  it('deletes a product from the catalog list', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<ProductsPage />, '/catalog/products')
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Excluir produto Bowl Adulto' })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Excluir produto Bowl Adulto' }))
+
+    await waitFor(() => {
+      expect(findCall(calls, 'DELETE', '/admin/catalog/products/prod-1')).toBeTruthy()
+    })
+    expect(screen.queryByRole('link', { name: 'Bowl Adulto' })).not.toBeInTheDocument()
+    expect(screen.getByText('Produto "Bowl Adulto" excluído.')).toBeInTheDocument()
   })
 })

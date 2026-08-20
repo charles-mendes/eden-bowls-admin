@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
@@ -85,12 +85,14 @@ function variantPayload(item: VariantDraft) {
 export function ProductDetailPage() {
   const { token, hasPermission } = useAuth()
   const { productId } = useParams()
+  const navigate = useNavigate()
   const [data, setData] = useState<ProductDetail | null>(null)
   const [planCountry, setPlanCountry] = useState('BR')
   const [planDays, setPlanDays] = useState(28)
   const [variants, setVariants] = useState<VariantDraft[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [deletingKey, setDeletingKey] = useState('')
 
   const canWrite = hasPermission('catalog.write')
   const canEdit = Boolean(canWrite && data && !data.active)
@@ -187,6 +189,51 @@ export function ProductDetailPage() {
     setVariants((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)))
   }
 
+  const deleteVariation = async (item: VariantDraft) => {
+    if (!token || !productId || !canWrite) return
+    if (!item.id) {
+      setVariants((current) => current.filter((row) => row.key !== item.key))
+      return
+    }
+
+    const label = item.name.trim() || item.sku.trim() || item.id
+    const confirmed = window.confirm(`Excluir a variação "${label}"? Isso remove o cadastro local e não pode ser desfeito.`)
+    if (!confirmed) return
+
+    try {
+      setDeletingKey(item.key)
+      const response = await apiRequest<ProductDetail>(`/admin/catalog/products/${productId}/variations/${item.id}`, {
+        token,
+        method: 'DELETE',
+      })
+      applyProduct(response)
+      setError('')
+      setMessage(`Variação "${label}" excluída.`)
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao excluir variação')
+    } finally {
+      setDeletingKey('')
+    }
+  }
+
+  const deleteProduct = async () => {
+    if (!token || !productId || !canWrite || !data) return
+    const count = data.variants.length
+    const confirmed = window.confirm(
+      `Excluir o produto "${data.namePt}" e ${count} variação(ões)? Isso remove o cadastro local e não pode ser desfeito.`,
+    )
+    if (!confirmed) return
+
+    try {
+      setDeletingKey('product')
+      await apiRequest(`/admin/catalog/products/${productId}`, { token, method: 'DELETE' })
+      navigate('/catalog/products')
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao excluir produto')
+      setDeletingKey('')
+    }
+  }
+
   return (
     <PageFrame title={data?.namePt ?? 'Produto'} description="País, dias, variações e guard de publish sem price mapeado.">
       {error ? <div className="alert">{error}</div> : null}
@@ -224,7 +271,7 @@ export function ProductDetailPage() {
           title="Variações"
           description={canEdit
             ? 'SKU, nome e preço da variação. Salvar grava o rascunho. Publicar grava, sincroniza o Stripe e ativa.'
-            : 'Mapeamento Stripe e status de sync. Edição só em rascunho.'}
+            : 'Mapeamento Stripe e status de sync. Edição só em rascunho; exclusão pode ser feita agora.'}
           actions={canEdit ? (
             <button className="ghost-button" type="button" onClick={() => setVariants((current) => [...current, emptyVariantDraft()])}>
               Adicionar variação
@@ -241,13 +288,13 @@ export function ProductDetailPage() {
                   <th>Stripe product</th>
                   <th>Stripe price</th>
                   <th>Status</th>
-                  {canEdit ? <th></th> : null}
+                  {canWrite ? <th></th> : null}
                 </tr>
               </thead>
               <tbody>
                 {variants.length === 0 ? (
                   <tr>
-                    <td colSpan={canEdit ? 7 : 6}>
+                    <td colSpan={canWrite ? 7 : 6}>
                       {canEdit
                         ? 'Nenhuma variação. Use Adicionar variação para criar SKU, nome e preço.'
                         : 'Nenhuma variação cadastrada.'}
@@ -283,9 +330,19 @@ export function ProductDetailPage() {
                     <td className={item.requiresSync ? 'warning-text' : undefined}>
                       {item.syncStatus}{item.requiresSync ? ' · requires_sync' : ''}
                     </td>
-                    {canEdit ? (
+                    {canWrite ? (
                       <td>
-                        {item.id ? null : (
+                        {item.id ? (
+                          <button
+                            className="danger-button"
+                            type="button"
+                            aria-label={`Excluir variação ${item.name || item.sku || item.id}`}
+                            disabled={deletingKey === item.key}
+                            onClick={() => void deleteVariation(item)}
+                          >
+                            {deletingKey === item.key ? 'Excluindo…' : 'Excluir'}
+                          </button>
+                        ) : (
                           <button className="ghost-button" type="button" onClick={() => setVariants((current) => current.filter((row) => row.key !== item.key))}>
                             Remover
                           </button>
@@ -305,6 +362,16 @@ export function ProductDetailPage() {
           {canWrite ? (
             <button className="ghost-button" type="button" onClick={() => void togglePublish(!data?.active)}>
               {data?.active ? 'Voltar para rascunho' : 'Publicar'}
+            </button>
+          ) : null}
+          {canWrite ? (
+            <button
+              className="danger-button"
+              type="button"
+              disabled={deletingKey === 'product'}
+              onClick={() => void deleteProduct()}
+            >
+              {deletingKey === 'product' ? 'Excluindo…' : 'Excluir produto'}
             </button>
           ) : null}
           {hasPermission('catalog.sync') ? (

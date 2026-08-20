@@ -3,13 +3,14 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProductDetailPage } from './ProductDetailPage'
 import { operatorWriteUser, readonlyUser } from '../test/fixtures'
-import { installAdminFetchMock } from '../test/mockAdminFetch'
+import { findCall, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
 describe('ProductDetailPage', () => {
   afterEach(() => {
     localStorage.clear()
     vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
   it('loads product detail and PATCHes plan fields', async () => {
@@ -142,5 +143,27 @@ describe('ProductDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Adicionar variação' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Publicar' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sincronizar Stripe' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Excluir produto' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Excluir variação/ })).not.toBeInTheDocument()
+  })
+
+  it('deletes an existing variation after confirmation', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Excluir variação Frango 1kg' })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Excluir variação Frango 1kg' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Variação "Frango 1kg" excluída.')).toBeInTheDocument()
+    })
+    expect(findCall(calls, 'DELETE', '/admin/catalog/products/prod-1/variations/var-1')).toBeTruthy()
+    expect(screen.queryByDisplayValue('BOWL-1')).not.toBeInTheDocument()
   })
 })

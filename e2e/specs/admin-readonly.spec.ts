@@ -25,5 +25,7 @@ test.describe('Admin readonly', () => {
     await expect(page.getByText('BOWL-1')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Salvar' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Publicar' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Excluir produto' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Excluir variação/ })).toHaveCount(0)
   })
 })

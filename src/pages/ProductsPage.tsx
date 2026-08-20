@@ -57,6 +57,7 @@ export function ProductsPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [creating, setCreating] = useState(false)
+  const [deletingId, setDeletingId] = useState('')
   const [form, setForm] = useState(emptyCreateForm)
   const canWrite = hasPermission('catalog.write')
 
@@ -126,6 +127,30 @@ export function ProductsPage() {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao criar produto')
     } finally {
       setCreating(false)
+    }
+  }
+
+  const deleteProduct = async (item: ProductItem) => {
+    if (!token || !canWrite) return
+    const count = item.variants.length
+    const confirmed = window.confirm(
+      `Excluir o produto "${item.namePt}" e ${count} variação(ões)? Isso remove o cadastro local e não pode ser desfeito.`,
+    )
+    if (!confirmed) return
+
+    try {
+      setDeletingId(item.id)
+      setError('')
+      await apiRequest<{ deleted: boolean }>(`/admin/catalog/products/${item.id}`, {
+        token,
+        method: 'DELETE',
+      })
+      setMessage(`Produto "${item.namePt}" excluído.`)
+      await load()
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao excluir produto')
+    } finally {
+      setDeletingId('')
     }
   }
 
@@ -208,6 +233,7 @@ export function ProductsPage() {
                 <th>Variantes</th>
                 <th>Ativo</th>
                 <th>Criado em</th>
+                {canWrite ? <th>Ações</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -223,6 +249,19 @@ export function ProductsPage() {
                   <td>{item.variants.length}</td>
                   <td>{item.active ? 'Sim' : 'Não'}</td>
                   <td>{formatDate(item.createdAt)}</td>
+                  {canWrite ? (
+                    <td>
+                      <button
+                        className="danger-button"
+                        type="button"
+                        aria-label={`Excluir produto ${item.namePt}`}
+                        disabled={deletingId === item.id}
+                        onClick={() => void deleteProduct(item)}
+                      >
+                        {deletingId === item.id ? 'Excluindo…' : 'Excluir'}
+                      </button>
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>

@@ -65,4 +65,26 @@ test.describe('Admin catalog', () => {
     })
     await expect(page.getByText(/30,00/)).toBeVisible()
   })
+
+  test('deletes a product from the catalog list', async ({ page }) => {
+    page.once('dialog', (dialog) => dialog.accept())
+    const { captured } = await openAuthed(page, '/catalog/products', e2eProfiles.operatorWrite)
+
+    await page.getByRole('button', { name: 'Excluir produto Bowl Adulto' }).click()
+    await expect.poll(() => captured.find((item) => item.method === 'DELETE' && item.path === '/api/v1/admin/catalog/products/prod-1')).toMatchObject({
+      authorization: 'Bearer e2e-access-token',
+    })
+    await expect(page.getByRole('link', { name: 'Bowl Adulto' })).toHaveCount(0)
+  })
+
+  test('deletes a variation from the product detail', async ({ page }) => {
+    page.once('dialog', (dialog) => dialog.accept())
+    const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
+
+    await page.getByRole('button', { name: 'Excluir variação Frango 1kg' }).click()
+    await expect.poll(() => captured.find((item) => item.method === 'DELETE' && item.path === '/api/v1/admin/catalog/products/prod-1/variations/var-1')).toMatchObject({
+      authorization: 'Bearer e2e-access-token',
+    })
+    await expect(page.getByText('Variação "Frango 1kg" excluída.')).toBeVisible()
+  })
 })

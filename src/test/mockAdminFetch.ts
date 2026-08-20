@@ -36,6 +36,11 @@ function parseUrl(input: RequestInfo | URL) {
 
 export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
   const calls: FetchCall[] = []
+  let catalogItems = productsList.items.map((item) => ({ ...item, variants: [...item.variants] }))
+  let catalogDetail = {
+    ...productDetail,
+    variants: productDetail.variants.map((item) => ({ ...item })),
+  }
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = parseUrl(input)
@@ -103,7 +108,11 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
     }
 
     if (path === '/api/v1/admin/catalog/products' && method === 'GET') {
-      return jsonResponse(productsList)
+      return jsonResponse({
+        ...productsList,
+        total: catalogItems.length,
+        items: catalogItems,
+      })
     }
 
     if (path === '/api/v1/admin/catalog/products' && method === 'POST') {
@@ -120,14 +129,34 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
       })
     }
 
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/variations\/[^/]+$/.test(path) && method === 'DELETE') {
+      const variationId = path.split('/').pop() || ''
+      catalogDetail = {
+        ...catalogDetail,
+        variants: catalogDetail.variants.filter((item) => item.id !== variationId),
+      }
+      catalogItems = catalogItems.map((item) => (
+        item.id === catalogDetail.id
+          ? { ...item, variants: catalogDetail.variants.map((variant) => ({ id: variant.id, sku: variant.sku })) }
+          : item
+      ))
+      return jsonResponse(catalogDetail)
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'DELETE') {
+      const id = path.split('/').pop() || ''
+      catalogItems = catalogItems.filter((item) => item.id !== id)
+      return jsonResponse({ deleted: true, id })
+    }
+
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'GET') {
-      return jsonResponse(productDetail)
+      return jsonResponse(catalogDetail)
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'PATCH') {
       const variants = Array.isArray(body?.variants)
         ? body.variants.map((item: { id?: string; sku?: string; name?: string; regularPrice?: number | null }) => {
-            const current = productDetail.variants.find((row) => row.id === item.id) || {
+            const current = catalogDetail.variants.find((row) => row.id === item.id) || {
               stripeProductId: null,
               stripePriceId: null,
               syncStatus: 'not_synced',
@@ -135,13 +164,14 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
             }
             return { ...current, ...item }
           })
-        : productDetail.variants
-      return jsonResponse({
-        ...productDetail,
+        : catalogDetail.variants
+      catalogDetail = {
+        ...catalogDetail,
         ...body,
-        active: body.active ?? productDetail.active,
+        active: body.active ?? catalogDetail.active,
         variants,
-      })
+      }
+      return jsonResponse(catalogDetail)
     }
 
     if (path === '/api/v1/admin/catalog/sync' && method === 'POST') {

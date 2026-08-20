@@ -312,7 +312,8 @@ h3 {
 }
 
 .ghost-button,
-.primary-button {
+.primary-button,
+.danger-button {
   cursor: pointer;
   border-radius: var(--radius-sm);
   padding: 8px 12px;
@@ -329,6 +330,21 @@ h3 {
 
 .ghost-button:hover {
   background: var(--surface-muted);
+}
+
+.danger-button {
+  color: var(--danger);
+  background: var(--surface);
+  border: 1px solid var(--danger-border);
+}
+
+.danger-button:hover {
+  background: var(--danger-bg);
+}
+
+.danger-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .primary-button {
@@ -532,7 +548,8 @@ h3 {
 }
 
 .form-toolbar .primary-button,
-.form-toolbar .ghost-button {
+.form-toolbar .ghost-button,
+.form-toolbar .danger-button {
   width: auto;
   min-height: 38px;
 }
@@ -700,7 +717,8 @@ pre {
   min-width: 8rem;
 }
 
-.table-shell .ghost-button {
+.table-shell .ghost-button,
+.table-shell .danger-button {
   width: auto;
 }
 
