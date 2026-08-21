@@ -9,16 +9,7 @@ function base64UrlDecode(value: string): string | null {
     const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
     const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4))
     const padded = normalized + padding
-
-    if (typeof atob === 'function') {
-      return atob(padded)
-    }
-
-    if (typeof Buffer !== 'undefined') {
-      return Buffer.from(padded, 'base64').toString('utf8')
-    }
-
-    return null
+    return atob(padded)
   } catch {
     return null
   }

@@ -154,7 +154,17 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
       }
       catalogItems = catalogItems.map((item) => (
         item.id === catalogDetail.id
-          ? { ...item, variants: catalogDetail.variants.map((variant) => ({ id: variant.id, sku: variant.sku })) }
+          ? {
+              ...item,
+              variants: catalogDetail.variants.map((variant) => {
+                const previous = item.variants.find((row) => row.id === variant.id)
+                return {
+                  id: variant.id,
+                  sku: variant.sku,
+                  variantPrices: previous?.variantPrices ?? [],
+                }
+              }),
+            }
           : item
       ))
       return jsonResponse(catalogDetail)
