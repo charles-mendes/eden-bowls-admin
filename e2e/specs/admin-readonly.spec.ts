@@ -7,6 +7,7 @@ test.describe('Admin readonly', () => {
 
     await expect(page.getByRole('heading', { name: 'Assinantes' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Feedbacks' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Clientes' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Checkouts' })).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Frete' })).toHaveCount(0)

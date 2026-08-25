@@ -68,6 +68,11 @@ const COUNTRY_LABELS: Record<string, string> = {
   US: 'Estados Unidos',
 }
 
+const CATEGORY_LABELS: Record<string, string> = {
+  tutor: 'Tutor',
+  tutora: 'Tutora',
+}
+
 const DISTANCE_SOURCE_LABELS: Record<string, string> = {
   osrm: 'OSRM',
   haversine: 'Haversine',
@@ -198,6 +203,13 @@ export function formatCountry(value: string | null | undefined) {
   if (!raw) return '-'
 
   return COUNTRY_LABELS[raw.toUpperCase()] ?? raw
+}
+
+export function formatFeedbackCategory(value: string | null | undefined) {
+  const raw = String(value || '').trim()
+  if (!raw) return '-'
+
+  return CATEGORY_LABELS[raw.toLowerCase()] ?? raw
 }
 
 export function formatPostalCode(value: string | null | undefined) {

@@ -632,10 +632,15 @@ textarea:disabled {
 }
 
 .form-grid input[type="checkbox"],
-.editor-card input[type="checkbox"] {
+.editor-card input[type="checkbox"],
+.stack input[type="checkbox"],
+.checkbox-field input,
+.boolean-control input {
   width: auto;
   height: 16px;
   margin: 0;
+  padding: 0;
+  border: 0;
   accent-color: var(--accent);
   flex-shrink: 0;
 }
@@ -644,12 +649,17 @@ textarea:disabled {
   display: flex !important;
   align-items: center;
   gap: var(--space-2);
+  width: fit-content;
+  color: var(--text-strong);
+  cursor: pointer;
 }
 
 .boolean-field .boolean-control {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  width: fit-content;
+  min-width: 9rem;
   min-height: 38px;
   padding: 0 10px;
   border-radius: var(--radius-sm);
@@ -833,6 +843,44 @@ pre {
   overflow-x: auto;
 }
 
+.table-thumb,
+.photo-preview {
+  display: block;
+  object-fit: cover;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+}
+
+.table-thumb {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+}
+
+.photo-preview {
+  width: 96px;
+  height: 96px;
+  border-radius: var(--radius-md);
+}
+
+.photo-preview-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.photo-preview.is-removed {
+  opacity: 0.4;
+}
+
+.photo-placeholder {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  border: 1px dashed var(--border);
+}
+
 .table-shell input,
 .table-shell select {
   width: 100%;
@@ -946,6 +994,30 @@ button.table-link {
   flex-wrap: wrap;
   gap: var(--space-3);
   align-items: center;
+}
+
+.table-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-2);
+  white-space: nowrap;
+}
+
+.table-actions .ghost-button,
+.table-actions .danger-button {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  font-size: var(--text-xs);
+  line-height: 1.2;
+}
+
+.table-clip {
+  max-width: 22rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .editor-card,

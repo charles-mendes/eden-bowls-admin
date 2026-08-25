@@ -21,6 +21,8 @@ import {
   userDetail,
   usersList,
   webhooksList,
+  feedbackItem,
+  feedbacksList,
 } from './fixtures'
 
 export type FetchCall = {
@@ -331,6 +333,39 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
           display: { daily: '250 g', weight: '20 kg' },
         },
       })
+    }
+
+    if (path === '/api/v1/admin/feedbacks' && method === 'GET') {
+      return jsonResponse(feedbacksList)
+    }
+
+    if (path === '/api/v1/admin/feedbacks' && method === 'POST') {
+      return jsonResponse({
+        ...feedbackItem,
+        id: 2,
+        name: body?.name || 'Novo cliente',
+        category: body?.category || 'tutor',
+        country: body?.country || 'BR',
+        place: body?.place || '',
+        comment: body?.comment || '',
+        active: body?.active ?? true,
+      })
+    }
+
+    if (/^\/api\/v1\/admin\/feedbacks\/\d+\/active$/.test(path) && method === 'PATCH') {
+      return jsonResponse({ ...feedbackItem, active: Boolean(body?.active) })
+    }
+
+    if (/^\/api\/v1\/admin\/feedbacks\/\d+$/.test(path) && method === 'GET') {
+      return jsonResponse(feedbackItem)
+    }
+
+    if (/^\/api\/v1\/admin\/feedbacks\/\d+$/.test(path) && method === 'PATCH') {
+      return jsonResponse({ ...feedbackItem, ...body })
+    }
+
+    if (/^\/api\/v1\/admin\/feedbacks\/\d+$/.test(path) && method === 'DELETE') {
+      return jsonResponse({ deleted: true, id: Number(path.split('/').pop()) })
     }
 
     if (path === '/api/v1/breeds') {

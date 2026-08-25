@@ -36,13 +36,15 @@ const WRITE_PERMISSIONS = [
   'users.delivery.write',
   'users.status.write',
   'users.roles.write',
+  'feedbacks.read',
+  'feedbacks.write',
 ]
 
 const operatorProfile: Profile = {
   userId: 'u-operator',
   email: 'ops@edenbowls.com',
   roles: ['operator'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read'],
 }
 
 const operatorWriteProfile: Profile = {
@@ -63,7 +65,7 @@ const readonlyProfile: Profile = {
   userId: 'u-readonly',
   email: 'read@edenbowls.com',
   roles: ['readonly'],
-  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read'],
+  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read'],
 }
 
 const checkoutItem = {
@@ -524,6 +526,98 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
           }],
         },
       })
+      return
+    }
+
+    if (path === '/api/v1/admin/feedbacks' && method === 'GET') {
+      await fulfillJson(route, {
+        total: 1,
+        page: 1,
+        perPage: 20,
+        totalPages: 1,
+        items: [{
+          id: 1,
+          name: 'João Silva',
+          category: 'tutor',
+          country: 'BR',
+          photo: '',
+          place: 'São Paulo',
+          comment: 'O pelo do meu golden nunca esteve tão bonito.',
+          active: true,
+          createdAt: '2026-08-20T12:00:00.000Z',
+          updatedAt: '2026-08-20T12:00:00.000Z',
+        }],
+      })
+      return
+    }
+
+    if (path === '/api/v1/admin/feedbacks' && method === 'POST') {
+      const payload = (body || {}) as { name?: string; category?: string; country?: string; place?: string; comment?: string; active?: boolean }
+      await fulfillJson(route, {
+        id: 2,
+        name: payload.name || 'Novo cliente',
+        category: payload.category || 'tutor',
+        country: payload.country || 'BR',
+        place: payload.place || '',
+        photo: '',
+        comment: payload.comment || '',
+        active: payload.active ?? true,
+        createdAt: '2026-08-24T12:00:00.000Z',
+        updatedAt: '2026-08-24T12:00:00.000Z',
+      })
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/feedbacks\/\d+\/active$/.test(path) && method === 'PATCH') {
+      await fulfillJson(route, {
+        id: Number(path.split('/')[5]),
+        name: 'João Silva',
+        category: 'tutor',
+        country: 'BR',
+        photo: '',
+        place: 'São Paulo',
+        comment: 'O pelo do meu golden nunca esteve tão bonito.',
+        active: Boolean((body as { active?: boolean } | null)?.active),
+        createdAt: '2026-08-20T12:00:00.000Z',
+        updatedAt: '2026-08-24T12:00:00.000Z',
+      })
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/feedbacks\/\d+$/.test(path) && method === 'GET') {
+      await fulfillJson(route, {
+        id: Number(path.split('/').pop()),
+        name: 'João Silva',
+        category: 'tutor',
+        country: 'BR',
+        photo: '',
+        place: 'São Paulo',
+        comment: 'O pelo do meu golden nunca esteve tão bonito.',
+        active: true,
+        createdAt: '2026-08-20T12:00:00.000Z',
+        updatedAt: '2026-08-20T12:00:00.000Z',
+      })
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/feedbacks\/\d+$/.test(path) && method === 'PATCH') {
+      await fulfillJson(route, {
+        id: Number(path.split('/').pop()),
+        name: (body as { name?: string } | null)?.name || 'João Silva',
+        category: (body as { category?: string } | null)?.category || 'tutor',
+        country: (body as { country?: string } | null)?.country || 'BR',
+        place: (body as { place?: string } | null)?.place || 'São Paulo',
+        photo: '',
+        comment: (body as { comment?: string } | null)?.comment || 'O pelo do meu golden nunca esteve tão bonito.',
+        active: (body as { active?: boolean } | null)?.active ?? true,
+        createdAt: '2026-08-20T12:00:00.000Z',
+        updatedAt: '2026-08-24T12:00:00.000Z',
+      })
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/feedbacks\/\d+$/.test(path) && method === 'DELETE') {
+      await fulfillJson(route, { deleted: true, id: Number(path.split('/').pop()) })
       return
     }
 

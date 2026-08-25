@@ -23,13 +23,15 @@ export const WRITE_PERMISSIONS = [
   'users.delivery.write',
   'users.status.write',
   'users.roles.write',
+  'feedbacks.read',
+  'feedbacks.write',
 ] as const
 
 export const operatorUser: AdminUser = {
   userId: 'u-operator',
   email: 'ops@edenbowls.com',
   roles: ['operator'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read'],
 }
 
 export const operatorWriteUser: AdminUser = {
@@ -64,7 +66,7 @@ export const readonlyUser: AdminUser = {
   userId: 'u-readonly',
   email: 'read@edenbowls.com',
   roles: ['readonly'],
-  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read'],
+  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read'],
 }
 
 export const checkoutItem = {
@@ -377,4 +379,25 @@ export const promotionCodesList = {
       },
     ],
   },
+}
+
+export const feedbackItem = {
+  id: 1,
+  name: 'João Silva',
+  category: 'tutor',
+  country: 'BR',
+  photo: 'http://admin.local/feedback-photos/joao.png',
+  place: 'São Paulo',
+  comment: 'O pelo do meu golden nunca esteve tão bonito.',
+  active: true,
+  createdAt: '2026-08-20T12:00:00.000Z',
+  updatedAt: '2026-08-20T12:00:00.000Z',
+}
+
+export const feedbacksList = {
+  total: 1,
+  page: 1,
+  perPage: 20,
+  totalPages: 1,
+  items: [feedbackItem],
 }

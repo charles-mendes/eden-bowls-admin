@@ -16,6 +16,8 @@ import { NutritionSimulatePage } from './pages/NutritionSimulatePage'
 import { UsersPage } from './pages/UsersPage'
 import { RolesPage } from './pages/RolesPage'
 import { UserDetailPage } from './pages/UserDetailPage'
+import { FeedbacksPage } from './pages/FeedbacksPage'
+import { FeedbackFormPage } from './pages/FeedbackFormPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 function LegacyCheckoutRedirect() {
@@ -51,6 +53,9 @@ function App() {
           <Route path="/billing/coupons" element={<CouponsPage />} />
           <Route path="/config/shipping" element={<ShippingPage />} />
           <Route path="/config/business-rules" element={<Navigate to="/config/shipping" replace />} />
+          <Route path="/feedbacks/new" element={<FeedbackFormPage />} />
+          <Route path="/feedbacks/:id" element={<FeedbackFormPage />} />
+          <Route path="/feedbacks" element={<FeedbacksPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/roles" element={<RolesPage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />

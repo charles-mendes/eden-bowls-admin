@@ -3,6 +3,7 @@ import {
   formatCurrency,
   formatDate,
   formatDiscountReason,
+  formatFeedbackCategory,
   formatFlavor,
   formatFrequency,
   formatJson,
@@ -49,5 +50,7 @@ describe('format helpers', () => {
     expect(formatFlavor('beef')).toBe('Bovino')
     expect(formatTermMonths(1)).toBe('1 mês')
     expect(formatPostalCode('83331160')).toBe('83331-160')
+    expect(formatFeedbackCategory('tutor')).toBe('Tutor')
+    expect(formatFeedbackCategory('tutora')).toBe('Tutora')
   })
 })
