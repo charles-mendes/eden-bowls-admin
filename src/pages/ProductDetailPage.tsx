@@ -10,6 +10,7 @@ type ProductVariant = {
   id: string
   sku: string
   name: string
+  flavor: string | null
   regularPrice: number | null
   stripeProductId: string | null
   stripePriceId: string | null
@@ -35,6 +36,7 @@ type VariantDraft = {
   id: string | null
   sku: string
   name: string
+  flavor: string
   regularPrice: string
   stripeProductId: string | null
   stripePriceId: string | null
@@ -50,6 +52,7 @@ function toVariantDraft(item: ProductVariant): VariantDraft {
     id: item.id,
     sku: item.sku || '',
     name: item.name || '',
+    flavor: item.flavor || '',
     regularPrice: item.regularPrice == null ? '' : String(item.regularPrice),
     stripeProductId: item.stripeProductId,
     stripePriceId: item.stripePriceId,
@@ -65,6 +68,7 @@ function emptyVariantDraft(): VariantDraft {
     id: null,
     sku: '',
     name: '',
+    flavor: '',
     regularPrice: '',
     stripeProductId: null,
     stripePriceId: null,
@@ -78,6 +82,7 @@ function variantPayload(item: VariantDraft) {
     ...(item.id ? { id: item.id } : {}),
     sku: item.sku,
     name: item.name,
+    flavor: item.flavor.trim(),
     regularPrice: item.regularPrice === '' ? null : Number(item.regularPrice),
   }
 }
@@ -270,8 +275,8 @@ export function ProductDetailPage() {
         <Section
           title="Variações"
           description={canEdit
-            ? 'SKU, nome e preço da variação. Salvar grava o rascunho. Publicar grava, sincroniza o Stripe e ativa.'
-            : 'Mapeamento Stripe e status de sync. Edição só em rascunho; exclusão pode ser feita agora.'}
+            ? 'SKU, nome, sabor e preço da variação. O sabor cadastrado aparece no select da loja. Salvar grava o rascunho. Publicar grava, sincroniza o Stripe e ativa.'
+            : 'Sabor, mapeamento Stripe e status de sync. Edição só em rascunho; exclusão pode ser feita agora.'}
           actions={canEdit ? (
             <button className="ghost-button" type="button" onClick={() => setVariants((current) => [...current, emptyVariantDraft()])}>
               Adicionar variação
@@ -284,6 +289,7 @@ export function ProductDetailPage() {
                 <tr>
                   <th>SKU</th>
                   <th>Nome</th>
+                  <th>Sabor</th>
                   <th>Preço ({currency})</th>
                   <th>Stripe product</th>
                   <th>Stripe price</th>
@@ -294,7 +300,7 @@ export function ProductDetailPage() {
               <tbody>
                 {variants.length === 0 ? (
                   <tr>
-                    <td colSpan={canWrite ? 7 : 6}>
+                    <td colSpan={canWrite ? 8 : 7}>
                       {canEdit
                         ? 'Nenhuma variação. Use Adicionar variação para criar SKU, nome e preço.'
                         : 'Nenhuma variação cadastrada.'}
@@ -311,6 +317,16 @@ export function ProductDetailPage() {
                       {canEdit ? (
                         <input aria-label="Nome" value={item.name} onChange={(event) => updateVariant(item.key, { name: event.target.value })} placeholder="Nome" />
                       ) : item.name || '-'}
+                    </td>
+                    <td>
+                      {canEdit ? (
+                        <input
+                          aria-label="Sabor"
+                          value={item.flavor}
+                          onChange={(event) => updateVariant(item.key, { flavor: event.target.value })}
+                          placeholder="Ex.: Beef"
+                        />
+                      ) : item.flavor || '-'}
                     </td>
                     <td>
                       {canEdit ? (

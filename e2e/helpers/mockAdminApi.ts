@@ -198,7 +198,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       active: false,
       planCountry: 'BR',
       planDays: 28,
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }],
     },
   }
 

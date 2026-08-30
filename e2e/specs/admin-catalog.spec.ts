@@ -72,7 +72,7 @@ test.describe('Admin catalog', () => {
       body: {
         planCountry: 'BR',
         planDays: 28,
-        variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9 }],
+        variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 89.9 }],
       },
     })
   })
@@ -89,7 +89,7 @@ test.describe('Admin catalog', () => {
       body: {
         planCountry: 'BR',
         planDays: 28,
-        variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 30 }],
+        variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 30 }],
         active: true,
       },
     })

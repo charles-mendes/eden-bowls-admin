@@ -43,6 +43,7 @@ const emptyCreateForm = {
   planDays: 30,
   variantName: '',
   variantSku: '',
+  variantFlavor: '',
   variantPrice: '',
 }
 
@@ -100,10 +101,12 @@ export function ProductsPage() {
 
     const variantName = form.variantName.trim()
     const variantSku = form.variantSku.trim()
-    const variants = variantName || variantSku || form.variantPrice
+    const variantFlavor = form.variantFlavor.trim()
+    const variants = variantName || variantSku || variantFlavor || form.variantPrice
       ? [{
           name: variantName,
           sku: variantSku,
+          flavor: variantFlavor,
           regularPrice: form.variantPrice === '' ? null : Number(form.variantPrice),
         }]
       : undefined
@@ -199,6 +202,10 @@ export function ProductsPage() {
               <label>
                 Nome da variação
                 <input value={form.variantName} onChange={(event) => setForm((current) => ({ ...current, variantName: event.target.value }))} placeholder="Frango 300g" />
+              </label>
+              <label>
+                Sabor
+                <input value={form.variantFlavor} onChange={(event) => setForm((current) => ({ ...current, variantFlavor: event.target.value }))} placeholder="Ex.: Beef" />
               </label>
               <label>
                 Preço

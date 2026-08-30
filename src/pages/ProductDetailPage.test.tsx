@@ -33,9 +33,33 @@ describe('ProductDetailPage', () => {
     expect(patch?.body).toEqual({
       planCountry: 'BR',
       planDays: 28,
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9 }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 89.9 }],
     })
     expect(patch?.authorization).toBe('Bearer access-token')
+  })
+
+  it('saves the variation flavor in the product payload', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Sabor')).toHaveValue('Frango')
+    })
+
+    await user.clear(screen.getByLabelText('Sabor'))
+    await user.type(screen.getByLabelText('Sabor'), 'Lamb')
+    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Produto atualizado.')).toBeInTheDocument()
+    })
+
+    const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
+    expect(patch?.body.variants).toEqual([
+      { id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', regularPrice: 89.9 },
+    ])
   })
 
   it('creates a variation from draft and includes it in the save payload', async () => {
@@ -65,8 +89,8 @@ describe('ProductDetailPage', () => {
       planCountry: 'BR',
       planDays: 28,
       variants: [
-        { id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9 },
-        { sku: 'NOVO-1', name: 'Cordeiro 300g', regularPrice: null },
+        { id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 89.9 },
+        { sku: 'NOVO-1', name: 'Cordeiro 300g', flavor: '', regularPrice: null },
       ],
     })
   })
@@ -124,7 +148,7 @@ describe('ProductDetailPage', () => {
     expect(patch?.body).toEqual({
       planCountry: 'BR',
       planDays: 28,
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 30 }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 30 }],
       active: true,
     })
     expect(screen.getByText(/30,00/)).toBeInTheDocument()
