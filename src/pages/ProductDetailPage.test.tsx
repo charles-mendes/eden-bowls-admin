@@ -57,9 +57,11 @@ describe('ProductDetailPage', () => {
     })
 
     const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-    expect(patch?.body.variants).toEqual([
-      { id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', regularPrice: 89.9 },
-    ])
+    expect(patch?.body).toEqual({
+      planCountry: 'BR',
+      planDays: 28,
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', regularPrice: 89.9 }],
+    })
   })
 
   it('creates a variation from draft and includes it in the save payload', async () => {
