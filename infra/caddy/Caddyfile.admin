@@ -1,5 +1,6 @@
 :80 {
   encode zstd gzip
+  header X-Robots-Tag "noindex, nofollow"
 
   root * /srv
 
@@ -11,6 +12,11 @@
 
   @index path /index.html
   header @index Cache-Control "no-store"
+
+  handle /robots.txt {
+    header Content-Type "text/plain; charset=utf-8"
+    respond "User-agent: *\nDisallow: /\n" 200
+  }
 
   try_files {path} /index.html
   file_server
