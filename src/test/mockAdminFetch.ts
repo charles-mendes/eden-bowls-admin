@@ -240,7 +240,58 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
     }
 
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/sync-invoices$/.test(path) && method === 'POST') {
+      return jsonResponse({
+        success: true,
+        data: {
+          items: [
+            {
+              id: 'in_test_1',
+              number: 'INV-1001',
+              status: 'paid',
+              amountPaid: 89.5,
+              currency: 'usd',
+              createdAt: '2026-08-01T12:00:00.000Z',
+            },
+          ],
+        },
+      })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/shipments$/.test(path) && method === 'GET') {
       return jsonResponse({ success: true, data: { items: [] } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/shipments$/.test(path) && method === 'POST') {
+      return jsonResponse({
+        success: true,
+        data: {
+          reused: false,
+          shipment: {
+            id: 'ship_1',
+            subscription_id: 'sub-row-1',
+            stripe_invoice_id: body?.invoice_id || 'in_test_1',
+            ups_shipment_id: '1Z999',
+            tracking_number: '1Z999AA10123456784',
+            service_code: '03',
+            label_format: 'GIF',
+            has_label: true,
+            quoted_shipping_cost: 12.9,
+            ups_monetary_value: 14.2,
+            status: 'created',
+            shipped_at: '2026-08-02T12:00:00.000Z',
+            created_at: '2026-08-02T12:00:00.000Z',
+            updated_at: '2026-08-02T12:00:00.000Z',
+          },
+        },
+      })
+    }
+
+    if (/^\/api\/v1\/admin\/shipments\/[^/]+\/void$/.test(path) && method === 'POST') {
+      return jsonResponse({ success: true, data: { shipment: { id: 'ship_1', status: 'voided' } } })
+    }
+
+    if (/^\/api\/v1\/admin\/shipments\/[^/]+\/refresh-tracking$/.test(path) && method === 'POST') {
+      return jsonResponse({ success: true, data: { shipment: { id: 'ship_1', tracking_number: '1Z999' } } })
     }
 
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+$/.test(path) && method === 'GET') {
@@ -269,6 +320,20 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
     }
 
     if (path === '/api/v1/admin/shipping/test' && method === 'POST') {
+      const country = body?.country === 'US' ? 'US' : 'BR'
+      if (country === 'US') {
+        return jsonResponse({
+          success: true,
+          data: {
+            shipping: 18.45,
+            delivery_days: 4,
+            currency: 'USD',
+            label: 'UPS Ground',
+            carrier: 'UPS',
+            source: 'ups',
+          },
+        })
+      }
       return jsonResponse({
         success: true,
         data: { distance: 8.2, shipping: 12.5, delivery_days: 2, distance_source: 'haversine' },

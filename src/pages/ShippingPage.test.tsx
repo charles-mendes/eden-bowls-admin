@@ -44,4 +44,30 @@ describe('ShippingPage', () => {
 
     expect(screen.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument()
   })
+
+  it('shows US UPS settings and tests a ZIP', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<ShippingPage />, '/config/shipping')
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('CD SP')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'United States' }))
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Eden Bowls Warehouse')).toBeInTheDocument()
+    })
+
+    await user.type(screen.getByPlaceholderText('94105'), '94105')
+    await user.click(screen.getByRole('button', { name: 'Testar' }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/18\.45 USD/)).toBeInTheDocument()
+    })
+
+    expect(calls.some((call) => call.method === 'POST' && call.path === '/api/v1/admin/shipping/test')).toBe(true)
+  })
 })

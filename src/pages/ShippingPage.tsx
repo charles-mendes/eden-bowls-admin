@@ -20,7 +20,18 @@ type ShippingSettings = {
       max_days: number
     }
   }
-  us: { enabled: boolean; cost: number; carrier: string; delivery: string; label: string }
+  us: {
+    enabled: boolean
+    cost: number
+    carrier: string
+    delivery: string
+    label: string
+    quote_mode: 'fixed' | 'ups'
+    fallback_enabled: boolean
+    ship_from: { name: string; street: string; city: string; state: string; zipcode: string; country: string }
+    package: { weight_lb: number; length_in: number; width_in: number; height_in: number }
+    allowed_service_codes: string[]
+  }
 }
 
 const emptySettings = (): ShippingSettings => ({
@@ -30,8 +41,33 @@ const emptySettings = (): ShippingSettings => ({
     center: { name: 'CD', street: '', city: '', state: '', zipcode: '', lat: 0, lng: 0 },
     rule: { per_km: 0.95, road_factor: 1.3, min_fee: 0, max_fee: null, max_distance_km: 500, km_per_day: 80, min_days: 2, max_days: 10 },
   },
-  us: { enabled: true, cost: 12.9, carrier: 'FedEx', delivery: '3–5 business days', label: 'FedEx 3–5 business days' },
+  us: {
+    enabled: true,
+    cost: 12.9,
+    carrier: 'FedEx',
+    delivery: '3–5 business days',
+    label: 'FedEx 3–5 business days',
+    quote_mode: 'fixed',
+    fallback_enabled: true,
+    ship_from: { name: '', street: '', city: '', state: '', zipcode: '', country: 'US' },
+    package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12 },
+    allowed_service_codes: ['03'],
+  },
 })
+
+function mergeUs(settings: ShippingSettings['us'] | undefined): ShippingSettings['us'] {
+  const base = emptySettings().us
+  return {
+    ...base,
+    ...(settings || {}),
+    ship_from: { ...base.ship_from, ...(settings?.ship_from || {}) },
+    package: { ...base.package, ...(settings?.package || {}) },
+    allowed_service_codes: Array.isArray(settings?.allowed_service_codes) && settings.allowed_service_codes.length
+      ? settings.allowed_service_codes
+      : base.allowed_service_codes,
+    quote_mode: settings?.quote_mode === 'ups' ? 'ups' : 'fixed',
+  }
+}
 
 export function ShippingPage() {
   const { token, hasPermission } = useAuth()
@@ -48,7 +84,9 @@ export function ShippingPage() {
     try {
       setError('')
       const response = await apiRequest<{ success: boolean; data: { settings: ShippingSettings } }>('/admin/shipping/settings', { token })
-      setSettings({ ...emptySettings(), ...response.data.settings })
+      const next = { ...emptySettings(), ...response.data.settings }
+      next.us = mergeUs(response.data.settings?.us)
+      setSettings(next)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar frete')
     }
@@ -68,7 +106,9 @@ export function ShippingPage() {
         method: 'PUT',
         body: settings,
       })
-      setSettings({ ...emptySettings(), ...response.data.settings })
+      const next = { ...emptySettings(), ...response.data.settings }
+      next.us = mergeUs(response.data.settings?.us)
+      setSettings(next)
       setMessage('Settings saved.')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar')
@@ -80,21 +120,38 @@ export function ShippingPage() {
     if (!token) return
     try {
       setError('')
-      const response = await apiRequest<{ success: boolean; data: { distance: number; shipping: number; delivery_days: number; distance_source: string; breakdown?: { minimum_applied?: boolean } } }>('/admin/shipping/test', {
+      const country = tab === 'US' ? 'US' : 'BR'
+      const response = await apiRequest<{
+        success: boolean
+        data: {
+          distance?: number
+          shipping: number
+          delivery_days?: number | null
+          distance_source?: string
+          source?: string
+          label?: string
+          carrier?: string
+          breakdown?: { minimum_applied?: boolean }
+        }
+      }>('/admin/shipping/test', {
         token,
         method: 'POST',
-        body: { zipCode, country: 'BR' },
+        body: { zipCode, country },
       })
       const data = response.data
-      setTestResult(`${data.shipping} BRL · ${data.distance} km (${data.distance_source}) · ${data.delivery_days} dias${data.breakdown?.minimum_applied ? ' · piso aplicado' : ''}`)
+      if (country === 'US') {
+        setTestResult(`${data.shipping} USD · ${data.label || data.carrier || 'US'} · source=${data.source || 'n/a'} · ${data.delivery_days ?? '-'} dias`)
+      } else {
+        setTestResult(`${data.shipping} BRL · ${data.distance} km (${data.distance_source}) · ${data.delivery_days} dias${data.breakdown?.minimum_applied ? ' · piso aplicado' : ''}`)
+      }
     } catch (requestError) {
       setTestResult('')
-      setError(requestError instanceof Error ? requestError.message : 'Falha no teste de CEP')
+      setError(requestError instanceof Error ? requestError.message : 'Falha no teste de CEP/ZIP')
     }
   }
 
   return (
-    <PageFrame title="Frete" description="Configuração BR (por km) e US (taxa fixa), persistida no banco.">
+    <PageFrame title="Frete" description="Configuração BR (por km) e US (fixo ou UPS Rating). Credenciais UPS ficam só no env do servidor.">
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
 
@@ -127,26 +184,51 @@ export function ShippingPage() {
           <div className="form-grid">
             <label className="checkbox-field">
               <input type="checkbox" checked={settings.us.enabled} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, enabled: event.target.checked } }))} />
-              Enabled (bloqueia a rate na loja se desmarcado)
+              Enabled
             </label>
-            <label>Cost<input type="number" step="0.01" value={settings.us.cost} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, cost: Number(event.target.value) } }))} /></label>
-            <label>Carrier<input value={settings.us.carrier} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, carrier: event.target.value } }))} /></label>
-            <label>Delivery<input value={settings.us.delivery} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, delivery: event.target.value } }))} /></label>
-            <label>Label<input value={settings.us.label} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, label: event.target.value } }))} /></label>
+            <label>
+              Quote mode
+              <select
+                value={settings.us.quote_mode}
+                onChange={(event) => setSettings((current) => ({
+                  ...current,
+                  us: { ...current.us, quote_mode: event.target.value === 'ups' ? 'ups' : 'fixed' },
+                }))}
+              >
+                <option value="fixed">fixed (taxa fixa / fallback)</option>
+                <option value="ups">ups (Rating API)</option>
+              </select>
+            </label>
+            <label className="checkbox-field">
+              <input type="checkbox" checked={settings.us.fallback_enabled} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, fallback_enabled: event.target.checked } }))} />
+              Fallback para custo fixo se UPS falhar
+            </label>
+            <label>Fallback cost<input type="number" step="0.01" value={settings.us.cost} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, cost: Number(event.target.value) } }))} /></label>
+            <label>Fallback carrier<input value={settings.us.carrier} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, carrier: event.target.value } }))} /></label>
+            <label>Fallback delivery<input value={settings.us.delivery} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, delivery: event.target.value } }))} /></label>
+            <label>Fallback label<input value={settings.us.label} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, label: event.target.value } }))} /></label>
+            <label>Allowed service codes<input value={settings.us.allowed_service_codes.join(',')} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, allowed_service_codes: event.target.value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean) } }))} placeholder="03" /></label>
+            <label>Ship-from name<input value={settings.us.ship_from.name} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, name: event.target.value } } }))} /></label>
+            <label>Ship-from street<input value={settings.us.ship_from.street} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, street: event.target.value } } }))} /></label>
+            <label>Ship-from city<input value={settings.us.ship_from.city} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, city: event.target.value } } }))} /></label>
+            <label>Ship-from state<input value={settings.us.ship_from.state} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, state: event.target.value } } }))} /></label>
+            <label>Ship-from ZIP<input value={settings.us.ship_from.zipcode} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, zipcode: event.target.value } } }))} /></label>
+            <label>Package weight (lb)<input type="number" step="0.1" value={settings.us.package.weight_lb} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, weight_lb: Number(event.target.value) } } }))} /></label>
+            <label>Length (in)<input type="number" step="0.1" value={settings.us.package.length_in} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, length_in: Number(event.target.value) } } }))} /></label>
+            <label>Width (in)<input type="number" step="0.1" value={settings.us.package.width_in} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, width_in: Number(event.target.value) } } }))} /></label>
+            <label>Height (in)<input type="number" step="0.1" value={settings.us.package.height_in} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, height_in: Number(event.target.value) } } }))} /></label>
           </div>
         )}
         {canWrite ? <button className="primary-button" type="submit">Salvar</button> : null}
       </form>
 
-      {tab === 'BR' ? (
-        <Section title="Teste de CEP" description="Mesmo motor da loja, sem rate limit extra.">
-          <form className="inline-actions" onSubmit={testZip}>
-            <input value={zipCode} onChange={(event) => setZipCode(event.target.value)} placeholder="01310-100" />
-            <button className="primary-button" type="submit">Testar</button>
-          </form>
-          {testResult ? <div className="muted-panel">{testResult}</div> : null}
-        </Section>
-      ) : null}
+      <Section title={tab === 'US' ? 'Teste de ZIP (US)' : 'Teste de CEP'} description="Mesmo motor da loja.">
+        <form className="inline-actions" onSubmit={testZip}>
+          <input value={zipCode} onChange={(event) => setZipCode(event.target.value)} placeholder={tab === 'US' ? '94105' : '01310-100'} />
+          <button className="primary-button" type="submit">Testar</button>
+        </form>
+        {testResult ? <div className="muted-panel">{testResult}</div> : null}
+      </Section>
     </PageFrame>
   )
 }

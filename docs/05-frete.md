@@ -115,11 +115,11 @@ Save BR:
 | lat/lng | float |
 | textos | sanitize_text_field |
 
-Save US: enabled, cost float default 12.90, carrier default FedEx, delivery/label strings.
+Save US: enabled, quote_mode (`fixed`|`ups`), fallback_enabled, cost/carrier/delivery/label (fallback ou modo fixed), ship_from, package (peso/dimensões em lb/in), allowed_service_codes (lista, default `03`).
 
 Tab invalida → forca `br`.
 
-CEP teste: validacao real no use case (8 digitos). Campo HTML sem mascara obrigatoria.
+CEP/ZIP teste: BR = CEP 8 digitos; US = ZIP — mesmo `POST /api/v1/admin/shipping/test` com `country`.
 
 ## Campos BR
 
@@ -144,16 +144,26 @@ CEP teste: validacao real no use case (8 digitos). Campo HTML sem mascara obriga
 | Campo | Tipo | Default |
 |---|---|---|
 | enabled | bool | true |
-| cost | float USD | 12.90 |
-| carrier | string | FedEx |
+| quote_mode | `fixed` \| `ups` | `fixed` até gate dry ice + credenciais |
+| fallback_enabled | bool | true |
+| cost | float USD | 12.90 (fallback / fixed) |
+| carrier | string | FedEx (fallback label) |
 | delivery | string | 3–5 business days |
 | label | string | FedEx 3–5 business days |
+| ship_from.* | strings | origem UPS |
+| package.weight_lb / length_in / width_in / height_in | float | pacote fixo v1 |
+| allowed_service_codes | string[] | `['03']` (Ground); editável |
+
+Credenciais OAuth UPS (`UPS_CLIENT_ID`, etc.) ficam **só no env** do backend — não nesta tela.
+
+Ver também `eden-bowls-backend/docs-new/FEATURE_UPS/` (CIE ≠ preço real; go-live gate dry ice).
 
 ## APIs / Endpoints desta tela
 
-Nenhum REST disparado pelo form. O teste chama o use case in-process.
+- `GET/PUT /api/v1/admin/shipping/settings`
+- `POST /api/v1/admin/shipping/test` `{ zipCode, country }`
 
-A API de checkout (referencia, nao e esta tela): rotas em `ShippingApi`.
+Fulfillment (etiqueta) fica em SubscriptionDetail: `.../shipments`, label download, void, refresh-tracking.
 
 ## Banco de dados
 

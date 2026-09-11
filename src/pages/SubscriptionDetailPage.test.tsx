@@ -43,4 +43,33 @@ describe('SubscriptionDetailPage', () => {
 
     expect(screen.queryByRole('button', { name: 'Sincronizar invoices' })).not.toBeInTheDocument()
   })
+
+  it('creates a UPS label from a synced invoice', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await waitFor(() => {
+      expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Sincronizar invoices' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('INV-1001')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Gerar etiqueta UPS' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Etiqueta UPS gerada.')).toBeInTheDocument()
+    })
+
+    expect(calls.some((call) => (
+      call.method === 'POST'
+      && call.path === '/api/v1/admin/billing/subscriptions/sub-row-1/shipments'
+      && call.body?.invoice_id === 'in_test_1'
+    ))).toBe(true)
+  })
 })
