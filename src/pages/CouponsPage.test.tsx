@@ -37,6 +37,8 @@ describe('CouponsPage', () => {
 
     const sync = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/stripe/first-purchase-promos/sync')
     expect(sync?.authorization).toBe('Bearer access-token')
+    expect(sync?.search).toBe('?account=us')
+    expect(sync?.body).toMatchObject({ account: 'us' })
   })
 
   it('saves the promo map with PUT', async () => {
@@ -56,6 +58,28 @@ describe('CouponsPage', () => {
     })
 
     const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/stripe/first-purchase-promos')
-    expect(put?.body).toMatchObject({ 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m' })
+    expect(put?.body).toMatchObject({ 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m', account: 'us' })
+  })
+
+  it('loads a separate coupon map for the BR Stripe account', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<CouponsPage />, '/billing/coupons')
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('promo_1m')).toBeInTheDocument()
+    })
+
+    await user.selectOptions(screen.getByLabelText('Conta'), 'BR')
+
+    await waitFor(() => {
+      const health = calls.find((call) => (
+        call.method === 'GET'
+        && call.path === '/api/v1/admin/stripe/first-purchase-promos'
+        && call.search === '?account=br'
+      ))
+      expect(health).toBeTruthy()
+    })
   })
 })

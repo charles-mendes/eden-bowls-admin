@@ -42,6 +42,7 @@ type SubscriptionItem = {
   createdAt: string
   user: { id: string; email: string }
   term: { marketCountry: string; months: number }
+  stripeAccount?: string
 }
 
 type BillingMetrics = {
@@ -73,6 +74,7 @@ export function BillingPage() {
   const [subscriptionPage, setSubscriptionPage] = useState(1)
   const perPage = 20
   const [subscriptionStatus, setSubscriptionStatus] = useState('active')
+  const [account, setAccount] = useState('all')
   const [search, setSearch] = useState('')
   const [syncMessage, setSyncMessage] = useState('')
   const [error, setError] = useState('')
@@ -85,7 +87,7 @@ export function BillingPage() {
       const [healthResponse, webhooksResponse, subscriptionsResponse, metricsResponse] = await Promise.all([
         apiRequest<SyncHealth>(`/admin/catalog/sync/health${buildQueryString({ market, currency })}`, { token }),
         apiRequest<Paginated<WebhookItem>>(`/admin/billing/webhooks${buildQueryString({ page: webhookPage, perPage })}`, { token }),
-        apiRequest<Paginated<SubscriptionItem>>(`/admin/billing/subscriptions${buildQueryString({ page: subscriptionPage, perPage, status: subscriptionStatus || 'active', q: search || undefined, market: market || undefined })}`, { token }),
+        apiRequest<Paginated<SubscriptionItem>>(`/admin/billing/subscriptions${buildQueryString({ page: subscriptionPage, perPage, status: subscriptionStatus || 'active', q: search || undefined, market: market || undefined, account: account === 'all' ? undefined : account })}`, { token }),
         apiRequest<BillingMetrics>('/admin/billing/metrics', { token }),
       ])
 
@@ -107,7 +109,7 @@ export function BillingPage() {
 
   useEffect(() => {
     void loadData()
-  }, [token, market, currency, webhookPage, subscriptionPage, perPage, subscriptionStatus, search])
+  }, [token, market, currency, webhookPage, subscriptionPage, perPage, subscriptionStatus, search, account])
 
   const submitSync = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -181,12 +183,20 @@ export function BillingPage() {
             </select>
           </label>
           <label>
+            Conta
+            <select value={account} onChange={(event) => { setAccount(event.target.value); setSubscriptionPage(1) }}>
+              <option value="all">todas</option>
+              <option value="us">US</option>
+              <option value="br">BR</option>
+            </select>
+          </label>
+          <label>
             Busca
             <input value={search} onChange={(event) => { setSearch(event.target.value); setSubscriptionPage(1) }} placeholder="sub_, cus_, email, userId" />
           </label>
         </FiltersBar>
         <div className="inline-actions">
-          <button className="ghost-button" type="button" onClick={() => { setSubscriptionStatus('active'); setSearch(''); setSubscriptionPage(1) }}>Limpar filtros</button>
+          <button className="ghost-button" type="button" onClick={() => { setSubscriptionStatus('active'); setAccount('all'); setSearch(''); setSubscriptionPage(1) }}>Limpar filtros</button>
           {hasPermission('billing.subscribers.sync') ? (
             <>
               <button className="ghost-button" type="button" onClick={() => void backfill()}>Vincular ao usuário</button>
@@ -201,6 +211,7 @@ export function BillingPage() {
               <tr>
                 <th>Usuário</th>
                 <th>Subscription</th>
+                <th>Conta</th>
                 <th>Termo</th>
                 <th>Status</th>
                 <th>Auto renew</th>
@@ -212,6 +223,7 @@ export function BillingPage() {
                 <tr key={item.id}>
                   <td>{item.user.email}</td>
                   <td><Link className="table-link" to={`/billing/subscriptions/${item.id}`}>{item.providerSubscriptionId}</Link></td>
+                  <td><span className="badge-info">{(item.stripeAccount || 'us').toUpperCase()}</span></td>
                   <td>{item.term.marketCountry} · {item.term.months}m</td>
                   <td>{item.status}</td>
                   <td>{item.autoRenew ? 'Sim' : 'Não'}</td>

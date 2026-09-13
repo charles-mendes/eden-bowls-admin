@@ -17,6 +17,7 @@ type SubscriptionDetail = {
   currentPeriodEnd: string | null
   cancelAtPeriodEnd: boolean
   dashboardUrl: string
+  stripeAccount?: string
   user: { id: string; email: string }
   petsSnapshot: unknown
   planSelection: unknown
@@ -206,6 +207,7 @@ export function SubscriptionDetailPage() {
 
       <Section title="Identidade">
         <p>{data?.planLabel} · {data?.stripePriceId}</p>
+        <p className="muted">Conta <span className="badge-info">{(data?.stripeAccount || 'us').toUpperCase()}</span></p>
         <div className="inline-actions">
           {data?.dashboardUrl ? <a className="ghost-button" href={data.dashboardUrl} target="_blank" rel="noreferrer">Ver no Stripe</a> : null}
           <Link className="ghost-button" to={`/users/${data?.user.id}`}>Cliente</Link>

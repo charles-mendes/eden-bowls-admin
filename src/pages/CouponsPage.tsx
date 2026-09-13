@@ -1,8 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
+import { FiltersBar } from '../components/FiltersBar'
 import { useAuth } from '../contexts/AuthContext'
-import { apiRequest } from '../lib/api'
+import { apiRequest, buildQueryString } from '../lib/api'
 
 type PromoSlot = {
   promotion_code_id?: string | null
@@ -55,6 +56,7 @@ function formatPromoDuration(duration: string | null | undefined) {
 
 export function CouponsPage() {
   const { token } = useAuth()
+  const [account, setAccount] = useState<'br' | 'us'>('us')
   const [health, setHealth] = useState<PromoHealth | null>(null)
   const [mapping, setMapping] = useState(emptyMapping)
   const [codes, setCodes] = useState<PromoCode[]>([])
@@ -72,13 +74,15 @@ export function CouponsPage() {
     setMapping(mappingFromHealth(nextHealth))
   }
 
+  const accountQuery = buildQueryString({ account })
+
   const load = async () => {
     if (!token) return
     try {
       setError('')
       const [healthResponse, codesResponse] = await Promise.all([
-        apiRequest<PromoHealth>('/admin/stripe/first-purchase-promos', { token }),
-        apiRequest<{ success?: boolean; data?: { items: PromoCode[] }; message?: string }>('/admin/stripe/promotion-codes', { token }),
+        apiRequest<PromoHealth>(`/admin/stripe/first-purchase-promos${accountQuery}`, { token }),
+        apiRequest<{ success?: boolean; data?: { items: PromoCode[] }; message?: string }>(`/admin/stripe/promotion-codes${accountQuery}`, { token }),
       ])
       applyHealth(healthResponse)
       setCodes(codesResponse.data?.items || [])
@@ -92,17 +96,17 @@ export function CouponsPage() {
 
   useEffect(() => {
     void load()
-  }, [token])
+  }, [token, account])
 
   const saveMap = async (event: FormEvent) => {
     event.preventDefault()
     if (!token) return
     try {
       setError('')
-      const response = await apiRequest<PromoHealth>('/admin/stripe/first-purchase-promos', {
+      const response = await apiRequest<PromoHealth>(`/admin/stripe/first-purchase-promos${accountQuery}`, {
         token,
         method: 'PUT',
-        body: mapping,
+        body: { ...mapping, account },
       })
       applyHealth(response)
       setMessage('mapped')
@@ -116,13 +120,14 @@ export function CouponsPage() {
     try {
       setError('')
       setSyncing(true)
-      const response = await apiRequest<PromoHealth>('/admin/stripe/first-purchase-promos/sync', {
+      const response = await apiRequest<PromoHealth>(`/admin/stripe/first-purchase-promos/sync${accountQuery}`, {
         token,
         method: 'POST',
+        body: { account },
       })
       applyHealth(response)
       setMessage('synced')
-      const codesResponse = await apiRequest<{ success?: boolean; data?: { items: PromoCode[] }; message?: string }>('/admin/stripe/promotion-codes', { token })
+      const codesResponse = await apiRequest<{ success?: boolean; data?: { items: PromoCode[] }; message?: string }>(`/admin/stripe/promotion-codes${accountQuery}`, { token })
       setCodes(codesResponse.data?.items || [])
       if (codesResponse.success === false && codesResponse.message) {
         setError(codesResponse.message)
@@ -148,6 +153,7 @@ export function CouponsPage() {
           name,
           max_redemptions: maxRedemptions,
           assign_first_purchase_slot: assignSlot,
+          account,
         },
       })
       setMessage('created')
@@ -161,7 +167,23 @@ export function CouponsPage() {
   const percent = term === 6 ? 40 : term === 3 ? 25 : 10
 
   return (
-    <PageFrame title="Cupons de 1ª compra" description="O mapa prazo → promo_ fica no banco. A Stripe continua sendo a fonte do cupom cobrado.">
+    <PageFrame title="Cupons de 1ª compra" description="O mapa prazo → promo_ é por conta Stripe. BR e US não compartilham cupom; o mapa duplicado é de propósito.">
+      <FiltersBar>
+        <label>
+          Conta
+          <select
+            value={account}
+            onChange={(event) => {
+              setAccount(event.target.value === 'br' ? 'br' : 'us')
+              setMessage('')
+              setMapping(emptyMapping)
+            }}
+          >
+            <option value="us">US</option>
+            <option value="br">BR</option>
+          </select>
+        </label>
+      </FiltersBar>
       <div className="muted-panel">
         Desconto de 1ª compra aplica-se somente à primeira fatura mensal. Nos planos de 3 e 6 meses, os meses seguintes cobram o preço cheio. O percentual maior (25%/40%) é benefício de compromisso, não desconto sobre o valor total do contrato.
       </div>

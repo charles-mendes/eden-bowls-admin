@@ -24,6 +24,7 @@ describe('BillingPage', () => {
 
     expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
     expect(screen.getByText('evt_1')).toBeInTheDocument()
+    expect(document.querySelector('.badge-info')?.textContent).toBe('US')
 
     await user.click(screen.getByRole('button', { name: 'Sync catálogo' }))
 
@@ -34,6 +35,28 @@ describe('BillingPage', () => {
     const sync = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/catalog/sync')
     expect(sync?.body).toEqual({ market: 'BR', currency: 'BRL' })
     expect(sync?.authorization).toBe('Bearer access-token')
+  })
+
+  it('filters subscriptions by Stripe account', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<BillingPage />, '/billing')
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: 'sub_123' })).toBeInTheDocument()
+    })
+
+    await user.selectOptions(screen.getByLabelText('Conta'), 'br')
+
+    await waitFor(() => {
+      const list = calls.find((call) => (
+        call.method === 'GET'
+        && call.path === '/api/v1/admin/billing/subscriptions'
+        && call.search.includes('account=br')
+      ))
+      expect(list).toBeTruthy()
+    })
   })
 
   it('hides billing mutations from readonly accounts', async () => {

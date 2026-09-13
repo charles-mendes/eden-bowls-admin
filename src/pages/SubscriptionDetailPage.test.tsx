@@ -22,6 +22,9 @@ describe('SubscriptionDetailPage', () => {
       expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
     })
 
+    expect(screen.getByText('US')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Ver no Stripe' })).toHaveAttribute('href', 'https://dashboard.stripe.com/sub_123')
+
     await user.click(screen.getByRole('button', { name: 'Sincronizar invoices' }))
 
     await waitFor(() => {

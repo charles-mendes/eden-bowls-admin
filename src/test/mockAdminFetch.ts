@@ -304,6 +304,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
         currentPeriodEnd: '2026-09-01T12:00:00.000Z',
         cancelAtPeriodEnd: false,
         dashboardUrl: 'https://dashboard.stripe.com/sub_123',
+        stripeAccount: 'us',
         petsSnapshot: {},
         planSelection: {},
         shipping: {},

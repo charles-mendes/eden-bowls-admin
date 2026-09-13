@@ -264,6 +264,7 @@ export const subscriptionItem = {
   createdAt: '2026-08-01T12:00:00.000Z',
   user: { id: 'u-ana', email: 'ana@edenbowls.com' },
   term: { marketCountry: 'BR', months: 1 },
+  stripeAccount: 'us',
 }
 
 export const subscriptionsList = {
