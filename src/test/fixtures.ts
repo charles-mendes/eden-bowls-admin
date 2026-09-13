@@ -25,13 +25,15 @@ export const WRITE_PERMISSIONS = [
   'users.roles.write',
   'feedbacks.read',
   'feedbacks.write',
+  'privacy.requests.read',
+  'privacy.requests.write',
 ] as const
 
 export const operatorUser: AdminUser = {
   userId: 'u-operator',
   email: 'ops@edenbowls.com',
   roles: ['operator'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read'],
 }
 
 export const operatorWriteUser: AdminUser = {
@@ -66,7 +68,7 @@ export const readonlyUser: AdminUser = {
   userId: 'u-readonly',
   email: 'read@edenbowls.com',
   roles: ['readonly'],
-  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read'],
+  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'privacy.requests.read'],
 }
 
 export const checkoutItem = {
@@ -421,3 +423,58 @@ export const feedbacksList = {
   totalPages: 1,
   items: [feedbackItem],
 }
+
+export const privacyRequestItem = {
+  id: 41,
+  userId: 77,
+  type: 'access',
+  status: 'open',
+  locale: 'pt-BR',
+  market: 'BR',
+  payload: { note: 'pedido por e-mail', hasPackage: false },
+  resultNote: null,
+  dueAt: '2026-01-20T00:00:00.000Z',
+  extendedAt: null,
+  extensionReason: null,
+  identityStatus: 'unverified',
+  identityVerifiedAt: null,
+  channel: 'email',
+  resolvedAt: null,
+  resolvedBy: null,
+  createdAt: '2026-01-05T00:00:00.000Z',
+  updatedAt: '2026-01-05T00:00:00.000Z',
+  overdue: true,
+}
+
+export const privacyRequestsList = {
+  total: 1,
+  page: 1,
+  perPage: 20,
+  totalPages: 1,
+  items: [privacyRequestItem],
+}
+
+export const userPrivacySnapshot = {
+  marketingOptIn: false,
+  cookiePreferences: { analytics: 'granted', ads: 'denied' },
+  consents: [
+    {
+      id: 9,
+      consentType: 'marketing_email',
+      status: 'denied',
+      documentVersion: null,
+      source: 'otp_verify',
+      createdAt: '2026-08-01T12:00:00.000Z',
+    },
+  ],
+  requests: [
+    {
+      id: 41,
+      type: 'access',
+      status: 'open',
+      dueAt: '2026-01-20T00:00:00.000Z',
+      identityStatus: 'unverified',
+    },
+  ],
+}
+

@@ -24,6 +24,7 @@ describe('UserDetailPage', () => {
     })
 
     expect(screen.getByDisplayValue('Rua Augusta 100')).toBeInTheDocument()
+    expect(screen.getByText(/Marketing: opt-out/)).toBeInTheDocument()
     expect(calls.some((call) => call.method === 'GET' && call.path === '/api/v1/admin/users/u-ana' && call.authorization === 'Bearer access-token')).toBe(true)
 
     await user.clear(screen.getByLabelText('Instruções'))

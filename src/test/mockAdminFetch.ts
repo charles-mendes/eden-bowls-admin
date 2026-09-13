@@ -23,6 +23,9 @@ import {
   webhooksList,
   feedbackItem,
   feedbacksList,
+  privacyRequestItem,
+  privacyRequestsList,
+  userPrivacySnapshot,
 } from './fixtures'
 
 export type FetchCall = {
@@ -101,6 +104,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
         roles: storedRoles.length ? storedRoles : ['customer'],
         lockedByAllowlist: false,
       })
+    }
+
+    if (/^\/api\/v1\/admin\/users\/[^/]+\/privacy$/.test(path) && method === 'GET') {
+      return jsonResponse(userPrivacySnapshot)
     }
 
     if (/^\/api\/v1\/admin\/users\/[^/]+$/.test(path) && method === 'GET') {
@@ -432,6 +439,65 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
 
     if (/^\/api\/v1\/admin\/feedbacks\/\d+$/.test(path) && method === 'DELETE') {
       return jsonResponse({ deleted: true, id: Number(path.split('/').pop()) })
+    }
+
+    if (path === '/api/v1/admin/privacy/requests' && method === 'GET') {
+      return jsonResponse(privacyRequestsList)
+    }
+
+    if (path === '/api/v1/admin/privacy/requests' && method === 'POST') {
+      return jsonResponse({
+        ...privacyRequestItem,
+        id: 42,
+        userId: Number(body?.userId) || 77,
+        type: body?.type || 'correction',
+        market: body?.market || 'BR',
+      })
+    }
+
+    if (/^\/api\/v1\/admin\/privacy\/requests\/\d+\/in-progress$/.test(path) && method === 'POST') {
+      return jsonResponse({ ...privacyRequestItem, status: 'in_progress' })
+    }
+
+    if (/^\/api\/v1\/admin\/privacy\/requests\/\d+\/extend$/.test(path) && method === 'POST') {
+      return jsonResponse({
+        ...privacyRequestItem,
+        extendedAt: '2026-01-06T00:00:00.000Z',
+        extensionReason: body?.reason || 'need more time',
+        dueAt: '2026-02-04T00:00:00.000Z',
+        overdue: false,
+      })
+    }
+
+    if (/^\/api\/v1\/admin\/privacy\/requests\/\d+\/complete$/.test(path) && method === 'POST') {
+      if (privacyRequestItem.identityStatus === 'unverified' && ['access', 'deletion', 'portability'].includes(String(privacyRequestItem.type))) {
+        return jsonResponse({ success: false, message: 'Identity must be verified before completing this request.' }, 422)
+      }
+      return jsonResponse({ ...privacyRequestItem, status: 'completed' })
+    }
+
+    if (/^\/api\/v1\/admin\/privacy\/requests\/\d+\/reject$/.test(path) && method === 'POST') {
+      return jsonResponse({ ...privacyRequestItem, status: 'rejected', resultNote: body?.note || 'Rejected.' })
+    }
+
+    if (/^\/api\/v1\/admin\/privacy\/requests\/\d+\/send-verification$/.test(path) && method === 'POST') {
+      return jsonResponse({ sent: true, to: 'ana@edenbowls.com' })
+    }
+
+    if (/^\/api\/v1\/admin\/privacy\/requests\/\d+\/verify-identity$/.test(path) && method === 'POST') {
+      return jsonResponse({
+        ...privacyRequestItem,
+        identityStatus: 'verified_account_email',
+        identityVerifiedAt: '2026-01-06T00:00:00.000Z',
+      })
+    }
+
+    if (/^\/api\/v1\/admin\/privacy\/requests\/\d+\/export$/.test(path) && method === 'GET') {
+      return jsonResponse({ exportedAt: '2026-01-06T00:00:00.000Z', profile: { email: 'ana@edenbowls.com' } })
+    }
+
+    if (/^\/api\/v1\/admin\/privacy\/requests\/\d+$/.test(path) && method === 'GET') {
+      return jsonResponse(privacyRequestItem)
     }
 
     if (path === '/api/v1/breeds') {

@@ -11,6 +11,7 @@ import {
   isDeactivatedStatus,
   isStaffAccount,
 } from '../lib/accountStatus'
+import { formatPrivacyIdentity, formatPrivacyStatus, formatPrivacyType, type UserPrivacySnapshot } from '../lib/privacy'
 
 type UserDetail = {
   id: string
@@ -62,6 +63,7 @@ export function UserDetailPage() {
   const { token, user, hasPermission } = useAuth()
   const { userId } = useParams()
   const [data, setData] = useState<UserDetail | null>(null)
+  const [privacy, setPrivacy] = useState<UserPrivacySnapshot | null>(null)
   const [delivery, setDelivery] = useState<DeliveryForm>(emptyDelivery)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -80,8 +82,12 @@ export function UserDetailPage() {
     if (!token || !userId) return
     try {
       setError('')
-      const response = await apiRequest<UserDetail>(`/admin/users/${userId}`, { token })
+      const [response, privacySnapshot] = await Promise.all([
+        apiRequest<UserDetail>(`/admin/users/${userId}`, { token }),
+        apiRequest<UserPrivacySnapshot>(`/admin/users/${userId}/privacy`, { token }).catch(() => null),
+      ])
       setData(response)
+      setPrivacy(privacySnapshot)
       setDelivery(deliveryFromUser(response))
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar cliente')
@@ -234,6 +240,36 @@ export function UserDetailPage() {
           </label>
           {canWriteDelivery ? <button className="primary-button" type="submit">Salvar instruções</button> : null}
         </form>
+      </Section>
+
+      <Section title="Privacidade" description="Consentimentos atuais, marketing e atalho para a fila DSAR. Sem mutação nesta tela.">
+        <p>Marketing: {privacy?.marketingOptIn ? 'opt-in' : 'opt-out'}</p>
+        <p className="muted">
+          Cookies: analytics {privacy?.cookiePreferences?.analytics || '—'} · ads {privacy?.cookiePreferences?.ads || '—'}
+        </p>
+        {privacy?.consents?.length ? (
+          <ul>
+            {privacy.consents.slice(0, 8).map((consent) => (
+              <li key={consent.id}>{consent.consentType} · {consent.status} · {consent.source}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted">Sem histórico de consentimento.</p>
+        )}
+        {privacy?.requests?.length ? (
+          <ul>
+            {privacy.requests.map((requestItem) => (
+              <li key={requestItem.id}>
+                <Link className="table-link" to={`/privacy/requests/${requestItem.id}`}>
+                  #{requestItem.id} {formatPrivacyType(requestItem.type)} · {formatPrivacyStatus(requestItem.status)} · {formatPrivacyIdentity(requestItem.identityStatus)}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="inline-actions">
+          <Link className="ghost-button" to={`/privacy/requests?userId=${userId}`}>Ver solicitações</Link>
+        </div>
       </Section>
     </PageFrame>
   )

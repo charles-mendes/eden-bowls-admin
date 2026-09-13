@@ -18,6 +18,8 @@ import { RolesPage } from './pages/RolesPage'
 import { UserDetailPage } from './pages/UserDetailPage'
 import { FeedbacksPage } from './pages/FeedbacksPage'
 import { FeedbackFormPage } from './pages/FeedbackFormPage'
+import { PrivacyRequestsPage } from './pages/PrivacyRequestsPage'
+import { PrivacyRequestDetailPage } from './pages/PrivacyRequestDetailPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 function LegacyCheckoutRedirect() {
@@ -56,6 +58,8 @@ function App() {
           <Route path="/feedbacks/new" element={<FeedbackFormPage />} />
           <Route path="/feedbacks/:id" element={<FeedbackFormPage />} />
           <Route path="/feedbacks" element={<FeedbacksPage />} />
+          <Route path="/privacy/requests/:id" element={<PrivacyRequestDetailPage />} />
+          <Route path="/privacy/requests" element={<PrivacyRequestsPage />} />
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/roles" element={<RolesPage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />

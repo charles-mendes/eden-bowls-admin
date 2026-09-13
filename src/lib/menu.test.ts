@@ -22,6 +22,7 @@ describe('admin menu', () => {
     expect(hrefs).toContain('/dashboard')
     expect(hrefs).toContain('/onboarding/sessions')
     expect(hrefs).toContain('/feedbacks')
+    expect(hrefs).toContain('/privacy/requests')
     expect(hrefs).not.toContain('/config/shipping')
     expect(hrefs).not.toContain('/billing/coupons')
     expect(hrefs).not.toContain('/orders')

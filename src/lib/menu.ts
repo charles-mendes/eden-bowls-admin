@@ -21,6 +21,7 @@ export const adminMenu: MenuItem[] = [
   { label: 'Assinantes', href: '/billing', roles: ['admin', 'operator', 'readonly'], group: 'Billing' },
   { label: 'Cupons 1ª compra', href: '/billing/coupons', roles: ['admin', 'operator'], group: 'Billing' },
   { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Equipe' },
+  { label: 'Privacidade', href: '/privacy/requests', roles: ['admin', 'operator', 'readonly'], group: 'Equipe' },
   { label: 'Papéis', href: '/users/roles', roles: ['admin'], group: 'Equipe' },
 ]
 
