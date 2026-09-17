@@ -36,6 +36,7 @@ const WRITE_PERMISSIONS = [
   'users.delivery.write',
   'users.status.write',
   'users.roles.write',
+  'users.access.write',
   'feedbacks.read',
   'feedbacks.write',
 ]
@@ -51,7 +52,7 @@ const operatorWriteProfile: Profile = {
   userId: 'u-operator-write',
   email: 'ops.write@edenbowls.com',
   roles: ['operator'],
-  permissions: WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write'),
+  permissions: WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write'),
 }
 
 const adminProfile: Profile = {
@@ -255,6 +256,19 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
 
     if (path === '/api/v1/admin/users' && method === 'GET') {
       await fulfillJson(route, { total: 1, page: 1, perPage: 20, totalPages: 1, items: [userDetail] })
+      return
+    }
+
+    if (path === '/api/v1/admin/users' && method === 'POST') {
+      const payload = (body || {}) as { name?: string; email?: string; role?: string }
+      await fulfillJson(route, {
+        id: 'u-lia',
+        email: payload.email,
+        status: 'pending',
+        roles: [payload.role || 'operator'],
+        inviteMailStatus: 'sent',
+        profile: { fullName: payload.name || null, phone: null },
+      })
       return
     }
 

@@ -6,6 +6,7 @@ import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
+import { PANEL_ROLE_OPTIONS, ROLE_OPTIONS, primaryRole, roleLabel } from '../lib/roles'
 
 type StaffUser = {
   id: string
@@ -30,32 +31,11 @@ type UsersSearchResponse = {
   items: StaffUser[]
 }
 
-const ROLE_OPTIONS = [
-  { value: 'customer', label: 'Sem acesso ao painel' },
-  { value: 'nutritionist', label: 'Nutricionista' },
-  { value: 'readonly', label: 'Somente leitura' },
-  { value: 'operator', label: 'Operador' },
-  { value: 'admin', label: 'Admin' },
-] as const
-
-function primaryRole(roles: string[] | undefined) {
-  if (!roles || roles.length === 0) return 'customer'
-  if (roles.includes('admin')) return 'admin'
-  if (roles.includes('operator')) return 'operator'
-  if (roles.includes('readonly')) return 'readonly'
-  if (roles.includes('nutritionist')) return 'nutritionist'
-  return 'customer'
-}
-
 function assignedRole(item: Pick<StaffUser, 'storedRoles' | 'roles' | 'lockedByAllowlist'>) {
   if (item.lockedByAllowlist) return primaryRole(item.roles)
   const stored = (item.storedRoles ?? []).filter((role) => role !== 'customer')
   if (stored.length > 0) return primaryRole(stored)
   return primaryRole(item.roles)
-}
-
-function roleLabel(role: string) {
-  return ROLE_OPTIONS.find((option) => option.value === role)?.label ?? role
 }
 
 export function RolesPage() {
@@ -200,13 +180,13 @@ export function RolesPage() {
             </p>
             {selected.lockedByAllowlist ? (
               <div className="warning">
-                Este e-mail está em ADMIN_EMAILS. O papel admin continua efetivo mesmo se você gravar outro valor.
+                Este e-mail está em ADMIN_EMAILS. O papel efetivo permanece Admin e não pode ser rebaixado pela UI.
               </div>
             ) : null}
             <label>
               Papel
-              <select value={role} onChange={(event) => setRole(event.target.value)}>
-                {ROLE_OPTIONS.map((option) => (
+              <select value={role} onChange={(event) => setRole(event.target.value)} disabled={selected.lockedByAllowlist}>
+                {(selected.lockedByAllowlist ? PANEL_ROLE_OPTIONS : ROLE_OPTIONS).map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>

@@ -10,6 +10,8 @@ export type AdminUser = {
   email: string
   roles: AdminRole[]
   permissions: string[]
+  mustChangePassword?: boolean
+  inviteExpiresAt?: number | null
 }
 
 type AuthContextValue = {
@@ -18,6 +20,7 @@ type AuthContextValue = {
   isReady: boolean
   login: (email: string, password: string) => Promise<AdminUser>
   logout: () => void
+  reloadUser: () => Promise<AdminUser | null>
   hasPermission: (permission: string) => boolean
   hasRole: (...roles: AdminRole[]) => boolean
 }
@@ -200,6 +203,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return me
   }, [])
 
+  const reloadUser = useCallback(async () => {
+    if (!token) return null
+    const me = await apiRequest<AdminUser>('/admin/me', { token })
+    setUser(me)
+    return me
+  }, [token])
+
   const logout = useCallback(() => {
     skipCookieRestoreRef.current = true
     void logoutRefreshSession()
@@ -212,9 +222,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isReady,
     login,
     logout,
+    reloadUser,
     hasPermission: (permission) => Boolean(user?.permissions.includes(permission)),
     hasRole: (...roles) => Boolean(user?.roles.some((role) => roles.includes(role))),
-  }), [isReady, login, logout, token, user])
+  }), [isReady, login, logout, reloadUser, token, user])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

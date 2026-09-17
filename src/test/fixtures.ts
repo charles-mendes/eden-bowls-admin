@@ -23,6 +23,7 @@ export const WRITE_PERMISSIONS = [
   'users.delivery.write',
   'users.status.write',
   'users.roles.write',
+  'users.access.write',
   'feedbacks.read',
   'feedbacks.write',
   'privacy.requests.read',
@@ -40,7 +41,7 @@ export const operatorWriteUser: AdminUser = {
   userId: 'u-operator-write',
   email: 'ops.write@edenbowls.com',
   roles: ['operator'],
-  permissions: WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write'),
+  permissions: WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write'),
 }
 
 export const adminUser: AdminUser = {
@@ -192,12 +193,25 @@ export const userItem = {
   profile: { fullName: 'Ana Costa', phone: '11999999999' },
 }
 
+export const staffAccessItem = {
+  id: 'u-lia',
+  email: 'lia@edenbowls.com',
+  status: 'pending',
+  createdAt: '2026-08-02T12:00:00.000Z',
+  roles: ['nutritionist'],
+  storedRoles: ['nutritionist'],
+  lockedByAllowlist: false,
+  inviteMailStatus: 'failed',
+  mustChangePassword: true,
+  profile: { fullName: 'Lia Nutri', phone: null },
+}
+
 export const usersList = {
-  total: 1,
+  total: 2,
   page: 1,
   perPage: 20,
   totalPages: 1,
-  items: [userItem],
+  items: [userItem, staffAccessItem],
 }
 
 export const userDetail = {

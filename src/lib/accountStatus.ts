@@ -13,13 +13,14 @@ export function canToggleCustomerStatus(status: string | undefined) {
 }
 
 export function accountStatusLabel(status: string | undefined) {
+  if (status === 'deleted') return 'Excluída'
   if (isDeactivatedStatus(status)) return 'Desativada'
   if (status === 'pending') return 'Pendente'
   return 'Ativa'
 }
 
 export function accountStatusBadgeClass(status: string | undefined) {
-  if (isDeactivatedStatus(status)) return 'badge-error'
+  if (status === 'deleted' || isDeactivatedStatus(status)) return 'badge-error'
   if (status === 'pending') return 'badge-warning'
   return 'badge-success'
 }

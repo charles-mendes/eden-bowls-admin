@@ -67,4 +67,20 @@ test.describe('Admin users', () => {
       body: { status: 'inactive' },
     })
   })
+
+  test('admin creates a panel access from the users list', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/users', e2eProfiles.admin)
+
+    await page.getByRole('button', { name: 'Novo acesso' }).click()
+    await page.getByLabel('Nome').fill('Lia')
+    await page.getByLabel('E-mail').fill('lia@edenbowls.com')
+    await page.getByLabel('Papel').selectOption('nutritionist')
+    await page.getByRole('button', { name: 'Criar acesso' }).click()
+
+    await expect(page.getByText(/Acesso criado para lia@edenbowls.com/)).toBeVisible()
+    await expect.poll(() => captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/users')).toMatchObject({
+      authorization: 'Bearer e2e-access-token',
+      body: { name: 'Lia', email: 'lia@edenbowls.com', role: 'nutritionist' },
+    })
+  })
 })

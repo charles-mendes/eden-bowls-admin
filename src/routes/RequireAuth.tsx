@@ -19,7 +19,11 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return <Navigate to="/login" replace />
   }
 
-  if (isNutritionistOnly(user?.roles) && location.pathname !== '/nutrition/simulate') {
+  if (user?.mustChangePassword && location.pathname !== '/account/password') {
+    return <Navigate to="/account/password" replace />
+  }
+
+  if (isNutritionistOnly(user?.roles) && location.pathname !== '/nutrition/simulate' && location.pathname !== '/account/password') {
     return <Navigate to="/nutrition/simulate" replace />
   }
 

@@ -20,6 +20,6 @@ describe('admin roles', () => {
   it('routes nutritionists to the simulator and others to dashboard or origin', () => {
     expect(getPostLoginPath(['nutritionist'])).toBe('/nutrition/simulate')
     expect(getPostLoginPath(['operator'], '/login')).toBe('/dashboard')
-    expect(getPostLoginPath(['operator'], '/users')).toBe('/users')
+    expect(getPostLoginPath(['operator'], '/users', { mustChangePassword: true })).toBe('/account/password')
   })
 })

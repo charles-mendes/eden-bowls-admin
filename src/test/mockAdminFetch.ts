@@ -83,6 +83,34 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
       return jsonResponse(usersList)
     }
 
+    if (path === '/api/v1/admin/users' && method === 'POST') {
+      return jsonResponse({
+        id: 'u-lia',
+        email: body?.email,
+        status: 'pending',
+        roles: [body?.role || 'operator'],
+        storedRoles: [body?.role || 'operator'],
+        inviteMailStatus: 'sent',
+        profile: { fullName: body?.name || null, phone: body?.phone || null },
+      })
+    }
+
+    if (/^\/api\/v1\/admin\/users\/[^/]+\/invite$/.test(path) && method === 'POST') {
+      return jsonResponse({ id: 'u-ops', email: 'ops@edenbowls.com', inviteMailStatus: 'sent', status: 'pending', roles: ['operator'] })
+    }
+
+    if (/^\/api\/v1\/admin\/users\/[^/]+$/.test(path) && method === 'PATCH' && !path.endsWith('/status') && !path.endsWith('/delivery') && !path.endsWith('/delivery-instructions')) {
+      return jsonResponse({ ...userDetail, profile: { ...userDetail.profile, fullName: body?.name || userDetail.profile.fullName } })
+    }
+
+    if (/^\/api\/v1\/admin\/users\/[^/]+$/.test(path) && method === 'DELETE') {
+      return jsonResponse({ success: true, id: path.split('/').at(-1) })
+    }
+
+    if (path === '/api/v1/admin/me/password' && method === 'POST') {
+      return jsonResponse({ success: true, mustChangePassword: false })
+    }
+
     if (path.endsWith('/delivery-instructions') && method === 'PATCH') {
       return jsonResponse({ ok: true })
     }

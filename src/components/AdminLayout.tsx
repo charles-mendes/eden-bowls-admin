@@ -6,7 +6,8 @@ import { useAuth } from '../contexts/AuthContext'
 export function AdminLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const menuGroups = groupedMenuItems(user?.roles ?? [])
+  const forcePassword = Boolean(user?.mustChangePassword)
+  const menuGroups = groupedMenuItems(forcePassword ? [] : user?.roles ?? [])
 
   return (
     <div className="admin-shell">

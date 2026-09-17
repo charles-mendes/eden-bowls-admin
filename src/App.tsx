@@ -16,6 +16,7 @@ import { NutritionSimulatePage } from './pages/NutritionSimulatePage'
 import { UsersPage } from './pages/UsersPage'
 import { RolesPage } from './pages/RolesPage'
 import { UserDetailPage } from './pages/UserDetailPage'
+import { ChangePasswordPage } from './pages/ChangePasswordPage'
 import { FeedbacksPage } from './pages/FeedbacksPage'
 import { FeedbackFormPage } from './pages/FeedbackFormPage'
 import { PrivacyRequestsPage } from './pages/PrivacyRequestsPage'
@@ -63,6 +64,7 @@ function App() {
           <Route path="/users" element={<UsersPage />} />
           <Route path="/users/roles" element={<RolesPage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />
+          <Route path="/account/password" element={<ChangePasswordPage />} />
           <Route path="/orders" element={<Navigate to="/onboarding/sessions" replace />} />
           <Route path="/orders/:orderId" element={<LegacyCheckoutRedirect />} />
         </Route>

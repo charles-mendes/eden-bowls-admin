@@ -15,7 +15,7 @@ export function LoginPage() {
   const from = (location.state as { from?: string } | null)?.from ?? '/dashboard'
 
   if (token && user) {
-    return <Navigate to={getPostLoginPath(user.roles, from)} replace />
+    return <Navigate to={getPostLoginPath(user.roles, from, { mustChangePassword: user.mustChangePassword })} replace />
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -25,7 +25,7 @@ export function LoginPage() {
 
     try {
       const me = await login(email, password)
-      navigate(getPostLoginPath(me.roles, from), { replace: true })
+      navigate(getPostLoginPath(me.roles, from, { mustChangePassword: me.mustChangePassword }), { replace: true })
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha no login')
     } finally {

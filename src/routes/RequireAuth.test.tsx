@@ -21,6 +21,14 @@ function renderGuard(route: string) {
             )}
           />
           <Route
+            path="/account/password"
+            element={(
+              <RequireAuth>
+                <div>password-page</div>
+              </RequireAuth>
+            )}
+          />
+          <Route
             path="/dashboard"
             element={(
               <RequireAuth>
@@ -68,6 +76,20 @@ describe('RequireAuth', () => {
 
     await waitFor(() => {
       expect(screen.getByText('simulate-page')).toBeInTheDocument()
+    })
+  })
+
+  it('keeps invited staff on the password screen until they change it', async () => {
+    localStorage.setItem(TOKEN_KEY, 'invite-token')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      ...operatorUser,
+      mustChangePassword: true,
+    })))
+
+    renderGuard('/dashboard')
+
+    await waitFor(() => {
+      expect(screen.getByText('password-page')).toBeInTheDocument()
     })
   })
 })
