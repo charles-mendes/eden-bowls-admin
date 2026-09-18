@@ -11,6 +11,8 @@ type ProductVariant = {
   sku: string
   name: string
   flavor: string | null
+  flavorSlug: string | null
+  flavorAliases: string | null
   regularPrice: number | null
   stripeProductId: string | null
   stripePriceId: string | null
@@ -37,6 +39,8 @@ type VariantDraft = {
   sku: string
   name: string
   flavor: string
+  flavorSlug: string
+  flavorAliases: string
   regularPrice: string
   stripeProductId: string | null
   stripePriceId: string | null
@@ -46,6 +50,16 @@ type VariantDraft = {
 
 let newVariantSeq = 0
 
+function suggestFlavorSlug(label: string) {
+  return String(label || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
 function toVariantDraft(item: ProductVariant): VariantDraft {
   return {
     key: item.id,
@@ -53,6 +67,8 @@ function toVariantDraft(item: ProductVariant): VariantDraft {
     sku: item.sku || '',
     name: item.name || '',
     flavor: item.flavor || '',
+    flavorSlug: item.flavorSlug || '',
+    flavorAliases: item.flavorAliases || '',
     regularPrice: item.regularPrice == null ? '' : String(item.regularPrice),
     stripeProductId: item.stripeProductId,
     stripePriceId: item.stripePriceId,
@@ -69,6 +85,8 @@ function emptyVariantDraft(): VariantDraft {
     sku: '',
     name: '',
     flavor: '',
+    flavorSlug: '',
+    flavorAliases: '',
     regularPrice: '',
     stripeProductId: null,
     stripePriceId: null,
@@ -83,6 +101,8 @@ function variantPayload(item: VariantDraft) {
     sku: item.sku,
     name: item.name,
     flavor: item.flavor.trim(),
+    ...(item.flavorSlug.trim() ? { flavorSlug: item.flavorSlug.trim() } : {}),
+    ...(item.flavorAliases.trim() ? { flavorAliases: item.flavorAliases.trim() } : {}),
     regularPrice: item.regularPrice === '' ? null : Number(item.regularPrice),
   }
 }
@@ -191,7 +211,20 @@ export function ProductDetailPage() {
   }
 
   const updateVariant = (key: string, patch: Partial<VariantDraft>) => {
-    setVariants((current) => current.map((item) => (item.key === key ? { ...item, ...patch } : item)))
+    setVariants((current) => current.map((item) => {
+      if (item.key !== key) return item
+      const next = { ...item, ...patch }
+      const slugLocked = Boolean(item.id && item.flavorSlug)
+      if (patch.flavor != null && !item.id && !slugLocked && patch.flavorSlug == null) {
+        const sibling = current.find((row) => (
+          row.key !== key
+          && row.flavor.trim().toLowerCase() === patch.flavor.trim().toLowerCase()
+          && row.flavorSlug
+        ))
+        next.flavorSlug = sibling?.flavorSlug || suggestFlavorSlug(patch.flavor)
+      }
+      return next
+    }))
   }
 
   const deleteVariation = async (item: VariantDraft) => {
@@ -275,8 +308,8 @@ export function ProductDetailPage() {
         <Section
           title="Variações"
           description={canEdit
-            ? 'SKU, nome, sabor e preço da variação. O sabor cadastrado aparece no select da loja. Salvar grava o rascunho. Publicar grava, sincroniza o Stripe e ativa.'
-            : 'Sabor, mapeamento Stripe e status de sync. Edição só em rascunho; exclusão pode ser feita agora.'}
+            ? 'Label livre, slug estável compartilhado entre gramaturas e preço. O slug não muda depois de gravado. Stripe cobra; o nome na loja vem do sabor.'
+            : 'Sabor, slug, mapeamento Stripe e status de sync. Edição só em rascunho; exclusão pode ser feita agora.'}
           actions={canEdit ? (
             <button className="ghost-button" type="button" onClick={() => setVariants((current) => [...current, emptyVariantDraft()])}>
               Adicionar variação
@@ -290,6 +323,8 @@ export function ProductDetailPage() {
                   <th>SKU</th>
                   <th>Nome</th>
                   <th>Sabor</th>
+                  <th>Slug</th>
+                  <th>Aliases</th>
                   <th>Preço ({currency})</th>
                   <th>Stripe product</th>
                   <th>Stripe price</th>
@@ -300,7 +335,7 @@ export function ProductDetailPage() {
               <tbody>
                 {variants.length === 0 ? (
                   <tr>
-                    <td colSpan={canWrite ? 8 : 7}>
+                    <td colSpan={canWrite ? 10 : 9}>
                       {canEdit
                         ? 'Nenhuma variação. Use Adicionar variação para criar SKU, nome e preço.'
                         : 'Nenhuma variação cadastrada.'}
@@ -324,9 +359,30 @@ export function ProductDetailPage() {
                           aria-label="Sabor"
                           value={item.flavor}
                           onChange={(event) => updateVariant(item.key, { flavor: event.target.value })}
-                          placeholder="Ex.: Beef"
+                          placeholder="Ex.: Frango"
                         />
                       ) : item.flavor || '-'}
+                    </td>
+                    <td>
+                      {canEdit ? (
+                        <input
+                          aria-label="Slug do sabor"
+                          value={item.flavorSlug}
+                          disabled={Boolean(item.id && item.flavorSlug)}
+                          onChange={(event) => updateVariant(item.key, { flavorSlug: event.target.value })}
+                          placeholder="turkey"
+                        />
+                      ) : item.flavorSlug || '-'}
+                    </td>
+                    <td>
+                      {canEdit ? (
+                        <input
+                          aria-label="Aliases do sabor"
+                          value={item.flavorAliases}
+                          onChange={(event) => updateVariant(item.key, { flavorAliases: event.target.value })}
+                          placeholder="chicken, frango"
+                        />
+                      ) : item.flavorAliases || '-'}
                     </td>
                     <td>
                       {canEdit ? (

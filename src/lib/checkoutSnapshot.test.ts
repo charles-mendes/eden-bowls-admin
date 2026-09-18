@@ -13,11 +13,11 @@ describe('parseCheckoutSnapshots', () => {
     ]))
     expect(snapshots.plan.pets[0]).toEqual({
       petName: 'Luna',
-      flavors: 'Bovino × 5, Peixe × 5',
+      flavors: 'beef × 5, fish × 5',
     })
     expect(snapshots.plan.lineItems[0]).toMatchObject({
       petName: 'Luna',
-      product: 'Bovino',
+      product: 'beef',
       quantity: '5',
     })
     expect(snapshots.address.lines).toEqual([

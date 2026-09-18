@@ -25,13 +25,6 @@ const FREQUENCY_LABELS: Record<string, string> = {
   every_4_weeks: 'A cada 4 semanas',
 }
 
-const FLAVOR_LABELS: Record<string, string> = {
-  beef: 'Bovino',
-  turkey: 'Peru',
-  pork: 'Porco',
-  fish: 'Peixe',
-}
-
 const DISCOUNT_REASON_LABELS: Record<string, string> = {
   HAS_PREVIOUS_PURCHASE: 'Cliente já possui compra anterior',
   HAS_ACTIVE_SUBSCRIPTION: 'Cliente já possui assinatura ativa',
@@ -167,7 +160,7 @@ export function formatFlavor(value: string | null | undefined) {
   const raw = String(value || '').trim()
   if (!raw) return '-'
 
-  return FLAVOR_LABELS[raw.toLowerCase()] ?? raw
+  return raw
 }
 
 export function formatDiscountReason(value: string | null | undefined) {

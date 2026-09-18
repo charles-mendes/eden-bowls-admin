@@ -47,7 +47,9 @@ describe('format helpers', () => {
 
   it('translates checkout snapshot labels to portuguese', () => {
     expect(formatDiscountReason('HAS_PREVIOUS_PURCHASE')).toBe('Cliente já possui compra anterior')
-    expect(formatFlavor('beef')).toBe('Bovino')
+    expect(formatFlavor('beef')).toBe('beef')
+    expect(formatFlavor('turkey')).toBe('turkey')
+    expect(formatFlavor('Frango')).toBe('Frango')
     expect(formatTermMonths(1)).toBe('1 mês')
     expect(formatPostalCode('83331160')).toBe('83331-160')
     expect(formatFeedbackCategory('tutor')).toBe('Tutor')
