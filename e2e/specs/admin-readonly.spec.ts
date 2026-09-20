@@ -17,6 +17,16 @@ test.describe('Admin readonly', () => {
     await expect(page.getByRole('button', { name: 'Sincronizar agora' })).toHaveCount(0)
   })
 
+  test('opens production queue without status-advance controls', async ({ page }) => {
+    await openAuthed(page, '/operations/production', e2eProfiles.readonly)
+
+    await expect(page.getByRole('heading', { name: 'Produção' })).toBeVisible()
+    await expect(page.getByText('Ana Costa')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Em produção' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Bloquear' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'Assinante', exact: true })).toBeVisible()
+  })
+
   test('hides delivery and catalog mutations', async ({ page }) => {
     await openAuthed(page, '/users/u-ana', e2eProfiles.readonly)
     await expect(page.getByRole('heading', { name: 'ana@edenbowls.com' })).toBeVisible()

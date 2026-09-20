@@ -8,6 +8,13 @@ describe('admin menu', () => {
     expect(hrefs).toEqual(['/nutrition/simulate'])
   })
 
+  it('shows Produção to operator and readonly, not nutritionist', () => {
+    expect(visibleMenuItems(['admin']).map((item) => item.href)).toContain('/operations/production')
+    expect(visibleMenuItems(['operator']).map((item) => item.href)).toContain('/operations/production')
+    expect(visibleMenuItems(['readonly']).map((item) => item.href)).toContain('/operations/production')
+    expect(visibleMenuItems(['nutritionist']).map((item) => item.href)).not.toContain('/operations/production')
+  })
+
   it('keeps role assignment exclusive to admin', () => {
     const operatorHrefs = visibleMenuItems(['operator']).map((item) => item.href)
     const adminHrefs = visibleMenuItems(['admin']).map((item) => item.href)
@@ -21,6 +28,7 @@ describe('admin menu', () => {
 
     expect(hrefs).toContain('/dashboard')
     expect(hrefs).toContain('/onboarding/sessions')
+    expect(hrefs).toContain('/operations/production')
     expect(hrefs).toContain('/feedbacks')
     expect(hrefs).toContain('/privacy/requests')
     expect(hrefs).not.toContain('/config/shipping')

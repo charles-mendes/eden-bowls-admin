@@ -28,13 +28,15 @@ export const WRITE_PERMISSIONS = [
   'feedbacks.write',
   'privacy.requests.read',
   'privacy.requests.write',
+  'production.read',
+  'production.write',
 ] as const
 
 export const operatorUser: AdminUser = {
   userId: 'u-operator',
   email: 'ops@edenbowls.com',
   roles: ['operator'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read'],
 }
 
 export const operatorWriteUser: AdminUser = {
@@ -69,7 +71,46 @@ export const readonlyUser: AdminUser = {
   userId: 'u-readonly',
   email: 'read@edenbowls.com',
   roles: ['readonly'],
-  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'privacy.requests.read'],
+  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'privacy.requests.read', 'production.read'],
+}
+
+export const productionQueueItem = {
+  id: 42,
+  userId: '7',
+  stripeSubscriptionId: 'sub_123',
+  currentPeriodEnd: '2026-09-20T08:00:00.000Z',
+  daysUntil: 0,
+  dueBucket: 'today',
+  dueLabel: 'Vence hoje',
+  displayName: 'Ana Costa',
+  email: 'ana@edenbowls.com',
+  flavorMix: 'beef × 2, turkey × 1',
+  packCount: 3,
+  packSizeLabel: '500 g',
+  planLabel: 'Plano adulto',
+  termMonths: 1,
+  country: 'BR',
+  city: 'São Paulo',
+  stripeStatus: 'active',
+  productionStatus: 'to_prepare',
+  note: null,
+  subtotal: 189.9,
+  currency: 'BRL',
+  stripeAccount: 'br',
+  dense: false,
+  lineItems: [
+    { flavor: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
+    { flavor: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
+  ],
+}
+
+export const productionQueueList = {
+  total: 1,
+  page: 1,
+  perPage: 20,
+  totalPages: 1,
+  metrics: { today: 1, tomorrow: 0, upcoming: 0, overdue: 0 },
+  items: [productionQueueItem],
 }
 
 export const checkoutItem = {

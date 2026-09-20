@@ -25,6 +25,8 @@ import {
   feedbacksList,
   privacyRequestItem,
   privacyRequestsList,
+  productionQueueItem,
+  productionQueueList,
   userPrivacySnapshot,
 } from './fixtures'
 
@@ -252,6 +254,27 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
 
     if (path === '/api/v1/admin/catalog/sync/status') {
       return jsonResponse(syncStatus)
+    }
+
+    if (path === '/api/v1/admin/production/queue' && method === 'GET') {
+      const productionStatus = url.searchParams.get('productionStatus')
+      const items = productionStatus && productionStatus !== productionQueueItem.productionStatus
+        ? []
+        : [{ ...productionQueueItem }]
+      return jsonResponse({
+        ...productionQueueList,
+        total: items.length,
+        totalPages: 1,
+        items,
+      })
+    }
+
+    if (/^\/api\/v1\/admin\/production\/queue\/\d+$/.test(path) && method === 'PATCH') {
+      return jsonResponse({
+        ...productionQueueItem,
+        productionStatus: body?.status || 'in_production',
+        note: body?.note || null,
+      })
     }
 
     if (path === '/api/v1/admin/billing/metrics') {

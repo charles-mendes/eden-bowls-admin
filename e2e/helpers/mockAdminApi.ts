@@ -39,13 +39,15 @@ const WRITE_PERMISSIONS = [
   'users.access.write',
   'feedbacks.read',
   'feedbacks.write',
+  'production.read',
+  'production.write',
 ]
 
 const operatorProfile: Profile = {
   userId: 'u-operator',
   email: 'ops@edenbowls.com',
   roles: ['operator'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'production.read'],
 }
 
 const operatorWriteProfile: Profile = {
@@ -66,7 +68,7 @@ const readonlyProfile: Profile = {
   userId: 'u-readonly',
   email: 'read@edenbowls.com',
   roles: ['readonly'],
-  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read'],
+  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'production.read'],
 }
 
 const checkoutItem = {
@@ -408,6 +410,80 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
 
     if (path === '/api/v1/admin/catalog/sync/status') {
       await fulfillJson(route, { syncJobId: 'job-1', status: 'idle', summary: { scope: 'catalog' } })
+      return
+    }
+
+    if (path === '/api/v1/admin/production/queue' && method === 'GET') {
+      await fulfillJson(route, {
+        total: 1,
+        page: 1,
+        perPage: 20,
+        totalPages: 1,
+        metrics: { today: 1, tomorrow: 0, upcoming: 0, overdue: 0 },
+        items: [{
+          id: 42,
+          userId: 'u-ana',
+          stripeSubscriptionId: 'sub_123',
+          currentPeriodEnd: '2026-09-20T08:00:00.000Z',
+          daysUntil: 0,
+          dueBucket: 'today',
+          dueLabel: 'Vence hoje',
+          displayName: 'Ana Costa',
+          email: 'ana@edenbowls.com',
+          flavorMix: 'beef × 2, turkey × 1',
+          packCount: 3,
+          packSizeLabel: '500 g',
+          planLabel: 'Plano adulto',
+          termMonths: 1,
+          country: 'BR',
+          city: 'São Paulo',
+          stripeStatus: 'active',
+          productionStatus: 'to_prepare',
+          note: null,
+          subtotal: 189.9,
+          currency: 'BRL',
+          stripeAccount: 'br',
+          dense: false,
+          lineItems: [
+            { flavor: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
+            { flavor: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
+          ],
+        }],
+      })
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/production\/queue\/\d+$/.test(path) && method === 'PATCH') {
+      const payload = (body || {}) as { status?: string; note?: string }
+      await fulfillJson(route, {
+        id: 42,
+        userId: 'u-ana',
+        stripeSubscriptionId: 'sub_123',
+        currentPeriodEnd: '2026-09-20T08:00:00.000Z',
+        daysUntil: 0,
+        dueBucket: 'today',
+        dueLabel: 'Vence hoje',
+        displayName: 'Ana Costa',
+        email: 'ana@edenbowls.com',
+        flavorMix: 'beef × 2, turkey × 1',
+        packCount: 3,
+        packSizeLabel: '500 g',
+        planLabel: 'Plano adulto',
+        termMonths: 1,
+        country: 'BR',
+        city: 'São Paulo',
+        stripeStatus: 'active',
+        productionStatus: payload.status || 'in_production',
+        note: payload.note || null,
+        subtotal: 189.9,
+        currency: 'BRL',
+        stripeAccount: 'br',
+        dense: false,
+        lineItems: [
+          { flavor: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
+          { flavor: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
+        ],
+      })
       return
     }
 

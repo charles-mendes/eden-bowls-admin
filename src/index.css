@@ -949,6 +949,29 @@ pre {
   width: auto;
 }
 
+.table-skeleton .skeleton-bar {
+  display: block;
+  height: 10px;
+  border-radius: 4px;
+  background: var(--surface-muted);
+}
+
+.table-section-row td {
+  background: var(--surface-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+}
+
+.plain-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: var(--space-2);
+}
+
 .warning-text {
   color: var(--warning-text);
 }
