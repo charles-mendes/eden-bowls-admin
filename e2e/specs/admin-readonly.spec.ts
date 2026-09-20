@@ -6,6 +6,9 @@ test.describe('Admin readonly', () => {
     await openAuthed(page, '/billing', e2eProfiles.readonly)
 
     await expect(page.getByRole('heading', { name: 'Assinantes' })).toBeVisible()
+    await expect(page.getByLabel('Conta')).toHaveValue('br')
+    await expect(page.getByLabel('Conta')).toBeDisabled()
+    await expect(page.getByRole('option', { name: 'US' })).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Feedbacks' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Clientes' })).toBeVisible()
@@ -21,7 +24,10 @@ test.describe('Admin readonly', () => {
     await openAuthed(page, '/operations/production', e2eProfiles.readonly)
 
     await expect(page.getByRole('heading', { name: 'Produção' })).toBeVisible()
-    await expect(page.getByText('Ana Costa')).toBeVisible()
+    await expect(page.getByText('Ana Ledger')).toBeVisible()
+    await expect(page.getByLabel('Conta')).toHaveValue('br')
+    await expect(page.getByLabel('Conta')).toBeDisabled()
+    await expect(page.getByRole('option', { name: 'US' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Em produção' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Bloquear' })).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Assinante', exact: true })).toBeVisible()
@@ -33,6 +39,12 @@ test.describe('Admin readonly', () => {
     await expect(page.getByRole('button', { name: 'Salvar instruções' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Salvar endereço' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Desativar conta' })).toHaveCount(0)
+
+    await openAuthed(page, '/catalog/products', e2eProfiles.readonly)
+    await expect(page.getByRole('heading', { name: 'Produtos', exact: true })).toBeVisible()
+    await expect(page.getByRole('combobox', { name: 'Mercado' })).toHaveValue('BR')
+    await expect(page.getByRole('combobox', { name: 'Mercado' })).toBeDisabled()
+    await expect(page.getByRole('option', { name: 'Estados Unidos' })).toHaveCount(0)
 
     await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.readonly)
     await expect(page.getByText('BOWL-1')).toBeVisible()

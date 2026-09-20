@@ -28,6 +28,7 @@ import {
   productionQueueItem,
   productionQueueList,
   userPrivacySnapshot,
+  marketConflicts,
 } from './fixtures'
 
 export type FetchCall = {
@@ -43,7 +44,11 @@ function parseUrl(input: RequestInfo | URL) {
   return new URL(String(input), 'http://admin.local')
 }
 
-export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
+export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, options: {
+  marketConflicts?: typeof marketConflicts.items
+  subscriptionInScope?: boolean
+  productionInScope?: boolean
+} = {}) {
   const calls: FetchCall[] = []
   let catalogItems = productsList.items.map((item) => ({ ...item, variants: [...item.variants] }))
   let catalogDetail = {
@@ -248,6 +253,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
       return jsonResponse({ status: 'queued', summary: { created: 1, updated: 0 } })
     }
 
+    if (path === '/api/v1/admin/markets/conflicts' && method === 'GET') {
+      return jsonResponse({ items: options.marketConflicts ?? marketConflicts.items })
+    }
+
     if (path === '/api/v1/admin/catalog/sync/health') {
       return jsonResponse(syncHealth)
     }
@@ -260,7 +269,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
       const productionStatus = url.searchParams.get('productionStatus')
       const items = productionStatus && productionStatus !== productionQueueItem.productionStatus
         ? []
-        : [{ ...productionQueueItem }]
+        : [{
+          ...productionQueueItem,
+          customerProfileInScope: options.productionInScope ?? productionQueueItem.customerProfileInScope,
+        }]
       return jsonResponse({
         ...productionQueueList,
         total: items.length,
@@ -367,6 +379,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser) {
         planSelection: {},
         shipping: {},
         address: {},
+        ...(options.subscriptionInScope === undefined ? {} : { customerProfileInScope: options.subscriptionInScope }),
       })
     }
 

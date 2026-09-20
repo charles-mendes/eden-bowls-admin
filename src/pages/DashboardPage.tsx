@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { MetricCard } from '../components/MetricCard'
 import { Section } from '../components/Section'
+import { MarketSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
-import { apiRequest } from '../lib/api'
+import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate } from '../lib/format'
+import { currencyForMarket, defaultMarket, hasBothMarkets, MARKET_LABELS, type MarketCode } from '../lib/markets'
 
 type CheckoutMetrics = {
   totalCheckouts: number
@@ -30,6 +32,13 @@ type SyncStatus = {
   scope?: string
 }
 
+type MarketConflict = {
+  userId: string
+  email: string
+  profileMarket: string
+  stripeAccount: string
+}
+
 const SYNC_STATUS_LABELS: Record<string, string> = {
   idle: 'nenhum job em andamento',
   queued: 'na fila',
@@ -37,12 +46,20 @@ const SYNC_STATUS_LABELS: Record<string, string> = {
   completed_with_skips: 'concluído com variações ignoradas',
 }
 
-function catalogHealthCopy(health: SyncHealth | null) {
+function marketLabel(market: string) {
+  return market === 'US' || market === 'BR' ? MARKET_LABELS[market] : market
+}
+
+function catalogHealthCopy(health: SyncHealth | null, market: string, currency: string) {
+  const label = marketLabel(market)
+  const place = market || '—'
+  const money = currency || '—'
+
   if (!health) {
     return {
       badgeClass: 'badge-info',
       badgeLabel: 'Carregando',
-      summary: 'Consultando as variações do catálogo Brasil (BRL).',
+      summary: `Consultando as variações do catálogo ${label} (${money}).`,
     }
   }
 
@@ -53,7 +70,7 @@ function catalogHealthCopy(health: SyncHealth | null) {
     return {
       badgeClass: 'badge-info',
       badgeLabel: 'Sem variações',
-      summary: 'Não há variações no mercado BR. Confira se os produtos têm país do plano = BR.',
+      summary: `Não há variações no mercado ${place}. Confira se os produtos têm país do plano = ${place}.`,
     }
   }
 
@@ -61,14 +78,14 @@ function catalogHealthCopy(health: SyncHealth | null) {
     return {
       badgeClass: 'badge-success',
       badgeLabel: 'Completo',
-      summary: `As ${health.totalMapped} variações do catálogo BR já têm um Price ID em BRL. O checkout pode cobrar essas opções.`,
+      summary: `As ${health.totalMapped} variações do catálogo ${place} já têm um Price ID em ${money}. O checkout pode cobrar essas opções.`,
     }
   }
 
   return {
     badgeClass: 'badge-warning',
     badgeLabel: `${gapCount} sem Price`,
-    summary: `Faltam Price IDs em ${gapCount} de ${health.totalExpected} variações. Sem esse vínculo o checkout BR não consegue cobrar essas opções.`,
+    summary: `Faltam Price IDs em ${gapCount} de ${health.totalExpected} variações. Sem esse vínculo o checkout ${place} não consegue cobrar essas opções.`,
   }
 }
 
@@ -81,21 +98,31 @@ function formatSyncJobStatus(status?: string) {
 }
 
 export function DashboardPage() {
-  const { token } = useAuth()
+  const { token, user, hasRole } = useAuth()
+  const bothMarkets = hasBothMarkets(user)
+  const isAdmin = hasRole('admin')
+  const [pickedMarket, setPickedMarket] = useState<MarketCode | ''>('')
   const [metrics, setMetrics] = useState<CheckoutMetrics | null>(null)
   const [syncHealth, setSyncHealth] = useState<SyncHealth | null>(null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
+  const [conflicts, setConflicts] = useState<MarketConflict[] | null>(null)
+  const [conflictsError, setConflictsError] = useState('')
   const [error, setError] = useState('')
+  const market = bothMarkets ? (pickedMarket || defaultMarket(user) || '') : (defaultMarket(user) ?? '')
+  const currency = market === 'BR' || market === 'US' ? currencyForMarket(market) : ''
 
   useEffect(() => {
-    if (!token) return
+    if (!token || !user) return
 
     const load = async () => {
       setError('')
       try {
         const [metricsResponse, syncHealthResponse] = await Promise.all([
           apiRequest<CheckoutMetrics>('/admin/onboarding/metrics', { token }),
-          apiRequest<SyncHealth>('/admin/catalog/sync/health?market=BR&currency=BRL', { token }),
+          apiRequest<SyncHealth>(`/admin/catalog/sync/health${buildQueryString({
+            market: market || undefined,
+            currency: currency || undefined,
+          })}`, { token }),
         ])
 
         setMetrics(metricsResponse)
@@ -110,13 +137,29 @@ export function DashboardPage() {
       } catch (requestError) {
         setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar dashboard')
       }
+
+      if (!isAdmin) {
+        setConflicts(null)
+        setConflictsError('')
+        return
+      }
+
+      try {
+        setConflictsError('')
+        const response = await apiRequest<{ items?: MarketConflict[] }>('/admin/markets/conflicts', { token })
+        setConflicts(response.items ?? [])
+      } catch (requestError) {
+        setConflicts([])
+        setConflictsError(requestError instanceof Error ? requestError.message : 'Falha ao carregar conflitos')
+      }
     }
 
     void load()
-  }, [token])
+  }, [token, user, market, currency, isAdmin])
 
-  const coverage = catalogHealthCopy(syncHealth)
+  const coverage = catalogHealthCopy(syncHealth, market, currency)
   const gapIds = syncHealth?.gaps ?? []
+  const catalogLabel = marketLabel(market)
 
   return (
     <PageFrame
@@ -134,9 +177,17 @@ export function DashboardPage() {
 
       <Section
         title="Preços Stripe no catálogo"
-        description="Cada variação vendável (sabor/peso) precisa de um Price ID no Stripe. Este recorte é o mercado Brasil em BRL."
+        description={`Cada variação vendável (sabor/peso) precisa de um Price ID no Stripe. Este recorte é o mercado ${catalogLabel} em ${currency || '—'}.`}
       >
         <div className="stack">
+          {bothMarkets ? (
+            <MarketSelect
+              user={user}
+              value={market}
+              onChange={(value) => setPickedMarket(value === 'US' ? 'US' : 'BR')}
+            />
+          ) : null}
+
           <div className="inline-actions">
             <span className={coverage.badgeClass}>{coverage.badgeLabel}</span>
             <span>{coverage.summary}</span>
@@ -146,7 +197,7 @@ export function DashboardPage() {
             <MetricCard
               label="Com Price Stripe"
               value={syncHealth ? `${syncHealth.totalMapped} / ${syncHealth.totalExpected}` : '—'}
-              hint="Variações já vinculadas em BRL"
+              hint={`Variações já vinculadas em ${currency || '—'}`}
             />
             <MetricCard
               label="No catálogo"
@@ -177,6 +228,36 @@ export function DashboardPage() {
           </div>
         </div>
       </Section>
+
+      {isAdmin ? (
+        <Section title="Conflitos de mercado" description="Perfis cujo mercado não bate com a conta Stripe do ledger.">
+          {conflictsError ? <div className="alert">{conflictsError}</div> : null}
+          {conflicts == null ? null : conflicts.length === 0 ? (
+            <p>Nenhum conflito perfil vs Stripe.</p>
+          ) : (
+            <div className="table-shell table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>E-mail</th>
+                    <th>Mercado do perfil</th>
+                    <th>Conta Stripe</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {conflicts?.map((item) => (
+                    <tr key={item.userId}>
+                      <td>{item.email}</td>
+                      <td>{item.profileMarket}</td>
+                      <td><span className="badge-info">{item.stripeAccount.toUpperCase()}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
+      ) : null}
     </PageFrame>
   )
 }

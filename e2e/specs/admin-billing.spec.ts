@@ -7,7 +7,16 @@ test.describe('Admin billing', () => {
 
     await expect(page.getByRole('heading', { name: 'Assinantes' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'sub_123' })).toBeVisible()
-    await expect.poll(() => captured.some((item) => item.method === 'GET' && item.path === '/api/v1/admin/billing/subscriptions')).toBe(true)
+    await expect(page.getByLabel('Conta')).toHaveValue('br')
+    await expect(page.getByLabel('Conta')).toBeDisabled()
+    await expect(page.getByRole('option', { name: 'todas' })).toHaveCount(0)
+    await expect(page.getByRole('option', { name: 'US' })).toHaveCount(0)
+    await expect.poll(() => captured.some((item) => (
+      item.method === 'GET'
+      && item.path === '/api/v1/admin/billing/subscriptions'
+      && item.search.includes('account=br')
+      && !item.search.includes('account=us')
+    ))).toBe(true)
   })
 
   test('starts a catalog sync', async ({ page }) => {
@@ -35,11 +44,19 @@ test.describe('Admin billing', () => {
     await expect(page.getByRole('heading', { name: 'Cupons de 1ª compra' })).toBeVisible()
     await expect(page.getByLabel('1 mês(es) — 10%')).toHaveValue('promo_1m')
     await expect(page.getByText(/Slots também definidos via env/)).toHaveCount(0)
+    await expect(page.getByLabel('Conta')).toHaveValue('br')
+    await expect(page.getByLabel('Conta')).toBeDisabled()
+    await expect.poll(() => captured.some((item) => (
+      item.method === 'GET'
+      && item.path === '/api/v1/admin/stripe/first-purchase-promos'
+      && item.search.includes('account=br')
+    ))).toBe(true)
 
     await page.getByRole('button', { name: 'Sincronizar com Stripe' }).click()
     await expect(page.getByText('Slots sincronizados com a Stripe.')).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/stripe/first-purchase-promos/sync')).toMatchObject({
       authorization: 'Bearer e2e-access-token',
+      search: '?account=br',
     })
   })
 })

@@ -3,7 +3,7 @@ import { fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UsersPage } from './UsersPage'
-import { operatorUser, operatorWriteUser } from '../test/fixtures'
+import { jsonResponse, operatorUser, operatorWriteUser } from '../test/fixtures'
 import { findCall, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -66,5 +66,28 @@ describe('UsersPage', () => {
     const patch = calls.find((call) => call.method === 'PATCH' && call.path.endsWith('/status'))
     expect(patch?.body).toEqual({ status: 'inactive' })
     expect(patch?.authorization).toBe('Bearer access-token')
+  })
+
+  it('shows market_required in an alert instead of an empty table', async () => {
+    seedAuth()
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/admin/me')) {
+        return jsonResponse(operatorUser)
+      }
+      if (url.includes('/admin/users')) {
+        return jsonResponse({ message: 'Atribua um mercado a esta conta.', code: 'market_required' }, 403)
+      }
+      return jsonResponse({ message: 'not found' }, 404)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderAuthedPage(<UsersPage />, '/users')
+
+    await waitFor(() => {
+      expect(screen.getByText('Atribua um mercado a esta conta.')).toBeInTheDocument()
+    })
+
+    expect(screen.getByText('Atribua um mercado a esta conta.').closest('.alert')).toBeTruthy()
+    expect(screen.queryByRole('columnheader', { name: 'E-mail' })).not.toBeInTheDocument()
   })
 })

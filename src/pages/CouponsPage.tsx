@@ -2,8 +2,10 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { FiltersBar } from '../components/FiltersBar'
+import { AccountSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
+import { defaultStripeAccount, hasBothMarkets, type StripeAccount } from '../lib/markets'
 
 type PromoSlot = {
   promotion_code_id?: string | null
@@ -55,8 +57,9 @@ function formatPromoDuration(duration: string | null | undefined) {
 }
 
 export function CouponsPage() {
-  const { token } = useAuth()
-  const [account, setAccount] = useState<'br' | 'us'>('us')
+  const { token, user } = useAuth()
+  const bothMarkets = hasBothMarkets(user)
+  const [pickedAccount, setPickedAccount] = useState<StripeAccount | ''>('')
   const [health, setHealth] = useState<PromoHealth | null>(null)
   const [mapping, setMapping] = useState(emptyMapping)
   const [codes, setCodes] = useState<PromoCode[]>([])
@@ -68,6 +71,7 @@ export function CouponsPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [syncing, setSyncing] = useState(false)
+  const account = (bothMarkets ? pickedAccount : null) || defaultStripeAccount(user)
 
   const applyHealth = (nextHealth: PromoHealth) => {
     setHealth(nextHealth)
@@ -77,7 +81,7 @@ export function CouponsPage() {
   const accountQuery = buildQueryString({ account })
 
   const load = async () => {
-    if (!token) return
+    if (!token || !user || !account) return
     try {
       setError('')
       const [healthResponse, codesResponse] = await Promise.all([
@@ -96,11 +100,11 @@ export function CouponsPage() {
 
   useEffect(() => {
     void load()
-  }, [token, account])
+  }, [token, user, account])
 
   const saveMap = async (event: FormEvent) => {
     event.preventDefault()
-    if (!token) return
+    if (!token || !account) return
     try {
       setError('')
       const response = await apiRequest<PromoHealth>(`/admin/stripe/first-purchase-promos${accountQuery}`, {
@@ -116,7 +120,7 @@ export function CouponsPage() {
   }
 
   const syncStripe = async () => {
-    if (!token) return
+    if (!token || !account) return
     try {
       setError('')
       setSyncing(true)
@@ -141,7 +145,7 @@ export function CouponsPage() {
 
   const createCoupon = async (event: FormEvent) => {
     event.preventDefault()
-    if (!token) return
+    if (!token || !account) return
     try {
       setError('')
       await apiRequest('/admin/stripe/first-purchase-coupons', {
@@ -169,20 +173,15 @@ export function CouponsPage() {
   return (
     <PageFrame title="Cupons de 1ª compra" description="O mapa prazo → promo_ é por conta Stripe. BR e US não compartilham cupom; o mapa duplicado é de propósito.">
       <FiltersBar>
-        <label>
-          Conta
-          <select
-            value={account}
-            onChange={(event) => {
-              setAccount(event.target.value === 'br' ? 'br' : 'us')
-              setMessage('')
-              setMapping(emptyMapping)
-            }}
-          >
-            <option value="us">US</option>
-            <option value="br">BR</option>
-          </select>
-        </label>
+        <AccountSelect
+          user={user}
+          value={account ?? ''}
+          onChange={(value) => {
+            setPickedAccount(value === 'us' ? 'us' : 'br')
+            setMessage('')
+            setMapping(emptyMapping)
+          }}
+        />
       </FiltersBar>
       <div className="muted-panel">
         Desconto de 1ª compra aplica-se somente à primeira fatura mensal. Nos planos de 3 e 6 meses, os meses seguintes cobram o preço cheio. O percentual maior (25%/40%) é benefício de compromisso, não desconto sobre o valor total do contrato.

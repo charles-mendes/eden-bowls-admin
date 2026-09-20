@@ -2,25 +2,29 @@ import { expect, test } from '@playwright/test'
 import { e2eProfiles, openAuthed } from '../helpers/mockAdminApi'
 
 test.describe('Admin feedbacks', () => {
-  test('loads the feedback list without country filter', async ({ page }) => {
+  test('loads the feedback list scoped to the operator country', async ({ page }) => {
     const { captured } = await openAuthed(page, '/feedbacks', e2eProfiles.operator)
 
     await expect(page.getByRole('heading', { name: 'Feedbacks', exact: true })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'João Silva' })).toBeVisible()
-    await expect(page.getByRole('combobox', { name: 'País' })).toHaveValue('')
+    await expect(page.getByRole('link', { name: 'João Silva', exact: true })).toBeVisible()
+    await expect(page.getByRole('combobox', { name: 'País' })).toHaveValue('BR')
+    await expect(page.getByRole('combobox', { name: 'País' })).toBeDisabled()
+    await expect(page.getByRole('option', { name: 'Estados Unidos' })).toHaveCount(0)
     await expect.poll(() => captured.some((item) => (
       item.method === 'GET'
       && item.path === '/api/v1/admin/feedbacks'
       && item.search.includes('page=1')
-      && !item.search.includes('country=')
+      && item.search.includes('country=BR')
+      && !item.search.includes('country=US')
       && item.authorization === 'Bearer e2e-access-token'
     ))).toBe(true)
   })
 
-  test('filters by Brazil and creates a feedback', async ({ page }) => {
+  test('creates a feedback in the locked operator country', async ({ page }) => {
     const { captured } = await openAuthed(page, '/feedbacks', e2eProfiles.operatorWrite)
 
-    await page.getByRole('combobox', { name: 'País' }).selectOption('BR')
+    await expect(page.getByRole('combobox', { name: 'País' })).toHaveValue('BR')
+    await expect(page.getByRole('combobox', { name: 'País' })).toBeDisabled()
     await expect.poll(() => captured.some((item) => (
       item.method === 'GET'
       && item.path === '/api/v1/admin/feedbacks'
@@ -29,6 +33,8 @@ test.describe('Admin feedbacks', () => {
 
     await page.getByRole('link', { name: 'Novo feedback' }).click()
     await expect(page.getByRole('heading', { name: 'Novo feedback' })).toBeVisible()
+    await expect(page.getByRole('combobox', { name: 'País' })).toHaveValue('BR')
+    await expect(page.getByRole('combobox', { name: 'País' })).toBeDisabled()
     await page.getByPlaceholder('Nome do cliente').fill('Maria Souza')
     await page.getByRole('combobox', { name: 'Categoria' }).selectOption('tutora')
     await page.getByPlaceholder('Nova York, São Paulo').fill('São Paulo')
@@ -52,7 +58,7 @@ test.describe('Admin feedbacks', () => {
   test('edits and deactivates a feedback', async ({ page }) => {
     const edit = await openAuthed(page, '/feedbacks/1', e2eProfiles.operatorWrite)
 
-    await expect(page.getByDisplayValue('João Silva')).toBeVisible()
+    await expect(page.getByPlaceholder('Nome do cliente')).toHaveValue('João Silva')
     await page.getByPlaceholder('Nome do cliente').fill('João Silva Jr')
     await page.getByRole('button', { name: 'Salvar' }).click()
     await expect.poll(() => edit.captured.find((item) => item.method === 'PATCH' && item.path === '/api/v1/admin/feedbacks/1')).toMatchObject({

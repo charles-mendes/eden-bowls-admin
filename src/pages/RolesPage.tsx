@@ -6,6 +6,7 @@ import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
+import { MARKET_LABELS, staffMarketRequired, type MarketCode } from '../lib/markets'
 import { PANEL_ROLE_OPTIONS, ROLE_OPTIONS, primaryRole, roleLabel } from '../lib/roles'
 
 type StaffUser = {
@@ -15,6 +16,7 @@ type StaffUser = {
   profile?: { fullName: string | null } | null
   storedRoles: string[]
   roles: string[]
+  markets?: MarketCode[]
   lockedByAllowlist: boolean
 }
 
@@ -48,6 +50,7 @@ export function RolesPage() {
   const [matches, setMatches] = useState<StaffUser[]>([])
   const [selected, setSelected] = useState<StaffUser | null>(null)
   const [role, setRole] = useState('operator')
+  const [market, setMarket] = useState<MarketCode | ''>('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -84,17 +87,27 @@ export function RolesPage() {
   const chooseUser = (item: StaffUser) => {
     setSelected(item)
     setRole(assignedRole(item))
+    const nextRole = assignedRole(item)
+    setMarket(
+      staffMarketRequired(nextRole)
+        ? (item.markets?.includes('US') && !item.markets.includes('BR') ? 'US' : item.markets?.includes('BR') ? 'BR' : '')
+        : '',
+    )
     setMessage('')
   }
 
   const saveRole = async (nextRole: string) => {
     if (!token || !selected) return
+    if (staffMarketRequired(nextRole) && market !== 'BR' && market !== 'US') {
+      setError('Informe o mercado.')
+      return
+    }
     try {
       setError('')
       const response = await apiRequest<StaffUser>(`/admin/users/${selected.id}/roles`, {
         token,
         method: 'PUT',
-        body: { role: nextRole },
+        body: staffMarketRequired(nextRole) ? { role: nextRole, market } : { role: nextRole },
       })
       setSelected(response)
       setRole(assignedRole(response))
@@ -185,12 +198,35 @@ export function RolesPage() {
             ) : null}
             <label>
               Papel
-              <select value={role} onChange={(event) => setRole(event.target.value)} disabled={selected.lockedByAllowlist}>
+              <select
+                value={role}
+                onChange={(event) => {
+                  const nextRole = event.target.value
+                  setRole(nextRole)
+                  if (!staffMarketRequired(nextRole)) setMarket('')
+                }}
+                disabled={selected.lockedByAllowlist}
+              >
                 {(selected.lockedByAllowlist ? PANEL_ROLE_OPTIONS : ROLE_OPTIONS).map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
             </label>
+            {staffMarketRequired(role) ? (
+              <label>
+                Mercado
+                <select
+                  value={market}
+                  onChange={(event) => setMarket(event.target.value === 'US' ? 'US' : event.target.value === 'BR' ? 'BR' : '')}
+                  disabled={selected.lockedByAllowlist}
+                  required
+                >
+                  <option value="">Selecione</option>
+                  <option value="BR">{MARKET_LABELS.BR}</option>
+                  <option value="US">{MARKET_LABELS.US}</option>
+                </select>
+              </label>
+            ) : null}
             <div className="inline-actions">
               <button className="primary-button" type="submit">Salvar papel</button>
               {canRevokeSelected ? (

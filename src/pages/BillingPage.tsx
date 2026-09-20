@@ -5,9 +5,11 @@ import { Section } from '../components/Section'
 import { MetricCard } from '../components/MetricCard'
 import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
+import { AccountSelect, MarketSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate } from '../lib/format'
+import { currencyForMarket, defaultMarket, defaultStripeAccount, hasBothMarkets } from '../lib/markets'
 
 type SyncStatus = {
   syncJobId: string
@@ -62,9 +64,9 @@ type Paginated<T> = {
 }
 
 export function BillingPage() {
-  const { token, hasPermission } = useAuth()
-  const [market, setMarket] = useState('BR')
-  const [currency, setCurrency] = useState('BRL')
+  const { token, user, hasPermission } = useAuth()
+  const bothMarkets = hasBothMarkets(user)
+  const [pickedMarket, setPickedMarket] = useState('')
   const [status, setStatus] = useState<SyncStatus | null>(null)
   const [health, setHealth] = useState<SyncHealth | null>(null)
   const [metrics, setMetrics] = useState<BillingMetrics | null>(null)
@@ -74,13 +76,16 @@ export function BillingPage() {
   const [subscriptionPage, setSubscriptionPage] = useState(1)
   const perPage = 20
   const [subscriptionStatus, setSubscriptionStatus] = useState('active')
-  const [account, setAccount] = useState('all')
+  const [pickedAccount, setPickedAccount] = useState('all')
   const [search, setSearch] = useState('')
   const [syncMessage, setSyncMessage] = useState('')
   const [error, setError] = useState('')
+  const market = bothMarkets ? (pickedMarket || defaultMarket(user) || '') : (defaultMarket(user) ?? '')
+  const currency = market === 'BR' || market === 'US' ? currencyForMarket(market) : ''
+  const account = bothMarkets ? pickedAccount : (defaultStripeAccount(user) ?? '')
 
   const loadData = async () => {
-    if (!token) return
+    if (!token || !user) return
 
     try {
       setError('')
@@ -109,7 +114,7 @@ export function BillingPage() {
 
   useEffect(() => {
     void loadData()
-  }, [token, market, currency, webhookPage, subscriptionPage, perPage, subscriptionStatus, search, account])
+  }, [token, user, market, currency, webhookPage, subscriptionPage, perPage, subscriptionStatus, search, account])
 
   const submitSync = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -160,8 +165,12 @@ export function BillingPage() {
 
       <Section title="Catálogo Stripe" description="Health e sync de preços.">
         <form className="inline-actions" onSubmit={submitSync}>
-          <input value={market} onChange={(event) => setMarket(event.target.value.toUpperCase())} />
-          <input value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase())} />
+          <MarketSelect
+            user={user}
+            value={market}
+            onChange={setPickedMarket}
+          />
+          <span className="muted">{currency || '—'}</span>
           {hasPermission('catalog.sync') ? <button className="primary-button" type="submit">Sync catálogo</button> : null}
         </form>
         <p className="muted">Mapped {health?.totalMapped ?? 0}/{health?.totalExpected ?? 0} · {status?.status ?? 'sem job'}</p>
@@ -182,21 +191,19 @@ export function BillingPage() {
               <option value="all">all</option>
             </select>
           </label>
-          <label>
-            Conta
-            <select value={account} onChange={(event) => { setAccount(event.target.value); setSubscriptionPage(1) }}>
-              <option value="all">todas</option>
-              <option value="us">US</option>
-              <option value="br">BR</option>
-            </select>
-          </label>
+          <AccountSelect
+            user={user}
+            includeAll
+            value={account || 'all'}
+            onChange={(value) => { setPickedAccount(value); setSubscriptionPage(1) }}
+          />
           <label>
             Busca
             <input value={search} onChange={(event) => { setSearch(event.target.value); setSubscriptionPage(1) }} placeholder="sub_, cus_, email, userId" />
           </label>
         </FiltersBar>
         <div className="inline-actions">
-          <button className="ghost-button" type="button" onClick={() => { setSubscriptionStatus('active'); setAccount('all'); setSearch(''); setSubscriptionPage(1) }}>Limpar filtros</button>
+          <button className="ghost-button" type="button" onClick={() => { setSubscriptionStatus('active'); setPickedAccount(bothMarkets ? 'all' : (defaultStripeAccount(user) ?? '')); setSearch(''); setSubscriptionPage(1) }}>Limpar filtros</button>
           {hasPermission('billing.subscribers.sync') ? (
             <>
               <button className="ghost-button" type="button" onClick={() => void backfill()}>Vincular ao usuário</button>

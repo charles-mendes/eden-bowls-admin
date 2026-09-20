@@ -6,9 +6,11 @@ import { MetricCard } from '../components/MetricCard'
 import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
 import { Dialog } from '../components/Dialog'
+import { AccountSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate, formatStripeStatus, getBrowserTimeZone } from '../lib/format'
+import { defaultStripeAccount, hasBothMarkets, isProfileInScope } from '../lib/markets'
 
 type ProductionStatus = 'to_prepare' | 'in_production' | 'ready' | 'blocked'
 type DueBucket = 'overdue' | 'today' | 'tomorrow' | 'upcoming'
@@ -29,6 +31,7 @@ type QueueItem = {
   dueBucket: DueBucket | null
   dueLabel: string
   displayName: string
+  customerName?: string | null
   email: string
   flavorMix: string
   packCount: number
@@ -44,6 +47,7 @@ type QueueItem = {
   currency: string | null
   stripeAccount: string
   dense: boolean
+  customerProfileInScope?: boolean
   lineItems: LineItem[]
 }
 
@@ -137,11 +141,12 @@ function TableSkeleton() {
 }
 
 export function ProductionQueuePage() {
-  const { token, hasPermission } = useAuth()
+  const { token, user, hasPermission } = useAuth()
   const canWrite = hasPermission('production.write')
+  const bothMarkets = hasBothMarkets(user)
   const [data, setData] = useState<QueueResponse | null>(null)
   const [windowDays, setWindowDays] = useState(7)
-  const [account, setAccount] = useState('')
+  const [pickedAccount, setPickedAccount] = useState('')
   const [productionStatus, setProductionStatus] = useState('')
   const [search, setSearch] = useState('')
   const [includeOverdue, setIncludeOverdue] = useState(true)
@@ -153,9 +158,10 @@ export function ProductionQueuePage() {
   const [blockNote, setBlockNote] = useState('')
   const [denseItem, setDenseItem] = useState<QueueItem | null>(null)
   const [busyId, setBusyId] = useState<number | null>(null)
+  const account = bothMarkets ? pickedAccount : (defaultStripeAccount(user) ?? '')
 
   const load = async () => {
-    if (!token) return
+    if (!token || !user) return
     setError('')
     setLoading(true)
     try {
@@ -180,7 +186,7 @@ export function ProductionQueuePage() {
 
   useEffect(() => {
     void load()
-  }, [token, windowDays, account, productionStatus, search, includeOverdue, page, perPage])
+  }, [token, user, windowDays, account, productionStatus, search, includeOverdue, page, perPage])
 
   const patchStatus = async (item: QueueItem, status: ProductionStatus, note?: string) => {
     if (!token || !canWrite || !item.currentPeriodEnd) return
@@ -225,7 +231,7 @@ export function ProductionQueuePage() {
 
   const clearFilters = () => {
     setWindowDays(7)
-    setAccount('')
+    setPickedAccount(bothMarkets ? '' : (defaultStripeAccount(user) ?? ''))
     setProductionStatus('')
     setSearch('')
     setIncludeOverdue(true)
@@ -257,23 +263,12 @@ export function ProductionQueuePage() {
               <option value={30}>30 dias</option>
             </select>
           </label>
-          <label>
-            Conta
-            <span className="filter-field">
-              <select
-                aria-label="Conta"
-                value={account}
-                onChange={(event) => { setAccount(event.target.value); setPage(1) }}
-              >
-                <option value="">Todas</option>
-                <option value="br">BR</option>
-                <option value="us">US</option>
-              </select>
-              {account ? (
-                <FilterClearButton label="Limpar conta" onClear={() => { setAccount(''); setPage(1) }} />
-              ) : null}
-            </span>
-          </label>
+          <AccountSelect
+            user={user}
+            includeAll
+            value={account || 'all'}
+            onChange={(value) => { setPickedAccount(value === 'all' ? '' : value); setPage(1) }}
+          />
           <label>
             Produção
             <span className="filter-field">
@@ -363,8 +358,8 @@ export function ProductionQueuePage() {
                           ) : null}
                         </td>
                         <td>
-                          <div>{item.displayName || item.email}</div>
-                          <div className="muted">{item.email}</div>
+                          <div>{item.customerName || item.email}</div>
+                          {item.customerName ? <div className="muted">{item.email}</div> : null}
                         </td>
                         <td>
                           {item.flavorMix || '—'}
@@ -401,8 +396,19 @@ export function ProductionQueuePage() {
                                 {action.label}
                               </button>
                             )) : null}
-                            <Link className="table-link" to={`/billing/subscriptions/${item.id}`}>Assinante</Link>
-                            <Link className="table-link" to={`/onboarding/sessions/${item.userId}`}>Onboarding 360</Link>
+                            {isProfileInScope(item.customerProfileInScope) ? (
+                              <>
+                                <Link className="table-link" to={`/users/${item.userId}`}>Cliente</Link>
+                                <Link className="table-link" to={`/billing/subscriptions/${item.id}`}>Assinante</Link>
+                                <Link className="table-link" to={`/onboarding/sessions/${item.userId}`}>Onboarding 360</Link>
+                              </>
+                            ) : (
+                              <>
+                                <span>Cliente</span>
+                                <span>Assinante</span>
+                                <span>Onboarding 360</span>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>

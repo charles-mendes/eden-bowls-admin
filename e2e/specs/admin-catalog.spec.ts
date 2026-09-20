@@ -8,26 +8,26 @@ test.describe('Admin catalog', () => {
     await expect(page.getByRole('heading', { name: 'Produtos', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Bowl Adulto' })).toBeVisible()
     await expect(page.getByPlaceholder('slug, nome pt ou en')).toHaveValue('')
-    await expect(page.getByRole('combobox', { name: 'Mercado' })).toHaveValue('')
+    await expect(page.getByRole('combobox', { name: 'Mercado' })).toHaveValue('BR')
+    await expect(page.getByRole('combobox', { name: 'Mercado' })).toBeDisabled()
+    await expect(page.getByRole('option', { name: 'Estados Unidos' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Limpar busca' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Limpar mercado' })).toHaveCount(0)
     await expect.poll(() => captured.some((item) => (
       item.method === 'GET'
       && item.path === '/api/v1/admin/catalog/products'
       && item.search.includes('page=1')
-      && !item.search.includes('market=')
+      && item.search.includes('market=BR')
+      && !item.search.includes('market=US')
       && !item.search.includes('search=')
       && item.authorization === 'Bearer e2e-access-token'
     ))).toBe(true)
   })
 
-  test('clears catalog list filters with the side X', async ({ page }) => {
+  test('clears catalog search and keeps the locked market', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products', e2eProfiles.operator)
 
     await page.getByPlaceholder('slug, nome pt ou en').fill('bowl')
-    await page.getByRole('combobox', { name: 'Mercado' }).selectOption('BR')
     await expect(page.getByRole('button', { name: 'Limpar busca' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Limpar mercado' })).toBeVisible()
     await expect.poll(() => captured.some((item) => (
       item.method === 'GET'
       && item.path === '/api/v1/admin/catalog/products'
@@ -36,12 +36,12 @@ test.describe('Admin catalog', () => {
     ))).toBe(true)
 
     await page.getByRole('button', { name: 'Limpar busca' }).click()
-    await page.getByRole('button', { name: 'Limpar mercado' }).click()
     await expect(page.getByPlaceholder('slug, nome pt ou en')).toHaveValue('')
-    await expect(page.getByRole('combobox', { name: 'Mercado' })).toHaveValue('')
+    await expect(page.getByRole('combobox', { name: 'Mercado' })).toHaveValue('BR')
+    await expect(page.getByRole('combobox', { name: 'Mercado' })).toBeDisabled()
     await expect.poll(() => {
       const lastList = [...captured].reverse().find((item) => item.method === 'GET' && item.path === '/api/v1/admin/catalog/products')
-      return Boolean(lastList && !lastList.search.includes('search=') && !lastList.search.includes('market='))
+      return Boolean(lastList && !lastList.search.includes('search=') && lastList.search.includes('market=BR'))
     }).toBe(true)
   })
 

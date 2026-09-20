@@ -41,6 +41,7 @@ describe('UsersPage access CRUD', () => {
     await user.type(screen.getByLabelText('Nome'), 'Lia')
     await user.type(screen.getByLabelText('E-mail'), 'nova.lia@edenbowls.com')
     await user.selectOptions(screen.getByLabelText('Papel'), 'nutritionist')
+    await user.selectOptions(screen.getByLabelText('Mercado'), 'US')
     await user.click(screen.getByRole('button', { name: 'Criar acesso' }))
 
     await waitFor(() => {
@@ -52,6 +53,7 @@ describe('UsersPage access CRUD', () => {
       name: 'Lia',
       email: 'nova.lia@edenbowls.com',
       role: 'nutritionist',
+      market: 'US',
     })
     expect(JSON.stringify(create?.body)).not.toMatch(/password/i)
     expect(screen.queryByText(/TempPassword/i)).not.toBeInTheDocument()
@@ -76,5 +78,26 @@ describe('UsersPage access CRUD', () => {
 
     const invite = calls.find((call) => call.method === 'POST' && call.path.endsWith('/invite'))
     expect(invite?.authorization).toBe('Bearer access-token')
+  })
+
+  it('does not create access when Mercado is empty', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(adminUser)
+    renderAuthedPage(<UsersPage />, '/users')
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Novo acesso' })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: 'Novo acesso' }))
+    await user.type(screen.getByLabelText('Nome'), 'Lia')
+    await user.type(screen.getByLabelText('E-mail'), 'nova.lia@edenbowls.com')
+    await user.click(screen.getByRole('button', { name: 'Criar acesso' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Informe o mercado.')).toBeInTheDocument()
+    })
+    expect(findCall(calls, 'POST', '/admin/users')).toBeUndefined()
   })
 })

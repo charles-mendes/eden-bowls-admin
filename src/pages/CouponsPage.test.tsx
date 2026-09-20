@@ -37,8 +37,8 @@ describe('CouponsPage', () => {
 
     const sync = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/stripe/first-purchase-promos/sync')
     expect(sync?.authorization).toBe('Bearer access-token')
-    expect(sync?.search).toBe('?account=us')
-    expect(sync?.body).toMatchObject({ account: 'us' })
+    expect(sync?.search).toBe('?account=br')
+    expect(sync?.body).toMatchObject({ account: 'br' })
   })
 
   it('saves the promo map with PUT', async () => {
@@ -58,11 +58,10 @@ describe('CouponsPage', () => {
     })
 
     const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/stripe/first-purchase-promos')
-    expect(put?.body).toMatchObject({ 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m', account: 'us' })
+    expect(put?.body).toMatchObject({ 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m', account: 'br' })
   })
 
-  it('loads a separate coupon map for the BR Stripe account', async () => {
-    const user = userEvent.setup()
+  it('defaults the coupon account to the operator market', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<CouponsPage />, '/billing/coupons')
@@ -71,15 +70,15 @@ describe('CouponsPage', () => {
       expect(screen.getByDisplayValue('promo_1m')).toBeInTheDocument()
     })
 
-    await user.selectOptions(screen.getByLabelText('Conta'), 'BR')
-
-    await waitFor(() => {
-      const health = calls.find((call) => (
-        call.method === 'GET'
-        && call.path === '/api/v1/admin/stripe/first-purchase-promos'
-        && call.search === '?account=br'
-      ))
-      expect(health).toBeTruthy()
-    })
+    const account = screen.getByLabelText('Conta')
+    expect(account).toHaveValue('br')
+    expect(account).toBeDisabled()
+    expect(screen.queryByRole('option', { name: 'US' })).not.toBeInTheDocument()
+    expect(calls.some((call) => (
+      call.method === 'GET'
+      && call.path === '/api/v1/admin/stripe/first-purchase-promos'
+      && call.search === '?account=br'
+    ))).toBe(true)
+    expect(calls.some((call) => call.search === '?account=us')).toBe(false)
   })
 })

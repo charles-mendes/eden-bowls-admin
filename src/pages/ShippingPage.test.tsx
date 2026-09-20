@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ShippingPage } from './ShippingPage'
-import { operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { adminUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -31,6 +31,7 @@ describe('ShippingPage', () => {
     const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
     expect(put?.authorization).toBe('Bearer access-token')
     expect(put?.body).toMatchObject({ br: { center: { name: 'CD SP' } } })
+    expect(screen.queryByRole('button', { name: 'United States' })).not.toBeInTheDocument()
   })
 
   it('hides the save mutation from readonly accounts', async () => {
@@ -42,13 +43,14 @@ describe('ShippingPage', () => {
       expect(screen.getByDisplayValue('CD SP')).toBeInTheDocument()
     })
 
+    expect(screen.queryByRole('button', { name: 'United States' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument()
   })
 
   it('shows US UPS settings and tests a ZIP', async () => {
     const user = userEvent.setup()
     seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
+    const { calls } = installAdminFetchMock(adminUser)
     renderAuthedPage(<ShippingPage />, '/config/shipping')
 
     await waitFor(() => {

@@ -3,6 +3,7 @@ import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest } from '../lib/api'
+import { defaultMarket, hasBothMarkets, sessionMarkets } from '../lib/markets'
 
 type ShippingSettings = {
   br: {
@@ -70,14 +71,17 @@ function mergeUs(settings: ShippingSettings['us'] | undefined): ShippingSettings
 }
 
 export function ShippingPage() {
-  const { token, hasPermission } = useAuth()
-  const [tab, setTab] = useState<'BR' | 'US'>('BR')
+  const { token, user, hasPermission } = useAuth()
+  const bothMarkets = hasBothMarkets(user)
+  const [pickedTab, setPickedTab] = useState<'BR' | 'US'>('BR')
   const [settings, setSettings] = useState<ShippingSettings>(emptySettings)
   const [zipCode, setZipCode] = useState('')
   const [testResult, setTestResult] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const canWrite = hasPermission('shipping.write')
+  const tab = bothMarkets ? pickedTab : (defaultMarket(user) ?? pickedTab)
+  const tabs = sessionMarkets(user)
 
   const load = async () => {
     if (!token) return
@@ -156,8 +160,16 @@ export function ShippingPage() {
       {message ? <div className="success">{message}</div> : null}
 
       <div className="tabs">
-        <button type="button" className={tab === 'BR' ? 'tab active' : 'tab'} onClick={() => setTab('BR')}>Brasil</button>
-        <button type="button" className={tab === 'US' ? 'tab active' : 'tab'} onClick={() => setTab('US')}>United States</button>
+        {tabs.map((market) => (
+          <button
+            key={market}
+            type="button"
+            className={tab === market ? 'tab active' : 'tab'}
+            onClick={() => setPickedTab(market)}
+          >
+            {market === 'US' ? 'United States' : 'Brasil'}
+          </button>
+        ))}
       </div>
 
       <form className="editor-card" onSubmit={save}>

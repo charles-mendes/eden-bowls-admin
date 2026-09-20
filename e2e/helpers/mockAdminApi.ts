@@ -5,6 +5,7 @@ type Profile = {
   email: string
   roles: string[]
   permissions: string[]
+  markets?: Array<'BR' | 'US'>
 }
 
 export type CapturedAdminRequest = {
@@ -47,28 +48,35 @@ const operatorProfile: Profile = {
   userId: 'u-operator',
   email: 'ops@edenbowls.com',
   roles: ['operator'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'production.read'],
+  markets: ['BR'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'production.read', 'market.br'],
 }
 
 const operatorWriteProfile: Profile = {
   userId: 'u-operator-write',
   email: 'ops.write@edenbowls.com',
   roles: ['operator'],
-  permissions: WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write'),
+  markets: ['BR'],
+  permissions: [
+    ...WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write'),
+    'market.br',
+  ],
 }
 
 const adminProfile: Profile = {
   userId: 'u-admin',
   email: 'admin@edenbowls.com',
   roles: ['admin'],
-  permissions: WRITE_PERMISSIONS,
+  markets: ['BR', 'US'],
+  permissions: [...WRITE_PERMISSIONS, 'market.br', 'market.us'],
 }
 
 const readonlyProfile: Profile = {
   userId: 'u-readonly',
   email: 'read@edenbowls.com',
   roles: ['readonly'],
-  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'production.read'],
+  markets: ['BR'],
+  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'production.read', 'market.br'],
 }
 
 const checkoutItem = {
@@ -244,13 +252,27 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
+    if (/^\/api\/v1\/admin\/users\/[^/]+\/roles$/.test(path) && method === 'PUT') {
+      const payload = (body || {}) as { role?: string; market?: string }
+      await fulfillJson(route, {
+        id: path.split('/')[5],
+        email: 'ops@edenbowls.com',
+        roles: [payload.role || 'operator'],
+        storedRoles: [payload.role || 'operator'],
+        markets: payload.market ? [payload.market] : ['BR', 'US'],
+        lockedByAllowlist: false,
+        profile: { fullName: 'Operador' },
+      })
+      return
+    }
+
     if (path === '/api/v1/admin/users/roles') {
       await fulfillJson(route, {
         total: 1,
         page: 1,
         perPage: 50,
         totalPages: 1,
-        items: [{ id: 'u-ops', email: 'ops@edenbowls.com', storedRoles: ['operator'], roles: ['operator'], lockedByAllowlist: false, profile: { fullName: 'Operador' } }],
+        items: [{ id: 'u-ops', email: 'ops@edenbowls.com', storedRoles: ['operator'], roles: ['operator'], markets: ['BR'], lockedByAllowlist: false, profile: { fullName: 'Operador' } }],
         bootstrapEmails: ['admin@edenbowls.com'],
       })
       return
@@ -403,6 +425,13 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
+    if (path === '/api/v1/admin/markets/conflicts' && method === 'GET') {
+      await fulfillJson(route, {
+        items: [{ userId: 'u-ana', email: 'ana@edenbowls.com', profileMarket: 'BR', stripeAccount: 'us' }],
+      })
+      return
+    }
+
     if (path.startsWith('/api/v1/admin/catalog/sync/health')) {
       await fulfillJson(route, { market: 'BR', currency: 'BRL', totalExpected: 10, totalMapped: 10, gaps: [] })
       return
@@ -428,7 +457,8 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
           daysUntil: 0,
           dueBucket: 'today',
           dueLabel: 'Vence hoje',
-          displayName: 'Ana Costa',
+          displayName: 'WordPress Name',
+          customerName: 'Ana Ledger',
           email: 'ana@edenbowls.com',
           flavorMix: 'beef × 2, turkey × 1',
           packCount: 3,
@@ -444,6 +474,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
           currency: 'BRL',
           stripeAccount: 'br',
           dense: false,
+          customerProfileInScope: true,
           lineItems: [
             { flavor: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
             { flavor: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
@@ -463,7 +494,8 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         daysUntil: 0,
         dueBucket: 'today',
         dueLabel: 'Vence hoje',
-        displayName: 'Ana Costa',
+        displayName: 'WordPress Name',
+        customerName: 'Ana Ledger',
         email: 'ana@edenbowls.com',
         flavorMix: 'beef × 2, turkey × 1',
         packCount: 3,
@@ -479,6 +511,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         currency: 'BRL',
         stripeAccount: 'br',
         dense: false,
+        customerProfileInScope: true,
         lineItems: [
           { flavor: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
           { flavor: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
@@ -533,6 +566,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         cancelAtPeriodEnd: false,
         dashboardUrl: 'https://dashboard.stripe.com/sub_123',
         user: { id: 'u-ana', email: 'ana@edenbowls.com' },
+        customerProfileInScope: true,
         petsSnapshot: {},
         planSelection: {},
         shipping: {},
@@ -739,7 +773,8 @@ export const e2eProfiles = {
     userId: 'u-nutritionist',
     email: 'nutri@edenbowls.com',
     roles: ['nutritionist'],
-    permissions: ['nutrition.simulate'],
+    markets: ['US'],
+    permissions: ['nutrition.simulate', 'market.us'],
   },
   customer: {
     userId: 'u-customer',

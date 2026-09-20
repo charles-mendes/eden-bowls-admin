@@ -37,8 +37,7 @@ describe('BillingPage', () => {
     expect(sync?.authorization).toBe('Bearer access-token')
   })
 
-  it('filters subscriptions by Stripe account', async () => {
-    const user = userEvent.setup()
+  it('locks the account filter to the operator market', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<BillingPage />, '/billing')
@@ -47,16 +46,21 @@ describe('BillingPage', () => {
       expect(screen.getByRole('link', { name: 'sub_123' })).toBeInTheDocument()
     })
 
-    await user.selectOptions(screen.getByLabelText('Conta'), 'br')
-
-    await waitFor(() => {
-      const list = calls.find((call) => (
-        call.method === 'GET'
-        && call.path === '/api/v1/admin/billing/subscriptions'
-        && call.search.includes('account=br')
-      ))
-      expect(list).toBeTruthy()
-    })
+    const account = screen.getByLabelText('Conta')
+    expect(account).toHaveValue('br')
+    expect(account).toBeDisabled()
+    expect(screen.queryByRole('option', { name: 'todas' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'US' })).not.toBeInTheDocument()
+    expect(calls.some((call) => (
+      call.method === 'GET'
+      && call.path === '/api/v1/admin/billing/subscriptions'
+      && call.search.includes('account=us')
+    ))).toBe(false)
+    expect(calls.some((call) => (
+      call.method === 'GET'
+      && call.path === '/api/v1/admin/billing/subscriptions'
+      && call.search.includes('account=br')
+    ))).toBe(true)
   })
 
   it('hides billing mutations from readonly accounts', async () => {

@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NutritionSimulatePage } from './NutritionSimulatePage'
-import { nutritionistUser } from '../test/fixtures'
+import { nutritionistUser, nutritionistUsUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -15,13 +15,16 @@ describe('NutritionSimulatePage', () => {
   it('POSTs a simulation payload with Bearer and shows the result', async () => {
     const user = userEvent.setup()
     seedAuth()
-    const { calls } = installAdminFetchMock(nutritionistUser)
+    const { calls } = installAdminFetchMock(nutritionistUsUser)
     renderAuthedPage(<NutritionSimulatePage />, '/nutrition/simulate')
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Calculate' })).toBeInTheDocument()
     })
 
+    expect(screen.getByLabelText('Country')).toHaveValue('US')
+    expect(screen.getByLabelText('Country')).toBeDisabled()
+    expect(screen.queryByRole('option', { name: 'BR' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Weight (lb)')).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Low' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'Ideal' })).toBeInTheDocument()
@@ -58,13 +61,13 @@ describe('NutritionSimulatePage', () => {
     renderAuthedPage(<NutritionSimulatePage />, '/nutrition/simulate')
 
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Calculate' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Calcular' })).toBeInTheDocument()
     })
 
-    await user.selectOptions(screen.getByLabelText('Country'), 'BR')
-    await waitFor(() => {
-      expect(screen.getByLabelText('Peso (kg)')).toBeInTheDocument()
-    })
+    expect(screen.getByLabelText('País')).toHaveValue('BR')
+    expect(screen.getByLabelText('País')).toBeDisabled()
+    expect(screen.queryByRole('option', { name: 'US' })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Peso (kg)')).toBeInTheDocument()
 
     expect(screen.getByRole('option', { name: 'BAIXO' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'ADEQUADO' })).toBeInTheDocument()

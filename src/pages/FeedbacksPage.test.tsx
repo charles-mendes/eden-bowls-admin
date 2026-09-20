@@ -1,5 +1,4 @@
 import { screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FeedbacksPage } from './FeedbacksPage'
 import { operatorUser, operatorWriteUser } from '../test/fixtures'
@@ -13,7 +12,7 @@ describe('FeedbacksPage', () => {
     vi.restoreAllMocks()
   })
 
-  it('loads feedbacks without country or status filters', async () => {
+  it('loads feedbacks scoped to the operator country', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorUser)
     renderAuthedPage(<FeedbacksPage />, '/feedbacks')
@@ -25,14 +24,16 @@ describe('FeedbacksPage', () => {
     const listCall = findCall(calls, 'GET', '/admin/feedbacks')
     expect(listCall?.authorization).toBe('Bearer access-token')
     expect(listCall?.search).toContain('page=1')
-    expect(listCall?.search).not.toContain('country=')
+    expect(listCall?.search).toContain('country=BR')
+    expect(listCall?.search).not.toContain('country=US')
     expect(listCall?.search).not.toContain('active=')
-    expect(screen.getByRole('combobox', { name: 'País' })).toHaveValue('')
+    expect(screen.getByRole('combobox', { name: 'País' })).toHaveValue('BR')
+    expect(screen.getByRole('combobox', { name: 'País' })).toBeDisabled()
+    expect(screen.queryByRole('option', { name: 'Estados Unidos' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Novo feedback' })).not.toBeInTheDocument()
   })
 
-  it('filters by Brazil and shows write actions for operators', async () => {
-    const user = userEvent.setup()
+  it('shows write actions for operators without offering the other country', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<FeedbacksPage />, '/feedbacks')
@@ -41,11 +42,8 @@ describe('FeedbacksPage', () => {
       expect(screen.getByRole('link', { name: 'João Silva' })).toBeInTheDocument()
     })
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'País' }), 'BR')
-
-    await waitFor(() => {
-      expect(calls.some((call) => call.method === 'GET' && call.path.includes('/admin/feedbacks') && call.search.includes('country=BR'))).toBe(true)
-    })
+    expect(calls.some((call) => call.method === 'GET' && call.path.includes('/admin/feedbacks') && call.search.includes('country=BR'))).toBe(true)
+    expect(calls.some((call) => call.search.includes('country=US'))).toBe(false)
     expect(screen.getByRole('link', { name: 'Novo feedback' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Editar feedback João Silva' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Excluir feedback João Silva' })).toBeInTheDocument()

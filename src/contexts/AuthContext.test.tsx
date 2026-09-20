@@ -15,6 +15,7 @@ function AuthProbe() {
     <div>
       <span>{token ? 'has-token' : 'no-token'}</span>
       <span>{user?.email ?? 'anonymous'}</span>
+      <span>{user?.markets?.join(',') || 'no-markets'}</span>
     </div>
   )
 }
@@ -64,6 +65,8 @@ describe('AuthProvider', () => {
     )
     expect(localStorage.getItem(TOKEN_KEY)).toBe('stored-token')
     expect(localStorage.getItem('eden-bowls-admin-user')).toBeNull()
+    expect(screen.getByText('BR')).toBeInTheDocument()
+    expect(Object.keys(localStorage)).toEqual([TOKEN_KEY])
   })
 
   it('clears a stored token when /admin/me returns a customer account', async () => {

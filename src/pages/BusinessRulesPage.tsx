@@ -4,9 +4,11 @@ import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
+import { MarketSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate, formatJson } from '../lib/format'
+import { defaultMarket, hasBothMarkets } from '../lib/markets'
 
 type BusinessRule = {
   id: string
@@ -30,7 +32,8 @@ type RulesResponse = {
 }
 
 export function BusinessRulesPage() {
-  const { token } = useAuth()
+  const { token, user } = useAuth()
+  const bothMarkets = hasBothMarkets(user)
   const [data, setData] = useState<RulesResponse | null>(null)
   const [domain, setDomain] = useState('')
   const [key, setKey] = useState('')
@@ -43,9 +46,10 @@ export function BusinessRulesPage() {
   const [effectiveTo, setEffectiveTo] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
   const [error, setError] = useState('')
+  const scopedMarketCountry = bothMarkets ? marketCountry : (defaultMarket(user) ?? '')
 
   useEffect(() => {
-    if (!token) return
+    if (!token || !user) return
 
     const load = async () => {
       try {
@@ -53,7 +57,7 @@ export function BusinessRulesPage() {
         const response = await apiRequest<RulesResponse>(`/admin/config/business-rules${buildQueryString({
           domain: domain || undefined,
           key: key || undefined,
-          marketCountry: marketCountry || undefined,
+          marketCountry: scopedMarketCountry || undefined,
           active: active === '' ? undefined : active === 'true',
           page,
           perPage,
@@ -70,7 +74,7 @@ export function BusinessRulesPage() {
     }
 
     void load()
-  }, [token, domain, key, marketCountry, active, page, perPage])
+  }, [token, user, domain, key, scopedMarketCountry, active, page, perPage])
 
   const selectedSummary = useMemo(() => {
     if (!selectedRule) return 'Selecione uma regra na tabela.'
@@ -96,7 +100,7 @@ export function BusinessRulesPage() {
       const refreshed = await apiRequest<RulesResponse>(`/admin/config/business-rules${buildQueryString({
         domain: domain || undefined,
         key: key || undefined,
-        marketCountry: marketCountry || undefined,
+        marketCountry: scopedMarketCountry || undefined,
         active: active === '' ? undefined : active === 'true',
         page,
         perPage,
@@ -123,10 +127,13 @@ export function BusinessRulesPage() {
             Key
             <input value={key} onChange={(event) => { setKey(event.target.value); setPage(1) }} />
           </label>
-          <label>
-            Market
-            <input value={marketCountry} onChange={(event) => { setMarketCountry(event.target.value.toUpperCase()); setPage(1) }} />
-          </label>
+          <MarketSelect
+            user={user}
+            value={scopedMarketCountry}
+            includeAll
+            allLabel="Todos"
+            onChange={(value) => { setMarketCountry(value); setPage(1) }}
+          />
           <label>
             Active
             <select value={active} onChange={(event) => { setActive(event.target.value); setPage(1) }}>

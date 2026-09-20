@@ -36,34 +36,58 @@ export const operatorUser: AdminUser = {
   userId: 'u-operator',
   email: 'ops@edenbowls.com',
   roles: ['operator'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read'],
+  markets: ['BR'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'market.br'],
 }
 
 export const operatorWriteUser: AdminUser = {
   userId: 'u-operator-write',
   email: 'ops.write@edenbowls.com',
   roles: ['operator'],
-  permissions: WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write'),
+  markets: ['BR'],
+  permissions: [
+    ...WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write'),
+    'market.br',
+  ],
+}
+
+export const operatorUsUser: AdminUser = {
+  userId: 'u-operator-us',
+  email: 'ops.us@edenbowls.com',
+  roles: ['operator'],
+  markets: ['US'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'market.us'],
 }
 
 export const adminUser: AdminUser = {
   userId: 'u-admin',
   email: 'admin@edenbowls.com',
   roles: ['admin'],
-  permissions: [...WRITE_PERMISSIONS],
+  markets: ['BR', 'US'],
+  permissions: [...WRITE_PERMISSIONS, 'market.br', 'market.us'],
 }
 
 export const nutritionistUser: AdminUser = {
   userId: 'u-nutritionist',
   email: 'nutri@edenbowls.com',
   roles: ['nutritionist'],
-  permissions: ['nutrition.simulate'],
+  markets: ['BR'],
+  permissions: ['nutrition.simulate', 'market.br'],
+}
+
+export const nutritionistUsUser: AdminUser = {
+  userId: 'u-nutritionist-us',
+  email: 'nutri.us@edenbowls.com',
+  roles: ['nutritionist'],
+  markets: ['US'],
+  permissions: ['nutrition.simulate', 'market.us'],
 }
 
 export const customerUser: AdminUser = {
   userId: 'u-customer',
   email: 'client@edenbowls.com',
   roles: ['customer'],
+  markets: [],
   permissions: [],
 }
 
@@ -71,7 +95,8 @@ export const readonlyUser: AdminUser = {
   userId: 'u-readonly',
   email: 'read@edenbowls.com',
   roles: ['readonly'],
-  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'privacy.requests.read', 'production.read'],
+  markets: ['BR'],
+  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'market.br'],
 }
 
 export const productionQueueItem = {
@@ -82,7 +107,8 @@ export const productionQueueItem = {
   daysUntil: 0,
   dueBucket: 'today',
   dueLabel: 'Vence hoje',
-  displayName: 'Ana Costa',
+  displayName: 'WordPress Name',
+  customerName: 'Ana Ledger',
   email: 'ana@edenbowls.com',
   flavorMix: 'beef × 2, turkey × 1',
   packCount: 3,
@@ -98,6 +124,7 @@ export const productionQueueItem = {
   currency: 'BRL',
   stripeAccount: 'br',
   dense: false,
+  customerProfileInScope: true,
   lineItems: [
     { flavor: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
     { flavor: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
@@ -356,6 +383,12 @@ export const billingMetrics = {
   renewing7d: 2,
 }
 
+export const marketConflicts = {
+  items: [
+    { userId: 'u-ana', email: 'ana@edenbowls.com', profileMarket: 'BR', stripeAccount: 'us' },
+  ],
+}
+
 export const syncHealth = {
   market: 'BR',
   currency: 'BRL',
@@ -411,6 +444,7 @@ export const staffUser = {
   profile: { fullName: 'Operador' },
   storedRoles: ['operator'],
   roles: ['operator'],
+  markets: ['BR'],
   lockedByAllowlist: false,
 }
 

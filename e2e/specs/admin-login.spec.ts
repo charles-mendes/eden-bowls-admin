@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { e2eProfiles, installAdminApiMocks } from '../helpers/mockAdminApi'
+import { e2eProfiles, installAdminApiMocks, openAuthed } from '../helpers/mockAdminApi'
 
 test.describe('Admin login', () => {
   test('logs in as operator with Bearer session', async ({ page }) => {
@@ -27,6 +27,35 @@ test.describe('Admin login', () => {
     expect(tokenBodies).toEqual([{ username: 'ops@edenbowls.com', password: 'secret' }])
     expect(meAuth.some((value) => value === 'Bearer e2e-access-token')).toBe(true)
     await expect.poll(() => page.evaluate(() => localStorage.getItem('eden-bowls-admin-token'))).toBe('e2e-access-token')
+  })
+
+  test('loads dashboard catalog health for the session market', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/dashboard', e2eProfiles.operator)
+
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+    await expect(page.getByText('Completo')).toBeVisible()
+    await expect(page.getByText(/As 10 variações do catálogo BR já têm um Price ID em BRL/)).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Conflitos de mercado' })).toHaveCount(0)
+    await expect(page.getByRole('combobox', { name: 'Mercado' })).toHaveCount(0)
+    await expect.poll(() => captured.some((item) => (
+      item.method === 'GET'
+      && item.path === '/api/v1/admin/catalog/sync/health'
+      && item.search.includes('market=BR')
+      && item.search.includes('currency=BRL')
+    ))).toBe(true)
+    await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/markets/conflicts')).toBe(false)
+  })
+
+  test('admin dashboard lists market conflicts', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/dashboard', e2eProfiles.admin)
+
+    await expect(page.getByRole('heading', { name: 'Conflitos de mercado' })).toBeVisible()
+    await expect(page.getByText('ana@edenbowls.com')).toBeVisible()
+    await expect.poll(() => captured.some((item) => (
+      item.method === 'GET'
+      && item.path === '/api/v1/admin/markets/conflicts'
+      && item.authorization === 'Bearer e2e-access-token'
+    ))).toBe(true)
   })
 
   test('blocks a customer account from the shell', async ({ page }) => {

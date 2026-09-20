@@ -75,12 +75,28 @@ test.describe('Admin users', () => {
     await page.getByLabel('Nome').fill('Lia')
     await page.getByLabel('E-mail').fill('lia@edenbowls.com')
     await page.getByLabel('Papel').selectOption('nutritionist')
+    await page.getByLabel('Mercado').selectOption('US')
     await page.getByRole('button', { name: 'Criar acesso' }).click()
 
     await expect(page.getByText(/Acesso criado para lia@edenbowls.com/)).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/users')).toMatchObject({
       authorization: 'Bearer e2e-access-token',
-      body: { name: 'Lia', email: 'lia@edenbowls.com', role: 'nutritionist' },
+      body: { name: 'Lia', email: 'lia@edenbowls.com', role: 'nutritionist', market: 'US' },
+    })
+  })
+
+  test('admin assigns a staff role with market', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/users/roles', e2eProfiles.admin)
+
+    await expect(page.getByRole('heading', { name: 'Papéis' })).toBeVisible()
+    await page.getByRole('button', { name: /ops@edenbowls.com/ }).click()
+    await page.getByLabel('Papel').selectOption('operator')
+    await page.getByLabel('Mercado').selectOption('BR')
+    await page.getByRole('button', { name: 'Salvar papel' }).click()
+
+    await expect.poll(() => captured.find((item) => item.method === 'PUT' && item.path === '/api/v1/admin/users/u-ops/roles')).toMatchObject({
+      authorization: 'Bearer e2e-access-token',
+      body: { role: 'operator', market: 'BR' },
     })
   })
 })

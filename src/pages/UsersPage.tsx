@@ -15,6 +15,7 @@ import {
   isDeactivatedStatus,
   isStaffAccount,
 } from '../lib/accountStatus'
+import { MARKET_LABELS, staffMarketRequired, type MarketCode } from '../lib/markets'
 import { PANEL_ROLE_OPTIONS, primaryRole, roleLabel } from '../lib/roles'
 
 type UserItem = {
@@ -30,6 +31,7 @@ type UserItem = {
   inviteExpiresAt?: number | null
   inviteExpired?: boolean
   deletedAt?: string | null
+  markets?: MarketCode[]
   profile: { fullName: string | null; phone: string | null } | null
 }
 
@@ -46,6 +48,7 @@ type AccessForm = {
   email: string
   phone: string
   role: string
+  market: MarketCode | ''
 }
 
 const emptyForm: AccessForm = {
@@ -53,6 +56,7 @@ const emptyForm: AccessForm = {
   email: '',
   phone: '',
   role: 'operator',
+  market: '',
 }
 
 function inviteNeedsResend(item: UserItem) {
@@ -72,6 +76,7 @@ export function UsersPage() {
   const [editing, setEditing] = useState<UserItem | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
   const canWriteStatus = hasPermission('users.status.write')
   const canManageAccess = hasPermission('users.access.write')
   const showActions = canWriteStatus || canManageAccess
@@ -88,6 +93,7 @@ export function UsersPage() {
       })}`, { token })
       setData(response)
     } catch (requestError) {
+      setData(null)
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar usuários')
     }
   }
@@ -100,6 +106,7 @@ export function UsersPage() {
     setDialogOpen(false)
     setEditing(null)
     setForm(emptyForm)
+    setFormError('')
   }
 
   const openCreate = () => {
@@ -107,6 +114,7 @@ export function UsersPage() {
     setForm(emptyForm)
     setDialogOpen(true)
     setMessage('')
+    setFormError('')
   }
 
   const openEdit = (item: UserItem) => {
@@ -116,38 +124,49 @@ export function UsersPage() {
       email: item.email,
       phone: item.profile?.phone ?? '',
       role: primaryRole(item.storedRoles?.length ? item.storedRoles : item.roles),
+      market: item.markets?.includes('US') && !item.markets.includes('BR') ? 'US' : item.markets?.includes('BR') ? 'BR' : '',
     })
     setDialogOpen(true)
     setMessage('')
+    setFormError('')
   }
 
   const saveAccess = async () => {
     if (!token || !canManageAccess) return
     const email = form.email.trim().toLowerCase()
     if (!editing && !email) {
-      setError('Informe um e-mail válido.')
+      setFormError('Informe um e-mail válido.')
       return
     }
     if (!form.name.trim()) {
-      setError('Informe o nome.')
+      setFormError('Informe o nome.')
       return
     }
+    if (staffMarketRequired(form.role) && form.market !== 'BR' && form.market !== 'US') {
+      setFormError('Informe o mercado.')
+      return
+    }
+
+    const accessBody = staffMarketRequired(form.role)
+      ? { name: form.name.trim(), phone: form.phone.trim() || undefined, role: form.role, market: form.market }
+      : { name: form.name.trim(), phone: form.phone.trim() || undefined, role: form.role }
 
     setSaving(true)
     try {
       setError('')
+      setFormError('')
       if (editing) {
         await apiRequest(`/admin/users/${editing.id}`, {
           token,
           method: 'PATCH',
-          body: { name: form.name.trim(), phone: form.phone.trim() || null, role: form.role },
+          body: { ...accessBody, phone: form.phone.trim() || null },
         })
         setMessage(`Acesso de ${editing.email} atualizado.`)
       } else {
         const created = await apiRequest<UserItem>('/admin/users', {
           token,
           method: 'POST',
-          body: { name: form.name.trim(), email, phone: form.phone.trim() || undefined, role: form.role },
+          body: { ...accessBody, email, phone: form.phone.trim() || undefined },
         })
         setMessage(
           created.inviteMailStatus === 'failed' || created.inviteMailStatus === 'skipped'
@@ -158,7 +177,7 @@ export function UsersPage() {
       closeDialog()
       await load()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar acesso')
+      setFormError(requestError instanceof Error ? requestError.message : 'Falha ao salvar acesso')
     } finally {
       setSaving(false)
     }
@@ -264,6 +283,8 @@ export function UsersPage() {
         {error ? <div className="alert">{error}</div> : null}
         {message ? <div className="success">{message}</div> : null}
 
+        {data ? (
+        <>
         <div className="table-shell table-scroll">
           <table>
             <thead>
@@ -353,11 +374,13 @@ export function UsersPage() {
         </div>
 
         <Pager
-          page={data?.page ?? page}
-          totalPages={data?.totalPages ?? 1}
+          page={data.page}
+          totalPages={data.totalPages}
           onPrev={() => setPage((current) => Math.max(1, current - 1))}
           onNext={() => setPage((current) => current + 1)}
         />
+        </>
+        ) : null}
       </Section>
 
       <Dialog
@@ -397,7 +420,11 @@ export function UsersPage() {
             Papel
             <select
               value={dialogRole}
-              onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))}
+              onChange={(event) => setForm((current) => ({
+                ...current,
+                role: event.target.value,
+                market: event.target.value === 'admin' ? '' : current.market,
+              }))}
               disabled={allowlistLocked}
             >
               {PANEL_ROLE_OPTIONS.map((option) => (
@@ -405,6 +432,22 @@ export function UsersPage() {
               ))}
             </select>
           </label>
+          {staffMarketRequired(dialogRole) ? (
+            <label>
+              Mercado
+              <select
+                value={form.market}
+                onChange={(event) => setForm((current) => ({ ...current, market: event.target.value === 'US' ? 'US' : event.target.value === 'BR' ? 'BR' : '' }))}
+                disabled={allowlistLocked}
+                required
+              >
+                <option value="">Selecione</option>
+                <option value="BR">{MARKET_LABELS.BR}</option>
+                <option value="US">{MARKET_LABELS.US}</option>
+              </select>
+            </label>
+          ) : null}
+          {formError ? <div className="alert">{formError}</div> : null}
           {allowlistLocked ? (
             <div className="warning">
               Este e-mail está em ADMIN_EMAILS. O papel efetivo permanece Admin e não pode ser rebaixado pela UI.

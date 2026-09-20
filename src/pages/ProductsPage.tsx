@@ -7,6 +7,8 @@ import { FiltersBar } from '../components/FiltersBar'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate } from '../lib/format'
+import { defaultMarket, hasBothMarkets, sessionMarkets, type MarketCode } from '../lib/markets'
+import { MarketSelect } from '../components/MarketSelect'
 
 type ProductItem = {
   id: string
@@ -56,8 +58,9 @@ function FilterClearButton({ label, onClear }: { label: string; onClear: () => v
 }
 
 export function ProductsPage() {
-  const { token, hasPermission } = useAuth()
+  const { token, user, hasPermission } = useAuth()
   const navigate = useNavigate()
+  const bothMarkets = hasBothMarkets(user)
   const [data, setData] = useState<ProductsResponse | null>(null)
   const [search, setSearch] = useState('')
   const [market, setMarket] = useState('')
@@ -69,14 +72,26 @@ export function ProductsPage() {
   const [deletingId, setDeletingId] = useState('')
   const [form, setForm] = useState(emptyCreateForm)
   const canWrite = hasPermission('catalog.write')
+  const scopedMarket = bothMarkets ? market : (defaultMarket(user) ?? '')
+  const planCountries = sessionMarkets(user)
+
+  useEffect(() => {
+    const next = defaultMarket(user)
+    if (!next) return
+    setForm((current) => {
+      const allowed = sessionMarkets(user)
+      if (allowed.includes(current.planCountry as MarketCode)) return current
+      return { ...current, planCountry: next }
+    })
+  }, [user])
 
   const load = async () => {
-    if (!token) return
+    if (!token || !user) return
     setError('')
     try {
       const response = await apiRequest<ProductsResponse>(`/admin/catalog/products${buildQueryString({
         search: search || undefined,
-        market: market || undefined,
+        market: scopedMarket || undefined,
         page,
         perPage,
       })}`, { token })
@@ -88,7 +103,7 @@ export function ProductsPage() {
 
   useEffect(() => {
     void load()
-  }, [token, search, market, page, perPage])
+  }, [token, user, search, scopedMarket, page, perPage])
 
   const createProduct = async (event: FormEvent) => {
     event.preventDefault()
@@ -183,9 +198,14 @@ export function ProductsPage() {
               </label>
               <label>
                 País do plano
-                <select value={form.planCountry} onChange={(event) => setForm((current) => ({ ...current, planCountry: event.target.value }))}>
-                  <option value="BR">BR / BRL</option>
-                  <option value="US">US / USD</option>
+                <select
+                  value={form.planCountry}
+                  disabled={!bothMarkets}
+                  onChange={(event) => setForm((current) => ({ ...current, planCountry: event.target.value }))}
+                >
+                  {(planCountries.length ? planCountries : ['BR']).map((country) => (
+                    <option key={country} value={country}>{country === 'US' ? 'US / USD' : 'BR / BRL'}</option>
+                  ))}
                 </select>
               </label>
               <label>
@@ -234,19 +254,13 @@ export function ProductsPage() {
               ) : null}
             </span>
           </label>
-          <label>
-            Mercado
-            <span className="filter-field">
-              <select value={market} onChange={(event) => { setMarket(event.target.value); setPage(1) }}>
-                <option value="">Selecionar</option>
-                <option value="BR">BR</option>
-                <option value="US">US</option>
-              </select>
-              {market ? (
-                <FilterClearButton label="Limpar mercado" onClear={() => { setMarket(''); setPage(1) }} />
-              ) : null}
-            </span>
-          </label>
+          <MarketSelect
+            user={user}
+            value={scopedMarket}
+            includeAll
+            allLabel="Selecionar"
+            onChange={(value) => { setMarket(value); setPage(1) }}
+          />
           <label>
             Por página
             <input type="number" min={1} max={100} value={perPage} onChange={(event) => { setPerPage(Number(event.target.value)); setPage(1) }} />

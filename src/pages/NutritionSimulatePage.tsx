@@ -4,6 +4,7 @@ import { Section } from '../components/Section'
 import { MetricCard } from '../components/MetricCard'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
+import { defaultMarket, hasBothMarkets, sessionMarkets, type MarketCode } from '../lib/markets'
 
 type Breed = { id?: number; name: string; slug?: string }
 type Country = 'BR' | 'US'
@@ -116,8 +117,9 @@ function toAgePayload(age: number, unit: AgeUnit) {
 }
 
 export function NutritionSimulatePage() {
-  const { token } = useAuth()
-  const [country, setCountry] = useState<Country>('US')
+  const { token, user } = useAuth()
+  const bothMarkets = hasBothMarkets(user)
+  const [pickedCountry, setPickedCountry] = useState<Country>('BR')
   const [name, setName] = useState('')
   const [type, setType] = useState<'dog' | 'cat'>('dog')
   const [lifeStage, setLifeStage] = useState<'puppy' | 'adult' | 'senior'>('adult')
@@ -132,6 +134,7 @@ export function NutritionSimulatePage() {
   const [result, setResult] = useState<SimulateResult['data'] | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const country: Country = bothMarkets ? pickedCountry : (defaultMarket(user) ?? pickedCountry)
   const copy = labels[country]
   const weightUnit = weightUnitFor(country)
 
@@ -153,9 +156,9 @@ export function NutritionSimulatePage() {
   }, [country])
 
   function handleCountryChange(next: Country) {
-    if (next === country) return
+    if (next === country || !bothMarkets) return
     setWeight((current) => convertWeight(current, weightUnitFor(country), weightUnitFor(next)))
-    setCountry(next)
+    setPickedCountry(next)
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -200,9 +203,15 @@ export function NutritionSimulatePage() {
         <div className="form-grid simulate-grid">
           <label>
             {copy.country}
-            <select value={country} onChange={(event) => handleCountryChange(event.target.value === 'BR' ? 'BR' : 'US')}>
-              <option value="US">US</option>
-              <option value="BR">BR</option>
+            <select
+              aria-label={copy.country}
+              value={country}
+              disabled={!bothMarkets}
+              onChange={(event) => handleCountryChange(event.target.value === 'BR' ? 'BR' : 'US')}
+            >
+              {(sessionMarkets(user).length ? sessionMarkets(user) : [country]).map((market: MarketCode) => (
+                <option key={market} value={market}>{market}</option>
+              ))}
             </select>
           </label>
           <label>

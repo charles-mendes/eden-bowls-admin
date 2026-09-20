@@ -4,9 +4,11 @@ import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
+import { MarketSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate } from '../lib/format'
+import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import {
   formatPrivacyIdentity,
   formatPrivacyStatus,
@@ -24,7 +26,8 @@ function FilterClearButton({ label, onClear }: { label: string; onClear: () => v
 }
 
 export function PrivacyRequestsPage() {
-  const { token, hasPermission } = useAuth()
+  const { token, user, hasPermission } = useAuth()
+  const bothMarkets = hasBothMarkets(user)
   const [searchParams] = useSearchParams()
   const initialUserId = searchParams.get('userId') || ''
   const [data, setData] = useState<PrivacyRequestsResponse | null>(null)
@@ -39,10 +42,11 @@ export function PrivacyRequestsPage() {
   const [message, setMessage] = useState('')
   const [createUserId, setCreateUserId] = useState(initialUserId)
   const [createType, setCreateType] = useState<PrivacyRequestType>('correction')
-  const [createMarket, setCreateMarket] = useState('BR')
+  const [createMarket, setCreateMarket] = useState('')
   const [createNote, setCreateNote] = useState('')
   const [creating, setCreating] = useState(false)
   const canWrite = hasPermission('privacy.requests.write')
+  const scopedCreateMarket = bothMarkets ? (createMarket || defaultMarket(user) || 'BR') : (defaultMarket(user) ?? 'BR')
 
   const load = async () => {
     if (!token) return
@@ -79,7 +83,7 @@ export function PrivacyRequestsPage() {
         body: {
           userId: Number(createUserId),
           type: createType,
-          market: createMarket,
+          market: scopedCreateMarket,
           note: createNote || undefined,
         },
       })
@@ -219,13 +223,12 @@ export function PrivacyRequestsPage() {
                 <option value="opt_out_share">Opt-out de share</option>
               </select>
             </label>
-            <label>
-              Mercado
-              <select aria-label="Mercado" value={createMarket} onChange={(event) => setCreateMarket(event.target.value)}>
-                <option value="BR">Brasil (15 dias)</option>
-                <option value="US">EUA (45 dias)</option>
-              </select>
-            </label>
+            <MarketSelect
+              user={user}
+              value={scopedCreateMarket}
+              onChange={setCreateMarket}
+            />
+            <p className="muted">{scopedCreateMarket === 'US' ? 'Prazo EUA: 45 dias' : 'Prazo Brasil: 15 dias'}</p>
             <label>
               Nota
               <input value={createNote} onChange={(event) => setCreateNote(event.target.value)} placeholder="origem do e-mail" />

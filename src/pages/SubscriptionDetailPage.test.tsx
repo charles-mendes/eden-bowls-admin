@@ -45,6 +45,37 @@ describe('SubscriptionDetailPage', () => {
     })
 
     expect(screen.queryByRole('button', { name: 'Sincronizar invoices' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Cliente' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '360' })).not.toBeInTheDocument()
+  })
+
+  it('links Cliente and 360 only when the profile is in scope', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { subscriptionInScope: true })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await waitFor(() => {
+      expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
+    })
+
+    expect(screen.getByRole('link', { name: 'Cliente' })).toHaveAttribute('href', '/users/u-ana')
+    expect(screen.getByRole('link', { name: '360' })).toHaveAttribute('href', '/onboarding/sessions/u-ana')
+  })
+
+  it('keeps ledger identity as text when the profile is out of scope', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await waitFor(() => {
+      expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByRole('link', { name: 'Cliente' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '360' })).not.toBeInTheDocument()
+    expect(document.querySelector('a[href="/users/u-ana"]')).toBeNull()
+    expect(document.querySelector('a[href="/onboarding/sessions/u-ana"]')).toBeNull()
+    expect(screen.getAllByText('Cliente').length).toBeGreaterThan(0)
   })
 
   it('creates a UPS label from a synced invoice', async () => {

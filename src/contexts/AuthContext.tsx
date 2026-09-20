@@ -2,6 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useM
 import { apiRequest, logoutRefreshSession, onAccessTokenRefreshed, refreshAccessToken } from '../lib/api'
 import { decodeJwtPayload, isAuthTokenExpired } from '../lib/jwt'
 import { isOperationalUser, type AdminRole } from '../lib/roles'
+import type { MarketCode } from '../lib/markets'
 
 export type { AdminRole }
 
@@ -10,6 +11,7 @@ export type AdminUser = {
   email: string
   roles: AdminRole[]
   permissions: string[]
+  markets?: MarketCode[]
   mustChangePassword?: boolean
   inviteExpiresAt?: number | null
 }

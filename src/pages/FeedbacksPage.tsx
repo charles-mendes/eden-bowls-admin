@@ -4,9 +4,11 @@ import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
+import { MarketSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { formatCountry, formatDate, formatFeedbackCategory } from '../lib/format'
+import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import { type FeedbackItem, type FeedbacksResponse } from '../lib/feedbacks'
 
 function FilterClearButton({ label, onClear }: { label: string; onClear: () => void }) {
@@ -18,7 +20,8 @@ function FilterClearButton({ label, onClear }: { label: string; onClear: () => v
 }
 
 export function FeedbacksPage() {
-  const { token, hasPermission } = useAuth()
+  const { token, user, hasPermission } = useAuth()
+  const bothMarkets = hasBothMarkets(user)
   const [data, setData] = useState<FeedbacksResponse | null>(null)
   const [search, setSearch] = useState('')
   const [country, setCountry] = useState('')
@@ -29,14 +32,15 @@ export function FeedbacksPage() {
   const [message, setMessage] = useState('')
   const [busyId, setBusyId] = useState<number | null>(null)
   const canWrite = hasPermission('feedbacks.write')
+  const scopedCountry = bothMarkets ? country : (defaultMarket(user) ?? '')
 
   const load = async () => {
-    if (!token) return
+    if (!token || !user) return
     setError('')
     try {
       const response = await apiRequest<FeedbacksResponse>(`/admin/feedbacks${buildQueryString({
         search: search || undefined,
-        country: country || undefined,
+        country: scopedCountry || undefined,
         active: status === '' ? undefined : status,
         page,
         perPage,
@@ -49,7 +53,7 @@ export function FeedbacksPage() {
 
   useEffect(() => {
     void load()
-  }, [token, search, country, status, page, perPage])
+  }, [token, user, search, scopedCountry, status, page, perPage])
 
   const deleteFeedback = async (item: FeedbackItem) => {
     if (!token || !canWrite) return
@@ -93,23 +97,14 @@ export function FeedbacksPage() {
               ) : null}
             </span>
           </label>
-          <label>
-            País
-            <span className="filter-field">
-              <select
-                aria-label="País"
-                value={country}
-                onChange={(event) => { setCountry(event.target.value); setPage(1) }}
-              >
-                <option value="">Todos</option>
-                <option value="BR">Brasil</option>
-                <option value="US">Estados Unidos</option>
-              </select>
-              {country ? (
-                <FilterClearButton label="Limpar país" onClear={() => { setCountry(''); setPage(1) }} />
-              ) : null}
-            </span>
-          </label>
+          <MarketSelect
+            label="País"
+            user={user}
+            value={scopedCountry}
+            includeAll
+            allLabel="Todos"
+            onChange={(value) => { setCountry(value); setPage(1) }}
+          />
           <label>
             Status
             <span className="filter-field">

@@ -2,8 +2,10 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
+import { MarketSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest } from '../lib/api'
+import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import {
   fileToFeedbackPhoto,
   type FeedbackItem,
@@ -32,8 +34,9 @@ export function FeedbackFormPage() {
   const { id } = useParams()
   const isNew = !id
   const navigate = useNavigate()
-  const { token, hasPermission } = useAuth()
+  const { token, user, hasPermission } = useAuth()
   const canWrite = hasPermission('feedbacks.write')
+  const bothMarkets = hasBothMarkets(user)
   const [form, setForm] = useState<FormState>(emptyForm)
   const [photoUrl, setPhotoUrl] = useState('')
   const [photoPayload, setPhotoPayload] = useState<FeedbackPhotoPayload | null>(null)
@@ -41,6 +44,13 @@ export function FeedbackFormPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
+  const scopedCountry = bothMarkets ? form.country : (defaultMarket(user) ?? form.country)
+
+  useEffect(() => {
+    const next = defaultMarket(user)
+    if (!next || bothMarkets) return
+    setForm((current) => (current.country === next ? current : { ...current, country: next }))
+  }, [user, bothMarkets])
 
   useEffect(() => {
     if (!token || isNew) return
@@ -97,7 +107,7 @@ export function FeedbackFormPage() {
     const body: Record<string, unknown> = {
       name,
       category: form.category,
-      country: form.country,
+      country: scopedCountry,
       place,
       comment,
       active: form.active,
@@ -188,18 +198,13 @@ export function FeedbackFormPage() {
                 <option value="tutora">Tutora</option>
               </select>
             </label>
-            <label>
-              País
-              <select
-                aria-label="País"
-                value={form.country}
-                onChange={(event) => setForm((current) => ({ ...current, country: event.target.value as FormState['country'] }))}
-                disabled={!canWrite}
-              >
-                <option value="BR">Brasil</option>
-                <option value="US">Estados Unidos</option>
-              </select>
-            </label>
+            <MarketSelect
+              label="País"
+              user={user}
+              value={scopedCountry}
+              disabled={!canWrite}
+              onChange={(value) => setForm((current) => ({ ...current, country: value === 'US' ? 'US' : 'BR' }))}
+            />
             <label>
               Lugar
               <input

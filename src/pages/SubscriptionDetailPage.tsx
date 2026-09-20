@@ -6,6 +6,7 @@ import { MetricCard } from '../components/MetricCard'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, getApiBaseUrl } from '../lib/api'
 import { formatDate, formatJson } from '../lib/format'
+import { isProfileInScope } from '../lib/markets'
 
 type SubscriptionDetail = {
   id: string
@@ -18,6 +19,8 @@ type SubscriptionDetail = {
   cancelAtPeriodEnd: boolean
   dashboardUrl: string
   stripeAccount?: string
+  customerProfileInScope?: boolean
+  customerName?: string | null
   user: { id: string; email: string }
   petsSnapshot: unknown
   planSelection: unknown
@@ -61,6 +64,7 @@ export function SubscriptionDetailPage() {
   const [error, setError] = useState('')
   const canReadShipping = hasPermission('shipping.read')
   const canWriteShipping = hasPermission('shipping.write')
+  const profileInScope = isProfileInScope(data?.customerProfileInScope)
 
   const loadShipments = async () => {
     if (!token || !id || !canReadShipping) return
@@ -210,8 +214,17 @@ export function SubscriptionDetailPage() {
         <p className="muted">Conta <span className="badge-info">{(data?.stripeAccount || 'us').toUpperCase()}</span></p>
         <div className="inline-actions">
           {data?.dashboardUrl ? <a className="ghost-button" href={data.dashboardUrl} target="_blank" rel="noreferrer">Ver no Stripe</a> : null}
-          <Link className="ghost-button" to={`/users/${data?.user.id}`}>Cliente</Link>
-          <Link className="ghost-button" to={`/onboarding/sessions/${data?.user.id}`}>360</Link>
+          {profileInScope && data?.user.id ? (
+            <>
+              <Link className="ghost-button" to={`/users/${data.user.id}`}>Cliente</Link>
+              <Link className="ghost-button" to={`/onboarding/sessions/${data.user.id}`}>360</Link>
+            </>
+          ) : (
+            <>
+              <span>Cliente</span>
+              <span>360</span>
+            </>
+          )}
         </div>
       </Section>
 
