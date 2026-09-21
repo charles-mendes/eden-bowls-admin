@@ -15,6 +15,10 @@ describe('parseCheckoutSnapshots', () => {
       petName: 'Luna',
       flavors: 'beef × 5, fish × 5',
     })
+    expect(snapshots.plan.items).toEqual(expect.arrayContaining([
+      { label: 'Prazo', value: '1 mês' },
+    ]))
+    expect(snapshots.plan.items.some((item) => item.label === 'Recorrência')).toBe(false)
     expect(snapshots.plan.lineItems[0]).toMatchObject({
       petName: 'Luna',
       product: 'beef',

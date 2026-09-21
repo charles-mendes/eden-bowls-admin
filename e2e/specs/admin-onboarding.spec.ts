@@ -7,6 +7,9 @@ test.describe('Admin onboarding 360', () => {
 
     await expect(page.getByRole('heading', { name: 'Onboarding 360' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'ana@edenbowls.com' })).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Prazo (plano escolhido)' })).toBeVisible()
+    await expect(page.getByText('1 mês')).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'Recorrência' })).toHaveCount(0)
     await expect.poll(() => captured.some((item) => item.method === 'GET' && item.path === '/api/v1/admin/onboarding/checkouts')).toBe(true)
     await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/onboarding/metrics')).toBe(true)
   })

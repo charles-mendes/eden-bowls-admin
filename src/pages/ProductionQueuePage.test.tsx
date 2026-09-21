@@ -25,6 +25,7 @@ describe('ProductionQueuePage', () => {
     expect(screen.getByText('Ana Ledger')).toBeInTheDocument()
     expect(screen.queryByText('WordPress Name')).not.toBeInTheDocument()
     expect(screen.getByText('beef × 2, turkey × 1')).toBeInTheDocument()
+    expect(screen.getByText('1 mês')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Em produção' })).toBeInTheDocument()
     const listCall = findCall(calls, 'GET', '/admin/production/queue')
     expect(listCall?.authorization).toBe('Bearer access-token')

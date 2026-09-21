@@ -9,7 +9,7 @@ import { Dialog } from '../components/Dialog'
 import { AccountSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
-import { formatDate, formatStripeStatus, getBrowserTimeZone } from '../lib/format'
+import { formatDate, formatStripeStatus, formatTermMonths, getBrowserTimeZone } from '../lib/format'
 import { defaultStripeAccount, hasBothMarkets, isProfileInScope } from '../lib/markets'
 
 type ProductionStatus = 'to_prepare' | 'in_production' | 'ready' | 'blocked'
@@ -374,7 +374,7 @@ export function ProductionQueuePage() {
                         <td>{item.packCount} · {item.packSizeLabel || '—'}</td>
                         <td>
                           {item.planLabel || '—'}
-                          {item.termMonths ? <div className="muted">{item.termMonths}m</div> : null}
+                          {item.termMonths ? <div className="muted">{formatTermMonths(item.termMonths)}</div> : null}
                           {item.subtotal == null ? <div className="muted">Subtotal —</div> : null}
                         </td>
                         <td>{[item.country, item.city].filter(Boolean).join(' / ') || '—'}</td>

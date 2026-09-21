@@ -7,7 +7,7 @@ import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString, getApiBaseUrl } from '../lib/api'
-import { formatDate, formatFrequency, formatStripeStatus, getBrowserTimeZone } from '../lib/format'
+import { formatDate, formatStripeStatus, formatTermMonths, getBrowserTimeZone } from '../lib/format'
 
 type CheckoutItem = {
   userId: string
@@ -142,8 +142,7 @@ export function OnboardingPage() {
                 <th>Pets</th>
                 <th>Stripe</th>
                 <th>Status</th>
-                <th>Prazo</th>
-                <th>Recorrência</th>
+                <th>Prazo (plano escolhido)</th>
                 <th>Atualizado</th>
               </tr>
             </thead>
@@ -159,8 +158,7 @@ export function OnboardingPage() {
                   <td title={item.stripeStatus === 'mixed' ? 'Cliente com mais de uma assinatura Stripe' : undefined}>
                     {formatStripeStatus(item.stripeStatus)}
                   </td>
-                  <td>{item.termMonths ? `${item.termMonths}m` : '-'}</td>
-                  <td>{formatFrequency(item.frequency)}</td>
+                  <td>{formatTermMonths(item.termMonths)}</td>
                   <td>{formatDate(item.updatedAt)}</td>
                 </tr>
               ))}

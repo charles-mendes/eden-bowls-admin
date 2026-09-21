@@ -23,7 +23,9 @@ describe('OnboardingPage', () => {
 
     expect(screen.getByText('sub_123')).toBeInTheDocument()
     expect(screen.getByText('Ativo')).toBeInTheDocument()
-    expect(screen.getByText('A cada 4 semanas')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Prazo (plano escolhido)' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Recorrência' })).not.toBeInTheDocument()
+    expect(screen.getByText('1 mês')).toBeInTheDocument()
     expect(findCall(calls, 'GET', '/admin/onboarding/checkouts')?.authorization).toBe('Bearer access-token')
     expect(calls.some((call) => call.path === '/api/v1/admin/onboarding/metrics')).toBe(true)
   })

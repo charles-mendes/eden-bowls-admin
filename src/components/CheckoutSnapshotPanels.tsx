@@ -130,7 +130,7 @@ export function CheckoutSnapshotPanels({
           <JsonDetails title="Pagamento" value={raw.paymentReference} />
           <JsonDetails title="Endereço" value={raw.address} />
           <JsonDetails title="Frete" value={raw.shipping} />
-          <JsonDetails title="Recorrência" value={raw.recurrence} />
+          <JsonDetails title="Payload recurrence" value={raw.recurrence} />
         </div>
       </Section>
     </>

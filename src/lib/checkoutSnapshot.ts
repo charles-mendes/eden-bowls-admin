@@ -9,7 +9,6 @@ import {
   formatDiscountReason,
   formatDistanceSource,
   formatFlavor,
-  formatFrequency,
   formatNumber,
   formatPaymentState,
   formatPercent,
@@ -227,7 +226,6 @@ export function parseCheckoutSnapshots(input: {
   const billing = asRecord(checkout?.billing)
   const eligibility = asRecord(checkout?.discount_eligibility)
   const catalog = asRecord(plan?.catalog_pricing)
-  const recurrence = asRecord(input?.recurrence)
   const currencyLabel = readString(catalog, 'currency')
     || readString(plan, 'currency')
     || readString(checkout, 'currency')
@@ -255,7 +253,6 @@ export function parseCheckoutSnapshots(input: {
     plan: {
       items: compactItems([
         { label: 'Prazo', value: formatTermMonths(readNumber(plan, 'subscription_term_months')), hideIfEmpty: true },
-        { label: 'Recorrência', value: formatFrequency(readString(recurrence, 'frequency')), hideIfEmpty: true },
         { label: 'Mercado', value: formatCountry(readString(plan, 'country') || readString(address, 'country')), hideIfEmpty: true },
         { label: 'Moeda', value: displayValue(currencyLabel), hideIfEmpty: true },
         { label: 'Plano', value: readString(plan, 'plan'), hideIfEmpty: true },
