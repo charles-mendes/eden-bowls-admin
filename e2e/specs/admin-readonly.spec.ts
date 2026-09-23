@@ -16,7 +16,7 @@ test.describe('Admin readonly', () => {
     await expect(page.getByRole('link', { name: 'Frete' })).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Cupons 1ª compra' })).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Papéis' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Sync catálogo' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Sincronizar catálogo' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Sincronizar agora' })).toHaveCount(0)
   })
 

@@ -296,7 +296,7 @@ export function NutritionSimulatePage() {
       </form>
 
       {result ? (
-        <Section title="Resultado" description="NEM vem do default do motor (3600 cão / 3800 gato).">
+        <Section title="Resultado" description="NEM vem do padrão do motor (3600 cão / 3800 gato).">
           <div className="grid cards-4">
             <MetricCard label="Energia" value={`${result.energia_kcal_dia} kcal`} />
             <MetricCard label="Gramas / dia" value={result.display.daily} />

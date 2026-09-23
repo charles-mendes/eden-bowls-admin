@@ -23,6 +23,8 @@ describe('CouponsPage', () => {
     })
 
     expect(screen.getByText('FIRST_1M')).toBeInTheDocument()
+    expect(screen.getByText('1 mês')).toBeInTheDocument()
+    expect(screen.queryByText('1m')).not.toBeInTheDocument()
     expect(screen.getByText('coupon_1')).toBeInTheDocument()
     expect(screen.getByText('10%')).toBeInTheDocument()
     expect(screen.getByText('once')).toBeInTheDocument()
@@ -32,7 +34,7 @@ describe('CouponsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Sincronizar com Stripe' }))
 
     await waitFor(() => {
-      expect(screen.getByText('Slots sincronizados com a Stripe.')).toBeInTheDocument()
+      expect(screen.getByText('Mapa sincronizado com a Stripe.')).toBeInTheDocument()
     })
 
     const sync = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/stripe/first-purchase-promos/sync')

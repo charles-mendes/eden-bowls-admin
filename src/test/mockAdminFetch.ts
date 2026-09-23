@@ -48,12 +48,24 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   marketConflicts?: typeof marketConflicts.items
   subscriptionInScope?: boolean
   productionInScope?: boolean
+  subscriptionSnapshot?: {
+    petsSnapshot?: unknown
+    planSelection?: unknown
+    address?: unknown
+    shipping?: unknown
+  }
+  products?: typeof productsList.items
+  product?: typeof productDetail
+  catalogDelete?: 'in_use' | 'archive'
 } = {}) {
   const calls: FetchCall[] = []
-  let catalogItems = productsList.items.map((item) => ({ ...item, variants: [...item.variants] }))
+  let catalogItems = (options.products ?? productsList.items).map((item) => ({
+    ...item,
+    variants: item.variants.map((variant) => ({ ...variant })),
+  }))
   let catalogDetail = {
-    ...productDetail,
-    variants: productDetail.variants.map((item) => ({ ...item })),
+    ...(options.product ?? productDetail),
+    variants: (options.product ?? productDetail).variants.map((item) => ({ ...item })),
   }
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -215,6 +227,20 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'DELETE') {
+      if (options.catalogDelete === 'in_use') {
+        catalogItems = catalogItems.map((item) => ({ ...item, canDelete: false }))
+        catalogDetail = { ...catalogDetail, canDelete: false }
+        return jsonResponse({
+          message: 'Product is linked to a subscription and cannot be deleted.',
+          details: { code: 'product_in_use' },
+        }, 409)
+      }
+      if (options.catalogDelete === 'archive') {
+        return jsonResponse({
+          message: 'Unable to archive Stripe product.',
+          details: { code: 'stripe_product_archive_failed' },
+        }, 502)
+      }
       const id = path.split('/').pop() || ''
       catalogItems = catalogItems.filter((item) => item.id !== id)
       return jsonResponse({ deleted: true, id })
@@ -241,6 +267,11 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         ...body,
         active: body.active ?? catalogDetail.active,
         variants,
+      }
+      if (body && Object.prototype.hasOwnProperty.call(body, 'active')) {
+        catalogItems = catalogItems.map((item) => (
+          item.id === catalogDetail.id ? { ...item, active: Boolean(body.active) } : item
+        ))
       }
       return jsonResponse(catalogDetail)
     }
@@ -379,6 +410,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         planSelection: {},
         shipping: {},
         address: {},
+        ...(options.subscriptionSnapshot ?? {}),
         ...(options.subscriptionInScope === undefined ? {} : { customerProfileInScope: options.subscriptionInScope }),
       })
     }

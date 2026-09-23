@@ -64,7 +64,7 @@ test.describe('Admin catalog', () => {
   test('saves product plan fields', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
 
-    await expect(page.getByPlaceholder('SKU')).toHaveValue('BOWL-1')
+    await expect(page.getByText('BOWL-1')).toBeVisible()
     await page.getByRole('button', { name: 'Salvar' }).click()
     await expect(page.getByText('Produto atualizado.')).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'PATCH' && item.path.endsWith('/catalog/products/prod-1'))).toMatchObject({
@@ -72,7 +72,6 @@ test.describe('Admin catalog', () => {
       body: {
         planCountry: 'BR',
         planDays: 28,
-        variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 89.9 }],
       },
     })
   })
@@ -80,19 +79,28 @@ test.describe('Admin catalog', () => {
   test('publishes edited variation prices', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
 
-    await expect(page.getByPlaceholder('SKU')).toHaveValue('BOWL-1')
+    await page.getByRole('button', { name: 'Editar variação Frango 1kg' }).click()
     await page.getByLabel('Preço').fill('30')
+    await page.getByRole('button', { name: 'Salvar variação' }).click()
+    await expect(page.getByText(/30,00/)).toBeVisible()
     await page.getByRole('button', { name: 'Publicar' }).click()
     await expect(page.getByText('Publicado.', { exact: true })).toBeVisible()
-    await expect.poll(() => captured.find((item) => item.method === 'PATCH' && item.path.endsWith('/catalog/products/prod-1'))).toMatchObject({
-      authorization: 'Bearer e2e-access-token',
-      body: {
-        planCountry: 'BR',
-        planDays: 28,
-        variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 30 }],
-        active: true,
-      },
-    })
+    await expect.poll(() => captured.filter((item) => item.method === 'PATCH' && item.path.endsWith('/catalog/products/prod-1'))).toEqual([
+      expect.objectContaining({
+        authorization: 'Bearer e2e-access-token',
+        body: {
+          variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 30 }],
+        },
+      }),
+      expect.objectContaining({
+        authorization: 'Bearer e2e-access-token',
+        body: {
+          planCountry: 'BR',
+          planDays: 28,
+          active: true,
+        },
+      }),
+    ])
     await expect(page.getByText(/30,00/)).toBeVisible()
   })
 

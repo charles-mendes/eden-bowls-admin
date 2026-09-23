@@ -114,6 +114,18 @@ export async function logoutRefreshSession() {
   }
 }
 
+export class ApiRequestError extends Error {
+  readonly status: number
+  readonly code: string
+
+  constructor(message: string, status: number, code: string) {
+    super(message)
+    this.name = 'ApiRequestError'
+    this.status = status
+    this.code = code
+  }
+}
+
 type RequestOptions = {
   token?: string | null
   body?: unknown
@@ -144,7 +156,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
     }
 
     const message = errorBody?.message ?? response.statusText
-    throw new Error(typeof message === 'string' ? message : 'request_failed')
+    throw new ApiRequestError(
+      typeof message === 'string' && message ? message : 'request_failed',
+      response.status,
+      readErrorCode(errorBody),
+    )
   }
 
   if (response.status === 204) {

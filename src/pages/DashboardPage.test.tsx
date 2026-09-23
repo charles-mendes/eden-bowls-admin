@@ -27,6 +27,8 @@ describe('DashboardPage', () => {
     expect(screen.getByText('Com Price Stripe')).toBeInTheDocument()
     expect(screen.getByText('Sem vínculo')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Ver produtos' })).toHaveAttribute('href', '/catalog/products')
+    expect(screen.getByText(/Última sincronização: nenhum job em andamento/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Sincronizar e assinantes' })).toHaveAttribute('href', '/billing')
     expect(screen.queryByRole('heading', { name: 'Conflitos de mercado' })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox', { name: 'Mercado' })).not.toBeInTheDocument()
 

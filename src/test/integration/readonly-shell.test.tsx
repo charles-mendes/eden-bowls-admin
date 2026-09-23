@@ -35,7 +35,7 @@ describe('readonly admin shell', () => {
     expect(screen.queryByRole('link', { name: 'Frete' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Cupons 1ª compra' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Papéis' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Sync catálogo' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sincronizar catálogo' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sincronizar agora' })).not.toBeInTheDocument()
   })
 })

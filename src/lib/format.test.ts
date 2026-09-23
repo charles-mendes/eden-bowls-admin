@@ -9,6 +9,7 @@ import {
   formatJson,
   formatPostalCode,
   formatStripeStatus,
+  formatSyncJobStatus,
   formatTermMonths,
 } from './format'
 
@@ -29,6 +30,11 @@ describe('format helpers', () => {
     expect(formatStripeStatus('mixed')).toBe('Misto')
     expect(formatStripeStatus('active')).toBe('Ativo')
     expect(formatStripeStatus('unlinked')).toBe('Não vinculado')
+    expect(formatStripeStatus('canceling')).toBe('Cancelando')
+    expect(formatStripeStatus('all')).toBe('Todas')
+    expect(formatSyncJobStatus('queued')).toBe('na fila')
+    expect(formatSyncJobStatus('completed')).toBe('concluído')
+    expect(formatSyncJobStatus(null)).toBe('nenhum job')
     expect(formatFrequency('monthly')).toBe('Mensal')
     expect(formatFrequency('every_4_weeks')).toBe('A cada 4 semanas')
     expect(formatFrequency('3_month')).toBe('A cada 3 meses')

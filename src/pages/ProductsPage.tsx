@@ -5,7 +5,7 @@ import { Section } from '../components/Section'
 import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
 import { useAuth } from '../contexts/AuthContext'
-import { apiRequest, buildQueryString } from '../lib/api'
+import { ApiRequestError, apiRequest, buildQueryString } from '../lib/api'
 import { formatDate } from '../lib/format'
 import { defaultMarket, hasBothMarkets, sessionMarkets, type MarketCode } from '../lib/markets'
 import { MarketSelect } from '../components/MarketSelect'
@@ -20,6 +20,7 @@ type ProductItem = {
   marketConfigs: Array<{ marketCountry: string; currency: string; active: boolean }>
   variants: Array<{ id: string; sku: string; variantPrices?: Array<{ id: string }> }>
   createdAt: string
+  canDelete?: boolean
 }
 
 type ProductsResponse = {
@@ -37,6 +38,20 @@ type CreatedProduct = {
   planDays: number | null
   stripeProductId?: string | null
   variants: Array<{ id: string }>
+}
+
+const DEACTIVATE_CONFIRM = 'Este produto já está em assinaturas. Desativar tira ele da loja e mantém o cadastro e a cobrança atual. Deseja desativar?'
+const IN_USE_MESSAGE = 'Este produto já está em assinaturas e não pode ser excluído.'
+const ARCHIVE_FAILED_MESSAGE = 'Não foi possível arquivar o produto na Stripe. O cadastro foi mantido.'
+
+function deleteFailure(error: unknown, fallback: string) {
+  if (error instanceof ApiRequestError && (error.code === 'product_in_use' || error.code === 'variation_in_use')) {
+    return { inUse: true, message: IN_USE_MESSAGE }
+  }
+  if (error instanceof ApiRequestError && error.status === 502) {
+    return { inUse: false, message: ARCHIVE_FAILED_MESSAGE }
+  }
+  return { inUse: false, message: error instanceof Error ? error.message : fallback }
 }
 
 const emptyCreateForm = {
@@ -174,7 +189,33 @@ export function ProductsPage() {
       setMessage(`Produto "${item.namePt}" excluído.`)
       await load()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao excluir produto')
+      const failure = deleteFailure(requestError, 'Falha ao excluir produto')
+      if (failure.inUse) {
+        await load()
+      }
+      setError(failure.message)
+    } finally {
+      setDeletingId('')
+    }
+  }
+
+  const deactivateProduct = async (item: ProductItem) => {
+    if (!token || !canWrite) return
+    const confirmed = window.confirm(DEACTIVATE_CONFIRM)
+    if (!confirmed) return
+
+    try {
+      setDeletingId(item.id)
+      setError('')
+      await apiRequest(`/admin/catalog/products/${item.id}`, {
+        token,
+        method: 'PATCH',
+        body: { active: false },
+      })
+      setMessage(`Produto "${item.namePt}" desativado.`)
+      await load()
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao desativar produto')
     } finally {
       setDeletingId('')
     }
@@ -239,7 +280,7 @@ export function ProductsPage() {
         </Section>
       ) : null}
 
-      <Section title="Filtros" description="A lista abre sem filtro. Preencha busca ou mercado quando quiser recortar.">
+      <Section title="Filtros" description="A busca começa vazia. Com um só mercado na sessão, a lista já vem filtrada por ele.">
         <FiltersBar>
           <label>
             Busca
@@ -278,9 +319,9 @@ export function ProductsPage() {
                 <th>Slug</th>
                 <th>Mercados</th>
                 <th>Variantes</th>
-                <th>Ativo</th>
+                <th>Status</th>
                 <th>Criado em</th>
-                {canWrite ? <th>Ações</th> : null}
+                <th>Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -294,21 +335,42 @@ export function ProductsPage() {
                   <td>{item.slug}</td>
                   <td>{item.marketConfigs.map((config) => `${config.marketCountry}/${config.currency}`).join(', ') || '-'}</td>
                   <td>{item.variants.length}</td>
-                  <td>{item.active ? 'Sim' : 'Não'}</td>
+                  <td>
+                    <span className={item.active ? 'badge-success' : 'badge-warning'}>
+                      {item.active ? 'Publicado' : 'Rascunho'}
+                    </span>
+                  </td>
                   <td>{formatDate(item.createdAt)}</td>
-                  {canWrite ? (
-                    <td>
-                      <button
-                        className="danger-button"
-                        type="button"
-                        aria-label={`Excluir produto ${item.namePt}`}
-                        disabled={deletingId === item.id}
-                        onClick={() => void deleteProduct(item)}
-                      >
-                        {deletingId === item.id ? 'Excluindo…' : 'Excluir'}
-                      </button>
-                    </td>
-                  ) : null}
+                  <td>
+                    <div className="table-actions">
+                      <Link className="ghost-button" to={`/catalog/products/${item.id}`}>Detalhes</Link>
+                      {canWrite && item.canDelete === true ? (
+                        <button
+                          className="danger-button"
+                          type="button"
+                          aria-label={`Excluir produto ${item.namePt}`}
+                          disabled={deletingId === item.id}
+                          onClick={() => void deleteProduct(item)}
+                        >
+                          {deletingId === item.id ? 'Excluindo…' : 'Excluir'}
+                        </button>
+                      ) : null}
+                      {canWrite && item.canDelete !== true && item.active ? (
+                        <button
+                          className="danger-button"
+                          type="button"
+                          aria-label={`Desativar produto ${item.namePt}`}
+                          disabled={deletingId === item.id}
+                          onClick={() => void deactivateProduct(item)}
+                        >
+                          {deletingId === item.id ? 'Desativando…' : 'Desativar'}
+                        </button>
+                      ) : null}
+                      {canWrite && item.canDelete !== true && !item.active ? (
+                        <span className="muted">Produto vinculado a assinatura. Não pode ser excluído.</span>
+                      ) : null}
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>

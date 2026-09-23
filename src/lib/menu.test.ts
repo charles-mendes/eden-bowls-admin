@@ -53,7 +53,7 @@ describe('admin menu', () => {
       'Visão geral',
       'Operação',
       'Catálogo',
-      'Billing',
+      'Cobrança',
       'Equipe',
     ])
   })

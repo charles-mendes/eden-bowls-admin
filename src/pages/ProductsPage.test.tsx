@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProductsPage } from './ProductsPage'
 import { AuthProvider } from '../contexts/AuthContext'
-import { operatorUser, operatorWriteUser } from '../test/fixtures'
+import { operatorUser, operatorWriteUser, productItem } from '../test/fixtures'
 import { findCall, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -30,6 +30,13 @@ describe('ProductsPage', () => {
     expect(listCall?.search).toContain('market=BR')
     expect(listCall?.search).not.toContain('search=')
     expect(screen.getByPlaceholderText('slug, nome pt ou en')).toHaveValue('')
+    expect(screen.getByRole('link', { name: 'Detalhes' })).toHaveAttribute('href', '/catalog/products/prod-1')
+    expect(screen.queryByRole('button', { name: 'Excluir produto Bowl Adulto' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Desativar produto Bowl Adulto' })).not.toBeInTheDocument()
+    expect(screen.getByText('Publicado')).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Ativo' })).not.toBeInTheDocument()
+    expect(screen.getByText(/já vem filtrada por ele/)).toBeInTheDocument()
+    expect(screen.queryByText(/sem filtro/)).not.toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Mercado' })).toHaveValue('BR')
     expect(screen.getByRole('combobox', { name: 'Mercado' })).toBeDisabled()
     expect(screen.queryByRole('option', { name: 'Estados Unidos' })).not.toBeInTheDocument()
@@ -107,6 +114,7 @@ describe('ProductsPage', () => {
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Excluir produto Bowl Adulto' })).toBeInTheDocument()
     })
+    expect(screen.getByRole('link', { name: 'Detalhes' })).toHaveAttribute('href', '/catalog/products/prod-1')
 
     await user.click(screen.getByRole('button', { name: 'Excluir produto Bowl Adulto' }))
 
@@ -115,5 +123,81 @@ describe('ProductsPage', () => {
     })
     expect(screen.queryByRole('link', { name: 'Bowl Adulto' })).not.toBeInTheDocument()
     expect(screen.getByText('Produto "Bowl Adulto" excluído.')).toBeInTheDocument()
+  })
+
+  it('deactivates a published linked product without deleting it', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      products: [{ ...productItem, canDelete: false, active: true }],
+    })
+    renderAuthedPage(<ProductsPage />, '/catalog/products')
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Desativar produto Bowl Adulto' })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: 'Excluir produto Bowl Adulto' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Desativar produto Bowl Adulto' }))
+
+    await waitFor(() => {
+      expect(findCall(calls, 'PATCH', '/admin/catalog/products/prod-1')?.body).toEqual({ active: false })
+    })
+    expect(findCall(calls, 'DELETE', '/admin/catalog/products/prod-1')).toBeUndefined()
+    expect(vi.mocked(window.confirm).mock.calls[0][0]).toContain('mantém o cadastro e a cobrança atual')
+  })
+
+  it('hides destructive actions for a linked draft', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      products: [{ ...productItem, canDelete: false, active: false }],
+    })
+    renderAuthedPage(<ProductsPage />, '/catalog/products')
+
+    await waitFor(() => {
+      expect(screen.getByText('Produto vinculado a assinatura. Não pode ser excluído.')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: 'Excluir produto Bowl Adulto' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Desativar produto Bowl Adulto' })).not.toBeInTheDocument()
+  })
+
+  it('reloads the list when delete reports the product is in use', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { calls } = installAdminFetchMock(operatorWriteUser, { catalogDelete: 'in_use' })
+    renderAuthedPage(<ProductsPage />, '/catalog/products')
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Excluir produto Bowl Adulto' })).toBeInTheDocument()
+    })
+    const getsBefore = calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/admin/catalog/products').length
+
+    await user.click(screen.getByRole('button', { name: 'Excluir produto Bowl Adulto' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Este produto já está em assinaturas e não pode ser excluído.')).toBeInTheDocument()
+    })
+    expect(screen.getByRole('link', { name: 'Bowl Adulto' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Desativar produto Bowl Adulto' })).toBeInTheDocument()
+    const getsAfter = calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/admin/catalog/products').length
+    expect(getsAfter).toBeGreaterThan(getsBefore)
+  })
+
+  it('keeps the row when Stripe archive fails', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    installAdminFetchMock(operatorWriteUser, { catalogDelete: 'archive' })
+    renderAuthedPage(<ProductsPage />, '/catalog/products')
+
+    await user.click(await screen.findByRole('button', { name: 'Excluir produto Bowl Adulto' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Não foi possível arquivar o produto na Stripe. O cadastro foi mantido.')).toBeInTheDocument()
+    })
+    expect(screen.getByRole('link', { name: 'Bowl Adulto' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Excluir produto Bowl Adulto' })).toBeInTheDocument()
   })
 })

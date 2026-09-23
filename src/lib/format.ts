@@ -10,6 +10,15 @@ const STRIPE_STATUS_LABELS: Record<string, string> = {
   incomplete: 'Incompleto',
   incomplete_expired: 'Expirado',
   paused: 'Pausado',
+  canceling: 'Cancelando',
+  all: 'Todas',
+}
+
+const SYNC_JOB_STATUS_LABELS: Record<string, string> = {
+  idle: 'nenhum job em andamento',
+  queued: 'na fila',
+  completed: 'concluído',
+  completed_with_skips: 'concluído com variações ignoradas',
 }
 
 const FREQUENCY_LABELS: Record<string, string> = {
@@ -100,6 +109,13 @@ export function formatStripeStatus(value: string | null | undefined) {
   if (!raw) return '-'
 
   return STRIPE_STATUS_LABELS[raw.toLowerCase()] ?? raw
+}
+
+export function formatSyncJobStatus(status?: string | null) {
+  const raw = String(status ?? '').trim()
+  if (!raw) return 'nenhum job'
+
+  return SYNC_JOB_STATUS_LABELS[raw] ?? raw
 }
 
 export function formatFrequency(value: string | null | undefined) {

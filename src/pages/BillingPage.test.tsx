@@ -23,13 +23,14 @@ describe('BillingPage', () => {
     })
 
     expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
-    expect(screen.getByText('evt_1')).toBeInTheDocument()
+    expect(screen.queryByText('Webhooks Stripe')).not.toBeInTheDocument()
+    expect(calls.some((call) => call.path === '/api/v1/admin/billing/webhooks')).toBe(false)
     expect(document.querySelector('.badge-info')?.textContent).toBe('US')
 
-    await user.click(screen.getByRole('button', { name: 'Sync catálogo' }))
+    await user.click(screen.getByRole('button', { name: 'Sincronizar catálogo' }))
 
     await waitFor(() => {
-      expect(screen.getByText('Sync: queued')).toBeInTheDocument()
+      expect(screen.getByText('Sincronização: na fila')).toBeInTheDocument()
     })
 
     const sync = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/catalog/sync')
@@ -72,7 +73,7 @@ describe('BillingPage', () => {
       expect(screen.getByRole('link', { name: 'sub_123' })).toBeInTheDocument()
     })
 
-    expect(screen.queryByRole('button', { name: 'Sync catálogo' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Sincronizar catálogo' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Vincular ao usuário' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sincronizar agora' })).not.toBeInTheDocument()
   })

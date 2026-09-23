@@ -63,6 +63,16 @@ On catalog, billing, production, coupons, feedbacks, privacy, shipping, nutritio
 - **WHEN** an admin opens catalog or dashboard and selects US
 - **THEN** subsequent health and list requests use that market (US / USD or `account=us` as the screen already maps)
 
+#### Scenario: Operator BR cannot pick US on product detail
+
+- **WHEN** an operator assigned `BR` opens a product detail
+- **THEN** the plan country control offers `BR` and does not offer `US`
+
+#### Scenario: Admin can still pick either country on product detail
+
+- **WHEN** an admin opens a product detail
+- **THEN** the plan country control offers both `BR` and `US`
+
 ### Requirement: Dashboard uses the session market
 
 Dashboard catalog health MUST stop hardcoding Brazil / BRL. It MUST request sync health for a market in the session. A single-market session MUST use that market and its currency. An admin session MUST choose which market to view. Checkout metric cards MAY stay unfiltered in the UI only when the backend already scopes `/admin/onboarding/metrics`; the catalog section MUST show which market is in view.

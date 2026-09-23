@@ -5,6 +5,7 @@ import { FiltersBar } from '../components/FiltersBar'
 import { AccountSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
+import { formatTermMonths } from '../lib/format'
 import { defaultStripeAccount, hasBothMarkets, type StripeAccount } from '../lib/markets'
 
 type PromoSlot = {
@@ -40,7 +41,7 @@ const emptyMapping = { 1: '', 3: '', 6: '' }
 const noticeCopy: Record<string, string> = {
   mapped: 'Mapa salvo no banco.',
   created: 'Cupom criado na Stripe e gravado no banco.',
-  synced: 'Slots sincronizados com a Stripe.',
+  synced: 'Mapa sincronizado com a Stripe.',
 }
 
 function mappingFromHealth(health: PromoHealth) {
@@ -190,7 +191,7 @@ export function CouponsPage() {
         <div className="alert">Mapa incompleto ({health.missing_terms.map((item) => `${item}m`).join(', ')}). Checkout de cliente elegível fica bloqueado.</div>
       ) : null}
       {health && health.misconfig_count > 0 ? (
-        <div className="warning">Misconfig count: {health.misconfig_count}</div>
+        <div className="warning">Configurações inconsistentes: {health.misconfig_count}</div>
       ) : null}
       {health?.missing_in_stripe?.length ? (
         <div className="warning">Não encontrados na Stripe: {health.missing_in_stripe.map((item) => `${item}m`).join(', ')}</div>
@@ -232,12 +233,12 @@ export function CouponsPage() {
                 <option value={6}>6 meses — 40%</option>
               </select>
             </label>
-            <label>Code<input value={code} onChange={(event) => setCode(event.target.value)} required /></label>
-            <label>Name<input value={name} onChange={(event) => setName(event.target.value)} placeholder={`First purchase ${term}m (${percent}%)`} /></label>
-            <label>Max redemptions<input type="number" min={0} value={maxRedemptions} onChange={(event) => setMaxRedemptions(Number(event.target.value))} /></label>
+            <label>Código<input value={code} onChange={(event) => setCode(event.target.value)} required /></label>
+            <label>Nome<input value={name} onChange={(event) => setName(event.target.value)} placeholder={`First purchase ${term}m (${percent}%)`} /></label>
+            <label>Máximo de usos<input type="number" min={0} value={maxRedemptions} onChange={(event) => setMaxRedemptions(Number(event.target.value))} /></label>
             <label className="checkbox-field">
               <input type="checkbox" checked={assignSlot} onChange={(event) => setAssignSlot(event.target.checked)} />
-              Assign first purchase slot
+              Atribuir à vaga da primeira compra
             </label>
           </div>
           <div className="inline-actions">
@@ -246,16 +247,16 @@ export function CouponsPage() {
         </form>
       </Section>
 
-      <Section title="Promotion codes recentes" description="Até 25 códigos da Stripe.">
+      <Section title="Códigos de promoção recentes" description="Até 25 códigos da Stripe.">
         <div className="table-shell table-scroll">
           <table>
             <thead>
               <tr>
-                <th>Code</th>
+                <th>Código</th>
                 <th>Promo id</th>
                 <th>Coupon</th>
                 <th>%</th>
-                <th>Duration</th>
+                <th>Duração</th>
                 <th>Ativo</th>
                 <th>Slot</th>
                 <th>Stripe</th>
@@ -270,7 +271,7 @@ export function CouponsPage() {
                   <td>{item.percent_off == null ? '-' : `${item.percent_off}%`}</td>
                   <td>{formatPromoDuration(item.duration)}</td>
                   <td>{item.active ? 'Sim' : 'Não'}</td>
-                  <td>{item.slot ? `${item.slot}m` : '-'}</td>
+                  <td>{formatTermMonths(item.slot)}</td>
                   <td><a className="table-link" href={item.dashboard_url} target="_blank" rel="noreferrer">Abrir</a></td>
                 </tr>
               ))}

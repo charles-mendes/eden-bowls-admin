@@ -105,14 +105,13 @@ Arquivo: `src/pages/BillingPage.tsx`.
 Em paralelo:
 
 - `GET /billing/catalog/sync/health?market&currency`
-- `GET /admin/billing/webhooks?page&perPage&state?`
 - `GET /admin/billing/subscriptions?page&perPage&status?&market?`
 
 Depois, de forma opcional (falha não derruba a página):
 
 - `GET /billing/catalog/sync/status`
 
-Webhooks e subscriptions têm páginas independentes (`webhookPage`, `subscriptionPage`) e compartilham `perPage`.
+A listagem de assinaturas pagina com `subscriptionPage` e `perPage`.
 
 ### Mutações
 
@@ -134,10 +133,9 @@ Espera `{ syncJobId, status }`. Mostra mensagem de sucesso e recarrega os dados.
 
 - KPIs de health (expected, mapped, gaps) e status do job.
 - Formulários lado a lado: sync de catálogo e sync por UUID de produto.
-- Tabela de webhooks: `eventId`, tipo, estado, tentativas, `correlationId`, `processedAt`.
 - Tabela de subscriptions: e-mail, termo (`marketCountry` + meses), status, auto renew, próximo billing, criado em.
 
-Não há retry de webhook, cancelamento de assinatura nem inspeção de payload do evento.
+Não há cancelamento de assinatura nesta tela.
 
 ## Regras de negócio — `/config/business-rules`
 

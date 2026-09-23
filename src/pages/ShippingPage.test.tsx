@@ -31,7 +31,7 @@ describe('ShippingPage', () => {
     const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
     expect(put?.authorization).toBe('Bearer access-token')
     expect(put?.body).toMatchObject({ br: { center: { name: 'CD SP' } } })
-    expect(screen.queryByRole('button', { name: 'United States' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Estados Unidos' })).not.toBeInTheDocument()
   })
 
   it('hides the save mutation from readonly accounts', async () => {
@@ -43,7 +43,7 @@ describe('ShippingPage', () => {
       expect(screen.getByDisplayValue('CD SP')).toBeInTheDocument()
     })
 
-    expect(screen.queryByRole('button', { name: 'United States' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Estados Unidos' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument()
   })
 
@@ -57,7 +57,7 @@ describe('ShippingPage', () => {
       expect(screen.getByDisplayValue('CD SP')).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: 'United States' }))
+    await user.click(screen.getByRole('button', { name: 'Estados Unidos' }))
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('Eden Bowls Warehouse')).toBeInTheDocument()

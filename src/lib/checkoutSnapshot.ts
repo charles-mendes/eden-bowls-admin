@@ -165,26 +165,66 @@ function parseLineItems(rawItems: unknown[], fallbackCurrency: string): PlanLine
   })
 }
 
-function parsePlanPets(plan: Record<string, unknown> | null): PlanPetMix[] {
-  const fromPets = asArray(plan?.pets).flatMap((item) => {
+function mapPetRows(items: unknown[]) {
+  return items.flatMap((item) => {
     const pet = asRecord(item)
     if (!pet) return []
     return [{
-      petName: readString(pet, 'pet_name', 'name') || 'Unnamed pet',
+      id: readString(pet, 'pet_id', 'id'),
+      petName: readString(pet, 'pet_name', 'name') || 'Pet sem nome',
       flavors: parseFlavors(pet),
     }]
   })
+}
 
+function identifiedPlanPets(plan: Record<string, unknown> | null) {
+  const fromPets = mapPetRows(asArray(plan?.pets))
+  if (fromPets.length) return fromPets
+  return mapPetRows(asArray(plan?.flavors_by_pet))
+}
+
+function parsePlanPets(plan: Record<string, unknown> | null): PlanPetMix[] {
+  return identifiedPlanPets(plan).map(({ petName, flavors }) => ({ petName, flavors }))
+}
+
+function snapshotPetRows(petsSnapshot: unknown) {
+  const snapshot = asRecord(petsSnapshot)
+  const fromPets = asArray(snapshot?.pets).flatMap((item) => {
+    const pet = asRecord(item)
+    if (!pet) return []
+    const id = readString(pet, 'pet_id', 'id')
+    const name = readString(pet, 'pet_name', 'name')
+    if (!id && !name) return []
+    return [{ id, name }]
+  })
   if (fromPets.length) return fromPets
 
-  return asArray(plan?.flavors_by_pet).flatMap((item) => {
-    const pet = asRecord(item)
-    if (!pet) return []
-    return [{
-      petName: readString(pet, 'pet_name', 'name') || 'Unnamed pet',
-      flavors: parseFlavors(pet),
-    }]
+  const ids = asArray(snapshot?.pet_ids).map((item) => String(item || '').trim())
+  const names = asArray(snapshot?.pets_names).map((item) => String(item || '').trim())
+  const rows = []
+  for (let index = 0; index < Math.max(ids.length, names.length); index += 1) {
+    const id = ids[index] || ''
+    const name = names[index] || ''
+    if (!id && !name) continue
+    rows.push({ id, name })
+  }
+  return rows
+}
+
+export function mergeReadablePets(planSelection: unknown, petsSnapshot: unknown): PlanPetMix[] {
+  const planPets = identifiedPlanPets(asRecord(planSelection))
+  const seenIds = new Set(planPets.map((pet) => pet.id).filter(Boolean))
+  const extras = snapshotPetRows(petsSnapshot).flatMap((pet) => {
+    if (pet.id && seenIds.has(pet.id)) return []
+    if (!pet.id && planPets.some((planPet) => planPet.petName === pet.name)) return []
+    if (pet.id) seenIds.add(pet.id)
+    return [{ petName: pet.name || 'Pet sem nome', flavors: '' }]
   })
+
+  return [
+    ...planPets.map(({ petName, flavors }) => ({ petName, flavors })),
+    ...extras,
+  ]
 }
 
 function parseAddressLines(address: Record<string, unknown> | null) {

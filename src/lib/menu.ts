@@ -2,7 +2,7 @@ import { type AdminRole } from './roles'
 
 export type { AdminRole }
 
-export type MenuGroup = 'Visão geral' | 'Operação' | 'Catálogo' | 'Billing' | 'Equipe'
+export type MenuGroup = 'Visão geral' | 'Operação' | 'Catálogo' | 'Cobrança' | 'Equipe'
 
 export type MenuItem = {
   label: string
@@ -19,8 +19,8 @@ export const adminMenu: MenuItem[] = [
   { label: 'Feedbacks', href: '/feedbacks', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Frete', href: '/config/shipping', roles: ['admin', 'operator'], group: 'Operação' },
   { label: 'Produtos', href: '/catalog/products', roles: ['admin', 'operator', 'readonly'], group: 'Catálogo' },
-  { label: 'Assinantes', href: '/billing', roles: ['admin', 'operator', 'readonly'], group: 'Billing' },
-  { label: 'Cupons 1ª compra', href: '/billing/coupons', roles: ['admin', 'operator'], group: 'Billing' },
+  { label: 'Assinantes', href: '/billing', roles: ['admin', 'operator', 'readonly'], group: 'Cobrança' },
+  { label: 'Cupons 1ª compra', href: '/billing/coupons', roles: ['admin', 'operator'], group: 'Cobrança' },
   { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Equipe' },
   { label: 'Privacidade', href: '/privacy/requests', roles: ['admin', 'operator', 'readonly'], group: 'Equipe' },
   { label: 'Papéis', href: '/users/roles', roles: ['admin'], group: 'Equipe' },

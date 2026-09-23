@@ -54,7 +54,7 @@ export function OnboardingSessionPage() {
   const snapshots = parseCheckoutSnapshots(data)
 
   return (
-    <PageFrame title={`Checkout ${data?.email ?? id ?? ''}`} description="Visão 360 por user_id: pets, plano, endereço, N assinaturas Stripe.">
+    <PageFrame title={`Checkout ${data?.email ?? id ?? ''}`} description="Visão 360 pelo identificador do usuário: pets, plano, endereço, N assinaturas Stripe.">
       {error ? <div className="alert">{error}</div> : null}
       {data?.empty ? <div className="warning">Sem checkout_reference para este usuário.</div> : null}
 
@@ -66,19 +66,19 @@ export function OnboardingSessionPage() {
           <MetricCard label="Atualizado" value={formatDate(data?.updatedAt)} />
         </div>
 
-        <Section title="Cliente" description="Identidade do user_id — não há mais session_id.">
+        <Section title="Cliente" description="Identidade do usuário. O identificador de sessão antigo não existe mais.">
           <p>{data?.displayName} · {data?.email} · {data?.userId}</p>
           <div className="inline-actions">
             <Link className="ghost-button" to={`/users/${data?.userId}`}>Ver cliente</Link>
           </div>
         </Section>
 
-        <Section title="Assinaturas Stripe" description="Ledger local. Um checkout pode ter N assinaturas.">
+        <Section title="Assinaturas Stripe" description="Registro local. Um checkout pode ter N assinaturas.">
           <div className="table-shell table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Subscription</th>
+                  <th>Assinatura</th>
                   <th>Status</th>
                   <th>Plano</th>
                   <th>Período</th>
@@ -100,7 +100,7 @@ export function OnboardingSessionPage() {
           </div>
         </Section>
 
-        <Section title="Pets" description="Pets atuais do onboarding. Sem nome vira Unnamed pet.">
+        <Section title="Pets" description="Pets atuais do onboarding. Sem nome aparece como Pet sem nome.">
           <div className="table-shell table-scroll">
             <table>
               <thead>

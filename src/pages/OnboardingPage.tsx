@@ -75,7 +75,7 @@ export function OnboardingPage() {
   }, [token, email, link, page, perPage])
 
   return (
-    <PageFrame title="Onboarding 360" description="Consulta operacional de checkouts por user_id. Um usuário pode ter N assinaturas.">
+    <PageFrame title="Onboarding 360" description="Consulta operacional de checkouts pelo identificador do usuário. Um usuário pode ter N assinaturas.">
       <div className="grid cards-4">
         <MetricCard label="Checkouts" value={metrics?.totalCheckouts ?? '—'} />
         <MetricCard label="Vinculados" value={metrics?.linkedToStripe ?? '—'} />

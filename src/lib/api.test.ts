@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apiRequest, buildQueryString, getApiBaseUrl, refreshAccessToken } from './api'
+import { ApiRequestError, apiRequest, buildQueryString, getApiBaseUrl, refreshAccessToken } from './api'
 
 describe('api client', () => {
   afterEach(() => {
@@ -110,6 +110,34 @@ describe('api client', () => {
     ))
 
     await expect(apiRequest('/auth/token', { method: 'POST', body: {} })).rejects.toThrow('Invalid username or password')
+  })
+
+  it('keeps status and details code on a catalog conflict', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        message: 'Product is linked to a subscription and cannot be deleted.',
+        details: { code: 'product_in_use' },
+      }), {
+        status: 409,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    ))
+
+    await expect(apiRequest('/admin/catalog/products/prod-1', { method: 'DELETE', token: 'access-token' }))
+      .rejects.toMatchObject({
+        status: 409,
+        code: 'product_in_use',
+        message: 'Product is linked to a subscription and cannot be deleted.',
+      })
+    await expect(apiRequest('/admin/catalog/products/prod-1', { method: 'DELETE', token: 'access-token' }))
+      .rejects.toBeInstanceOf(ApiRequestError)
+  })
+
+  it('keeps a message when the error body is empty', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 502, statusText: 'Bad Gateway' })))
+
+    await expect(apiRequest('/admin/catalog/products/prod-1', { method: 'DELETE', token: 'access-token' }))
+      .rejects.toMatchObject({ message: 'Bad Gateway', status: 502, code: '' })
   })
 
   it('returns null for empty successful responses', async () => {

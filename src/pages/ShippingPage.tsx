@@ -167,7 +167,7 @@ export function ShippingPage() {
             className={tab === market ? 'tab active' : 'tab'}
             onClick={() => setPickedTab(market)}
           >
-            {market === 'US' ? 'United States' : 'Brasil'}
+            {market === 'US' ? 'Estados Unidos' : 'Brasil'}
           </button>
         ))}
       </div>
@@ -184,10 +184,10 @@ export function ShippingPage() {
             <label>Latitude<input type="number" step="0.000001" value={settings.br.center.lat} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, center: { ...current.br.center, lat: Number(event.target.value) } } }))} /></label>
             <label>Longitude<input type="number" step="0.000001" value={settings.br.center.lng} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, center: { ...current.br.center, lng: Number(event.target.value) } } }))} /></label>
             <label>R$/km<input type="number" step="0.01" value={settings.br.rule.per_km} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, per_km: Number(event.target.value) } } }))} /></label>
-            <label>Road factor<input type="number" step="0.01" value={settings.br.rule.road_factor} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, road_factor: Number(event.target.value) } } }))} /></label>
+            <label>Fator de correção<input type="number" step="0.01" value={settings.br.rule.road_factor} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, road_factor: Number(event.target.value) } } }))} /></label>
             <label>Piso<input type="number" step="0.01" value={settings.br.rule.min_fee} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, min_fee: Number(event.target.value) } } }))} /></label>
             <label>Teto<input value={settings.br.rule.max_fee ?? ''} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, max_fee: event.target.value === '' ? null : Number(event.target.value) } } }))} /></label>
-            <label>Max km<input type="number" value={settings.br.rule.max_distance_km} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, max_distance_km: Number(event.target.value) } } }))} /></label>
+            <label>Km máximos<input type="number" value={settings.br.rule.max_distance_km} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, max_distance_km: Number(event.target.value) } } }))} /></label>
             <label>Km/dia<input type="number" value={settings.br.rule.km_per_day} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, km_per_day: Number(event.target.value) } } }))} /></label>
             <label>Mín. dias<input type="number" value={settings.br.rule.min_days} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, min_days: Number(event.target.value) } } }))} /></label>
             <label>Máx. dias<input type="number" value={settings.br.rule.max_days} onChange={(event) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, max_days: Number(event.target.value) } } }))} /></label>
@@ -196,10 +196,10 @@ export function ShippingPage() {
           <div className="form-grid">
             <label className="checkbox-field">
               <input type="checkbox" checked={settings.us.enabled} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, enabled: event.target.checked } }))} />
-              Enabled
+              Habilitado
             </label>
             <label>
-              Quote mode
+              Modo de cotação
               <select
                 value={settings.us.quote_mode}
                 onChange={(event) => setSettings((current) => ({
@@ -207,28 +207,28 @@ export function ShippingPage() {
                   us: { ...current.us, quote_mode: event.target.value === 'ups' ? 'ups' : 'fixed' },
                 }))}
               >
-                <option value="fixed">fixed (taxa fixa / fallback)</option>
-                <option value="ups">ups (Rating API)</option>
+                <option value="fixed">fixo (taxa fixa / reserva)</option>
+                <option value="ups">UPS (API de cotação)</option>
               </select>
             </label>
             <label className="checkbox-field">
               <input type="checkbox" checked={settings.us.fallback_enabled} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, fallback_enabled: event.target.checked } }))} />
               Fallback para custo fixo se UPS falhar
             </label>
-            <label>Fallback cost<input type="number" step="0.01" value={settings.us.cost} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, cost: Number(event.target.value) } }))} /></label>
-            <label>Fallback carrier<input value={settings.us.carrier} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, carrier: event.target.value } }))} /></label>
-            <label>Fallback delivery<input value={settings.us.delivery} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, delivery: event.target.value } }))} /></label>
-            <label>Fallback label<input value={settings.us.label} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, label: event.target.value } }))} /></label>
-            <label>Allowed service codes<input value={settings.us.allowed_service_codes.join(',')} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, allowed_service_codes: event.target.value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean) } }))} placeholder="03" /></label>
-            <label>Ship-from name<input value={settings.us.ship_from.name} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, name: event.target.value } } }))} /></label>
-            <label>Ship-from street<input value={settings.us.ship_from.street} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, street: event.target.value } } }))} /></label>
-            <label>Ship-from city<input value={settings.us.ship_from.city} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, city: event.target.value } } }))} /></label>
-            <label>Ship-from state<input value={settings.us.ship_from.state} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, state: event.target.value } } }))} /></label>
-            <label>Ship-from ZIP<input value={settings.us.ship_from.zipcode} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, zipcode: event.target.value } } }))} /></label>
-            <label>Package weight (lb)<input type="number" step="0.1" value={settings.us.package.weight_lb} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, weight_lb: Number(event.target.value) } } }))} /></label>
-            <label>Length (in)<input type="number" step="0.1" value={settings.us.package.length_in} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, length_in: Number(event.target.value) } } }))} /></label>
-            <label>Width (in)<input type="number" step="0.1" value={settings.us.package.width_in} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, width_in: Number(event.target.value) } } }))} /></label>
-            <label>Height (in)<input type="number" step="0.1" value={settings.us.package.height_in} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, height_in: Number(event.target.value) } } }))} /></label>
+            <label>Custo reserva<input type="number" step="0.01" value={settings.us.cost} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, cost: Number(event.target.value) } }))} /></label>
+            <label>Transportadora reserva<input value={settings.us.carrier} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, carrier: event.target.value } }))} /></label>
+            <label>Prazo reserva<input value={settings.us.delivery} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, delivery: event.target.value } }))} /></label>
+            <label>Rótulo reserva<input value={settings.us.label} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, label: event.target.value } }))} /></label>
+            <label>Códigos de serviço permitidos<input value={settings.us.allowed_service_codes.join(',')} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, allowed_service_codes: event.target.value.split(/[\s,]+/).map((item) => item.trim()).filter(Boolean) } }))} placeholder="03" /></label>
+            <label>Nome de origem<input value={settings.us.ship_from.name} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, name: event.target.value } } }))} /></label>
+            <label>Rua de origem<input value={settings.us.ship_from.street} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, street: event.target.value } } }))} /></label>
+            <label>Cidade de origem<input value={settings.us.ship_from.city} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, city: event.target.value } } }))} /></label>
+            <label>Estado de origem<input value={settings.us.ship_from.state} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, state: event.target.value } } }))} /></label>
+            <label>ZIP de origem<input value={settings.us.ship_from.zipcode} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, ship_from: { ...current.us.ship_from, zipcode: event.target.value } } }))} /></label>
+            <label>Peso do pacote (lb)<input type="number" step="0.1" value={settings.us.package.weight_lb} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, weight_lb: Number(event.target.value) } } }))} /></label>
+            <label>Comprimento (pol)<input type="number" step="0.1" value={settings.us.package.length_in} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, length_in: Number(event.target.value) } } }))} /></label>
+            <label>Largura (pol)<input type="number" step="0.1" value={settings.us.package.width_in} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, width_in: Number(event.target.value) } } }))} /></label>
+            <label>Altura (pol)<input type="number" step="0.1" value={settings.us.package.height_in} onChange={(event) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, height_in: Number(event.target.value) } } }))} /></label>
           </div>
         )}
         {canWrite ? <button className="primary-button" type="submit">Salvar</button> : null}

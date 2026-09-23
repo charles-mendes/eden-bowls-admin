@@ -9,8 +9,8 @@ test.describe('Admin billing', () => {
     await expect(page.getByRole('link', { name: 'sub_123' })).toBeVisible()
     await expect(page.getByLabel('Conta')).toHaveValue('br')
     await expect(page.getByLabel('Conta')).toBeDisabled()
-    await expect(page.getByRole('option', { name: 'todas' })).toHaveCount(0)
-    await expect(page.getByRole('option', { name: 'US' })).toHaveCount(0)
+    await expect(page.getByLabel('Conta').getByRole('option', { name: 'todas' })).toHaveCount(0)
+    await expect(page.getByLabel('Conta').getByRole('option', { name: 'US' })).toHaveCount(0)
     await expect.poll(() => captured.some((item) => (
       item.method === 'GET'
       && item.path === '/api/v1/admin/billing/subscriptions'
@@ -22,9 +22,9 @@ test.describe('Admin billing', () => {
   test('starts a catalog sync', async ({ page }) => {
     const { captured } = await openAuthed(page, '/billing', e2eProfiles.operatorWrite)
 
-    await expect(page.getByRole('button', { name: 'Sync catálogo' })).toBeVisible()
-    await page.getByRole('button', { name: 'Sync catálogo' }).click()
-    await expect(page.getByText('Sync: queued')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Sincronizar catálogo' })).toBeVisible()
+    await page.getByRole('button', { name: 'Sincronizar catálogo' }).click()
+    await expect(page.getByText('Sincronização: na fila')).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/catalog/sync')).toMatchObject({
       authorization: 'Bearer e2e-access-token',
       body: { market: 'BR', currency: 'BRL' },
@@ -53,7 +53,7 @@ test.describe('Admin billing', () => {
     ))).toBe(true)
 
     await page.getByRole('button', { name: 'Sincronizar com Stripe' }).click()
-    await expect(page.getByText('Slots sincronizados com a Stripe.')).toBeVisible()
+    await expect(page.getByText('Mapa sincronizado com a Stripe.')).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/stripe/first-purchase-promos/sync')).toMatchObject({
       authorization: 'Bearer e2e-access-token',
       search: '?account=br',

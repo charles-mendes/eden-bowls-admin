@@ -6,7 +6,7 @@ import { Section } from '../components/Section'
 import { MarketSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
-import { formatDate } from '../lib/format'
+import { formatDate, formatSyncJobStatus } from '../lib/format'
 import { currencyForMarket, defaultMarket, hasBothMarkets, MARKET_LABELS, type MarketCode } from '../lib/markets'
 
 type CheckoutMetrics = {
@@ -37,13 +37,6 @@ type MarketConflict = {
   email: string
   profileMarket: string
   stripeAccount: string
-}
-
-const SYNC_STATUS_LABELS: Record<string, string> = {
-  idle: 'nenhum job em andamento',
-  queued: 'na fila',
-  completed: 'concluído',
-  completed_with_skips: 'concluído com variações ignoradas',
 }
 
 function marketLabel(market: string) {
@@ -87,14 +80,6 @@ function catalogHealthCopy(health: SyncHealth | null, market: string, currency: 
     badgeLabel: `${gapCount} sem Price`,
     summary: `Faltam Price IDs em ${gapCount} de ${health.totalExpected} variações. Sem esse vínculo o checkout ${place} não consegue cobrar essas opções.`,
   }
-}
-
-function formatSyncJobStatus(status?: string) {
-  if (!status) {
-    return 'nenhum sync disparado nesta sessão do servidor'
-  }
-
-  return SYNC_STATUS_LABELS[status] ?? status
 }
 
 export function DashboardPage() {
@@ -218,13 +203,13 @@ export function DashboardPage() {
           ) : null}
 
           <p className="muted">
-            Último sync: {formatSyncJobStatus(syncStatus?.status)}
+            Última sincronização: {syncStatus?.status ? formatSyncJobStatus(syncStatus.status) : 'nenhum sync disparado nesta sessão do servidor'}
             {syncStatus?.summary?.scope || syncStatus?.scope ? ` · escopo ${syncStatus.summary?.scope ?? syncStatus.scope}` : ''}
           </p>
 
           <div className="inline-actions">
             <Link className="ghost-button" to="/catalog/products">Ver produtos</Link>
-            <Link className="ghost-button" to="/billing">Sync e assinantes</Link>
+            <Link className="ghost-button" to="/billing">Sincronizar e assinantes</Link>
           </div>
         </div>
       </Section>

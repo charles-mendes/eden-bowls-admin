@@ -200,6 +200,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       marketConfigs: [{ marketCountry: 'BR', currency: 'BRL', active: true }],
       variants: [{ id: 'var-1', sku: 'BOWL-1', variantPrices: [{ id: 'price-1' }] }],
       createdAt: '2026-08-01T12:00:00.000Z',
+      canDelete: true,
     }],
     detail: {
       id: 'prod-1',
@@ -209,7 +210,8 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       active: false,
       planCountry: 'BR',
       planDays: 28,
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }],
+      canDelete: true,
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'synced', requiresSync: false, canDelete: true }],
     },
   }
 
@@ -405,7 +407,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     }
 
     if (path === '/api/v1/admin/catalog/products/prod-1' && method === 'PATCH') {
-      const currentVariant = catalog.detail.variants[0] || { id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'mapped', requiresSync: false }
+      const currentVariant = catalog.detail.variants[0] || { id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'synced', requiresSync: false }
       const variants = Array.isArray(body?.variants)
         ? body.variants.map((item: { id?: string }) => ({ ...currentVariant, ...item }))
         : catalog.detail.variants

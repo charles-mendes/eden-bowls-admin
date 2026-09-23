@@ -227,7 +227,7 @@ export function UserDetailPage() {
         </form>
       </Section>
 
-      <Section title="Delivery instructions" description="Special instructions for delivery drivers, gate code, preferred drop-off location, or pet safety notes.">
+      <Section title="Instruções de entrega" description="Portão, local de entrega ou cuidados com o pet para quem faz a entrega.">
         <form className="stack" onSubmit={saveInstructions}>
           <label>
             Instruções

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseCheckoutSnapshots } from './checkoutSnapshot'
+import { mergeReadablePets, parseCheckoutSnapshots } from './checkoutSnapshot'
 import { checkoutDetail } from '../test/fixtures'
 
 describe('parseCheckoutSnapshots', () => {
@@ -60,5 +60,27 @@ describe('parseCheckoutSnapshots', () => {
       { label: 'Método', value: 'eden' },
     ])
     expect(snapshots.payment.items).toEqual([])
+  })
+
+  it('keeps the plan name on a clash and appends snapshot-only pets with an empty flavor cell', () => {
+    expect(mergeReadablePets(
+      {
+        pets: [{
+          pet_id: 'pet-1',
+          pet_name: 'luna',
+          selected_flavors: ['beef'],
+          flavor_weights: [5],
+        }],
+      },
+      {
+        pets: [
+          { id: 'pet-1', name: 'Luna' },
+          { id: 'pet-2', name: 'Milo' },
+        ],
+      },
+    )).toEqual([
+      { petName: 'luna', flavors: 'beef × 5' },
+      { petName: 'Milo', flavors: '' },
+    ])
   })
 })

@@ -115,16 +115,16 @@ export function BusinessRulesPage() {
   return (
     <PageFrame
       title="Regras de negócio"
-      description="Listagem de business rules por domínio, chave, mercado e vigência."
+      description="Listagem de regras de negócio por domínio, chave, mercado e vigência."
     >
       <Section title="Filtros" description="Localize a regra antes de editar o JSON e a vigência.">
         <FiltersBar>
           <label>
-            Domain
+            Domínio
             <input value={domain} onChange={(event) => { setDomain(event.target.value); setPage(1) }} />
           </label>
           <label>
-            Key
+            Chave
             <input value={key} onChange={(event) => { setKey(event.target.value); setPage(1) }} />
           </label>
           <MarketSelect
@@ -135,7 +135,7 @@ export function BusinessRulesPage() {
             onChange={(value) => { setMarketCountry(value); setPage(1) }}
           />
           <label>
-            Active
+            Ativa
             <select value={active} onChange={(event) => { setActive(event.target.value); setPage(1) }}>
               <option value="">Todos</option>
               <option value="true">Ativas</option>
@@ -156,11 +156,11 @@ export function BusinessRulesPage() {
             <table>
               <thead>
                 <tr>
-                  <th>Domain</th>
-                  <th>Key</th>
-                  <th>Market</th>
-                  <th>Active</th>
-                  <th>Effective from</th>
+                  <th>Domínio</th>
+                  <th>Chave</th>
+                  <th>Mercado</th>
+                  <th>Ativa</th>
+                  <th>Vigente desde</th>
                 </tr>
               </thead>
               <tbody>
@@ -181,11 +181,11 @@ export function BusinessRulesPage() {
             <h3>Editar regra</h3>
             <div className="muted-panel">{selectedSummary}</div>
             <label>
-              valueJson
+              Valor (JSON)
               <textarea rows={14} value={valueJson} onChange={(event) => setValueJson(event.target.value)} />
             </label>
             <label>
-              effectiveTo
+              Vigente até
               <input value={effectiveTo} onChange={(event) => setEffectiveTo(event.target.value)} placeholder="YYYY-MM-DDTHH:mm:ss.sssZ ou vazio" />
             </label>
             <button className="primary-button" type="submit" disabled={!selectedRule}>Salvar regra</button>

@@ -249,7 +249,7 @@ export function ProductionQueuePage() {
         <MetricCard label="Atrasados" value={data?.metrics.overdue ?? '—'} />
       </div>
 
-      <Section title="Filtros" description="A busca e o status de produção recortam a grade, não os KPIs.">
+      <Section title="Filtros" description="A busca e o status de produção recortam a grade, não os indicadores.">
         <FiltersBar>
           <label>
             Janela

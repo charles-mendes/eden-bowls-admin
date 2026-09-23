@@ -8,7 +8,7 @@ import { FiltersBar } from '../components/FiltersBar'
 import { AccountSelect, MarketSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
-import { formatDate } from '../lib/format'
+import { formatDate, formatStripeStatus, formatSyncJobStatus } from '../lib/format'
 import { currencyForMarket, defaultMarket, defaultStripeAccount, hasBothMarkets } from '../lib/markets'
 
 type SyncStatus = {
@@ -24,15 +24,6 @@ type SyncHealth = {
   totalExpected: number
   totalMapped: number
   gaps: string[]
-}
-
-type WebhookItem = {
-  id: string
-  eventId: string
-  eventType: string
-  state: string
-  attempts: number
-  processedAt: string | null
 }
 
 type SubscriptionItem = {
@@ -70,9 +61,7 @@ export function BillingPage() {
   const [status, setStatus] = useState<SyncStatus | null>(null)
   const [health, setHealth] = useState<SyncHealth | null>(null)
   const [metrics, setMetrics] = useState<BillingMetrics | null>(null)
-  const [webhooks, setWebhooks] = useState<Paginated<WebhookItem> | null>(null)
   const [subscriptions, setSubscriptions] = useState<Paginated<SubscriptionItem> | null>(null)
-  const [webhookPage, setWebhookPage] = useState(1)
   const [subscriptionPage, setSubscriptionPage] = useState(1)
   const perPage = 20
   const [subscriptionStatus, setSubscriptionStatus] = useState('active')
@@ -89,15 +78,13 @@ export function BillingPage() {
 
     try {
       setError('')
-      const [healthResponse, webhooksResponse, subscriptionsResponse, metricsResponse] = await Promise.all([
+      const [healthResponse, subscriptionsResponse, metricsResponse] = await Promise.all([
         apiRequest<SyncHealth>(`/admin/catalog/sync/health${buildQueryString({ market, currency })}`, { token }),
-        apiRequest<Paginated<WebhookItem>>(`/admin/billing/webhooks${buildQueryString({ page: webhookPage, perPage })}`, { token }),
         apiRequest<Paginated<SubscriptionItem>>(`/admin/billing/subscriptions${buildQueryString({ page: subscriptionPage, perPage, status: subscriptionStatus || 'active', q: search || undefined, market: market || undefined, account: account === 'all' ? undefined : account })}`, { token }),
         apiRequest<BillingMetrics>('/admin/billing/metrics', { token }),
       ])
 
       setHealth(healthResponse)
-      setWebhooks(webhooksResponse)
       setSubscriptions(subscriptionsResponse)
       setMetrics(metricsResponse)
 
@@ -108,13 +95,13 @@ export function BillingPage() {
         setStatus(null)
       }
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar billing')
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar assinantes')
     }
   }
 
   useEffect(() => {
     void loadData()
-  }, [token, user, market, currency, webhookPage, subscriptionPage, perPage, subscriptionStatus, search, account])
+  }, [token, user, market, currency, subscriptionPage, perPage, subscriptionStatus, search, account])
 
   const submitSync = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -125,10 +112,10 @@ export function BillingPage() {
         method: 'POST',
         body: { market, currency },
       })
-      setSyncMessage(`Sync: ${response.status}`)
+      setSyncMessage(`Sincronização: ${formatSyncJobStatus(response.status)}`)
       await loadData()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao iniciar sync')
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao iniciar a sincronização')
     }
   }
 
@@ -150,12 +137,12 @@ export function BillingPage() {
       setSyncMessage(`Vinculados: ${response.data?.linked ?? 0}`)
       await loadData()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha no backfill')
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao vincular')
     }
   }
 
   return (
-    <PageFrame title="Assinantes" description="Ledger local Stripe. Sem pause/cancel por esta tela.">
+    <PageFrame title="Assinantes" description="Registro local da Stripe. Pausa e cancelamento não são feitos nesta tela.">
       <div className="grid cards-4">
         <MetricCard label="Ativas" value={metrics?.active ?? '—'} />
         <MetricCard label="Cancelando" value={metrics?.canceling ?? '—'} />
@@ -163,7 +150,7 @@ export function BillingPage() {
         <MetricCard label="Renovação 7d" value={metrics?.renewing7d ?? '—'} />
       </div>
 
-      <Section title="Catálogo Stripe" description="Health e sync de preços.">
+      <Section title="Catálogo Stripe" description="Saúde do catálogo e sincronização de preços.">
         <form className="inline-actions" onSubmit={submitSync}>
           <MarketSelect
             user={user}
@@ -171,24 +158,24 @@ export function BillingPage() {
             onChange={setPickedMarket}
           />
           <span className="muted">{currency || '—'}</span>
-          {hasPermission('catalog.sync') ? <button className="primary-button" type="submit">Sync catálogo</button> : null}
+          {hasPermission('catalog.sync') ? <button className="primary-button" type="submit">Sincronizar catálogo</button> : null}
         </form>
-        <p className="muted">Mapped {health?.totalMapped ?? 0}/{health?.totalExpected ?? 0} · {status?.status ?? 'sem job'}</p>
+        <p className="muted">Mapeados {health?.totalMapped ?? 0}/{health?.totalExpected ?? 0} · {formatSyncJobStatus(status?.status)}</p>
         {syncMessage ? <div className="success">{syncMessage}</div> : null}
         {error ? <div className="alert">{error}</div> : null}
       </Section>
 
-      <Section title="Assinaturas" description="Default status=active. Limpar filtros volta para active.">
+      <Section title="Assinaturas" description="O filtro começa em Ativas. Limpar filtros volta para Ativas.">
         <FiltersBar>
           <label>
             Status
             <select value={subscriptionStatus} onChange={(event) => { setSubscriptionStatus(event.target.value); setSubscriptionPage(1) }}>
-              <option value="active">active</option>
-              <option value="trialing">trialing</option>
-              <option value="past_due">past_due</option>
-              <option value="canceled">canceled</option>
-              <option value="canceling">canceling</option>
-              <option value="all">all</option>
+              <option value="active">{formatStripeStatus('active')}</option>
+              <option value="trialing">{formatStripeStatus('trialing')}</option>
+              <option value="past_due">{formatStripeStatus('past_due')}</option>
+              <option value="canceled">{formatStripeStatus('canceled')}</option>
+              <option value="canceling">{formatStripeStatus('canceling')}</option>
+              <option value="all">{formatStripeStatus('all')}</option>
             </select>
           </label>
           <AccountSelect
@@ -217,12 +204,12 @@ export function BillingPage() {
             <thead>
               <tr>
                 <th>Usuário</th>
-                <th>Subscription</th>
+                <th>Assinatura</th>
                 <th>Conta</th>
                 <th>Termo</th>
                 <th>Status</th>
-                <th>Auto renew</th>
-                <th>Next billing</th>
+                <th>Renovação automática</th>
+                <th>Próxima cobrança</th>
               </tr>
             </thead>
             <tbody>
@@ -232,7 +219,7 @@ export function BillingPage() {
                   <td><Link className="table-link" to={`/billing/subscriptions/${item.id}`}>{item.providerSubscriptionId}</Link></td>
                   <td><span className="badge-info">{(item.stripeAccount || 'us').toUpperCase()}</span></td>
                   <td>{item.term.marketCountry} · {item.term.months}m</td>
-                  <td>{item.status}</td>
+                  <td>{formatStripeStatus(item.status)}</td>
                   <td>{item.autoRenew ? 'Sim' : 'Não'}</td>
                   <td>{item.nextBillingAt ? formatDate(item.nextBillingAt) : '-'}</td>
                 </tr>
@@ -245,37 +232,6 @@ export function BillingPage() {
           totalPages={Math.max(1, Math.ceil((subscriptions?.total ?? 0) / (subscriptions?.perPage ?? perPage)))}
           onPrev={() => setSubscriptionPage((current) => Math.max(1, current - 1))}
           onNext={() => setSubscriptionPage((current) => current + 1)}
-        />
-      </Section>
-
-      <Section title="Webhooks Stripe" description="Inbox local (event_id, type, processed_at). Replay é backlog.">
-        <div className="table-shell table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Evento</th>
-                <th>Tipo</th>
-                <th>Estado</th>
-                <th>Processado em</th>
-              </tr>
-            </thead>
-            <tbody>
-              {webhooks?.items.map((item) => (
-                <tr key={item.id}>
-                  <td>{item.eventId}</td>
-                  <td>{item.eventType}</td>
-                  <td>{item.state}</td>
-                  <td>{item.processedAt ? formatDate(item.processedAt) : '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <Pager
-          page={webhooks?.page ?? webhookPage}
-          totalPages={Math.max(1, Math.ceil((webhooks?.total ?? 0) / (webhooks?.perPage ?? perPage)))}
-          onPrev={() => setWebhookPage((current) => Math.max(1, current - 1))}
-          onNext={() => setWebhookPage((current) => current + 1)}
         />
       </Section>
     </PageFrame>

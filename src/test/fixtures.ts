@@ -303,8 +303,9 @@ export const productItem = {
   active: true,
   category: { namePt: 'Alimentação', nameEn: 'Food' },
   marketConfigs: [{ marketCountry: 'BR', currency: 'BRL', active: true }],
-  variants: [{ id: 'var-1', sku: 'BOWL-1', variantPrices: [{ id: 'price-1' }] }],
+  variants: [{ id: 'var-1', sku: 'BOWL-1', variantPrices: [{ id: 'price-1' }], canDelete: true }],
   createdAt: '2026-08-01T12:00:00.000Z',
+  canDelete: true,
 }
 
 export const productsList = {
@@ -333,10 +334,12 @@ export const productDetail = {
       regularPrice: 89.9,
       stripeProductId: 'prod_stripe',
       stripePriceId: 'price_stripe',
-      syncStatus: 'mapped',
+      syncStatus: 'synced',
       requiresSync: false,
+      canDelete: true,
     },
   ],
+  canDelete: true,
 }
 
 export const subscriptionItem = {

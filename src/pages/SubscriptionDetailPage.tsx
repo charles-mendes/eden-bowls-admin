@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { LedgerSnapshotSections } from '../components/LedgerSnapshotSections'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { MetricCard } from '../components/MetricCard'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, getApiBaseUrl } from '../lib/api'
-import { formatDate, formatJson } from '../lib/format'
+import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
+import { formatDate } from '../lib/format'
 import { isProfileInScope } from '../lib/markets'
 
 type SubscriptionDetail = {
@@ -172,10 +174,10 @@ export function SubscriptionDetailPage() {
     try {
       setError('')
       await apiRequest(`/admin/shipments/${shipmentId}/void`, { token, method: 'POST' })
-      setMessage('Shipment voided na UPS.')
+      setMessage('Etiqueta anulada na UPS.')
       await loadShipments()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao void')
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao anular')
     }
   }
 
@@ -184,11 +186,24 @@ export function SubscriptionDetailPage() {
     try {
       setError('')
       await apiRequest(`/admin/shipments/${shipmentId}/refresh-tracking`, { token, method: 'POST' })
-      setMessage('Tracking atualizado.')
+      setMessage('Rastreio atualizado.')
       await loadShipments()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao atualizar tracking')
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao atualizar o rastreio')
     }
+  }
+
+  const snapshots = parseCheckoutSnapshots({
+    planSelection: data?.planSelection,
+    address: data?.address,
+    shipping: data?.shipping,
+  })
+  const readableSnapshots = {
+    ...snapshots,
+    plan: {
+      ...snapshots.plan,
+      pets: mergeReadablePets(data?.planSelection, data?.petsSnapshot),
+    },
   }
 
   const activeByInvoice = new Map(
@@ -198,7 +213,7 @@ export function SubscriptionDetailPage() {
   )
 
   return (
-    <PageFrame title={data?.stripeSubscriptionId ?? 'Assinatura'} description="Detalhe do ledger. Pause/cancel permanece na API do cliente.">
+    <PageFrame title={data?.stripeSubscriptionId ?? 'Assinatura'} description="Detalhe do registro local. Pausa e cancelamento permanecem na API do cliente.">
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
 
@@ -230,7 +245,7 @@ export function SubscriptionDetailPage() {
 
       <Section title="Faturas">
         {hasPermission('billing.subscribers.sync') ? (
-          <button className="primary-button" type="button" onClick={() => void syncInvoices()}>Sincronizar invoices</button>
+          <button className="primary-button" type="button" onClick={() => void syncInvoices()}>Sincronizar faturas</button>
         ) : null}
         <div className="table-shell table-scroll">
           <table>
@@ -274,17 +289,17 @@ export function SubscriptionDetailPage() {
       </Section>
 
       {canReadShipping ? (
-        <Section title="UPS fulfillment" description="Etiqueta por invoice paga. Cotado no checkout vs custo UPS na etiqueta (margem aceita na v1).">
+        <Section title="Envio UPS" description="Etiqueta por fatura paga. Valor cotado no checkout comparado ao custo UPS na etiqueta.">
           <div className="table-shell table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>Invoice</th>
+                  <th>Fatura</th>
                   <th>Status</th>
-                  <th>Tracking</th>
+                  <th>Rastreio</th>
                   <th>Serviço</th>
-                  <th>Quoted</th>
-                  <th>UPS cost</th>
+                  <th>Cotado</th>
+                  <th>Custo UPS</th>
                   <th>Enviado</th>
                   <th></th>
                 </tr>
@@ -308,17 +323,17 @@ export function SubscriptionDetailPage() {
                         <div className="inline-actions">
                           {item.has_label ? (
                             <button className="ghost-button" type="button" onClick={() => void downloadLabel(item.id)}>
-                              Download
+                              Baixar
                             </button>
                           ) : null}
                           {item.tracking_number ? (
                             <button className="ghost-button" type="button" onClick={() => void refreshTracking(item.id)}>
-                              Refresh tracking
+                              Atualizar rastreio
                             </button>
                           ) : null}
                           {canWriteShipping && item.status !== 'voided' && item.ups_shipment_id ? (
                             <button className="ghost-button" type="button" onClick={() => void voidShipment(item.id)}>
-                              Void
+                              Anular
                             </button>
                           ) : null}
                         </div>
@@ -332,14 +347,19 @@ export function SubscriptionDetailPage() {
         </Section>
       ) : null}
 
-      <Section title="Snapshots">
-        <div className="grid cards-2">
-          <pre>{formatJson(data?.petsSnapshot)}</pre>
-          <pre>{formatJson(data?.planSelection)}</pre>
-          <pre>{formatJson(data?.address)}</pre>
-          <pre>{formatJson(data?.shipping)}</pre>
-        </div>
-      </Section>
+      {data ? (
+        <LedgerSnapshotSections
+          planTitle="Detalhes do produto"
+          planDescription="Cópia gravada no checkout, sem recalcular."
+          snapshots={readableSnapshots}
+          raw={{
+            petsSnapshot: data.petsSnapshot,
+            planSelection: data.planSelection,
+            address: data.address,
+            shipping: data.shipping,
+          }}
+        />
+      ) : null}
     </PageFrame>
   )
 }
