@@ -31,7 +31,7 @@ push branches: [main]
 workflow_dispatch
 ```
 
-`permissions: contents: read`. Node 20. `npm ci`. No `pull_request_target`. Concurrency group per ref, cancel in progress.
+`permissions: contents: read`. Node 20. `npm ci`. No `pull_request_target`. One concurrency group per ref. `cancel-in-progress` is true only for `pull_request`, so a later push to `main` does not cancel the run of the previous commit. Each job sets `timeout-minutes: 20`. Action references stay on major tags (`actions/checkout@v4`, `actions/setup-node@v4`). Pinning SHAs is out of scope.
 
 ### Jobs
 
