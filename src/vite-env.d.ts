@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   readonly VITE_ADMIN_API_BASE_URL?: string
   readonly VITE_APP_BASE_PATH?: string
+  readonly VITE_SENTRY_DSN?: string
+  readonly VITE_SENTRY_ENVIRONMENT?: string
   readonly BASE_URL: string
   readonly DEV: boolean
   readonly PROD: boolean
