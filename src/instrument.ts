@@ -16,9 +16,10 @@ function resolveEnvironment(): string {
   return 'production'
 }
 
-if (dsn) {
-  const environment = resolveEnvironment()
+const environment = resolveEnvironment()
+const isLocalDevelopment = import.meta.env.DEV || environment === 'development'
 
+if (dsn && !isLocalDevelopment) {
   Sentry.init({
     dsn,
     environment,
@@ -35,7 +36,7 @@ if (dsn) {
         blockAllMedia: true,
       }),
     ],
-    tracesSampleRate: environment === 'development' ? 1 : 0.1,
+    tracesSampleRate: 0.1,
     tracePropagationTargets: [
       'localhost',
       '127.0.0.1',
