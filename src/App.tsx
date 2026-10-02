@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/react'
 import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom'
 import { AdminLayout } from './components/AdminLayout'
 import { AuthProvider } from './contexts/AuthContext'
@@ -39,10 +40,12 @@ function ProtectedShell() {
   )
 }
 
+const SentryRoutes = Sentry.withSentryReactRouterV7Routing(Routes)
+
 function App() {
   return (
     <AuthProvider>
-      <Routes>
+      <SentryRoutes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedShell />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -71,7 +74,7 @@ function App() {
           <Route path="/orders/:orderId" element={<LegacyCheckoutRedirect />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
-      </Routes>
+      </SentryRoutes>
     </AuthProvider>
   )
 }

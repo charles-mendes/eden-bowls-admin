@@ -1,5 +1,6 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import { sentryVitePlugin } from '@sentry/vite-plugin'
 
 function resolveAppBasePath() {
   const raw = process.env.VITE_APP_BASE_PATH?.trim() || '/'
@@ -7,9 +8,23 @@ function resolveAppBasePath() {
   return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`
 }
 
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN
+
 export default defineConfig({
   base: resolveAppBasePath(),
-  plugins: [react()],
+  build: sentryAuthToken ? { sourcemap: 'hidden' } : undefined,
+  plugins: [
+    react(),
+    ...(sentryAuthToken
+      ? [
+          sentryVitePlugin({
+            org: process.env.SENTRY_ORG || 'eden-bowls',
+            project: process.env.SENTRY_PROJECT || 'javascript-react-portal-admin',
+            authToken: sentryAuthToken,
+          }),
+        ]
+      : []),
+  ],
   test: {
     environment: 'jsdom',
     globals: true,
