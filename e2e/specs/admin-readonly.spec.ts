@@ -33,6 +33,19 @@ test.describe('Admin readonly', () => {
     await expect(page.getByRole('link', { name: 'Assinante', exact: true })).toBeVisible()
   })
 
+  test('opens the delivery calendar without write controls', async ({ page }) => {
+    await openAuthed(page, '/operations/delivery-calendar', e2eProfiles.readonly)
+
+    await expect(page.getByRole('heading', { name: 'Calendário de entregas' })).toBeVisible()
+    await page.getByLabel('Ano').selectOption('2027')
+    await expect(page.getByRole('cell', { name: 'Natal', exact: true })).toBeVisible()
+    await expect(page.getByLabel('Mercado')).toBeDisabled()
+    await expect(page.getByRole('row').filter({ hasText: 'sub_late' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Novo fechamento' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^(Editar|Desativar|Reativar|Remover)/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Reenviar' })).toHaveCount(0)
+  })
+
   test('hides delivery and catalog mutations', async ({ page }) => {
     await openAuthed(page, '/users/u-ana', e2eProfiles.readonly)
     await expect(page.getByRole('heading', { name: 'ana@edenbowls.com' })).toBeVisible()

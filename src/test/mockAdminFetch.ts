@@ -58,6 +58,8 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   products?: typeof productsList.items
   product?: typeof productDetail
   catalogDelete?: 'in_use' | 'archive'
+  // Answered before the fixed routes; return undefined to fall through.
+  routes?: (call: FetchCall) => Response | undefined
 } = {}) {
   const calls: FetchCall[] = []
   let catalogItems = (options.products ?? productsList.items).map((item) => ({
@@ -78,6 +80,11 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     const search = url.search
 
     calls.push({ url: String(input), path, search, method, authorization, body })
+
+    const routed = options.routes?.({ url: String(input), path, search, method, authorization, body })
+    if (routed) {
+      return routed
+    }
 
     if (path === '/api/v1/auth/token' && method === 'POST') {
       return jsonResponse({ token: 'access-token' })

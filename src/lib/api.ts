@@ -117,13 +117,21 @@ export async function logoutRefreshSession() {
 export class ApiRequestError extends Error {
   readonly status: number
   readonly code: string
+  readonly details: Record<string, unknown> | null
 
-  constructor(message: string, status: number, code: string) {
+  constructor(message: string, status: number, code: string, details: Record<string, unknown> | null = null) {
     super(message)
     this.name = 'ApiRequestError'
     this.status = status
     this.code = code
+    this.details = details
   }
+}
+
+function readErrorDetails(errorBody: unknown) {
+  if (!errorBody || typeof errorBody !== 'object') return null
+  const details = (errorBody as { details?: unknown }).details
+  return details && typeof details === 'object' && !Array.isArray(details) ? details as Record<string, unknown> : null
 }
 
 type RequestOptions = {
@@ -160,6 +168,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}) 
       typeof message === 'string' && message ? message : 'request_failed',
       response.status,
       readErrorCode(errorBody),
+      readErrorDetails(errorBody),
     )
   }
 

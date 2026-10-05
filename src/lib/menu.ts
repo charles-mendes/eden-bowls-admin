@@ -16,6 +16,7 @@ export const adminMenu: MenuItem[] = [
   { label: 'Simulador nutricional', href: '/nutrition/simulate', roles: ['admin', 'operator', 'nutritionist'], group: 'Operação' },
   { label: 'Onboarding 360', href: '/onboarding/sessions', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Produção', href: '/operations/production', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
+  { label: 'Calendário de entregas', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Feedbacks', href: '/feedbacks', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Frete', href: '/config/shipping', roles: ['admin', 'operator'], group: 'Operação' },
   { label: 'Produtos', href: '/catalog/products', roles: ['admin', 'operator', 'readonly'], group: 'Catálogo' },

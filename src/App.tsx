@@ -10,6 +10,7 @@ import { ProductDetailPage } from './pages/ProductDetailPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { OnboardingSessionPage } from './pages/OnboardingSessionPage'
 import { ProductionQueuePage } from './pages/ProductionQueuePage'
+import { DeliveryCalendarPage } from './pages/DeliveryCalendarPage'
 import { BillingPage } from './pages/BillingPage'
 import { SubscriptionDetailPage } from './pages/SubscriptionDetailPage'
 import { CouponsPage } from './pages/CouponsPage'
@@ -56,6 +57,7 @@ function App() {
           <Route path="/onboarding/sessions" element={<OnboardingPage />} />
           <Route path="/onboarding/sessions/:id" element={<OnboardingSessionPage />} />
           <Route path="/operations/production" element={<ProductionQueuePage />} />
+          <Route path="/operations/delivery-calendar" element={<DeliveryCalendarPage />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/billing/subscriptions/:id" element={<SubscriptionDetailPage />} />
           <Route path="/billing/coupons" element={<CouponsPage />} />
