@@ -40,6 +40,28 @@ export type FetchCall = {
   body: unknown
 }
 
+export const customerInvoice = {
+  id: 12,
+  invoice_number: 'EB-2026-000418',
+  stripe_invoice_id: 'in_test_0',
+  stripe_account: 'us',
+  locale: 'en-US',
+  currency: 'usd',
+  total_minor: 14450,
+  amount_paid_minor: 14450,
+  invoice_status: 'paid',
+  billing_reason: 'subscription_cycle',
+  issued_at: '2026-09-01T15:00:00.000Z',
+  pdf_available: true,
+  pdf_generated_at: '2026-09-01T15:00:05.000Z',
+  email_to: 'ana@edenbowls.com',
+  email_status: 'sent',
+  email_sent_at: '2026-09-01T15:00:06.000Z',
+  email_attempts: 1,
+  email_last_error: null,
+  email_next_attempt_at: null,
+}
+
 function parseUrl(input: RequestInfo | URL) {
   return new URL(String(input), 'http://admin.local')
 }
@@ -47,6 +69,7 @@ function parseUrl(input: RequestInfo | URL) {
 export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, options: {
   marketConflicts?: typeof marketConflicts.items
   subscriptionInScope?: boolean
+  customerInvoices?: Array<Record<string, unknown>>
   productionInScope?: boolean
   productionQueue?: Array<Record<string, unknown>>
   subscriptionSnapshot?: {
@@ -348,6 +371,23 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (path === '/api/v1/admin/billing/subscriptions/backfill-links' && method === 'POST') {
       return jsonResponse({ success: true, data: { linked: 2 } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/customer-invoices$/.test(path) && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: options.customerInvoices ?? [customerInvoice] } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/customer-invoices$/.test(path) && method === 'POST') {
+      const stripeInvoiceId = String((body as { stripe_invoice_id?: string } | null)?.stripe_invoice_id || 'in_test_1')
+      return jsonResponse({ success: true, data: { ...customerInvoice, id: 13, stripe_invoice_id: stripeInvoiceId, email_status: 'pending', email_sent_at: null } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/customer-invoices\/[^/]+\/send$/.test(path) && method === 'POST') {
+      return jsonResponse({ success: true, data: { ...customerInvoice, email_status: 'sent', email_sent_at: '2026-09-02T10:30:00.000Z' } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/customer-invoices\/[^/]+\/pdf$/.test(path) && method === 'GET') {
+      return new Response('%PDF-1.3', { status: 200, headers: { 'Content-Type': 'application/pdf' } })
     }
 
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/sync-invoices$/.test(path) && method === 'POST') {
