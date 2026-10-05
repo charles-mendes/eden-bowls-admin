@@ -2,7 +2,7 @@
 
 ## Context
 
-See proposal.md for why. `redesign-my-plan` adds `delivery_closed_days` and seeds Brazil 2026–2027 plus the 2026 UPS list, including 1 January 2027. Migration `1700000000026` adds the 2027 UPS list, including 1 January 2028. The projection reads active rows. Brazil national dates (`origin` `fixed` or `movable`) are also rules in code: a year with none of those rows is inserted once. A deactivated row still counts as a row, so it is not inserted again. The United States has no holiday rule in code. A year with no UPS rows logs a warning and closes only Saturday and Sunday. A lone 1 January carried from the previous schedule does not count as that year's UPS calendar. Weekly rules stay in code: Sunday closed in Brazil; preparation Monday through Friday in the United States. The projection may cache a market in the existing `TtlCache` for about a minute and drops that key after it generates a Brazil year.
+See proposal.md for why. `redesign-my-plan` adds `delivery_closed_days` and seeds Brazil 2026–2027 plus the 2026 UPS list, including 1 January 2027. Migration `1700000000026` adds the 2027 UPS list, including 1 January 2028. The projection reads active rows. Brazil national dates (`origin` `fixed` or `movable`) are also rules in code: a year with none of those rows is inserted once. A deactivated row still counts as a row, so it is not inserted again. The United States has no holiday rule in code. A year with no UPS rows logs a warning and closes only Saturday and Sunday. A lone 1 January carried from the previous schedule does not count as that year's UPS calendar. Weekly rules stay in code: Sunday closed in Brazil; preparation Monday through Friday in the United States. The projection reads the active rows from MySQL on every read; there is no calendar cache.
 
 Skip, postpone, and a block before preparation write Stripe `trial_end` at 00:00 of the preparation day in the market timezone, with `proration_behavior: 'none'`. Closing a day that already has that `trial_end` stored changes a real charge. A delivery can already be locked: production status `in_production`, `ready`, or `blocked`, or the market clock past `editable_until`.
 
@@ -48,7 +48,7 @@ The projection already ignores `active = false` and applies the three flags of a
 
 ### 2. History reuses `admin_audit_events` and is shown in the panel
 
-`AdminAuditService.record` already stores who did it and when. Every calendar write records one event: create, remove, activate, deactivate, and flag change. Actions: `delivery_calendar.create`, `delivery_calendar.remove`, `delivery_calendar.activate`, `delivery_calendar.deactivate`, `delivery_calendar.update`, and `delivery_calendar.sync_resend` (decision 4). A calendar event leaves `target_user_id` empty and puts `market`, `closed_on`, `type`, `label`, the previous and the new value of `active` and the three flags, and the subscriptions moved (with the previous and the new preparation day) in `metadata`. Create has no previous value; remove has no new value.
+`AdminAuditService.record` already stores who did it and when. Every calendar write records one event: create, remove, activate, deactivate, and flag change. Actions: `delivery_calendar.create`, `delivery_calendar.remove`, `delivery_calendar.activate`, `delivery_calendar.deactivate`, `delivery_calendar.update`, and `delivery_calendar.sync_resend` (decision 4). A calendar event leaves `target_user_id` empty and puts `market`, `closed_on`, `type`, `label`, the previous and the new value of `active` and the three flags, and the subscriptions moved in `metadata`: the previous and the new preparation day, how each moved (Stripe sync, pending change, or projection only), and for a pending change the previous and the new `charge_move.trial_end`. Create has no previous value; remove has no new value.
 
 The audit row is written inside the same MySQL transaction as the calendar change, so a rolled-back change leaves no event. Remove writes the event, then deletes the calendar row. The audit table has no foreign key to the calendar row, which is what keeps a removed date traceable.
 
@@ -63,9 +63,18 @@ The same rule applies to every write that closes a day for a flag that was open:
 On confirm, the API runs the projection again inside the transaction, because the preview can be stale:
 
 - If any affected delivery is locked, the closure is refused and nothing is saved. Operations resolves that delivery by hand first.
-- Otherwise each affected editable delivery moves to the next valid preparation day after the closure. Stored preparation and delivery dates of that cycle, where present, are updated in MySQL. When the subscription has a Stripe `trial_end` at the old preparation day, a sync row is written for it (decision 4). Later deliveries that exist only in the projection move by themselves, because the projection reads the new row.
+- Otherwise each affected editable delivery moves to the next valid preparation day after the closure, in one of three ways:
+  - **Stripe sync.** The next delivery of a `trialing` subscription whose `trial_end` (the ledger's `current_period_end`) is 00:00 of the affected preparation day in the market timezone, the shape skip and postpone write. A sync row targets 00:00 of the new preparation day (decision 4).
+  - **Pending change rewritten.** A following delivery whose `pending_delivery_changes.charge_move.trial_end` is 00:00 of the affected preparation day. Stripe does not have that value yet; `invoice.paid` of the current charge applies it later. The transaction rewrites `charge_move.trial_end` to 00:00 of the new preparation day and writes no sync row. `after_charge_at` and the pending packs stay as they are.
+  - **Projection only.** Any other delivery: a renewal charged at the end of its period, or a later delivery that exists only in the projection. No stored value changes; the preparation day moves because the projection reads the new row.
 
-The calendar row, the moved dates, the sync rows, and the audit event commit in one MySQL transaction. If any of it fails, nothing is saved and the operator gets an error. The request itself does not call Stripe.
+The preview lists, for each affected delivery, which of the three applies, and for a pending change the previous and the new `trial_end`.
+
+The transaction does not touch the ledger's `current_period_end`. After the job writes Stripe, the ledger gets the new `trial_end` the way it gets every other subscription change: `customer.subscription.updated` reaches `StripeWebhookService.handleSubscriptionChanged`, which upserts `currentPeriodEnd` from the subscription's period end (for a trialing subscription, the `trial_end`). The hourly `ledger_reconcile` job reads every subscription from Stripe and upserts the same field if the webhook is lost. Until then Meu Plano already shows the new preparation day, and the edit deadline is still computed from the old charge.
+
+A pending change cannot sit on a delivery whose charge the closure moves through Stripe: a pending change is recorded only while the current delivery is past its edit deadline, and such a delivery is locked, so the closure is refused.
+
+The calendar row, the rewritten pending changes, the sync rows, and the audit event commit in one MySQL transaction. If any of it fails, nothing is saved and the operator gets an error. The request itself does not call Stripe.
 
 Removing or deactivating a row only makes that date open for later projection. It does not rewrite a delivery that is already scheduled, does not clear a `trial_end` already stored, and writes no sync row.
 
@@ -97,7 +106,7 @@ Each resend records `delivery_calendar.sync_resend` with the sync row, the subsc
 
 Route under Operação, beside Produção, using `PageFrame`, `FiltersBar` (market and year), a table, and `Dialog` for create and for the affected-subscription list. HTTP stays on `apiRequest`. Copy is Portuguese, including empty, loading, and error. A session limited to one market by `operations/admin-market-scope` does not list or edit the other market. An admin session can use both.
 
-After a successful write, the backend drops that market's `TtlCache` key in the same process. Another process can still serve the previous calendar until the minute TTL ends.
+Every read of the calendar goes to MySQL, so a committed write is seen by every API process at once.
 
 The screen uses the production queue's permissions. `production.read` lists the calendar, the history, the sync status, and the alerts. `production.write` (`admin` and `operator`) creates, edits flags, deactivates, reactivates, removes, and resends a sync. `readonly` sees the page with no write controls, and the API refuses its writes.
 
@@ -118,7 +127,6 @@ The covered end of the United States is 31 December of the last year with a load
 - [Resending a `conflict` overwrites what Stripe has] → The operator sees both values first, the API refuses if Stripe changed again since, and the resend is audited. Resending over a skip undoes the customer's skip; the screen says so in the confirmation.
 - [Two closures move the same subscription before the job runs] → The second supersedes the first and keeps the original expected value, so the job writes only the final date.
 - [Deleting a Brazil national row] → Generation fills a year only when it has no national rows, so a deleted one would not come back. The API refuses to delete `national` rows. They are only deactivated.
-- [Another API process still has the minute cache] → The writing process drops its key. The other process catches up when the TTL ends. Do not add a shared cache for this screen.
 - [The affected list is projected, so it can change between preview and save] → The confirm projects again and checks locks again inside the transaction.
 
 ## Migration Plan

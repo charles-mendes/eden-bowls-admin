@@ -137,12 +137,17 @@ The system SHALL let a user with `production.write` add a row of type `regional`
 
 ### Requirement: A new closure shows the affected deliveries first
 
-Before saving a write that closes a flag that was open on a date, the system SHALL list the subscriptions of that market whose next or projected preparation, pickup, or delivery falls on that date for that flag. Each item MUST say whether the delivery is locked. The preview MUST NOT change Stripe or any delivery.
+Before saving a write that closes a flag that was open on a date, the system SHALL list the subscriptions of that market whose next or projected preparation, pickup, or delivery falls on that date for that flag. Each item MUST say whether it is locked and how it moves: Stripe sync, pending change (with previous and new `trial_end`), or projection only. The preview MUST NOT change anything.
 
 #### Scenario: Preview lists the affected subscriptions
 
 - **WHEN** an operator prepares a closure on a date with two projected deliveries, one of them `in_production`
 - **THEN** the dialog lists both subscriptions and marks the `in_production` one as locked
+
+#### Scenario: Preview shows how each delivery moves
+
+- **WHEN** a closure affects a trialing subscription charged at 00:00 of that preparation day, a following delivery with a pending charge move to that day, and a renewal charged at the end of its period
+- **THEN** the dialog marks the first as Stripe sync, the second as pending change with the previous and the new `trial_end`, and the third as projection only
 
 #### Scenario: Preview with no affected deliveries
 
@@ -151,12 +156,22 @@ Before saving a write that closes a flag that was open on a date, the system SHA
 
 ### Requirement: A closure moves editable deliveries in one transaction
 
-On confirm, the system SHALL check the affected deliveries again. When none is locked, each MUST move to the next valid preparation day. The closure, the moved dates, one pending Stripe sync per moved subscription with a `trial_end`, and the audit entry MUST commit together or not at all. The confirm MUST NOT call Stripe.
+On confirm, the system SHALL check the affected deliveries again. When none is locked, each MUST move to the next valid preparation day. The closure, each rewritten pending charge move, one Stripe sync per trialing charge at the old preparation day, and the audit entry MUST commit together or not at all. The confirm MUST NOT call Stripe.
 
 #### Scenario: Editable delivery moves
 
 - **WHEN** an operator confirms a closure on a date where an editable delivery was due
 - **THEN** the closure is saved, that delivery moves to the next valid preparation day, Meu Plano shows the new date, and a pending sync targets `trial_end` at 00:00 of that day in the market timezone
+
+#### Scenario: Renewal at the end of its period
+
+- **WHEN** a closure hits the preparation day of a subscription whose next charge is its period end, not a trial end
+- **THEN** no sync is written and no stored value changes, and Meu Plano shows the next valid preparation day
+
+#### Scenario: Pending charge move rewritten
+
+- **WHEN** a closure hits the preparation day a pending charge move of the following delivery points to
+- **THEN** the pending `trial_end` becomes 00:00 of the next valid preparation day in the same transaction, no sync is written, and the pending packs are kept
 
 #### Scenario: Locked delivery blocks the closure
 
@@ -339,12 +354,17 @@ The system SHALL show a warning in the panel when today in `America/New_York` is
 
 ### Requirement: Every calendar change is audited
 
-The system SHALL record one audit entry for each create, remove, activation, deactivation, flag change, and sync resend. The entry MUST hold the actor, the time, the action, the market, date, type, and label, the previous and the new value of `active` and the three flags, and the subscriptions moved with their previous and new preparation day. A change that is not saved MUST leave no entry.
+The system SHALL record one audit entry for each create, remove, activation, deactivation, flag change, and sync resend. The entry MUST hold the actor, the time, the action, the market, date, type, and label, the previous and the new value of `active` and the three flags, and the subscriptions moved with their previous and new preparation day, how each moved, and for a pending change the previous and new `trial_end`. A change that is not saved MUST leave no entry.
 
 #### Scenario: Creating a closure that moves deliveries
 
 - **WHEN** an operator creates an `adhoc` closure that moves two subscriptions
 - **THEN** one entry records the operator, the time, no previous value, the new flags, and both subscriptions with their previous and new preparation day
+
+#### Scenario: Pending change in the audit
+
+- **WHEN** a closure rewrites a pending charge move
+- **THEN** the entry records that subscription as a pending change with the previous and the new `trial_end`
 
 #### Scenario: Flag change
 
