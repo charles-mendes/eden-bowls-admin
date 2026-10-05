@@ -732,6 +732,36 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
+    if (path === '/api/v1/admin/billing/subscriptions/sub-row-1/customer-invoices' && method === 'GET') {
+      await fulfillJson(route, {
+        success: true,
+        data: {
+          items: [{
+            id: 12,
+            invoice_number: 'EB-2026-000418',
+            stripe_invoice_id: 'in_test_0',
+            stripe_account: 'us',
+            locale: 'en-US',
+            currency: 'usd',
+            total_minor: 14450,
+            amount_paid_minor: 14450,
+            invoice_status: 'paid',
+            billing_reason: 'subscription_cycle',
+            issued_at: '2026-09-01T15:00:00.000Z',
+            pdf_available: true,
+            pdf_generated_at: '2026-09-01T15:00:05.000Z',
+            email_to: 'ana@edenbowls.com',
+            email_status: 'sent',
+            email_sent_at: '2026-09-01T15:00:06.000Z',
+            email_attempts: 1,
+            email_last_error: null,
+            email_next_attempt_at: null,
+          }],
+        },
+      })
+      return
+    }
+
     if (path === '/api/v1/admin/shipping/settings') {
       await fulfillJson(route, {
         success: true,

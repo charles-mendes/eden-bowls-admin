@@ -35,7 +35,11 @@ test.describe('Admin billing', () => {
     await openAuthed(page, '/billing/subscriptions/sub-row-1', e2eProfiles.operatorWrite)
 
     await expect(page.getByRole('heading', { name: 'sub_123' })).toBeVisible()
-    await expect(page.getByText('ana@edenbowls.com')).toBeVisible()
+    await expect(page.getByText('ana@edenbowls.com', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Invoices Eden Bowls' })).toBeVisible()
+    await expect(page.getByText('EB-2026-000418')).toBeVisible()
+    await expect(page.getByText('Enviada', { exact: true })).toBeVisible()
+    await expect(page.getByText(/para ana@edenbowls\.com/)).toBeVisible()
   })
 
   test('syncs first-purchase coupons with Stripe', async ({ page }) => {
