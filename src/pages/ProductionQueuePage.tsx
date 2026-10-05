@@ -42,6 +42,10 @@ type QueueItem = {
   city: string
   stripeStatus: string
   productionStatus: ProductionStatus
+  // A cycle is produced only after its invoice is paid; a past_due cycle waits for the late payment.
+  paymentState?: 'awaiting_payment' | 'past_due' | 'paid'
+  paymentLabel?: string | null
+  preparationDay?: string | null
   note: string | null
   subtotal: number | null
   currency: string | null
@@ -86,6 +90,12 @@ const BUCKET_HEADERS: Record<DueBucket, string> = {
   today: 'Vence hoje',
   tomorrow: 'Amanhã',
   upcoming: 'Próximos',
+}
+
+function nextActions(item: QueueItem) {
+  const actions = NEXT_ACTIONS[item.productionStatus] || []
+  const paid = !item.paymentState || item.paymentState === 'paid'
+  return paid ? actions : actions.filter((action) => action.status !== 'in_production')
 }
 
 const NEXT_ACTIONS: Record<ProductionStatus, Array<{ status: ProductionStatus; label: string }>> = {
@@ -157,7 +167,7 @@ export function ProductionQueuePage() {
   const [blockItem, setBlockItem] = useState<QueueItem | null>(null)
   const [blockNote, setBlockNote] = useState('')
   const [denseItem, setDenseItem] = useState<QueueItem | null>(null)
-  const [busyId, setBusyId] = useState<number | null>(null)
+  const [busyId, setBusyId] = useState<string | null>(null)
   const account = bothMarkets ? pickedAccount : (defaultStripeAccount(user) ?? '')
 
   const load = async () => {
@@ -190,7 +200,7 @@ export function ProductionQueuePage() {
 
   const patchStatus = async (item: QueueItem, status: ProductionStatus, note?: string) => {
     if (!token || !canWrite || !item.currentPeriodEnd) return
-    setBusyId(item.id)
+    setBusyId(`${item.id}-${item.currentPeriodEnd}`)
     setError('')
     try {
       await apiRequest(`/admin/production/queue/${item.id}`, {
@@ -344,7 +354,7 @@ export function ProductionQueuePage() {
                     lastBucket = item.dueBucket
                   }
                   return (
-                    <Fragment key={item.id}>
+                    <Fragment key={`${item.id}-${item.currentPeriodEnd}`}>
                       {showHeader && item.dueBucket ? (
                         <tr className="table-section-row">
                           <td colSpan={9}>{BUCKET_HEADERS[item.dueBucket]}</td>
@@ -352,7 +362,7 @@ export function ProductionQueuePage() {
                       ) : null}
                       <tr>
                         <td>
-                          <div>{formatDate(item.currentPeriodEnd)}</div>
+                          <div>{formatDate(item.preparationDay || item.currentPeriodEnd)}</div>
                           {item.dueBucket ? (
                             <span className={DUE_BADGE[item.dueBucket]}>{item.dueLabel}</span>
                           ) : null}
@@ -381,16 +391,19 @@ export function ProductionQueuePage() {
                         <td>{formatStripeStatus(item.stripeStatus)}</td>
                         <td>
                           <span className={STATUS_BADGE[item.productionStatus]}>{STATUS_LABELS[item.productionStatus]}</span>
+                          {item.paymentLabel ? (
+                            <div><span className={item.paymentState === 'past_due' ? 'badge-error' : 'badge-warning'}>{item.paymentLabel}</span></div>
+                          ) : null}
                           {item.note ? <div className="muted">{item.note}</div> : null}
                         </td>
                         <td>
                           <div className="table-actions">
-                            {canWrite ? NEXT_ACTIONS[item.productionStatus].map((action) => (
+                            {canWrite ? nextActions(item).map((action) => (
                               <button
                                 key={action.status}
                                 className="ghost-button"
                                 type="button"
-                                disabled={busyId === item.id}
+                                disabled={busyId === `${item.id}-${item.currentPeriodEnd}`}
                                 onClick={() => requestStatus(item, action.status)}
                               >
                                 {action.label}

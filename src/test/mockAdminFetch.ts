@@ -48,6 +48,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   marketConflicts?: typeof marketConflicts.items
   subscriptionInScope?: boolean
   productionInScope?: boolean
+  productionQueue?: Array<Record<string, unknown>>
   subscriptionSnapshot?: {
     petsSnapshot?: unknown
     planSelection?: unknown
@@ -298,12 +299,14 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (path === '/api/v1/admin/production/queue' && method === 'GET') {
       const productionStatus = url.searchParams.get('productionStatus')
-      const items = productionStatus && productionStatus !== productionQueueItem.productionStatus
-        ? []
-        : [{
-          ...productionQueueItem,
-          customerProfileInScope: options.productionInScope ?? productionQueueItem.customerProfileInScope,
-        }]
+      const items = options.productionQueue
+        ? options.productionQueue
+        : productionStatus && productionStatus !== productionQueueItem.productionStatus
+          ? []
+          : [{
+            ...productionQueueItem,
+            customerProfileInScope: options.productionInScope ?? productionQueueItem.customerProfileInScope,
+          }]
       return jsonResponse({
         ...productionQueueList,
         total: items.length,

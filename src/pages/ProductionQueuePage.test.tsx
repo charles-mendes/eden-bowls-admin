@@ -88,6 +88,25 @@ describe('ProductionQueuePage', () => {
     expect(document.querySelector('a[href="/users/7"]')).toBeNull()
     expect(document.querySelector('a[href="/onboarding/sessions/7"]')).toBeNull()
   })
+  it('shows a cycle awaiting payment without the start-production action (3.12)', async () => {
+    seedAuth()
+    const { productionQueueItem } = await import('../test/fixtures')
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [
+        { ...productionQueueItem, paymentState: 'awaiting_payment', paymentLabel: 'Aguardando pagamento' },
+        { ...productionQueueItem, id: 2, email: 'bia@edenbowls.com', customerName: 'Bia', currentPeriodEnd: '2026-09-19T17:00:00.000Z', preparationDay: '2026-09-21', paymentState: 'paid', paymentLabel: null },
+      ],
+    })
+    renderAuthedPage(<ProductionQueuePage />, '/operations/production')
+
+    await waitFor(() => {
+      expect(screen.getByText('Aguardando pagamento')).toBeInTheDocument()
+    })
+    // Only the paid cycle offers "Em produção"; both can still be blocked.
+    expect(screen.getAllByRole('button', { name: 'Em produção' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: 'Bloquear' })).toHaveLength(2)
+  })
+
   it('mirrors production permissions on write fixtures', () => {
     expect(WRITE_PERMISSIONS).toContain('production.read')
     expect(WRITE_PERMISSIONS).toContain('production.write')
