@@ -86,9 +86,9 @@ A background job `delivery_calendar_stripe_sync` runs on the existing scheduler 
 
 1. Reads the subscription from Stripe. If its `trial_end` already equals `target_trial_end`, the row becomes `synced` with no write.
 2. If its `trial_end` is neither `expected_trial_end` nor `target_trial_end` (a skip, a postpone, or a charge happened meanwhile), the row stores that value in `found_trial_end`, becomes `conflict`, and nothing is written. The job never sets a trial on a subscription whose charge already ran on its own.
-3. Otherwise it sets `trial_end` to `target_trial_end` with `proration_behavior: 'none'` and the idempotency key `delivery-calendar-sync:<row id>`, then marks the row `synced`.
+3. Otherwise it sets `trial_end` to `target_trial_end` with `proration_behavior: 'none'` and the idempotency key `delivery-calendar-sync:<row id>:<attempts>:<next_attempt_at>`, then marks the row `synced`. Each retry and each resend changes that key, so Stripe never replays a stored failure; the same row state gives the same key, so a crash between Stripe and MySQL stays safe.
 
-A transient error increments `attempts`, stores `last_error`, and sets `next_attempt_at` with exponential backoff. After 8 attempts the row becomes `failed`. Because of steps 1 and 3, running the same row twice leaves Stripe as one run would.
+A transient error increments `attempts`, stores `last_error`, and sets `next_attempt_at` with exponential backoff. After 8 attempts the row becomes `failed`. A row whose outcome cannot even be stored is marked `failed` with the message, logged, and the tick goes on with the next row. Because of steps 1 and 3, running the same row twice leaves Stripe as one run would.
 
 When a new closure moves a subscription that still has a `pending` row, the old row becomes `superseded` and the new row keeps the old row's `expected_trial_end`, so one pending row per subscription is the only writer.
 
