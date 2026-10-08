@@ -94,8 +94,9 @@ describe('SubscriptionDetailPage', () => {
     await user.click(screen.getByRole('button', { name: 'Sincronizar faturas' }))
 
     await waitFor(() => {
-      expect(screen.getByText('INV-1001')).toBeInTheDocument()
+      expect(screen.getAllByText('INV-1001').length).toBeGreaterThan(0)
     })
+    expect(screen.getByText('Sem etiqueta')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Gerar etiqueta UPS' }))
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupedMenuItems, visibleMenuItems } from './menu'
+import { activeMenuHref, groupedMenuItems, visibleMenuItems } from './menu'
 
 describe('admin menu', () => {
   it('hides operational sections from nutritionist-only accounts', () => {
@@ -52,9 +52,20 @@ describe('admin menu', () => {
     expect(groups.map((group) => group.group)).toEqual([
       'Visão geral',
       'Operação',
-      'Catálogo',
-      'Cobrança',
-      'Equipe',
+      'Clientes',
+      'Loja',
+      'Ferramentas',
+      'Administração',
     ])
+  })
+
+  it('activates only the most specific menu item', () => {
+    const items = visibleMenuItems(['admin'])
+
+    expect(activeMenuHref('/billing/coupons', items)).toBe('/billing/coupons')
+    expect(activeMenuHref('/billing/subscriptions/12', items)).toBe('/billing')
+    expect(activeMenuHref('/users/roles', items)).toBe('/users/roles')
+    expect(activeMenuHref('/users/u-1', items)).toBe('/users')
+    expect(activeMenuHref('/billingx', items)).toBe('')
   })
 })

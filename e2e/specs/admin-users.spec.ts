@@ -88,7 +88,7 @@ test.describe('Admin users', () => {
   test('admin assigns a staff role with market', async ({ page }) => {
     const { captured } = await openAuthed(page, '/users/roles', e2eProfiles.admin)
 
-    await expect(page.getByRole('heading', { name: 'Papéis' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Equipe e papéis' })).toBeVisible()
     await page.getByRole('button', { name: /ops@edenbowls.com/ }).click()
     await page.getByLabel('Papel').selectOption('operator')
     await page.getByLabel('Mercado').selectOption('BR')

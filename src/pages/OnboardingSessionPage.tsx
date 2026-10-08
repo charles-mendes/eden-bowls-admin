@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { CheckoutSnapshotPanels } from '../components/CheckoutSnapshotPanels'
+import { accountStatusLabel } from '../lib/accountStatus'
 import { MetricCard } from '../components/MetricCard'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
@@ -54,26 +55,26 @@ export function OnboardingSessionPage() {
   const snapshots = parseCheckoutSnapshots(data)
 
   return (
-    <PageFrame title={`Checkout ${data?.email ?? id ?? ''}`} description="Visão 360 pelo identificador do usuário: pets, plano, endereço, N assinaturas Stripe.">
+    <PageFrame title={`Checkout ${data?.email ?? id ?? ''}`} description="Tudo do cliente em um lugar: pets, plano, endereço e assinaturas.">
       {error ? <div className="alert">{error}</div> : null}
       {data?.empty ? <div className="warning">Sem checkout_reference para este usuário.</div> : null}
 
       <div className="page-stack">
         <div className="grid cards-4">
-          <MetricCard label="Status conta" value={data?.activationStatus ?? '—'} />
+          <MetricCard label="Status conta" value={data ? accountStatusLabel(data.activationStatus) : '—'} />
           <MetricCard label="Pets" value={data?.pets.length ?? '—'} />
           <MetricCard label="Assinaturas" value={data?.subscriptions.length ?? '—'} />
           <MetricCard label="Atualizado" value={formatDate(data?.updatedAt)} />
         </div>
 
-        <Section title="Cliente" description="Identidade do usuário. O identificador de sessão antigo não existe mais.">
+        <Section title="Cliente" description="Quem é o cliente.">
           <p>{data?.displayName} · {data?.email} · {data?.userId}</p>
           <div className="inline-actions">
             <Link className="ghost-button" to={`/users/${data?.userId}`}>Ver cliente</Link>
           </div>
         </Section>
 
-        <Section title="Assinaturas Stripe" description="Registro local. Um checkout pode ter N assinaturas.">
+        <Section title="Assinaturas Stripe" description="Assinaturas deste cliente na Stripe.">
           <div className="table-shell table-scroll">
             <table>
               <thead>

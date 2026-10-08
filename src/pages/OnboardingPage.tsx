@@ -75,7 +75,7 @@ export function OnboardingPage() {
   }, [token, email, link, page, perPage])
 
   return (
-    <PageFrame title="Onboarding 360" description="Consulta operacional de checkouts pelo identificador do usuário. Um usuário pode ter N assinaturas.">
+    <PageFrame title="Onboarding 360" description="Cada cliente que passou pelo checkout da loja: pets, plano e assinatura. Um cliente pode ter mais de uma assinatura.">
       <div className="grid cards-4">
         <MetricCard label="Checkouts" value={metrics?.totalCheckouts ?? '—'} />
         <MetricCard label="Vinculados" value={metrics?.linkedToStripe ?? '—'} />
@@ -83,7 +83,7 @@ export function OnboardingPage() {
         <MetricCard label="Com pets" value={metrics?.withSimplified ?? '—'} />
       </div>
 
-      <Section title="Filtros" description="Busca server-side. CSV usa os mesmos filtros.">
+      <Section title="Filtros" description="O CSV exporta o que estiver filtrado.">
         <FiltersBar>
           <label>
             E-mail

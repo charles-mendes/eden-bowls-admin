@@ -19,8 +19,8 @@ test.describe('Admin billing', () => {
     ))).toBe(true)
   })
 
-  test('starts a catalog sync', async ({ page }) => {
-    const { captured } = await openAuthed(page, '/billing', e2eProfiles.operatorWrite)
+  test('starts a catalog sync from the products page', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/catalog/products', e2eProfiles.operatorWrite)
 
     await expect(page.getByRole('button', { name: 'Sincronizar catálogo' })).toBeVisible()
     await page.getByRole('button', { name: 'Sincronizar catálogo' }).click()
@@ -34,7 +34,7 @@ test.describe('Admin billing', () => {
   test('loads customer subscription detail', async ({ page }) => {
     await openAuthed(page, '/billing/subscriptions/sub-row-1', e2eProfiles.operatorWrite)
 
-    await expect(page.getByRole('heading', { name: 'sub_123' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'ana@edenbowls.com' })).toBeVisible()
     await expect(page.getByText('ana@edenbowls.com', { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Invoices Eden Bowls' })).toBeVisible()
     await expect(page.getByText('EB-2026-000418')).toBeVisible()

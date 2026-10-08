@@ -7,7 +7,7 @@ import { MetricCard } from '../components/MetricCard'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, getApiBaseUrl } from '../lib/api'
 import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
-import { formatDate } from '../lib/format'
+import { formatDate, formatStripeStatus } from '../lib/format'
 import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
 
@@ -55,6 +55,13 @@ type UpsShipment = {
   shipped_at: string | null
   created_at: string | null
   updated_at: string | null
+}
+
+const SHIPMENT_STATUS: Record<string, { label: string; badge: string }> = {
+  created: { label: 'Etiqueta criada', badge: 'badge-success' },
+  pending: { label: 'Gerando', badge: 'badge-info' },
+  unknown: { label: 'Verificar na UPS', badge: 'badge-warning' },
+  voided: { label: 'Anulada', badge: 'badge-error' },
 }
 
 export function SubscriptionDetailPage() {
@@ -291,14 +298,20 @@ export function SubscriptionDetailPage() {
       .map((item) => [item.stripe_invoice_id, item]),
   )
 
+  // Paid invoices still waiting for a label: the shipping team starts here.
+  const awaitingLabel = invoices.filter((item) => item.status === 'paid' && !activeByInvoice.has(item.id))
+
   return (
-    <PageFrame title={data?.stripeSubscriptionId ?? 'Assinatura'} description="Detalhe do registro local. Pausa e cancelamento permanecem na API do cliente.">
+    <PageFrame
+      title={data?.user.email || data?.stripeSubscriptionId || 'Assinatura'}
+      description={data ? `Assinatura ${data.stripeSubscriptionId}${data.planLabel ? ` · ${data.planLabel}` : ''}. Pausa e cancelamento são feitos pelo cliente na loja.` : 'Carregando assinatura…'}
+    >
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
 
       <div className="grid cards-4">
-        <MetricCard label="Status" value={data?.status ?? '—'} />
-        <MetricCard label="Cliente" value={data?.user.email ?? '—'} />
+        <MetricCard label="Status" value={data ? formatStripeStatus(data.status) : '—'} />
+        <MetricCard label="Produto" value={data?.planLabel || '—'} />
         <MetricCard label="Renovação" value={formatDate(data?.currentPeriodEnd)} />
         <MetricCard label="Cancelando" value={data?.cancelAtPeriodEnd ? 'Sim' : 'Não'} />
       </div>
@@ -321,6 +334,79 @@ export function SubscriptionDetailPage() {
           )}
         </div>
       </Section>
+
+      {canReadShipping ? (
+        <Section title="Envio UPS" description="Uma etiqueta por fatura paga. Compare o frete cobrado no checkout com o custo da UPS.">
+          <div className="table-shell table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fatura</th>
+                  <th>Status</th>
+                  <th>Rastreio</th>
+                  <th>Serviço</th>
+                  <th>Cotado</th>
+                  <th>Custo UPS</th>
+                  <th>Enviado</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {awaitingLabel.map((item) => (
+                  <tr key={`awaiting-${item.id}`}>
+                    <td>{item.number ?? item.id}</td>
+                    <td><span className="badge-warning">Sem etiqueta</span></td>
+                    <td colSpan={5} className="muted">Fatura paga em {formatDate(item.createdAt)}.</td>
+                    <td>
+                      {canWriteShipping ? (
+                        <button className="primary-button" type="button" onClick={() => void createShipment(item.id)}>
+                          Gerar etiqueta UPS
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+                {shipments.length === 0 && awaitingLabel.length === 0 ? (
+                  <tr>
+                    <td colSpan={8}>Nenhuma etiqueta ainda. Faturas pagas aparecem aqui para gerar a etiqueta.</td>
+                  </tr>
+                ) : (
+                  shipments.map((item) => (
+                    <tr key={item.id}>
+                      <td>{item.stripe_invoice_id}</td>
+                      <td><span className={SHIPMENT_STATUS[item.status]?.badge ?? 'badge-info'}>{SHIPMENT_STATUS[item.status]?.label ?? item.status}</span></td>
+                      <td>{item.tracking_number || '—'}</td>
+                      <td>{item.service_code || '—'}</td>
+                      <td>{item.quoted_shipping_cost != null ? item.quoted_shipping_cost : '—'}</td>
+                      <td>{item.ups_monetary_value != null ? item.ups_monetary_value : '—'}</td>
+                      <td>{formatDate(item.shipped_at)}</td>
+                      <td>
+                        <div className="inline-actions">
+                          {item.has_label ? (
+                            <button className="ghost-button" type="button" onClick={() => void downloadLabel(item.id)}>
+                              Baixar
+                            </button>
+                          ) : null}
+                          {item.tracking_number ? (
+                            <button className="ghost-button" type="button" onClick={() => void refreshTracking(item.id)}>
+                              Atualizar rastreio
+                            </button>
+                          ) : null}
+                          {canWriteShipping && item.status !== 'voided' && item.ups_shipment_id ? (
+                            <button className="ghost-button" type="button" onClick={() => void voidShipment(item.id)}>
+                              Anular
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      ) : null}
 
       <Section
         title="Invoices Eden Bowls"
@@ -396,14 +482,19 @@ export function SubscriptionDetailPage() {
               </tr>
             </thead>
             <tbody>
+              {invoices.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>Nenhuma fatura carregada. {canSyncBilling ? 'Use "Sincronizar faturas" para buscar na Stripe.' : ''}</td>
+                </tr>
+              ) : null}
               {invoices.map((item) => {
                 const existing = activeByInvoice.get(item.id)
                 const customerInvoice = customerInvoiceByStripeId.get(item.id)
                 return (
                   <tr key={item.id}>
                     <td>{item.number ?? item.id}</td>
-                    <td>{item.status}</td>
-                    <td>{item.amountPaid} {item.currency}</td>
+                    <td>{formatInvoiceStatus(item.status)}</td>
+                    <td>{item.amountPaid} {item.currency?.toUpperCase()}</td>
                     <td>{formatDate(item.createdAt)}</td>
                     <td>
                       <div className="inline-actions">
@@ -413,11 +504,6 @@ export function SubscriptionDetailPage() {
                         ) : canSyncBilling && item.status === 'paid' ? (
                           <button className="ghost-button" type="button" onClick={() => void issueCustomerInvoice(item.id)}>
                             Gerar invoice
-                          </button>
-                        ) : null}
-                        {canWriteShipping && !existing ? (
-                          <button className="ghost-button" type="button" onClick={() => void createShipment(item.id)}>
-                            Gerar etiqueta UPS
                           </button>
                         ) : null}
                         {existing ? (
@@ -432,65 +518,6 @@ export function SubscriptionDetailPage() {
           </table>
         </div>
       </Section>
-
-      {canReadShipping ? (
-        <Section title="Envio UPS" description="Etiqueta por fatura paga. Valor cotado no checkout comparado ao custo UPS na etiqueta.">
-          <div className="table-shell table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Fatura</th>
-                  <th>Status</th>
-                  <th>Rastreio</th>
-                  <th>Serviço</th>
-                  <th>Cotado</th>
-                  <th>Custo UPS</th>
-                  <th>Enviado</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {shipments.length === 0 ? (
-                  <tr>
-                    <td colSpan={8}>Nenhuma etiqueta ainda.</td>
-                  </tr>
-                ) : (
-                  shipments.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.stripe_invoice_id}</td>
-                      <td>{item.status}</td>
-                      <td>{item.tracking_number || '—'}</td>
-                      <td>{item.service_code || '—'}</td>
-                      <td>{item.quoted_shipping_cost != null ? item.quoted_shipping_cost : '—'}</td>
-                      <td>{item.ups_monetary_value != null ? item.ups_monetary_value : '—'}</td>
-                      <td>{formatDate(item.shipped_at)}</td>
-                      <td>
-                        <div className="inline-actions">
-                          {item.has_label ? (
-                            <button className="ghost-button" type="button" onClick={() => void downloadLabel(item.id)}>
-                              Baixar
-                            </button>
-                          ) : null}
-                          {item.tracking_number ? (
-                            <button className="ghost-button" type="button" onClick={() => void refreshTracking(item.id)}>
-                              Atualizar rastreio
-                            </button>
-                          ) : null}
-                          {canWriteShipping && item.status !== 'voided' && item.ups_shipment_id ? (
-                            <button className="ghost-button" type="button" onClick={() => void voidShipment(item.id)}>
-                              Anular
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Section>
-      ) : null}
 
       {data ? (
         <LedgerSnapshotSections

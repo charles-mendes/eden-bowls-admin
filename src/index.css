@@ -258,6 +258,113 @@ h3 {
   box-shadow: inset 2px 0 0 var(--accent);
 }
 
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.menu-toggle {
+  display: none;
+  border: 1px solid #374151;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--sidebar-text);
+  padding: 6px 12px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+/* Grid children shrink to the screen; wide tables scroll inside their own frame. */
+.content-area > *,
+.page-frame,
+.section-card,
+.table-shell {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Stacked cards on a page get one rhythm instead of touching edges. */
+.page-frame > :is(.section-card, .editor-card, .grid, .table-shell, .block-card, .lookup-card, form)
+  + :is(.section-card, .editor-card, .table-shell, .block-card, .lookup-card, form) {
+  margin-top: var(--space-4);
+}
+
+.create-panel summary {
+  display: grid;
+  gap: 2px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.create-panel summary::-webkit-details-marker {
+  display: none;
+}
+
+.create-panel summary strong {
+  color: var(--accent);
+}
+
+.create-panel summary strong::before {
+  content: '+ ';
+}
+
+.create-panel[open] summary strong::before {
+  content: '− ';
+}
+
+.inline-actions > label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.inline-actions > label select {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-strong);
+  padding: 6px 8px;
+  font: inherit;
+}
+
+.create-panel[open] summary {
+  margin-bottom: var(--space-4);
+}
+
+.table-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.maintenance-panel {
+  margin-top: var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+}
+
+.maintenance-panel summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--text-soft);
+}
+
+.maintenance-panel[open] summary {
+  margin-bottom: var(--space-3);
+}
+
+.stat-card-value.stat-card-text {
+  font-size: var(--text-lg);
+  overflow-wrap: anywhere;
+}
+
 .main-panel {
   min-width: 0;
   display: flex;
@@ -893,7 +1000,7 @@ pre {
 
 .table-shell {
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .table-scroll {
@@ -1978,6 +2085,20 @@ button.table-link {
   .sidebar {
     border-right: 0;
     border-bottom: 1px solid #0b1220;
+    gap: 0;
+  }
+
+  .menu-toggle {
+    display: inline-flex;
+  }
+
+  .menu {
+    display: none;
+    margin-top: var(--space-4);
+  }
+
+  .admin-shell.menu-open .menu {
+    display: grid;
   }
 
   .cards-4,
@@ -2007,11 +2128,15 @@ button.table-link {
     flex-direction: column;
   }
 
-  .cards-4,
   .cards-3,
   .cards-2,
   .simulate-grid {
     grid-template-columns: 1fr;
+  }
+
+  .cards-4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
   }
 
   .form-toolbar {

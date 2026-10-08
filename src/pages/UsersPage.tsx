@@ -251,14 +251,14 @@ export function UsersPage() {
   return (
     <PageFrame
       title="Clientes"
-      description="Lista administrativa com busca por e-mail ou nome. Admin também cria e gerencia acessos do painel."
+      description="Contas da loja e do painel. Busque por e-mail ou nome."
       actions={canManageAccess ? (
         <button className="primary-button" type="button" onClick={openCreate}>
           Novo acesso
         </button>
       ) : null}
     >
-      <Section title="Filtros" description="Paginação unificada em page/perPage.">
+      <Section title="Filtros" description="Contas excluídas ficam escondidas, a menos que você marque a opção.">
         <FiltersBar>
           <label>
             Busca

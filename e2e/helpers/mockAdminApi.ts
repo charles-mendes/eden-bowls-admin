@@ -599,6 +599,28 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
+    if (path === '/api/v1/admin/today' && method === 'GET') {
+      await fulfillJson(route, {
+        success: true,
+        data: {
+          generatedAt: '2026-10-07T12:00:00.000Z',
+          timezone: 'America/Sao_Paulo',
+          today: '2026-10-07',
+          totals: { overdue: 0, today: 1, tomorrow: 0 },
+          byMarket: { BR: { overdue: 0, today: 1, tomorrow: 0 }, US: { overdue: 0, today: 0, tomorrow: 0 } },
+          truncated: false,
+          total: 1,
+          items: [{
+            id: 1, market: 'BR', dueBucket: 'today', dueLabel: 'Hoje', displayName: 'Ana Ledger', email: 'ana@edenbowls.com',
+            city: 'São Paulo', flavorMix: 'beef × 2', packCount: 2, packSizeLabel: '500 g',
+            productionStatus: 'to_prepare', paymentState: 'paid', note: null, upsLabel: null,
+          }],
+          closedDays: [],
+        },
+      })
+      return
+    }
+
     if (path === '/api/v1/admin/production/queue' && method === 'GET') {
       await fulfillJson(route, {
         total: 1,

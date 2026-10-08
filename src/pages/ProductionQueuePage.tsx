@@ -251,7 +251,7 @@ export function ProductionQueuePage() {
   let lastBucket: DueBucket | null = null
 
   return (
-    <PageFrame title="Produção" description="Fila da cozinha pelas renovações Stripe da janela civil selecionada.">
+    <PageFrame title="Produção" description="O que a cozinha precisa preparar, por data. Um pedido só entra em produção depois de pago.">
       <div className="grid cards-4">
         <MetricCard label="Vence hoje" value={data?.metrics.today ?? '—'} />
         <MetricCard label="Amanhã" value={data?.metrics.tomorrow ?? '—'} />
@@ -259,7 +259,7 @@ export function ProductionQueuePage() {
         <MetricCard label="Atrasados" value={data?.metrics.overdue ?? '—'} />
       </div>
 
-      <Section title="Filtros" description="A busca e o status de produção recortam a grade, não os indicadores.">
+      <Section title="Filtros" description="Os números do topo não mudam com a busca.">
         <FiltersBar>
           <label>
             Janela
@@ -334,19 +334,16 @@ export function ProductionQueuePage() {
                 <tr>
                   <th>Vencimento</th>
                   <th>Cliente</th>
-                  <th>Pets + mix</th>
-                  <th>Packs</th>
+                  <th>O que preparar</th>
                   <th>Plano</th>
-                  <th>País / cidade</th>
-                  <th>Pagamento</th>
-                  <th>Produção</th>
+                  <th>Status</th>
                   <th>Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {(data?.items.length ?? 0) === 0 ? (
                   <tr>
-                    <td colSpan={9}>Nenhuma renovação nesta janela.</td>
+                    <td colSpan={6}>Nenhuma renovação nesta janela.</td>
                   </tr>
                 ) : data?.items.map((item) => {
                   const showHeader = item.dueBucket && item.dueBucket !== lastBucket
@@ -357,7 +354,7 @@ export function ProductionQueuePage() {
                     <Fragment key={`${item.id}-${item.currentPeriodEnd}`}>
                       {showHeader && item.dueBucket ? (
                         <tr className="table-section-row">
-                          <td colSpan={9}>{BUCKET_HEADERS[item.dueBucket]}</td>
+                          <td colSpan={6}>{BUCKET_HEADERS[item.dueBucket]}</td>
                         </tr>
                       ) : null}
                       <tr>
@@ -370,9 +367,11 @@ export function ProductionQueuePage() {
                         <td>
                           <div>{item.customerName || item.email}</div>
                           {item.customerName ? <div className="muted">{item.email}</div> : null}
+                          <div className="muted">{[item.country, item.city].filter(Boolean).join(' · ') || '—'}</div>
                         </td>
                         <td>
                           {item.flavorMix || '—'}
+                          <div className="muted">{item.packCount} pacote(s) · {item.packSizeLabel || '—'}</div>
                           {item.dense ? (
                             <div>
                               <button className="table-link" type="button" onClick={() => setDenseItem(item)}>
@@ -381,16 +380,14 @@ export function ProductionQueuePage() {
                             </div>
                           ) : null}
                         </td>
-                        <td>{item.packCount} · {item.packSizeLabel || '—'}</td>
                         <td>
                           {item.planLabel || '—'}
                           {item.termMonths ? <div className="muted">{formatTermMonths(item.termMonths)}</div> : null}
                           {item.subtotal == null ? <div className="muted">Subtotal —</div> : null}
                         </td>
-                        <td>{[item.country, item.city].filter(Boolean).join(' / ') || '—'}</td>
-                        <td>{formatStripeStatus(item.stripeStatus)}</td>
                         <td>
                           <span className={STATUS_BADGE[item.productionStatus]}>{STATUS_LABELS[item.productionStatus]}</span>
+                          <div className="muted">Assinatura {formatStripeStatus(item.stripeStatus).toLowerCase()}</div>
                           {item.paymentLabel ? (
                             <div><span className={item.paymentState === 'past_due' ? 'badge-error' : 'badge-warning'}>{item.paymentLabel}</span></div>
                           ) : null}
@@ -409,6 +406,8 @@ export function ProductionQueuePage() {
                                 {action.label}
                               </button>
                             )) : null}
+                          </div>
+                          <div className="table-links">
                             {isProfileInScope(item.customerProfileInScope) ? (
                               <>
                                 <Link className="table-link" to={`/users/${item.userId}`}>Cliente</Link>

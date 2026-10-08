@@ -35,7 +35,7 @@ describe('ProductsPage', () => {
     expect(screen.queryByRole('button', { name: 'Desativar produto Bowl Adulto' })).not.toBeInTheDocument()
     expect(screen.getByText('Publicado')).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Ativo' })).not.toBeInTheDocument()
-    expect(screen.getByText(/já vem filtrada por ele/)).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Preços na Stripe' })).toBeInTheDocument()
     expect(screen.queryByText(/sem filtro/)).not.toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Mercado' })).toHaveValue('BR')
     expect(screen.getByRole('combobox', { name: 'Mercado' })).toBeDisabled()
@@ -199,5 +199,21 @@ describe('ProductsPage', () => {
     })
     expect(screen.getByRole('link', { name: 'Bowl Adulto' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Excluir produto Bowl Adulto' })).toBeInTheDocument()
+  })
+
+  it('syncs Stripe prices from the products page', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<ProductsPage />, '/catalog/products')
+
+    await user.click(await screen.findByRole('button', { name: 'Sincronizar catálogo' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Sincronização: na fila')).toBeInTheDocument()
+    })
+    const sync = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/catalog/sync')
+    expect(sync?.body).toEqual({ market: 'BR', currency: 'BRL' })
+    expect(sync?.authorization).toBe('Bearer access-token')
   })
 })
