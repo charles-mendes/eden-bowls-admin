@@ -1,248 +1,223 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
-import { MetricCard } from '../components/MetricCard'
 import { Section } from '../components/Section'
-import { MarketSelect } from '../components/MarketSelect'
+import { SystemHealth } from '../components/SystemHealth'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
-import { formatDate, formatSyncJobStatus } from '../lib/format'
-import { currencyForMarket, defaultMarket, hasBothMarkets, MARKET_LABELS, type MarketCode } from '../lib/markets'
+import { getBrowserTimeZone } from '../lib/format'
+import { hasBothMarkets, sessionMarkets } from '../lib/markets'
+import { nextStep, type Bucket, type ClosedDay, type Counts, type TodayItem, type TodayOverview, type Tone } from '../lib/today'
 
-type CheckoutMetrics = {
-  totalCheckouts: number
-  linkedToStripe: number
-  stripeActive: number
-  withSimplified: number
-  generatedAt: string
+const MARKET_NAME = { BR: 'Brasil', US: 'EUA' } as const
+
+const STATUS_LABEL: Record<TodayItem['productionStatus'], string> = {
+  to_prepare: 'A preparar',
+  in_production: 'Em produção',
+  ready: 'Pronto',
+  blocked: 'Bloqueado',
 }
 
-type SyncHealth = {
-  market: string
-  currency: string
-  totalExpected: number
-  totalMapped: number
-  gaps: string[]
+const BUCKETS: Array<{ key: Bucket; title: string; empty: string }> = [
+  { key: 'overdue', title: 'Atrasados', empty: 'Nenhum pedido atrasado.' },
+  { key: 'today', title: 'Hoje', empty: 'Nada programado para hoje.' },
+  { key: 'tomorrow', title: 'Amanhã', empty: 'Nada programado para amanhã.' },
+]
+
+function pendingAlerts(items: TodayItem[]) {
+  const count = (predicate: (item: TodayItem) => boolean) => items.filter(predicate).length
+  const alerts: Array<{ tone: Tone; count: number; text: string; to: string }> = [
+    { tone: 'error', count: count((item) => item.dueBucket === 'overdue' && item.productionStatus !== 'ready'), text: 'pedido(s) atrasado(s) ainda sem ficar pronto', to: '/operations/production' },
+    { tone: 'error', count: count((item) => item.paymentState === 'past_due'), text: 'pagamento(s) recusado(s) travando a produção', to: '/billing' },
+    { tone: 'error', count: count((item) => item.productionStatus === 'blocked'), text: 'pedido(s) bloqueado(s)', to: '/operations/production' },
+    { tone: 'warning', count: count((item) => item.upsLabel === 'missing' && item.productionStatus === 'ready'), text: 'pedido(s) dos EUA pronto(s) sem etiqueta UPS', to: '/operations/production' },
+    { tone: 'warning', count: count((item) => item.dueBucket === 'today' && item.paymentState === 'paid' && item.productionStatus === 'to_prepare'), text: 'pedido(s) pago(s) para hoje com preparo não iniciado', to: '/operations/production' },
+  ]
+  return alerts.filter((alert) => alert.count > 0)
 }
 
-type SyncStatus = {
-  syncJobId: string
-  status: string
-  summary?: { scope?: string }
-  scope?: string
+function closedDayText(day: ClosedDay, today: string) {
+  const when = day.date === today ? 'Hoje' : 'Amanhã'
+  const closes = [
+    day.closesPreparation ? 'sem preparo' : '',
+    day.closesPickup ? 'sem coleta' : '',
+    day.closesDelivery ? 'sem entrega' : '',
+  ].filter(Boolean).join(', ')
+  return `${when} (${MARKET_NAME[day.market]}): ${day.label}${closes ? ` · ${closes}` : ''}`
 }
 
-type MarketConflict = {
-  userId: string
-  email: string
-  profileMarket: string
-  stripeAccount: string
+function longDate(isoDate: string) {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  const text = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(year, month - 1, day))
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-function marketLabel(market: string) {
-  return market === 'US' || market === 'BR' ? MARKET_LABELS[market] : market
-}
-
-function catalogHealthCopy(health: SyncHealth | null, market: string, currency: string) {
-  const label = marketLabel(market)
-  const place = market || '—'
-  const money = currency || '—'
-
-  if (!health) {
-    return {
-      badgeClass: 'badge-info',
-      badgeLabel: 'Carregando',
-      summary: `Consultando as variações do catálogo ${label} (${money}).`,
-    }
-  }
-
-  const gapCount = health.gaps.length
-  const complete = health.totalExpected > 0 && gapCount === 0 && health.totalMapped === health.totalExpected
-
-  if (health.totalExpected === 0) {
-    return {
-      badgeClass: 'badge-info',
-      badgeLabel: 'Sem variações',
-      summary: `Não há variações no mercado ${place}. Confira se os produtos têm país do plano = ${place}.`,
-    }
-  }
-
-  if (complete) {
-    return {
-      badgeClass: 'badge-success',
-      badgeLabel: 'Completo',
-      summary: `As ${health.totalMapped} variações do catálogo ${place} já têm um Price ID em ${money}. O checkout pode cobrar essas opções.`,
-    }
-  }
-
-  return {
-    badgeClass: 'badge-warning',
-    badgeLabel: `${gapCount} sem Price`,
-    summary: `Faltam Price IDs em ${gapCount} de ${health.totalExpected} variações. Sem esse vínculo o checkout ${place} não consegue cobrar essas opções.`,
-  }
+function splitHint(counts: Record<'BR' | 'US', Counts>, bucket: Bucket, markets: Array<'BR' | 'US'>) {
+  if (markets.length < 2) return undefined
+  return `Brasil ${counts.BR[bucket]} · EUA ${counts.US[bucket]}`
 }
 
 export function DashboardPage() {
-  const { token, user, hasRole } = useAuth()
+  const { token, user } = useAuth()
   const bothMarkets = hasBothMarkets(user)
-  const isAdmin = hasRole('admin')
-  const [pickedMarket, setPickedMarket] = useState<MarketCode | ''>('')
-  const [metrics, setMetrics] = useState<CheckoutMetrics | null>(null)
-  const [syncHealth, setSyncHealth] = useState<SyncHealth | null>(null)
-  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
-  const [conflicts, setConflicts] = useState<MarketConflict[] | null>(null)
-  const [conflictsError, setConflictsError] = useState('')
+  const markets = sessionMarkets(user)
+  const [market, setMarket] = useState<'' | 'BR' | 'US'>('')
+  const [data, setData] = useState<TodayOverview | null>(null)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const market = bothMarkets ? (pickedMarket || defaultMarket(user) || '') : (defaultMarket(user) ?? '')
-  const currency = market === 'BR' || market === 'US' ? currencyForMarket(market) : ''
+  const [reload, setReload] = useState(0)
 
   useEffect(() => {
     if (!token || !user) return
-
-    const load = async () => {
+    let cancelled = false
+    const run = async () => {
+      setLoading(true)
       setError('')
       try {
-        const [metricsResponse, syncHealthResponse] = await Promise.all([
-          apiRequest<CheckoutMetrics>('/admin/onboarding/metrics', { token }),
-          apiRequest<SyncHealth>(`/admin/catalog/sync/health${buildQueryString({
-            market: market || undefined,
-            currency: currency || undefined,
-          })}`, { token }),
-        ])
-
-        setMetrics(metricsResponse)
-        setSyncHealth(syncHealthResponse)
-
-        try {
-          const syncStatusResponse = await apiRequest<SyncStatus>('/admin/catalog/sync/status', { token })
-          setSyncStatus(syncStatusResponse)
-        } catch {
-          setSyncStatus(null)
-        }
+        const response = await apiRequest<{ success: boolean; data: TodayOverview }>(`/admin/today${buildQueryString({
+          timezone: getBrowserTimeZone(),
+          account: market ? market.toLowerCase() : undefined,
+        })}`, { token })
+        if (!cancelled) setData(response.data)
       } catch (requestError) {
-        setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar dashboard')
-      }
-
-      if (!isAdmin) {
-        setConflicts(null)
-        setConflictsError('')
-        return
-      }
-
-      try {
-        setConflictsError('')
-        const response = await apiRequest<{ items?: MarketConflict[] }>('/admin/markets/conflicts', { token })
-        setConflicts(response.items ?? [])
-      } catch (requestError) {
-        setConflicts([])
-        setConflictsError(requestError instanceof Error ? requestError.message : 'Falha ao carregar conflitos')
+        if (!cancelled) setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar o dia')
+      } finally {
+        if (!cancelled) setLoading(false)
       }
     }
+    void run()
+    return () => {
+      cancelled = true
+    }
+  }, [token, user, market, reload])
 
-    void load()
-  }, [token, user, market, currency, isAdmin])
-
-  const coverage = catalogHealthCopy(syncHealth, market, currency)
-  const gapIds = syncHealth?.gaps ?? []
-  const catalogLabel = marketLabel(market)
+  const items = data?.items ?? []
+  const alerts = pendingAlerts(items)
+  const shownMarkets = market ? [market] : markets
+  const showUps = shownMarkets.includes('US')
+  const missingLabels = items.filter((item) => item.upsLabel === 'missing').length
 
   return (
     <PageFrame
-      title="Dashboard"
-      description="Checkouts de onboarding, vínculo Stripe e saúde do catálogo."
+      title="Hoje"
+      description={data ? `${longDate(data.today)} · o que precisa sair e o que está travando.` : 'O que precisa sair hoje e o que está travando.'}
+      actions={(
+        <div className="today-toolbar">
+          {bothMarkets ? (
+            <div className="today-segment" role="group" aria-label="Mercado">
+              {([['', 'Todos'], ['BR', 'Brasil'], ['US', 'EUA']] as const).map(([value, label]) => (
+                <button key={label} type="button" aria-pressed={market === value} className={market === value ? 'active' : ''} onClick={() => setMarket(value)}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          <button type="button" className="ghost-button" onClick={() => setReload((value) => value + 1)} disabled={loading}>
+            {loading ? 'Atualizando…' : 'Atualizar'}
+          </button>
+        </div>
+      )}
     >
       {error ? <div className="alert">{error}</div> : null}
 
-      <div className="grid cards-4">
-        <MetricCard label="Checkouts" value={metrics?.totalCheckouts ?? '—'} hint={`Gerado em ${formatDate(metrics?.generatedAt)}`} />
-        <MetricCard label="Vinculados Stripe" value={metrics?.linkedToStripe ?? '—'} />
-        <MetricCard label="Stripe ativos" value={metrics?.stripeActive ?? '—'} />
-        <MetricCard label="Com simplificado" value={metrics?.withSimplified ?? '—'} />
+      {data?.closedDays.map((day) => (
+        <div key={`${day.market}-${day.date}-${day.label}`} className="warning today-closed">
+          {closedDayText(day, data.today)} · <Link to="/operations/delivery-calendar">Ver calendário</Link>
+        </div>
+      ))}
+
+      <div className={showUps ? 'today-metrics' : 'today-metrics today-metrics-3'}>
+        <Link to="/operations/production" className="today-metric today-metric-primary">
+          <span>Para hoje</span>
+          <strong>{data ? data.totals.today : '—'}</strong>
+          <small>{data ? splitHint(data.byMarket, 'today', shownMarkets) ?? 'pedidos com preparo hoje' : ' '}</small>
+        </Link>
+        <Link to="/operations/production" className={data && data.totals.overdue > 0 ? 'today-metric today-metric-danger' : 'today-metric'}>
+          <span>Atrasados</span>
+          <strong>{data ? data.totals.overdue : '—'}</strong>
+          <small>{data ? splitHint(data.byMarket, 'overdue', shownMarkets) ?? 'deveriam ter saído' : ' '}</small>
+        </Link>
+        <Link to="/operations/production" className="today-metric">
+          <span>Amanhã</span>
+          <strong>{data ? data.totals.tomorrow : '—'}</strong>
+          <small>{data ? splitHint(data.byMarket, 'tomorrow', shownMarkets) ?? 'para se adiantar' : ' '}</small>
+        </Link>
+        {showUps ? (
+          <Link to="/operations/production" className={missingLabels > 0 ? 'today-metric today-metric-warning' : 'today-metric'}>
+            <span>Sem etiqueta UPS</span>
+            <strong>{data ? missingLabels : '—'}</strong>
+            <small>pedidos pagos dos EUA</small>
+          </Link>
+        ) : null}
       </div>
 
-      <Section
-        title="Preços Stripe no catálogo"
-        description={`Cada variação vendável (sabor/peso) precisa de um Price ID no Stripe. Este recorte é o mercado ${catalogLabel} em ${currency || '—'}.`}
-      >
-        <div className="stack">
-          {bothMarkets ? (
-            <MarketSelect
-              user={user}
-              value={market}
-              onChange={(value) => setPickedMarket(value === 'US' ? 'US' : 'BR')}
-            />
-          ) : null}
-
-          <div className="inline-actions">
-            <span className={coverage.badgeClass}>{coverage.badgeLabel}</span>
-            <span>{coverage.summary}</span>
-          </div>
-
-          <div className="grid cards-3">
-            <MetricCard
-              label="Com Price Stripe"
-              value={syncHealth ? `${syncHealth.totalMapped} / ${syncHealth.totalExpected}` : '—'}
-              hint={`Variações já vinculadas em ${currency || '—'}`}
-            />
-            <MetricCard
-              label="No catálogo"
-              value={syncHealth?.totalExpected ?? '—'}
-              hint="Variações esperadas neste mercado"
-            />
-            <MetricCard
-              label="Sem vínculo"
-              value={syncHealth?.gaps.length ?? '—'}
-              hint="Gaps: variação sem Price ID"
-            />
-          </div>
-
-          {gapIds.length > 0 ? (
-            <div className="warning">
-              Variações sem Price: {gapIds.join(', ')}. Abra o produto e rode o sync para criar os prices faltantes.
-            </div>
-          ) : null}
-
-          <p className="muted">
-            Última sincronização: {syncStatus?.status ? formatSyncJobStatus(syncStatus.status) : 'nenhum sync disparado nesta sessão do servidor'}
-            {syncStatus?.summary?.scope || syncStatus?.scope ? ` · escopo ${syncStatus.summary?.scope ?? syncStatus.scope}` : ''}
-          </p>
-
-          <div className="inline-actions">
-            <Link className="ghost-button" to="/catalog/products">Ver produtos</Link>
-            <Link className="ghost-button" to="/billing">Sincronizar e assinantes</Link>
-          </div>
-        </div>
+      <Section title="Pendências" description="O que trava as entregas agora.">
+        {!data ? (
+          <p className="muted">{loading ? 'Carregando…' : '—'}</p>
+        ) : alerts.length === 0 ? (
+          <p className="today-all-clear">Nada travado. Tudo em dia.</p>
+        ) : (
+          <ul className="today-alerts">
+            {alerts.map((alert) => (
+              <li key={alert.text} className={`today-alert today-alert-${alert.tone}`}>
+                <strong>{alert.count}</strong>
+                <span>{alert.text}</span>
+                <Link to={alert.to}>Resolver</Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </Section>
 
-      {isAdmin ? (
-        <Section title="Conflitos de mercado" description="Perfis cujo mercado não bate com a conta Stripe do ledger.">
-          {conflictsError ? <div className="alert">{conflictsError}</div> : null}
-          {conflicts == null ? null : conflicts.length === 0 ? (
-            <p>Nenhum conflito perfil vs Stripe.</p>
-          ) : (
-            <div className="table-shell table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>E-mail</th>
-                    <th>Mercado do perfil</th>
-                    <th>Conta Stripe</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {conflicts?.map((item) => (
-                    <tr key={item.userId}>
-                      <td>{item.email}</td>
-                      <td>{item.profileMarket}</td>
-                      <td><span className="badge-info">{item.stripeAccount.toUpperCase()}</span></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+      <Section
+        title="Pedidos"
+        description="Do mais urgente ao de amanhã, com o próximo passo de cada um."
+        actions={<Link className="ghost-button" to="/operations/production">Abrir produção</Link>}
+      >
+        {data?.truncated ? <div className="muted-panel">Mostrando {items.length} de {data.total}. A lista completa está em Produção.</div> : null}
+        {BUCKETS.map((bucket) => {
+          const rows = items.filter((item) => item.dueBucket === bucket.key)
+          if (bucket.key === 'overdue' && rows.length === 0) return null
+          return (
+            <div key={bucket.key} className="today-group">
+              <h4>{bucket.title} <span className="muted">({rows.length})</span></h4>
+              {rows.length === 0 ? (
+                <p className="muted">{data ? bucket.empty : '—'}</p>
+              ) : (
+                <ul className="today-orders">
+                  {rows.map((item) => {
+                    const step = nextStep(item)
+                    return (
+                      <li key={`${item.id}-${item.dueBucket}`} className="today-order">
+                        <div className="today-order-who">
+                          <strong>{item.displayName || item.email}</strong>
+                          <small>{[MARKET_NAME[item.market], item.city].filter(Boolean).join(' · ')}</small>
+                        </div>
+                        <div className="today-order-what">
+                          <span>{item.flavorMix || '—'}</span>
+                          <small>{item.packCount} pacote(s){item.packSizeLabel ? ` · ${item.packSizeLabel}` : ''}</small>
+                        </div>
+                        <div className="today-order-status">
+                          <span className={item.productionStatus === 'blocked' ? 'badge-error' : item.productionStatus === 'ready' ? 'badge-success' : 'badge-info'}>
+                            {STATUS_LABEL[item.productionStatus]}
+                          </span>
+                          {item.note ? <small title={item.note}>{item.note}</small> : null}
+                        </div>
+                        <Link to={step.to} className={`today-step today-step-${step.tone}`}>{step.text} →</Link>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
             </div>
-          )}
-        </Section>
-      ) : null}
+          )
+        })}
+      </Section>
+
+      <details className="today-health">
+        <summary>Saúde do sistema <span className="muted">· checkouts, preços Stripe e conflitos de mercado</span></summary>
+        <SystemHealth />
+      </details>
     </PageFrame>
   )
 }

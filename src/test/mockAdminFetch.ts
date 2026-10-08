@@ -12,6 +12,7 @@ import {
   productsList,
   promotionCodesList,
   shippingSettings,
+  todayOverview,
   staffList,
   staffUser,
   subscriptionItem,
@@ -462,6 +463,19 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         address: {},
         ...(options.subscriptionSnapshot ?? {}),
         ...(options.subscriptionInScope === undefined ? {} : { customerProfileInScope: options.subscriptionInScope }),
+      })
+    }
+
+    if (path === '/api/v1/admin/today' && method === 'GET') {
+      const only = profile.markets?.length === 1 ? profile.markets[0] : ''
+      const inScope = (market: string) => !only || market === only
+      return jsonResponse({
+        success: true,
+        data: {
+          ...todayOverview,
+          items: todayOverview.items.filter((item) => inScope(item.market)),
+          closedDays: todayOverview.closedDays.filter((day) => inScope(day.market)),
+        },
       })
     }
 

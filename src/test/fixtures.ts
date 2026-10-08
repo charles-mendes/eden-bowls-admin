@@ -570,3 +570,31 @@ export const userPrivacySnapshot = {
   ],
 }
 
+
+const todayOrder = {
+  dueLabel: 'Hoje',
+  email: 'cliente@example.com',
+  flavorMix: 'Frango 2 · Carne 1',
+  packCount: 3,
+  packSizeLabel: '500 g',
+  note: null,
+}
+
+export const todayOverview = {
+  generatedAt: '2026-10-07T12:00:00.000Z',
+  timezone: 'America/Sao_Paulo',
+  today: '2026-10-07',
+  totals: { overdue: 1, today: 2, tomorrow: 1 },
+  byMarket: { BR: { overdue: 0, today: 1, tomorrow: 1 }, US: { overdue: 1, today: 1, tomorrow: 0 } },
+  truncated: false,
+  total: 4,
+  items: [
+    { ...todayOrder, id: 31, market: 'US', dueBucket: 'overdue', dueLabel: 'Atrasado 1 dia', displayName: 'Ana Costa', city: 'Miami', productionStatus: 'ready', paymentState: 'paid', upsLabel: 'missing' },
+    { ...todayOrder, id: 32, market: 'BR', dueBucket: 'today', displayName: 'Bruno Lima', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'paid', upsLabel: null },
+    { ...todayOrder, id: 33, market: 'US', dueBucket: 'today', displayName: 'Carla Diaz', city: 'Orlando', productionStatus: 'in_production', paymentState: 'paid', upsLabel: 'missing' },
+    { ...todayOrder, id: 34, market: 'BR', dueBucket: 'tomorrow', dueLabel: 'Amanhã', displayName: 'Davi Rocha', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'past_due', upsLabel: null },
+  ],
+  closedDays: [
+    { market: 'BR', date: '2026-10-08', label: 'Folga da cozinha', closesPreparation: true, closesPickup: false, closesDelivery: true },
+  ],
+}
