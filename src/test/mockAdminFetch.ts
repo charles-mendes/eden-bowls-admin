@@ -479,18 +479,71 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         return jsonResponse({
           success: true,
           data: {
-            shipping: 18.45,
-            delivery_days: 4,
-            currency: 'USD',
-            label: 'UPS Ground',
-            carrier: 'UPS',
-            source: 'ups',
+            country: 'US',
+            quote_mode: 'ups',
+            fixed: null,
+            ups: {
+              environment: 'cie',
+              destination: { city: 'San Francisco', state: 'CA', zipcode: '94105' },
+              steps: [
+                { key: 'oauth', label: 'Autenticação OAuth', status: 'ok', detail: 'Token emitido pela UPS sandbox (CIE).', ms: 120 },
+                { key: 'destination', label: 'Cidade e estado do ZIP', status: 'ok', detail: 'San Francisco, CA 94105', ms: 80 },
+                { key: 'origin', label: 'Endereço da sede (XAV)', status: 'skipped', detail: 'O sandbox da UPS só valida endereços de NY e CA.' },
+                { key: 'rating', label: 'Cotação com prazo (Shoptimeintransit)', status: 'ok', detail: '2 serviço(s) cotado(s).', ms: 340 },
+              ],
+              rates: [
+                { service_code: '03', label: 'UPS Ground', amount: 18.45, currency: 'USD', delivery_days: 4, allowed: true },
+                { service_code: '01', label: 'UPS Next Day Air', amount: 72.1, currency: 'USD', delivery_days: 1, allowed: false },
+              ],
+              selected: { service_code: '03', label: 'UPS Ground', amount: 18.45, currency: 'USD', delivery_days: 4 },
+            },
           },
         })
       }
       return jsonResponse({
         success: true,
-        data: { distance: 8.2, shipping: 12.5, delivery_days: 2, distance_source: 'haversine' },
+        data: {
+          distance: 8.2,
+          shipping: 12.5,
+          delivery_days: 1,
+          distance_source: 'osrm',
+          destination: { city: 'São Paulo', state: 'SP', zipcode: '01310-100' },
+          breakdown: { minimum_applied: false },
+        },
+      })
+    }
+
+    if (path === '/api/v1/admin/shipping/headquarters/validate' && method === 'POST') {
+      const address = (body?.address || {}) as Record<string, string>
+      if (body?.country === 'BR') {
+        return jsonResponse({
+          success: true,
+          data: {
+            valid: true,
+            country: 'BR',
+            address: { ...address, city: 'São Paulo', state: 'SP', zipcode: '01310-100', neighborhood: 'Bela Vista' },
+            location: { lat: -23.5652, lng: -46.6514, precision: 'address' },
+            errors: {},
+            warnings: [],
+          },
+        })
+      }
+      return jsonResponse({
+        success: true,
+        data: {
+          valid: false,
+          country: 'US',
+          address,
+          errors: { state: 'O ZIP 33101 é de FL.' },
+          warnings: [],
+        },
+      })
+    }
+
+    if (path === '/api/v1/onboarding/zipcode/lookup' && method === 'POST') {
+      return jsonResponse({
+        success: true,
+        data: { status: 'found', street: 'Avenida Paulista', neighborhood: 'Bela Vista', city: 'São Paulo', state: 'SP' },
       })
     }
 
