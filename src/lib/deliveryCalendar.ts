@@ -173,3 +173,52 @@ export function resendCalendarSync(token: string, market: MarketCode, sync: Cale
 export function getCalendarAlerts(token: string, market: MarketCode) {
   return apiRequest<CalendarAlerts>(`${BASE}/alerts${buildQueryString({ market })}`, { token })
 }
+
+export const FLAG_LABELS: Record<keyof ClosedDayFlags, string> = {
+  closesPreparation: 'Preparo',
+  closesPickup: 'Coleta',
+  closesDelivery: 'Entrega',
+}
+
+export const FLAG_HINTS: Record<keyof ClosedDayFlags, string> = {
+  closesPreparation: 'Cozinha não produz',
+  closesPickup: 'Transportadora não coleta',
+  closesDelivery: 'Não há entrega ao cliente',
+}
+
+export const FLAGS = Object.keys(FLAG_LABELS) as Array<keyof ClosedDayFlags>
+
+export const MOVE_LABELS: Record<AffectedDelivery['move'], string> = {
+  stripe_sync: 'Cobrança movida no Stripe',
+  pending_change: 'Mudança pendente remarcada',
+  projection_only: 'Só o dia de preparo muda',
+}
+
+export const ACTION_LABELS: Record<string, string> = {
+  'delivery_calendar.create': 'Inclusão',
+  'delivery_calendar.remove': 'Remoção',
+  'delivery_calendar.activate': 'Reativação',
+  'delivery_calendar.deactivate': 'Desativação',
+  'delivery_calendar.update': 'Mudança de marcação',
+  'delivery_calendar.sync_resend': 'Reenvio ao Stripe',
+}
+
+const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
+
+export function formatDay(value: string | null | undefined) {
+  if (!value) return '—'
+  const [year, month, day] = value.split('-').map(Number)
+  const weekday = WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]
+  return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year} (${weekday})`
+}
+
+export function closedFlags(values: Partial<ClosedDayFlags> | null | undefined) {
+  if (!values) return '—'
+  const closed = FLAGS.filter((flag) => values[flag]).map((flag) => FLAG_LABELS[flag])
+  return closed.length ? closed.join(', ') : 'nenhuma'
+}
+
+export function describeValues(values: (Partial<ClosedDayFlags> & { active?: boolean }) | null | undefined) {
+  if (!values) return '—'
+  return `${values.active === false ? 'Inativa' : 'Ativa'} · fecha ${closedFlags(values)}`
+}

@@ -2343,3 +2343,171 @@ button.table-link {
     align-items: flex-start;
   }
 }
+
+/* Page tabs (Feriados e fechamentos) */
+.page-tabs {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  overflow-x: auto;
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: none;
+}
+
+.page-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  margin-bottom: -1px;
+  padding: 10px 12px;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--duration), border-color var(--duration);
+}
+
+.page-tab:hover {
+  color: var(--text-strong);
+}
+
+.page-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.page-tab:focus-visible {
+  outline-offset: -2px;
+}
+
+.page-tab-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  line-height: 18px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.page-tab.active .page-tab-count {
+  background: var(--accent-soft);
+  border-color: #bfdbfe;
+  color: var(--accent);
+}
+
+/* Delivery calendar history */
+.history-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.history-filters label {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.history-filters input,
+.history-filters select {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-strong);
+}
+
+.history-clear {
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.history-count {
+  margin: 0 0 var(--space-3);
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.history-empty {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: var(--space-5) 0;
+  color: var(--text-soft);
+}
+
+.history-empty p {
+  margin: 0;
+}
+
+.history-table td {
+  vertical-align: top;
+}
+
+.history-table .nowrap {
+  white-space: nowrap;
+}
+
+.history-action {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  color: var(--text-strong);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.history-moved summary {
+  color: var(--accent);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.history-moved ul {
+  margin-top: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 860px) {
+  .history-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .history-filters label:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  .history-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .history-filters input,
+  .history-filters select {
+    min-height: 42px;
+    font-size: 16px;
+  }
+
+  .history-clear {
+    justify-self: start;
+  }
+}

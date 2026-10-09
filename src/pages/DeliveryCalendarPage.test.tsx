@@ -56,12 +56,26 @@ function calendarRoutes(server: CalendarServer = {}) {
   }
 }
 
-function renderCalendar(profile = operatorWriteUser, server: CalendarServer = {}) {
+function renderCalendar(profile = operatorWriteUser, server: CalendarServer = {}, route = '/operations/delivery-calendar') {
   seedAuth()
   const mock = installAdminFetchMock(profile, { routes: calendarRoutes(server) })
-  renderAuthedPage(<DeliveryCalendarPage />, '/operations/delivery-calendar')
+  renderAuthedPage(<DeliveryCalendarPage />, route, '/operations/delivery-calendar')
   return mock
 }
+
+async function openHistoryTab() {
+  fireEvent.click(await screen.findByRole('tab', { name: /Histórico/ }))
+  return screen.findByRole('tabpanel', { name: /Histórico/ })
+}
+
+const historyEvent = (id: number, overrides: { action?: string; actorEmail?: string; label?: string } = {}) => ({
+  id, actorUserId: 7, actorEmail: overrides.actorEmail ?? 'admin@edenbowls.com', action: overrides.action ?? 'delivery_calendar.create',
+  createdAt: `${YEAR}-03-18T12:00:00.000Z`,
+  metadata: {
+    market: 'BR', closedOn: `${YEAR}-03-29`, type: 'adhoc', label: overrides.label ?? `Fechamento ${id}`, before: null,
+    after: { active: true, closesPreparation: true, closesPickup: true, closesDelivery: true }, moved: [],
+  },
+})
 
 describe('DeliveryCalendarPage list', () => {
   afterEach(() => {
@@ -358,20 +372,85 @@ describe('DeliveryCalendarPage history', () => {
 
   it('lists the events newest first with actor, action, before and after, and moved subscriptions', async () => {
     renderCalendar(readonlyUser, { history: HISTORY })
-    const actions = await screen.findAllByText(/^(Inclusão|Remoção|Reenvio ao Stripe)$/)
+    const panel = await openHistoryTab()
+    const actions = await within(within(panel).getByRole('table')).findAllByText(/^(Inclusão|Remoção|Reenvio ao Stripe)$/)
     expect(actions.map((node) => node.textContent)).toEqual(['Reenvio ao Stripe', 'Remoção', 'Inclusão'])
     const removed = screen.getByText('Falta de energia').closest('tr') as HTMLElement
     expect(within(removed).getByText('Ativa · fecha Preparo, Entrega')).toBeInTheDocument()
-    const created = screen.getByText('Inclusão').closest('tr') as HTMLElement
+    const created = within(within(panel).getByRole('table')).getByText('Inclusão').closest('tr') as HTMLElement
     expect(within(created).getByText(/sub_ana: .* → .* · Cobrança movida no Stripe/)).toBeInTheDocument()
-    const resend = screen.getByText('Reenvio ao Stripe').closest('tr') as HTMLElement
+    const resend = within(within(panel).getByRole('table')).getByText('Reenvio ao Stripe').closest('tr') as HTMLElement
     expect(within(resend).getByText('sub_late')).toBeInTheDocument()
     expect(within(resend).getByText(/^Esperada .* · encontrada /)).toBeInTheDocument()
   })
 
   it('says when the year has no events', async () => {
     renderCalendar()
+    await openHistoryTab()
     expect(await screen.findByText('Nenhuma mudança registrada neste ano.')).toBeInTheDocument()
+  })
+
+  it('keeps the history in its own tab, out of the closed days view', async () => {
+    renderCalendar(readonlyUser, { rows: BR_ROWS, history: HISTORY })
+    const daysTab = await screen.findByRole('tab', { name: /Dias fechados/ })
+    expect(daysTab).toHaveAttribute('aria-selected', 'true')
+    await screen.findByText('Natal')
+    expect(screen.queryByText('Falta de energia')).not.toBeInTheDocument()
+    await openHistoryTab()
+    expect(screen.getByRole('tab', { name: /Histórico/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Falta de energia')).toBeInTheDocument()
+    expect(screen.queryByRole('tabpanel', { name: /Dias fechados/ })).not.toBeInTheDocument()
+  })
+
+  it('opens straight on the history tab from the URL', async () => {
+    renderCalendar(readonlyUser, { history: HISTORY }, '/operations/delivery-calendar?aba=historico')
+    expect(await screen.findByRole('tabpanel', { name: /Histórico/ })).toBeInTheDocument()
+    expect(await screen.findByText('Falta de energia')).toBeInTheDocument()
+  })
+
+  it('filters by action, actor, and search text, and clears the filters', async () => {
+    renderCalendar(readonlyUser, { history: HISTORY })
+    const panel = await openHistoryTab()
+    await within(panel).findByText('Falta de energia')
+
+    fireEvent.change(within(panel).getByLabelText('Ação'), { target: { value: 'delivery_calendar.remove' } })
+    expect(within(panel).getByText('Falta de energia')).toBeInTheDocument()
+    expect(within(panel).queryByText('Aniversário de Curitiba')).not.toBeInTheDocument()
+
+    fireEvent.click(within(panel).getAllByRole('button', { name: 'Limpar filtros' })[0])
+    fireEvent.change(within(panel).getByLabelText('Responsável'), { target: { value: 'admin@edenbowls.com' } })
+    expect(within(panel).getByText('Aniversário de Curitiba')).toBeInTheDocument()
+    expect(within(panel).queryByText('Falta de energia')).not.toBeInTheDocument()
+
+    fireEvent.click(within(panel).getAllByRole('button', { name: 'Limpar filtros' })[0])
+    fireEvent.change(within(panel).getByLabelText('Buscar no histórico'), { target: { value: 'sub_ana' } })
+    expect(within(panel).getByText('Aniversário de Curitiba')).toBeInTheDocument()
+    expect(within(panel).getByText('Mostrando 1–1 de 1 (de 3 no ano)')).toBeInTheDocument()
+
+    fireEvent.change(within(panel).getByLabelText('Buscar no histórico'), { target: { value: 'nada disso' } })
+    expect(within(panel).getByText('Nenhuma mudança corresponde aos filtros.')).toBeInTheDocument()
+  })
+
+  it('pages the history twenty events at a time', async () => {
+    const events = Array.from({ length: 45 }, (_, index) => historyEvent(45 - index, { label: `Fechamento ${45 - index}` }))
+    renderCalendar(readonlyUser, { history: events })
+    const panel = await openHistoryTab()
+    expect(await within(panel).findByText('Mostrando 1–20 de 45')).toBeInTheDocument()
+    expect(within(panel).getByText('Página 1 de 3')).toBeInTheDocument()
+    expect(within(panel).getByText('Fechamento 45')).toBeInTheDocument()
+    expect(within(panel).queryByText('Fechamento 25')).not.toBeInTheDocument()
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Próxima' }))
+    expect(within(panel).getByText('Mostrando 21–40 de 45')).toBeInTheDocument()
+    expect(within(panel).getByText('Fechamento 25')).toBeInTheDocument()
+
+    fireEvent.click(within(panel).getByRole('button', { name: 'Próxima' }))
+    expect(within(panel).getByText('Mostrando 41–45 de 45')).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Próxima' })).toBeDisabled()
+
+    fireEvent.change(within(panel).getByLabelText('Buscar no histórico'), { target: { value: 'Fechamento 4' } })
+    expect(within(panel).getByText('Mostrando 1–7 de 7 (de 45 no ano)')).toBeInTheDocument()
+    expect(within(panel).queryByRole('button', { name: 'Próxima' })).not.toBeInTheDocument()
   })
 })
 

@@ -1,8 +1,10 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { FiltersBar } from '../components/FiltersBar'
 import { Dialog } from '../components/Dialog'
+import { DeliveryCalendarHistory } from '../components/DeliveryCalendarHistory'
 import { MarketSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError } from '../lib/api'
@@ -19,6 +21,11 @@ import {
   removeClosedDay,
   resendCalendarSync,
   updateClosedDay,
+  FLAG_HINTS,
+  FLAG_LABELS,
+  FLAGS,
+  formatDay,
+  MOVE_LABELS,
   type AffectedDelivery,
   type CalendarAlerts,
   type CalendarHistoryItem,
@@ -41,26 +48,6 @@ const TYPE_LABELS: Record<ClosedDayType, string> = {
   adhoc: 'Pontual',
 }
 
-const FLAG_LABELS: Record<keyof ClosedDayFlags, string> = {
-  closesPreparation: 'Preparo',
-  closesPickup: 'Coleta',
-  closesDelivery: 'Entrega',
-}
-
-const FLAG_HINTS: Record<keyof ClosedDayFlags, string> = {
-  closesPreparation: 'Cozinha não produz',
-  closesPickup: 'Transportadora não coleta',
-  closesDelivery: 'Não há entrega ao cliente',
-}
-
-const FLAGS = Object.keys(FLAG_LABELS) as Array<keyof ClosedDayFlags>
-
-const MOVE_LABELS: Record<AffectedDelivery['move'], string> = {
-  stripe_sync: 'Cobrança movida no Stripe',
-  pending_change: 'Mudança pendente remarcada',
-  projection_only: 'Só o dia de preparo muda',
-}
-
 const LOCK_LABELS: Record<string, string> = {
   in_production: 'em produção',
   ready: 'pronta',
@@ -70,39 +57,10 @@ const LOCK_LABELS: Record<string, string> = {
   no_preparation_day: 'sem dia de preparo disponível',
 }
 
-const ACTION_LABELS: Record<string, string> = {
-  'delivery_calendar.create': 'Inclusão',
-  'delivery_calendar.remove': 'Remoção',
-  'delivery_calendar.activate': 'Reativação',
-  'delivery_calendar.deactivate': 'Desativação',
-  'delivery_calendar.update': 'Mudança de marcação',
-  'delivery_calendar.sync_resend': 'Reenvio ao Stripe',
-}
-
 const SYNC_STATUS_LABELS: Record<string, string> = {
   pending: 'Atrasada',
   failed: 'Falhou',
   conflict: 'Conflito',
-}
-
-const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
-
-function formatDay(value: string | null | undefined) {
-  if (!value) return '—'
-  const [year, month, day] = value.split('-').map(Number)
-  const weekday = WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()]
-  return `${String(day).padStart(2, '0')}/${String(month).padStart(2, '0')}/${year} (${weekday})`
-}
-
-function closedFlags(values: Partial<ClosedDayFlags> | null | undefined) {
-  if (!values) return '—'
-  const closed = FLAGS.filter((flag) => values[flag]).map((flag) => FLAG_LABELS[flag])
-  return closed.length ? closed.join(', ') : 'nenhuma'
-}
-
-function describeValues(values: (Partial<ClosedDayFlags> & { active?: boolean }) | null | undefined) {
-  if (!values) return '—'
-  return `${values.active === false ? 'Inativa' : 'Ativa'} · fecha ${closedFlags(values)}`
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -118,6 +76,13 @@ function lockedFrom(error: unknown): LockedSubscription[] {
 }
 
 type Draft = NewClosedDay
+
+type CalendarTab = 'dias' | 'historico'
+
+const TABS: Array<{ id: CalendarTab; label: string }> = [
+  { id: 'dias', label: 'Dias fechados' },
+  { id: 'historico', label: 'Histórico' },
+]
 
 const EMPTY_DRAFT: Draft = {
   type: 'adhoc',
@@ -211,6 +176,8 @@ export function DeliveryCalendarPage() {
   const market: MarketCode | null = bothMarkets ? (pickedMarket || 'BR') : defaultMarket(user)
   const timeZone = market ? TIME_ZONES[market] : 'UTC'
   const [year, setYear] = useState(currentYear)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab: CalendarTab = searchParams.get('aba') === 'historico' ? 'historico' : 'dias'
   const [rows, setRows] = useState<ClosedDay[]>([])
   const [history, setHistory] = useState<CalendarHistoryItem[]>([])
   const [syncs, setSyncs] = useState<CalendarSyncs | null>(null)
@@ -264,6 +231,23 @@ export function DeliveryCalendarPage() {
       cancelled = true
     }
   }, [token, market, year, requestKey])
+
+  const selectTab = (next: CalendarTab) => {
+    setSearchParams((params) => {
+      if (next === 'dias') params.delete('aba')
+      else params.set('aba', next)
+      return params
+    }, { replace: true })
+  }
+
+  // Arrow keys move between tabs, following the WAI-ARIA tabs pattern.
+  const moveTabFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+    const index = TABS.findIndex((option) => option.id === tab)
+    const next = TABS[(index + (event.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length].id
+    selectTab(next)
+    document.getElementById(`calendar-tab-${next}`)?.focus()
+  }
 
   const closeWriteDialogs = () => {
     setDraft(null)
@@ -481,119 +465,103 @@ export function DeliveryCalendarPage() {
         </Section>
       ) : null}
 
-      <Section title="Dias fechados" description={market ? `${market} · ${year}` : undefined}>
-        {loading ? <p aria-busy="true">Carregando calendário…</p> : rows.length === 0 ? (
-          <p>Nenhum dia fechado cadastrado para este ano.</p>
-        ) : (
-          <div className="table-shell table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Data</th>
-                  <th>Rótulo</th>
-                  <th>Tipo</th>
-                  <th>Situação</th>
-                  {FLAGS.map((flag) => <th key={flag}>{FLAG_LABELS[flag]}</th>)}
-                  {canWrite ? <th>Ações</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className={row.active ? undefined : 'muted'}>
-                    <td>{formatDay(row.closedOn)}</td>
-                    <td>{row.label}</td>
-                    <td>{TYPE_LABELS[row.type] || row.type}</td>
-                    <td>{row.active ? <span className="badge-success">Ativa</span> : <span className="badge-info">Inativa</span>}</td>
-                    {FLAGS.map((flag) => <td key={flag}>{row[flag] ? 'Fechado' : 'Aberto'}</td>)}
-                    {canWrite ? (
-                      <td>
-                        <div className="table-actions">
-                          <button
-                            className="ghost-button"
-                            type="button"
-                            aria-label={`Editar marcações de ${row.label}`}
-                            onClick={() => { setEditing(row); setEditFlags({ closesPreparation: row.closesPreparation, closesPickup: row.closesPickup, closesDelivery: row.closesDelivery }); setDialogError('') }}
-                          >
-                            Editar
-                          </button>
-                          {row.active ? (
-                            <button className="ghost-button" type="button" disabled={busy} aria-label={`Desativar ${row.label}`} onClick={() => void deactivate(row)}>
-                              Desativar
-                            </button>
-                          ) : (
+      <div className="page-tabs" role="tablist" aria-label="Visões do calendário" onKeyDown={moveTabFocus}>
+        {TABS.map((option) => (
+          <button
+            key={option.id}
+            id={`calendar-tab-${option.id}`}
+            type="button"
+            role="tab"
+            aria-selected={tab === option.id}
+            aria-controls={`calendar-panel-${option.id}`}
+            tabIndex={tab === option.id ? 0 : -1}
+            className={tab === option.id ? 'page-tab active' : 'page-tab'}
+            onClick={() => selectTab(option.id)}
+          >
+            {option.label}
+            {!loading ? <span className="page-tab-count">{option.id === 'historico' ? history.length : rows.length}</span> : null}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'dias' ? (
+        <div id="calendar-panel-dias" role="tabpanel" aria-labelledby="calendar-tab-dias">
+        <Section title="Dias fechados" description={market ? `${market} · ${year}` : undefined}>
+          {loading ? <p aria-busy="true">Carregando calendário…</p> : rows.length === 0 ? (
+            <p>Nenhum dia fechado cadastrado para este ano.</p>
+          ) : (
+            <div className="table-shell table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Rótulo</th>
+                    <th>Tipo</th>
+                    <th>Situação</th>
+                    {FLAGS.map((flag) => <th key={flag}>{FLAG_LABELS[flag]}</th>)}
+                    {canWrite ? <th>Ações</th> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.id} className={row.active ? undefined : 'muted'}>
+                      <td>{formatDay(row.closedOn)}</td>
+                      <td>{row.label}</td>
+                      <td>{TYPE_LABELS[row.type] || row.type}</td>
+                      <td>{row.active ? <span className="badge-success">Ativa</span> : <span className="badge-info">Inativa</span>}</td>
+                      {FLAGS.map((flag) => <td key={flag}>{row[flag] ? 'Fechado' : 'Aberto'}</td>)}
+                      {canWrite ? (
+                        <td>
+                          <div className="table-actions">
                             <button
                               className="ghost-button"
                               type="button"
-                              disabled={busy}
-                              aria-label={`Reativar ${row.label}`}
-                              onClick={() => void askPreview({ kind: 'change', row, change: { active: true } })}
+                              aria-label={`Editar marcações de ${row.label}`}
+                              onClick={() => { setEditing(row); setEditFlags({ closesPreparation: row.closesPreparation, closesPickup: row.closesPickup, closesDelivery: row.closesDelivery }); setDialogError('') }}
                             >
-                              Reativar
+                              Editar
                             </button>
-                          )}
-                          {row.type === 'regional' || row.type === 'adhoc' ? (
-                            <button className="danger-button" type="button" aria-label={`Remover ${row.label}`} onClick={() => setRemoving(row)}>
-                              Remover
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    ) : null}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
-
-      <Section title="Histórico" description="Quem mudou o calendário deste mercado e ano, do mais recente ao mais antigo.">
-        {history.length === 0 ? <p>Nenhuma mudança registrada neste ano.</p> : (
-          <div className="table-shell table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Quando</th>
-                  <th>Quem</th>
-                  <th>Ação</th>
-                  <th>Data</th>
-                  <th>Antes</th>
-                  <th>Depois</th>
-                  <th>Assinaturas</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((item) => {
-                  const meta = item.metadata
-                  const resend = item.action === 'delivery_calendar.sync_resend'
-                  return (
-                    <tr key={item.id}>
-                      <td>{formatDate(item.createdAt)}</td>
-                      <td>{item.actorEmail || '—'}</td>
-                      <td>{ACTION_LABELS[item.action] || item.action}</td>
-                      <td>{formatDay(meta.closedOn)}{meta.label ? <div className="muted">{meta.label}</div> : null}</td>
-                      <td>{resend ? `Esperada ${formatDate(meta.expectedTrialEnd, timeZone)} · encontrada ${formatDate(meta.foundTrialEnd, timeZone)}` : describeValues(meta.before)}</td>
-                      <td>{resend ? `Alvo ${formatDate(meta.targetTrialEnd, timeZone)}` : describeValues(meta.after)}</td>
-                      <td>
-                        {resend ? meta.stripeSubscriptionId : (meta.moved && meta.moved.length > 0 ? (
-                          <ul className="plain-list">
-                            {meta.moved.map((moved) => (
-                              <li key={`${moved.stripeSubscriptionId}-${moved.deliveryId}`}>
-                                {moved.stripeSubscriptionId}: {formatDay(moved.previousPreparationDay)} → {formatDay(moved.newPreparationDay)} · {MOVE_LABELS[moved.move]}
-                                {moved.pendingTrialEnd ? ` (${formatDate(moved.pendingTrialEnd.previous, timeZone)} → ${formatDate(moved.pendingTrialEnd.next, timeZone)})` : ''}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : '—')}
-                      </td>
+                            {row.active ? (
+                              <button className="ghost-button" type="button" disabled={busy} aria-label={`Desativar ${row.label}`} onClick={() => void deactivate(row)}>
+                                Desativar
+                              </button>
+                            ) : (
+                              <button
+                                className="ghost-button"
+                                type="button"
+                                disabled={busy}
+                                aria-label={`Reativar ${row.label}`}
+                                onClick={() => void askPreview({ kind: 'change', row, change: { active: true } })}
+                              >
+                                Reativar
+                              </button>
+                            )}
+                            {row.type === 'regional' || row.type === 'adhoc' ? (
+                              <button className="danger-button" type="button" aria-label={`Remover ${row.label}`} onClick={() => setRemoving(row)}>
+                                Remover
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      ) : null}
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
+        </div>
+      ) : (
+        <div id="calendar-panel-historico" role="tabpanel" aria-labelledby="calendar-tab-historico">
+          <Section title="Histórico" description={`Quem mudou o calendário${market ? ` de ${market}` : ''} em ${year}, do mais recente ao mais antigo.`}>
+            {loading ? <p aria-busy="true">Carregando histórico…</p> : (
+              <DeliveryCalendarHistory key={`${market}-${year}`} items={history} timeZone={timeZone} />
+            )}
+          </Section>
+        </div>
+      )}
+
 
       <Dialog
         title={writeTitle}
