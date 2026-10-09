@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
-import { Section } from '../components/Section'
 import { Pager } from '../components/Pager'
-import { FiltersBar } from '../components/FiltersBar'
 import { Dialog } from '../components/Dialog'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
@@ -62,6 +60,8 @@ const emptyForm: AccessForm = {
 function inviteNeedsResend(item: UserItem) {
   return item.inviteMailStatus === 'failed' || item.inviteExpired || (item.status === 'pending' && isStaffAccount(item.roles))
 }
+
+const PER_PAGE_OPTIONS = [10, 20, 50, 100]
 
 export function UsersPage() {
   const { token, user, hasPermission } = useAuth()
@@ -258,18 +258,19 @@ export function UsersPage() {
         </button>
       ) : null}
     >
-      <Section title="Filtros" description="Contas excluídas ficam escondidas, a menos que você marque a opção.">
-        <FiltersBar>
-          <label>
-            Busca
-            <input value={query} onChange={(event) => { setQuery(event.target.value); setPage(1) }} placeholder="e-mail ou nome" />
-          </label>
-          <label>
-            Por página
-            <input type="number" min={1} max={100} value={perPage} onChange={(event) => { setPerPage(Number(event.target.value)); setPage(1) }} />
-          </label>
+      <div className="list-toolbar">
+        <label className="list-search">
+          <span className="sr-only">Busca</span>
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => { setQuery(event.target.value); setPage(1) }}
+            placeholder="Buscar por e-mail ou nome"
+          />
+        </label>
+        <div className="list-toolbar-end">
           {canManageAccess ? (
-            <label className="checkbox-field">
+            <label className="checkbox-field" title="Contas excluídas ficam escondidas, a menos que você marque esta opção.">
               <input
                 type="checkbox"
                 checked={includeDeleted}
@@ -278,28 +279,39 @@ export function UsersPage() {
               Incluir excluídos
             </label>
           ) : null}
-        </FiltersBar>
+          <label className="list-per-page">
+            Por página
+            <select value={perPage} onChange={(event) => { setPerPage(Number(event.target.value)); setPage(1) }}>
+              {PER_PAGE_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          </label>
+        </div>
+      </div>
 
-        {error ? <div className="alert">{error}</div> : null}
-        {message ? <div className="success">{message}</div> : null}
+      {error ? <div className="alert">{error}</div> : null}
+      {message ? <div className="success">{message}</div> : null}
 
-        {data ? (
+      {data ? (
         <>
         <div className="table-shell table-scroll">
-          <table>
+          <table className="users-table">
             <thead>
               <tr>
-                <th>E-mail</th>
+                <th>Cliente</th>
                 <th>Status</th>
                 <th>Papel</th>
-                <th>Nome</th>
                 <th>Telefone</th>
                 <th>Criado em</th>
-                {showActions ? <th>Ações</th> : null}
+                {showActions ? <th><span className="sr-only">Ações</span></th> : null}
               </tr>
             </thead>
             <tbody>
-              {data?.items.map((item) => {
+              {data.items.length === 0 ? (
+                <tr className="users-empty">
+                  <td colSpan={showActions ? 6 : 5}>Nenhuma conta encontrada{query ? ` para “${query}”` : ''}.</td>
+                </tr>
+              ) : null}
+              {data.items.map((item) => {
                 const staff = isStaffAccount(item.roles)
                 const isSelf = user?.userId === item.id
                 const deleted = Boolean(item.deletedAt)
@@ -317,29 +329,33 @@ export function UsersPage() {
                 const showEdit = canManageAccess && !isSelf && !deleted
                 const showInvite = canManageAccess && staff && inviteNeedsResend(item) && !isSelf && !deleted
                 const showDelete = canManageAccess && !isSelf && !item.lockedByAllowlist && !deleted
+                const name = item.profile?.fullName
 
                 return (
                   <tr key={item.id}>
-                    <td>
-                      <Link className="table-link" to={`/users/${item.id}`}>{item.email}</Link>
-                      {item.inviteMailStatus === 'failed' ? (
-                        <div className="muted">Convite não enviado — reenviar</div>
-                      ) : null}
+                    <td className="users-cell-client">
+                      <div className="users-client">
+                        {name ? <strong className="users-name">{name}</strong> : null}
+                        <Link className="table-link" to={`/users/${item.id}`}>{item.email}</Link>
+                        {isSelf ? <span className="muted users-note">Sua conta</span> : null}
+                        {item.inviteMailStatus === 'failed' ? (
+                          <span className="users-note users-note-warning">Convite não enviado — reenviar</span>
+                        ) : null}
+                      </div>
                     </td>
-                    <td>
+                    <td className="users-cell-status">
                       <span className={accountStatusBadgeClass(deleted ? 'deleted' : item.status)}>
                         {accountStatusLabel(deleted ? 'deleted' : item.status)}
                       </span>
                     </td>
-                    <td>
+                    <td className="users-cell-meta" data-label="Papel">
                       {item.roles?.filter((role) => role !== 'customer').map(roleLabel).join(', ') || 'cliente'}
-                      {item.lockedByAllowlist ? <div className="muted">Efetivo: {roleLabel(primaryRole(item.roles))} (allowlist)</div> : null}
+                      {item.lockedByAllowlist ? <span className="muted users-note">Efetivo: {roleLabel(primaryRole(item.roles))} (allowlist)</span> : null}
                     </td>
-                    <td>{item.profile?.fullName ?? '-'}</td>
-                    <td>{item.profile?.phone ?? '-'}</td>
-                    <td>{formatDate(item.createdAt)}</td>
+                    <td className="users-cell-meta" data-label="Telefone">{item.profile?.phone || '—'}</td>
+                    <td className="users-cell-meta" data-label="Criado em">{formatDate(item.createdAt)}</td>
                     {showActions ? (
-                      <td>
+                      <td className="users-cell-actions">
                         <div className="table-actions">
                           {showEdit ? (
                             <button className="ghost-button" type="button" onClick={() => openEdit(item)}>Editar</button>
@@ -348,20 +364,15 @@ export function UsersPage() {
                             <button className="ghost-button" type="button" onClick={() => void resendInvite(item)}>Reenviar convite</button>
                           ) : null}
                           {showCustomerToggle || showStaffToggle ? (
-                            <button
-                              className={isDeactivatedStatus(item.status) ? 'ghost-button' : 'danger-button'}
-                              type="button"
-                              onClick={() => void toggleStatus(item)}
-                            >
+                            <button className="ghost-button" type="button" onClick={() => void toggleStatus(item)}>
                               {isDeactivatedStatus(item.status) ? 'Reativar' : 'Desativar'}
                             </button>
                           ) : null}
                           {showDelete ? (
                             <button className="danger-button" type="button" onClick={() => void deleteAccess(item)}>Excluir</button>
                           ) : null}
-                          {isSelf ? <span className="muted">Sua conta</span> : null}
                           {item.lockedByAllowlist && canManageAccess && !isSelf ? (
-                            <span className="muted">Papel efetivo fixado por ADMIN_EMAILS</span>
+                            <span className="muted users-note">Papel fixado por ADMIN_EMAILS</span>
                           ) : null}
                         </div>
                       </td>
@@ -380,8 +391,7 @@ export function UsersPage() {
           onNext={() => setPage((current) => current + 1)}
         />
         </>
-        ) : null}
-      </Section>
+      ) : null}
 
       <Dialog
         open={dialogOpen}

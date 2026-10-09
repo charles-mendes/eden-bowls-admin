@@ -93,6 +93,18 @@ button {
   border: 0;
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,
@@ -2884,6 +2896,8 @@ button.table-link {
 @media (max-width: 1100px) {
   .admin-shell {
     grid-template-columns: 1fr;
+    /* Short pages must not stretch the header row to fill 100vh. */
+    grid-template-rows: auto 1fr;
   }
 
   .sidebar {
@@ -2949,8 +2963,7 @@ button.table-link {
   }
 
   .pager {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-wrap: wrap;
   }
 }
 
@@ -3121,3 +3134,188 @@ button.table-link {
     justify-self: start;
   }
 }
+
+/* List toolbar: search grows, secondary controls sit on the right. */
+.list-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.list-search {
+  flex: 1 1 320px;
+  max-width: 480px;
+}
+
+.list-search input {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-strong);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: var(--text-sm);
+}
+
+.list-toolbar-end {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.list-per-page {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.list-per-page select {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-strong);
+  padding: 6px 8px;
+  font: inherit;
+}
+
+/* Users list */
+.users-table td {
+  vertical-align: middle;
+}
+
+.users-client {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+}
+
+.users-name {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.users-note {
+  display: block;
+  font-size: var(--text-xs);
+}
+
+.users-note-warning {
+  color: var(--warning-text);
+}
+
+.users-cell-meta {
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+
+.users-cell-actions .table-actions {
+  justify-content: flex-end;
+}
+
+.users-cell-actions .ghost-button,
+.users-cell-actions .danger-button {
+  padding: 4px 10px;
+}
+
+.users-table tbody tr:hover td {
+  background: var(--surface-muted);
+}
+
+.users-empty td {
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+  color: var(--text-soft);
+}
+
+/* Phones: each account becomes a card — who and status on top, details below, actions last. */
+@media (max-width: 720px) {
+  .list-search {
+    max-width: none;
+  }
+
+  .list-toolbar-end {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .users-table {
+    min-width: 0;
+  }
+
+  .users-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+
+  .users-table tbody,
+  .users-table tr {
+    display: block;
+  }
+
+  .users-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .users-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  .users-table tbody tr:hover td {
+    background: transparent;
+  }
+
+  .users-table td {
+    padding: 0;
+    border: 0;
+  }
+
+  .users-cell-status {
+    justify-self: end;
+  }
+
+  .users-cell-meta {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    white-space: normal;
+  }
+
+  .users-cell-meta::before {
+    content: attr(data-label);
+    color: var(--text-soft);
+    font-size: var(--text-xs);
+  }
+
+  .users-cell-meta {
+    color: var(--text-strong);
+  }
+
+  .users-cell-actions {
+    grid-column: 1 / -1;
+    padding-top: var(--space-2) !important;
+  }
+
+  .users-cell-actions .table-actions {
+    justify-content: flex-start;
+  }
+
+  .users-empty td {
+    grid-column: 1 / -1;
+  }
+}
+
