@@ -38,6 +38,7 @@ const WRITE_PERMISSIONS = [
   'users.status.write',
   'users.roles.write',
   'users.access.write',
+  'system.health.read',
   'feedbacks.read',
   'feedbacks.write',
   'production.read',
@@ -58,7 +59,7 @@ const operatorWriteProfile: Profile = {
   roles: ['operator'],
   markets: ['BR'],
   permissions: [
-    ...WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write'),
+    ...WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write' && permission !== 'system.health.read'),
     'market.br',
   ],
 }
@@ -584,7 +585,23 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
 
     if (path === '/api/v1/admin/markets/conflicts' && method === 'GET') {
       await fulfillJson(route, {
+        total: 1,
+        page: 1,
+        perPage: 20,
+        totalPages: 1,
         items: [{ userId: 'u-ana', email: 'ana@edenbowls.com', profileMarket: 'BR', stripeAccount: 'us' }],
+      })
+      return
+    }
+
+    if (path === '/api/v1/admin/billing/webhooks/health' && method === 'GET') {
+      await fulfillJson(route, {
+        generatedAt: '2026-10-08T12:00:00.000Z',
+        staleAfterHours: 72,
+        accounts: [
+          { account: 'br', status: 'attention', lastEventAt: '2026-10-08T09:00:00.000Z', lastEventType: 'invoice.payment_failed', failedLast24h: 2, pendingOverdue: 0 },
+          { account: 'us', status: 'ok', lastEventAt: '2026-10-08T11:30:00.000Z', lastEventType: 'invoice.paid', failedLast24h: 0, pendingOverdue: 0 },
+        ],
       })
       return
     }
@@ -595,7 +612,8 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     }
 
     if (path === '/api/v1/admin/catalog/sync/status') {
-      await fulfillJson(route, { syncJobId: 'job-1', status: 'idle', summary: { scope: 'catalog' } })
+      const brRun = { syncJobId: 'sync_12', status: 'completed', scope: 'market', market: 'BR', currency: 'BRL', summary: { created: 1, updated: 0, skipped: [] }, error: null, createdAt: '2026-10-08T10:00:00.000Z', updatedAt: '2026-10-08T10:01:00.000Z' }
+      await fulfillJson(route, { ...brRun, byMarket: { BR: brRun } })
       return
     }
 

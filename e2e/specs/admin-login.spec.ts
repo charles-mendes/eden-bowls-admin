@@ -38,19 +38,29 @@ test.describe('Admin login', () => {
     await expect(page.getByRole('group', { name: 'Mercado' })).toHaveCount(0)
     await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/catalog/sync/health')).toBe(false)
     await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/markets/conflicts')).toBe(false)
+    await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/billing/webhooks/health')).toBe(false)
   })
 
-  test('admin dashboard lists market conflicts', async ({ page }) => {
+  test('admin dashboard shows webhooks, market conflicts and the last sync', async ({ page }) => {
     const { captured } = await openAuthed(page, '/dashboard', e2eProfiles.admin)
 
     await page.getByText('Saúde do sistema').click()
-    await expect(page.getByRole('heading', { name: 'Conflitos de mercado' })).toBeVisible()
-    await expect(page.locator('.day-health').getByText('ana@edenbowls.com')).toBeVisible()
+    const health = page.locator('.day-health')
+
+    await expect(health.getByRole('heading', { name: 'Webhooks Stripe' })).toBeVisible()
+    await expect(health.getByRole('row', { name: /Brasil/ }).getByText('Atenção')).toBeVisible()
+    await expect(health.getByRole('row', { name: /EUA/ }).getByText('OK')).toBeVisible()
+    await expect(health.getByRole('heading', { name: 'Conflitos de mercado' })).toBeVisible()
+    await expect(health.getByRole('row', { name: /ana@edenbowls\.com/ })).toBeVisible()
+    await expect(health.getByText(/Última sincronização Brasil: concluído/)).toBeVisible()
+    await expect(health.getByText('Checkouts', { exact: true })).toHaveCount(0)
     await expect.poll(() => captured.some((item) => (
       item.method === 'GET'
       && item.path === '/api/v1/admin/markets/conflicts'
       && item.authorization === 'Bearer e2e-access-token'
     ))).toBe(true)
+    await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/billing/webhooks/health')).toBe(true)
+    expect(captured.some((item) => item.path === '/api/v1/admin/onboarding/metrics')).toBe(false)
   })
 
   test('blocks a customer account from the shell', async ({ page }) => {

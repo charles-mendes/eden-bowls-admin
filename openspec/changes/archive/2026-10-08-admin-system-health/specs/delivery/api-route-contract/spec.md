@@ -15,6 +15,20 @@ The backend MUST keep a versioned manifest listing the method and path of every 
 - **WHEN** a developer registers a new `/api/v1` route and does not regenerate the manifest
 - **THEN** the backend test suite fails and names the missing route
 
+### Requirement: Route removals are acknowledged
+
+A backend test MUST fail when a route present in `docs/api-routes.json` on `origin/main` is missing from the current manifest, unless that method and path are listed with a reason in `docs/api-routes-removed.json`. When the base version cannot be read (no git history or the file does not exist on the base), the test MUST pass and say why it skipped.
+
+#### Scenario: Route removed silently
+
+- **WHEN** a branch deletes `GET /api/v1/admin/billing/webhooks` and regenerates the manifest without acknowledging it
+- **THEN** the removal test fails and names that route
+
+#### Scenario: Route removal acknowledged
+
+- **WHEN** the same route is listed in `docs/api-routes-removed.json` with a reason
+- **THEN** the removal test passes
+
 ### Requirement: Panel calls only routes in the manifest
 
 The panel MUST keep a copy of the backend manifest. Its Vitest suite MUST fail when a static API path used in panel source, or a path handled by the Vitest or Playwright API mocks, has no matching method and path in that copy. Calls that the panel builds at run time MUST be checked when the Vitest mock receives them. The check MUST NOT need network access, a backend checkout or any secret in CI.

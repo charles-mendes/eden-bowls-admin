@@ -22,7 +22,7 @@ The Dashboard MUST render the collapsed section **Saúde do sistema** only when 
 
 ### Requirement: System health shows webhooks, catalog prices and conflicts only
 
-The section MUST contain, in this order: the Stripe webhook indicator, **Preços Stripe no catálogo** (unchanged), and **Conflitos de mercado**. It MUST NOT show the checkout metric cards Checkouts, Vinculados Stripe, Stripe ativos or Com simplificado, and MUST NOT request `/admin/onboarding/metrics`.
+The section MUST contain, in this order: the Stripe webhook indicator, **Preços Stripe no catálogo** (unchanged except for the last-sync line), and **Conflitos de mercado**. It MUST NOT show the checkout metric cards Checkouts, Vinculados Stripe, Stripe ativos or Com simplificado, and MUST NOT request `/admin/onboarding/metrics`.
 
 #### Scenario: Checkout cards are gone
 
@@ -89,3 +89,17 @@ The section MUST show one row each for Brasil (`br`) and EUA (`us`) with a statu
 
 - **WHEN** the webhook health request fails
 - **THEN** the indicator shows the error in `div.alert` and no account is shown as OK
+
+### Requirement: Last sync is shown per market
+
+Inside **Preços Stripe no catálogo**, the section MUST show the newest catalog sync of each market returned in `byMarket`: market, finish time, result in Portuguese and, for a failed run, its error message. When there is no run it MUST say that no sync has been recorded, and MUST NOT mention the server session.
+
+#### Scenario: Failed BR sync
+
+- **WHEN** `byMarket.BR` is a failed run with error "No such product"
+- **THEN** the Brasil line shows the failure, its time and "No such product"
+
+#### Scenario: No sync recorded
+
+- **WHEN** the status response is `{ status: null, byMarket: {} }`
+- **THEN** the section says no sync has been recorded

@@ -24,6 +24,7 @@ export const WRITE_PERMISSIONS = [
   'users.status.write',
   'users.roles.write',
   'users.access.write',
+  'system.health.read',
   'feedbacks.read',
   'feedbacks.write',
   'privacy.requests.read',
@@ -46,7 +47,7 @@ export const operatorWriteUser: AdminUser = {
   roles: ['operator'],
   markets: ['BR'],
   permissions: [
-    ...WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write'),
+    ...WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write' && permission !== 'system.health.read'),
     'market.br',
   ],
 }
@@ -386,9 +387,36 @@ export const billingMetrics = {
   renewing7d: 2,
 }
 
+// GET /admin/markets/conflicts answers a paginated envelope (see installAdminFetchMock).
 export const marketConflicts = {
+  total: 1,
+  page: 1,
+  perPage: 20,
+  totalPages: 1,
   items: [
     { userId: 'u-ana', email: 'ana@edenbowls.com', profileMarket: 'BR', stripeAccount: 'us' },
+  ],
+}
+
+export type WebhookHealthFixture = {
+  generatedAt: string
+  staleAfterHours: number
+  accounts: Array<{
+    account: 'br' | 'us'
+    status: 'ok' | 'attention' | 'no_events'
+    lastEventAt: string | null
+    lastEventType: string | null
+    failedLast24h: number
+    pendingOverdue: number
+  }>
+}
+
+export const webhookHealth: WebhookHealthFixture = {
+  generatedAt: '2026-10-08T12:00:00.000Z',
+  staleAfterHours: 72,
+  accounts: [
+    { account: 'br', status: 'attention', lastEventAt: '2026-10-08T09:00:00.000Z', lastEventType: 'invoice.payment_failed', failedLast24h: 2, pendingOverdue: 0 },
+    { account: 'us', status: 'ok', lastEventAt: '2026-10-08T11:30:00.000Z', lastEventType: 'invoice.paid', failedLast24h: 0, pendingOverdue: 0 },
   ],
 }
 
@@ -400,12 +428,32 @@ export const syncHealth = {
   gaps: [],
 }
 
-export const syncStatus = {
-  syncJobId: 'job-1',
-  status: 'idle',
-  scope: 'catalog',
-  summary: { scope: 'catalog', created: 0, updated: 0 },
+const brSyncRun = {
+  syncJobId: 'sync_12',
+  status: 'failed',
+  scope: 'market',
+  market: 'BR',
+  currency: 'BRL',
+  summary: null,
+  error: 'No such product: prod_x',
+  createdAt: '2026-10-08T10:00:00.000Z',
+  updatedAt: '2026-10-08T10:01:00.000Z',
 }
+
+const usSyncRun = {
+  syncJobId: 'sync_11',
+  status: 'completed',
+  scope: 'market',
+  market: 'US',
+  currency: 'USD',
+  summary: { created: 2, updated: 1, skipped: [] },
+  error: null,
+  createdAt: '2026-10-07T18:00:00.000Z',
+  updatedAt: '2026-10-07T18:02:00.000Z',
+}
+
+// GET /admin/catalog/sync/status: newest run in scope on top, newest run per market in byMarket.
+export const syncStatus = { ...brSyncRun, byMarket: { BR: brSyncRun, US: usSyncRun } }
 
 export const shippingSettings = {
   success: true,

@@ -64,3 +64,12 @@ A conflict MUST be one distinct pair of customer and Stripe account where the cu
 
 - **WHEN** a customer has no stored profile market
 - **THEN** that customer is not reported as a conflict
+
+### Requirement: Backfill apply does not depend on the conflict count
+
+Counting conflicts by customer and account MUST NOT change what the backfill apply mode writes. Apply MUST keep filling only empty profile and onboarding markets from the address country, and MUST NOT change the market of a customer that already has one or the Stripe account of any subscription.
+
+#### Scenario: Customer with two subscriptions on the wrong account
+
+- **WHEN** a `BR` customer has two subscriptions on Stripe account `us` and the backfill runs in apply mode
+- **THEN** the dry-run reports 1 conflict, the customer's profile market stays `BR`, and both subscriptions stay on account `us`

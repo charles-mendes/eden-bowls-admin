@@ -12,25 +12,19 @@ Arquivo: `src/pages/LoginPage.tsx`.
 
 ## Dashboard — `/dashboard`
 
-Arquivo: `src/pages/DashboardPage.tsx`.
+Arquivo: `src/pages/DashboardPage.tsx`. A tela abre em **Hoje** (`GET /admin/today`): números do dia, pendências e pedidos que precisam de ação.
 
-Carrega em paralelo:
+### Saúde do sistema (só admin)
 
-1. `GET /admin/onboarding/metrics`
-2. `GET /billing/catalog/sync/health?market=BR&currency=BRL`
+`<details>` recolhido no fim da página, renderizado só com `hasRole('admin')`. Componente: `src/components/SystemHealth.tsx`. Operator, readonly e nutritionist não veem a seção e não chamam as rotas abaixo.
 
-Depois tenta `GET /billing/catalog/sync/status`. Se essa terceira chamada falhar, o dashboard **não** entra em erro global: `syncStatus` fica `null` e o card mostra “sem job”.
+| Bloco | Fonte | O que mostra |
+|---|---|---|
+| Webhooks Stripe | `GET /admin/billing/webhooks/health` | Uma linha por conta (Brasil, EUA): badge OK / Atenção / Sem eventos, último evento (hora · tipo), falhas em 24 h e eventos parados há mais de 1 h. Atenção = falha em 24 h, evento parado > 1 h ou nenhum evento há mais de 72 h. Erro → `div.alert`, nenhuma conta aparece como OK. |
+| Preços Stripe no catálogo | `GET /admin/catalog/sync/health`, `GET /admin/catalog/sync/status` | Cobertura de Price IDs do mercado escolhido (seletor só para quem tem BR e US) e a última sincronização de cada mercado em `byMarket`: resultado, hora e, se falhou, a mensagem de erro. Sem execução → "nenhuma sincronização registrada". |
+| Conflitos de mercado | `GET /admin/markets/conflicts?page&perPage=20` | Total e linhas (e-mail, mercado do perfil, conta Stripe), um por cliente + conta, com paginação. Lista vazia → "Nenhum conflito perfil vs Stripe." |
 
-KPIs:
-
-| Card | Fonte |
-|---|---|
-| Sessões | `metrics.totalSessions` + `generatedAt` |
-| Expiram em 24h | `metrics.expiringIn24h` |
-| Sync health | `totalMapped/totalExpected` e quantidade de `gaps` |
-| Último sync | `syncStatus.status` e `summary.scope` |
-
-Abaixo: pills de `metrics.byStatus` e texto dos gaps do catálogo Stripe (mercado/moeda fixos BR/BRL nesta tela).
+Os cards de checkout (Checkouts, Vinculados Stripe, Stripe ativos, Com simplificado) saíram desta seção; continuam em Onboarding 360.
 
 ## Onboarding — `/onboarding/sessions`
 

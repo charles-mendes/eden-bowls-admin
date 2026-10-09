@@ -30,7 +30,10 @@ import {
   productionQueueList,
   userPrivacySnapshot,
   marketConflicts,
+  webhookHealth,
 } from './fixtures'
+import type { WebhookHealthFixture } from './fixtures'
+import { checkMockedCall } from './apiContract'
 
 export type FetchCall = {
   url: string
@@ -69,6 +72,8 @@ function parseUrl(input: RequestInfo | URL) {
 
 export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, options: {
   marketConflicts?: typeof marketConflicts.items
+  webhookHealth?: WebhookHealthFixture | { status: number; message: string }
+  syncStatus?: Record<string, unknown>
   subscriptionInScope?: boolean
   customerInvoices?: Array<Record<string, unknown>>
   productionInScope?: boolean
@@ -104,6 +109,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     const search = url.search
 
     calls.push({ url: String(input), path, search, method, authorization, body })
+    checkMockedCall(method, path)
 
     const routed = options.routes?.({ url: String(input), path, search, method, authorization, body })
     if (routed) {
@@ -317,7 +323,22 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (path === '/api/v1/admin/markets/conflicts' && method === 'GET') {
-      return jsonResponse({ items: options.marketConflicts ?? marketConflicts.items })
+      const items = options.marketConflicts ?? marketConflicts.items
+      const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
+      const perPage = Math.min(100, Math.max(1, Number(url.searchParams.get('perPage')) || 20))
+      return jsonResponse({
+        total: items.length,
+        page,
+        perPage,
+        totalPages: Math.max(1, Math.ceil(items.length / perPage)),
+        items: items.slice((page - 1) * perPage, page * perPage),
+      })
+    }
+
+    if (path === '/api/v1/admin/billing/webhooks/health' && method === 'GET') {
+      const health = options.webhookHealth ?? webhookHealth
+      if ('status' in health) return jsonResponse({ success: false, message: health.message }, health.status)
+      return jsonResponse(health)
     }
 
     if (path === '/api/v1/admin/catalog/sync/health') {
@@ -325,7 +346,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (path === '/api/v1/admin/catalog/sync/status') {
-      return jsonResponse(syncStatus)
+      return jsonResponse(options.syncStatus ?? syncStatus)
     }
 
     if (path === '/api/v1/admin/production/queue' && method === 'GET') {

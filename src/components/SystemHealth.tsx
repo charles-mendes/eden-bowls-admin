@@ -3,18 +3,11 @@ import { Link } from 'react-router-dom'
 import { MetricCard } from './MetricCard'
 import { Section } from './Section'
 import { MarketSelect } from './MarketSelect'
+import { Pager } from './Pager'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate, formatSyncJobStatus } from '../lib/format'
 import { currencyForMarket, defaultMarket, hasBothMarkets, MARKET_LABELS, type MarketCode } from '../lib/markets'
-
-type CheckoutMetrics = {
-  totalCheckouts: number
-  linkedToStripe: number
-  stripeActive: number
-  withSimplified: number
-  generatedAt: string
-}
 
 type SyncHealth = {
   market: string
@@ -24,11 +17,18 @@ type SyncHealth = {
   gaps: string[]
 }
 
-type SyncStatus = {
+type SyncRun = {
   syncJobId: string
   status: string
-  summary?: { scope?: string }
   scope?: string
+  market?: string
+  error?: string | null
+  updatedAt?: string
+}
+
+type SyncStatus = {
+  status: string | null
+  byMarket?: Record<string, SyncRun>
 }
 
 type MarketConflict = {
@@ -37,6 +37,37 @@ type MarketConflict = {
   profileMarket: string
   stripeAccount: string
 }
+
+type ConflictsPage = {
+  total: number
+  page: number
+  totalPages: number
+  items: MarketConflict[]
+}
+
+type WebhookAccount = {
+  account: 'br' | 'us'
+  status: 'ok' | 'attention' | 'no_events'
+  lastEventAt: string | null
+  lastEventType: string | null
+  failedLast24h: number
+  pendingOverdue: number
+}
+
+type WebhookHealth = {
+  staleAfterHours: number
+  accounts: WebhookAccount[]
+}
+
+const ACCOUNT_LABELS: Record<WebhookAccount['account'], string> = { br: 'Brasil', us: 'EUA' }
+
+const WEBHOOK_BADGES: Record<WebhookAccount['status'], { className: string; label: string }> = {
+  ok: { className: 'badge-success', label: 'OK' },
+  attention: { className: 'badge-warning', label: 'Atenção' },
+  no_events: { className: 'badge-info', label: 'Sem eventos' },
+}
+
+const CONFLICTS_PER_PAGE = 20
 
 function marketLabel(market: string) {
   return market === 'US' || market === 'BR' ? MARKET_LABELS[market] : market
@@ -86,10 +117,12 @@ export function SystemHealth() {
   const bothMarkets = hasBothMarkets(user)
   const isAdmin = hasRole('admin')
   const [pickedMarket, setPickedMarket] = useState<MarketCode | ''>('')
-  const [metrics, setMetrics] = useState<CheckoutMetrics | null>(null)
   const [syncHealth, setSyncHealth] = useState<SyncHealth | null>(null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
-  const [conflicts, setConflicts] = useState<MarketConflict[] | null>(null)
+  const [webhooks, setWebhooks] = useState<WebhookHealth | null>(null)
+  const [webhooksError, setWebhooksError] = useState('')
+  const [conflicts, setConflicts] = useState<ConflictsPage | null>(null)
+  const [conflictsPage, setConflictsPage] = useState(1)
   const [conflictsError, setConflictsError] = useState('')
   const [error, setError] = useState('')
   const market = bothMarkets ? (pickedMarket || defaultMarket(user) || '') : (defaultMarket(user) ?? '')
@@ -101,60 +134,106 @@ export function SystemHealth() {
     const load = async () => {
       setError('')
       try {
-        const [metricsResponse, syncHealthResponse] = await Promise.all([
-          apiRequest<CheckoutMetrics>('/admin/onboarding/metrics', { token }),
-          apiRequest<SyncHealth>(`/admin/catalog/sync/health${buildQueryString({
-            market: market || undefined,
-            currency: currency || undefined,
-          })}`, { token }),
-        ])
-
-        setMetrics(metricsResponse)
-        setSyncHealth(syncHealthResponse)
-
-        try {
-          const syncStatusResponse = await apiRequest<SyncStatus>('/admin/catalog/sync/status', { token })
-          setSyncStatus(syncStatusResponse)
-        } catch {
-          setSyncStatus(null)
-        }
+        setSyncHealth(await apiRequest<SyncHealth>(`/admin/catalog/sync/health${buildQueryString({
+          market: market || undefined,
+          currency: currency || undefined,
+        })}`, { token }))
       } catch (requestError) {
         setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar dashboard')
       }
 
-      if (!isAdmin) {
-        setConflicts(null)
-        setConflictsError('')
-        return
+      try {
+        setSyncStatus(await apiRequest<SyncStatus>('/admin/catalog/sync/status', { token }))
+      } catch {
+        setSyncStatus(null)
       }
+    }
 
+    void load()
+  }, [token, user, market, currency])
+
+  useEffect(() => {
+    // Admin-only: the section is not rendered for other roles.
+    if (!token || !isAdmin) return
+
+    const load = async () => {
+      try {
+        setWebhooksError('')
+        setWebhooks(await apiRequest<WebhookHealth>('/admin/billing/webhooks/health', { token }))
+      } catch (requestError) {
+        setWebhooks(null)
+        setWebhooksError(requestError instanceof Error ? requestError.message : 'Falha ao carregar webhooks')
+      }
+    }
+
+    void load()
+  }, [token, isAdmin])
+
+  useEffect(() => {
+    if (!token || !isAdmin) return
+
+    const load = async () => {
       try {
         setConflictsError('')
-        const response = await apiRequest<{ items?: MarketConflict[] }>('/admin/markets/conflicts', { token })
-        setConflicts(response.items ?? [])
+        setConflicts(await apiRequest<ConflictsPage>(`/admin/markets/conflicts${buildQueryString({
+          page: conflictsPage,
+          perPage: CONFLICTS_PER_PAGE,
+        })}`, { token }))
       } catch (requestError) {
-        setConflicts([])
+        setConflicts(null)
         setConflictsError(requestError instanceof Error ? requestError.message : 'Falha ao carregar conflitos')
       }
     }
 
     void load()
-  }, [token, user, market, currency, isAdmin])
+  }, [token, isAdmin, conflictsPage])
 
   const coverage = catalogHealthCopy(syncHealth, market, currency)
   const gapIds = syncHealth?.gaps ?? []
   const catalogLabel = marketLabel(market)
+  const syncRuns = Object.entries(syncStatus?.byMarket ?? {}).sort(([a], [b]) => a.localeCompare(b))
 
   return (
     <div className="page-stack">
       {error ? <div className="alert">{error}</div> : null}
 
-      <div className="grid cards-4">
-        <MetricCard label="Checkouts" value={metrics?.totalCheckouts ?? '—'} hint={`Gerado em ${formatDate(metrics?.generatedAt)}`} />
-        <MetricCard label="Vinculados Stripe" value={metrics?.linkedToStripe ?? '—'} />
-        <MetricCard label="Stripe ativos" value={metrics?.stripeActive ?? '—'} />
-        <MetricCard label="Com simplificado" value={metrics?.withSimplified ?? '—'} />
-      </div>
+      {isAdmin ? (
+        <Section
+          title="Webhooks Stripe"
+          description={`Último evento recebido por conta. Atenção quando há falha nas últimas 24 h, evento parado há mais de 1 h ou nenhum evento há mais de ${webhooks?.staleAfterHours ?? 72} h.`}
+        >
+          {webhooksError ? <div className="alert">{webhooksError}</div> : null}
+          {webhooks ? (
+            <div className="table-shell table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Conta</th>
+                    <th>Status</th>
+                    <th>Último evento</th>
+                    <th>Falhas 24 h</th>
+                    <th>Parados &gt; 1 h</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {webhooks.accounts.map((item) => {
+                    const badge = WEBHOOK_BADGES[item.status] ?? WEBHOOK_BADGES.no_events
+                    return (
+                      <tr key={item.account}>
+                        <td>{ACCOUNT_LABELS[item.account] ?? item.account.toUpperCase()}</td>
+                        <td><span className={badge.className}>{badge.label}</span></td>
+                        <td>{item.lastEventAt ? `${formatDate(item.lastEventAt)} · ${item.lastEventType ?? '—'}` : 'Nenhum evento recebido'}</td>
+                        <td>{item.failedLast24h}</td>
+                        <td>{item.pendingOverdue}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </Section>
+      ) : null}
 
       <Section
         title="Preços Stripe no catálogo"
@@ -198,10 +277,18 @@ export function SystemHealth() {
             </div>
           ) : null}
 
-          <p className="muted">
-            Última sincronização: {syncStatus?.status ? formatSyncJobStatus(syncStatus.status) : 'nenhum sync disparado nesta sessão do servidor'}
-            {syncStatus?.summary?.scope || syncStatus?.scope ? ` · escopo ${syncStatus.summary?.scope ?? syncStatus.scope}` : ''}
-          </p>
+          {syncRuns.length === 0 ? (
+            <p className="muted">Última sincronização: nenhuma sincronização registrada.</p>
+          ) : (
+            <ul className="stack">
+              {syncRuns.map(([runMarket, run]) => (
+                <li key={runMarket} className="muted">
+                  Última sincronização {marketLabel(runMarket)}: {formatSyncJobStatus(run.status)} em {formatDate(run.updatedAt)}
+                  {run.status === 'failed' && run.error ? ` · ${run.error}` : null}
+                </li>
+              ))}
+            </ul>
+          )}
 
           <div className="inline-actions">
             <Link className="ghost-button" to="/catalog/products">Ver produtos</Link>
@@ -211,30 +298,44 @@ export function SystemHealth() {
       </Section>
 
       {isAdmin ? (
-        <Section title="Conflitos de mercado" description="Perfis cujo mercado não bate com a conta Stripe do ledger.">
+        <Section
+          title="Conflitos de mercado"
+          description="Clientes cujo mercado do perfil não bate com a conta Stripe de uma assinatura. Um por cliente e conta."
+        >
           {conflictsError ? <div className="alert">{conflictsError}</div> : null}
-          {conflicts == null ? null : conflicts.length === 0 ? (
+          {conflicts == null ? null : conflicts.total === 0 ? (
             <p>Nenhum conflito perfil vs Stripe.</p>
           ) : (
-            <div className="table-shell table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>E-mail</th>
-                    <th>Mercado do perfil</th>
-                    <th>Conta Stripe</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {conflicts?.map((item) => (
-                    <tr key={item.userId}>
-                      <td>{item.email}</td>
-                      <td>{item.profileMarket}</td>
-                      <td><span className="badge-info">{item.stripeAccount.toUpperCase()}</span></td>
+            <div className="stack">
+              <p className="muted">{conflicts.total === 1 ? '1 conflito' : `${conflicts.total} conflitos`}</p>
+              <div className="table-shell table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>E-mail</th>
+                      <th>Mercado do perfil</th>
+                      <th>Conta Stripe</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {conflicts.items.map((item) => (
+                      <tr key={`${item.userId}-${item.stripeAccount}`}>
+                        <td>{item.email}</td>
+                        <td>{item.profileMarket}</td>
+                        <td><span className="badge-info">{item.stripeAccount.toUpperCase()}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {conflicts.totalPages > 1 ? (
+                <Pager
+                  page={conflicts.page}
+                  totalPages={conflicts.totalPages}
+                  onPrev={() => setConflictsPage((value) => Math.max(1, value - 1))}
+                  onNext={() => setConflictsPage((value) => value + 1)}
+                />
+              ) : null}
             </div>
           )}
         </Section>

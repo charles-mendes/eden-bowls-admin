@@ -27,7 +27,7 @@ O que o código faz hoje (motivação em proposal.md):
 ## Decisions
 
 ### D1. Permissão nova `system.health.read`, só para admin
-Ela entra em `ROLE_PERMISSIONS.admin`. As duas rotas usam `requirePermission('system.health.read', { market: 'none' })`, e `market: 'none'` porque o admin enxerga os dois mercados.
+Ela entra em `ROLE_PERMISSIONS.admin`. As duas rotas usam `requirePermission('system.health.read', { market: 'query' })`. A lista de rotas `none` é congelada por `admin-market-scope-registry.test.js`; para admin, `query` resolve os dois mercados, e o serviço ignora o filtro de mercado.
 *Alternativa*: checar `identity.roles.includes('admin')` dentro do handler. Foi descartada porque espalha regra de papel fora do mapa de permissões e foge do padrão das outras rotas.
 
 ### D2. Módulo `src/infrastructure/repositories/market-conflicts.repository.js`
@@ -50,14 +50,19 @@ O volume de webhooks vem de assinaturas: renovação, fatura, pagamento. Com pou
 - **Painel**: `contracts/backend-routes.json` (cópia) + `scripts/sync-backend-routes.mjs`, que lê `../eden-bowls-backend/docs/api-routes.json` e imprime o diff. O comando é `npm run contract:sync`. O teste `src/test/apiContract.test.ts` faz três coisas: (a) varre `src/**/*.ts(x)` em busca de literais e templates passados a `apiRequest`/`fetch(\`${getApiBaseUrl()}…\`)` e normaliza `${…}` para segmento de parâmetro; (b) varre as condições de caminho de `src/test/mockAdminFetch.ts` e `e2e/helpers/mockAdminApi.ts`; (c) checa cada item contra o manifesto, aceitando `:param` em qualquer segmento. Além disso, `installAdminFetchMock` passa a lançar erro quando recebe uma rota fora do manifesto, o que cobre os caminhos montados em tempo de execução (`requestPath`, `path`, `BASE`).
 *Alternativa*: checkout do backend no CI. Foi descartada porque exige token entre repositórios privados e viola o requisito "sem segredo" do CI. *Risco aceito*: a cópia pode ficar defasada se alguém remover uma rota no backend sem rodar `contract:sync`. A mitigação está nas Tasks: o checklist do PR do backend lembra de sincronizar.
 
-### D7. Última sincronização: custo de persistir (decisão sua)
-Custo estimado para persistir:
-- 1 migration `1700000000032-create-catalog-sync-runs` (`id`, `market`, `currency`, `scope`, `product_id`, `status` [`completed`|`completed_with_skips`|`failed`], `summary` JSON, `error` varchar(500), `started_at`, `finished_at`, com índice em (`market`, `finished_at`)).
-- 1 repositório (`insert`, `latest({ market })`) e um ajuste em `AdminCatalogService.sync()` para gravar sucesso e também falha. Hoje uma falha não é gravada, e para isso entra um `try/catch` que grava e relança o erro. `status(query, actor)` passa a ler a última execução do mercado pedido, o que corrige o vazamento entre mercados descrito em Context.
-- Testes: um de integração da migration + repositório e um unitário do serviço, para sucesso e para falha.
-- Painel: mostrar data, resultado e erro. É 1 linha que já existe, com mock atualizado.
+### D7. Última sincronização persistida (aprovado: opção A)
+- **Tabela** `catalog_sync_runs` (migration `1700000000032-create-catalog-sync-runs`): `id` PK auto, `market` char(2), `currency` char(3), `scope` varchar(16), `product_id` varchar(32) null, `status` varchar(32), `summary` JSON null, `error` varchar(500) null, `started_at`, `finished_at` datetime, índice (`market`, `id`). O `down` derruba a tabela.
+- **Repositório** `CatalogSyncRunsRepository`: `insert(run)` faz o `INSERT` e em seguida o prune (`DELETE … WHERE market = ? AND id NOT IN (SELECT id FROM (SELECT id … WHERE market = ? ORDER BY id DESC LIMIT 50) keep)`, usando uma tabela derivada porque o MySQL não aceita `LIMIT` direto em `IN`). Há também `latestByMarket(markets)`.
+- **Retenção: 50 execuções por mercado.** A opção foi por contagem, não por tempo, porque o volume de sync é irregular (às vezes vários no mesmo dia, às vezes nenhum em semanas). Contar garante limite de tamanho e sempre deixa histórico. Um corte de 90 dias poderia apagar tudo num período parado.
+- **Serviço** `sync()`: os contadores passam a ser acumulados por país processado (`product.planCountry`), e cada país gera uma linha. Isso resolve o sync sem `market`, que hoje percorre todos os produtos. Se houver falha, o `catch` grava `failed` com `error.message` no mercado pedido (ou no `planCountry` do produto). Quando o mercado é desconhecido, grava nos dois mercados. Depois relança o erro original. Uma falha ao gravar só é logada e não esconde o erro do sync. Se o repositório não existir (dev sem DB), o serviço continua com o `lastSync` em memória.
+- **Status** `status(marketQuery)`: usa `request.marketQuery.markets` (o middleware já restringe o operator ao mercado dele). O objeto de topo é a execução mais recente entre `byMarket`, o formato que `CatalogPricesSection` já lê. Isso é compatível: `status.status` continua existindo.
+- **Painel**: `SystemHealth` mostra uma linha por mercado de `byMarket`. `CatalogPricesSection` continua lendo o topo, sem mudança.
 
-São ~150–200 linhas no backend e ~20 no painel, sem dependência nova. **A recomendação é persistir.** Esse grupo das Tasks só é executado com o seu "ok". Se a resposta for remover, o grupo alternativo apaga a linha "Última sincronização" e o `fetch` de `/catalog/sync/status` da seção. A rota continua, porque `/billing` também a usa.
+### D8. Contagem de conflitos x backfill
+O apply do backfill **não corrige conflitos e nunca corrigiu**: os três comandos só preenchem mercado vazio (`wp_usermeta`, `onboarding_user_state`) a partir do país do endereço, e nenhum toca em `stripe_subscriptions`. A mudança para pares distintos afeta só o número do dry-run. Um teste de integração cobre o caso "2 assinaturas na conta errada": a contagem dá 1 e, depois do apply, o perfil continua `BR` e as 2 assinaturas continuam em `us`. Corrigir conflito de fato (mudar o mercado do perfil ou migrar assinatura de conta) é uma decisão de negócio fora desta change.
+
+### D9. Teste de remoção de rotas
+`tests/api-routes-removal.test.js` lê a base com `git show ${API_ROUTES_BASE_REF:-origin/main}:docs/api-routes.json`. Uma rota que estava na base e não está no manifesto atual faz o teste falhar, a menos que conste em `docs/api-routes-removed.json` (`[{ method, path, reason }]`). Sem git, sem a ref ou sem o arquivo na base (caso do primeiro PR), o teste passa com `console.warn` explicando o motivo. No CI do backend, o checkout do job `unit` passa a usar `fetch-depth: 0` para `origin/main` existir.
 
 ## Risks / Trade-offs
 
@@ -68,4 +73,4 @@ São ~150–200 linhas no backend e ~20 no painel, sem dependência nova. **A re
 
 ## Migration Plan
 
-Deploy: backend primeiro (rotas novas, permissão nova), depois o painel. Rollback: reverter o painel. As rotas novas do backend são só leitura e não precisam de rollback de dados. Sem migration, a menos que D7 seja aprovado. Nesse caso a migration é aditiva e o `down` derruba a tabela.
+Deploy: backend primeiro (rotas novas, permissão nova), depois o painel. Rollback: reverter o painel. As rotas novas do backend são só leitura e não precisam de rollback de dados. Rodar `npm run migrate` antes de subir o backend, para criar `catalog_sync_runs`. A migration é aditiva e o `down` derruba a tabela. Sem a tabela, o status responde vazio e o sync não falha.
