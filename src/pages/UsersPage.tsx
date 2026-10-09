@@ -53,7 +53,7 @@ const emptyForm: AccessForm = {
   name: '',
   email: '',
   phone: '',
-  role: 'operator',
+  role: '',
   market: '',
 }
 
@@ -62,6 +62,19 @@ function inviteNeedsResend(item: UserItem) {
 }
 
 const PER_PAGE_OPTIONS = [10, 20, 50, 100]
+
+// What each panel role can do, shown under the role picker.
+const ROLE_HINTS: Record<string, string> = {
+  nutritionist: 'Acessa só o simulador nutricional.',
+  readonly: 'Vê as telas do painel sem alterar nada.',
+  operator: 'Opera pedidos, produção, catálogo e clientes do mercado escolhido.',
+  admin: 'Acesso total, inclusive equipe e papéis, nos dois mercados.',
+}
+
+function panelRoleOf(item: UserItem) {
+  const role = primaryRole(item.storedRoles?.length ? item.storedRoles : item.roles)
+  return role === 'customer' ? '' : role
+}
 
 export function UsersPage() {
   const { token, user, hasPermission } = useAuth()
@@ -123,7 +136,7 @@ export function UsersPage() {
       name: item.profile?.fullName ?? '',
       email: item.email,
       phone: item.profile?.phone ?? '',
-      role: primaryRole(item.storedRoles?.length ? item.storedRoles : item.roles),
+      role: panelRoleOf(item),
       market: item.markets?.includes('US') && !item.markets.includes('BR') ? 'US' : item.markets?.includes('BR') ? 'BR' : '',
     })
     setDialogOpen(true)
@@ -142,14 +155,20 @@ export function UsersPage() {
       setFormError('Informe o nome.')
       return
     }
-    if (staffMarketRequired(form.role) && form.market !== 'BR' && form.market !== 'US') {
+    if (!editing && !form.role) {
+      setFormError('Selecione um papel.')
+      return
+    }
+    if (form.role && staffMarketRequired(form.role) && form.market !== 'BR' && form.market !== 'US') {
       setFormError('Informe o mercado.')
       return
     }
 
-    const accessBody = staffMarketRequired(form.role)
-      ? { name: form.name.trim(), phone: form.phone.trim() || undefined, role: form.role, market: form.market }
-      : { name: form.name.trim(), phone: form.phone.trim() || undefined, role: form.role }
+    // A customer edited without picking a role keeps store-only access: the PATCH omits `role`.
+    const roleBody = !form.role
+      ? {}
+      : staffMarketRequired(form.role) ? { role: form.role, market: form.market } : { role: form.role }
+    const accessBody = { name: form.name.trim(), phone: form.phone.trim() || undefined, ...roleBody }
 
     setSaving(true)
     try {
@@ -247,6 +266,7 @@ export function UsersPage() {
 
   const allowlistLocked = Boolean(editing?.lockedByAllowlist)
   const dialogRole = allowlistLocked ? 'admin' : form.role
+  const editingStaff = Boolean(editing && panelRoleOf(editing))
 
   return (
     <PageFrame
@@ -396,7 +416,7 @@ export function UsersPage() {
       <Dialog
         open={dialogOpen}
         title={editing ? 'Editar acesso' : 'Novo acesso'}
-        description={editing ? 'Nome, telefone e papel. O e-mail não muda depois da criação.' : 'Cria a conta como Pendente, grava o papel e envia o convite com senha temporária.'}
+        description={editing ? editing.email : 'A conta é criada como Pendente e recebe um convite com senha temporária.'}
         onClose={closeDialog}
         footer={(
           <>
@@ -407,56 +427,79 @@ export function UsersPage() {
           </>
         )}
       >
-        <form className="form-grid" onSubmit={(event) => { event.preventDefault(); void saveAccess() }}>
-          <label>
-            Nome
-            <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required />
-          </label>
-          <label>
-            E-mail
-            <input
-              type="email"
-              value={form.email}
-              onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-              disabled={Boolean(editing)}
-              required={!editing}
-            />
-          </label>
-          <label>
-            Telefone <span className="muted">(opcional)</span>
-            <input value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
-          </label>
-          <label>
-            Papel
-            <select
-              value={dialogRole}
-              onChange={(event) => setForm((current) => ({
-                ...current,
-                role: event.target.value,
-                market: event.target.value === 'admin' ? '' : current.market,
-              }))}
-              disabled={allowlistLocked}
-            >
-              {PANEL_ROLE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </label>
-          {staffMarketRequired(dialogRole) ? (
-            <label>
-              Mercado
-              <select
-                value={form.market}
-                onChange={(event) => setForm((current) => ({ ...current, market: event.target.value === 'US' ? 'US' : event.target.value === 'BR' ? 'BR' : '' }))}
-                disabled={allowlistLocked}
-                required
-              >
-                <option value="">Selecione</option>
-                <option value="BR">{MARKET_LABELS.BR}</option>
-                <option value="US">{MARKET_LABELS.US}</option>
-              </select>
-            </label>
-          ) : null}
+        <form className="access-form" onSubmit={(event) => { event.preventDefault(); void saveAccess() }}>
+          <fieldset className="access-group">
+            <legend>Dados da conta</legend>
+            <div className="access-fields">
+              <label>
+                Nome
+                <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required />
+              </label>
+              <label>
+                <span>Telefone <span className="access-optional">opcional</span></span>
+                <input type="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
+              </label>
+              <label className="access-field-wide">
+                E-mail
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                  disabled={Boolean(editing)}
+                  required={!editing}
+                />
+                {editing ? <small className="access-hint">O e-mail não muda depois da criação.</small> : null}
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset className="access-group">
+            <legend>Acesso ao painel</legend>
+            <div className="access-fields">
+              <label>
+                Papel
+                <select
+                  value={dialogRole}
+                  onChange={(event) => setForm((current) => ({
+                    ...current,
+                    role: event.target.value,
+                    market: event.target.value === 'admin' ? '' : current.market,
+                  }))}
+                  disabled={allowlistLocked}
+                  required={!editing}
+                >
+                  {!editingStaff ? <option value="">Selecione um papel</option> : null}
+                  {PANEL_ROLE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              {dialogRole && staffMarketRequired(dialogRole) ? (
+                <label>
+                  Mercado
+                  <select
+                    value={form.market}
+                    onChange={(event) => setForm((current) => ({ ...current, market: event.target.value === 'US' ? 'US' : event.target.value === 'BR' ? 'BR' : '' }))}
+                    disabled={allowlistLocked}
+                    required
+                  >
+                    <option value="">Selecione</option>
+                    <option value="BR">{MARKET_LABELS.BR}</option>
+                    <option value="US">{MARKET_LABELS.US}</option>
+                  </select>
+                </label>
+              ) : null}
+            </div>
+            <p className="access-hint">
+              {dialogRole
+                ? ROLE_HINTS[dialogRole]
+                : editing ? 'Sem papel, a conta continua só com acesso à loja.' : 'Escolha o que esta pessoa poderá fazer no painel.'}
+            </p>
+            {editing && !editingStaff && dialogRole ? (
+              <div className="warning">Ao salvar, {editing.email} passa a entrar no painel como {roleLabel(dialogRole)}.</div>
+            ) : null}
+          </fieldset>
+
           {formError ? <div className="alert">{formError}</div> : null}
           {allowlistLocked ? (
             <div className="warning">
