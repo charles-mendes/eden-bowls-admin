@@ -1,15 +1,19 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { Dialog } from '../components/Dialog'
 import { HeadquartersCard } from '../components/shipping/HeadquartersCard'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
-import { defaultMarket, hasBothMarkets, sessionMarkets } from '../lib/markets'
+import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import {
   UPS_SERVICES,
+  brHeadquartersReady,
   emptySettings,
   formatMoney,
   mergeSettings,
+  usHeadquartersReady,
   type ShippingSettings,
   type UpsSimulation,
 } from '../lib/shippingSettings'
@@ -108,11 +112,52 @@ function brQuoteError(error: unknown) {
   return error instanceof Error ? error.message : 'Falha na simulação'
 }
 
+type ShippingTab = 'regras' | 'sede' | 'simulador'
+
+const TABS: Array<{ id: ShippingTab; label: string }> = [
+  { id: 'regras', label: 'Regras de entrega' },
+  { id: 'sede', label: 'Sede' },
+  { id: 'simulador', label: 'Simulador' },
+]
+
+const MARKET_NAME: Record<'BR' | 'US', string> = { BR: 'Brasil', US: 'EUA' }
+const RULES_OF: Record<'BR' | 'US', string> = { BR: 'do Brasil', US: 'dos EUA' }
+
+// The rules each market saves; headquarters addresses are saved from their own card.
+function rulesOf(settings: ShippingSettings, market: 'BR' | 'US') {
+  if (market === 'BR') return { enabled: settings.br.enabled, label: settings.br.label, rule: settings.br.rule }
+  const { us } = settings
+  return {
+    enabled: us.enabled,
+    cost: us.cost,
+    carrier: us.carrier,
+    delivery: us.delivery,
+    label: us.label,
+    quote_mode: us.quote_mode,
+    fallback_enabled: us.fallback_enabled,
+    package: us.package,
+    allowed_service_codes: us.allowed_service_codes,
+  }
+}
+
+function headquartersReady(settings: ShippingSettings, market: 'BR' | 'US') {
+  return market === 'BR' ? brHeadquartersReady(settings.br.center) : usHeadquartersReady(settings.us.ship_from)
+}
+
 export function ShippingPage() {
   const { token, user, hasPermission } = useAuth()
   const bothMarkets = hasBothMarkets(user)
-  const [pickedTab, setPickedTab] = useState<'BR' | 'US'>('BR')
+  const canWrite = hasPermission('shipping.write')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedMarket = searchParams.get('mercado') === 'us' ? 'US' : 'BR'
+  const market: 'BR' | 'US' = bothMarkets ? requestedMarket : (defaultMarket(user) ?? 'BR')
+  // Daily use is the simulator; people who can edit land on the rules.
+  const defaultTab: ShippingTab = canWrite ? 'regras' : 'simulador'
+  const requestedTab = searchParams.get('aba')
+  const tab: ShippingTab = TABS.some((option) => option.id === requestedTab) ? requestedTab as ShippingTab : defaultTab
+
   const [settings, setSettings] = useState<ShippingSettings>(emptySettings)
+  const [saved, setSaved] = useState<ShippingSettings>(emptySettings)
   const [loaded, setLoaded] = useState(false)
   const [zipCode, setZipCode] = useState('')
   const [testing, setTesting] = useState(false)
@@ -121,20 +166,21 @@ export function ShippingPage() {
   const [testError, setTestError] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  const canWrite = hasPermission('shipping.write')
-  const tab = bothMarkets ? pickedTab : (defaultMarket(user) ?? pickedTab)
-  const tabs = sessionMarkets(user)
+  const [pendingMarket, setPendingMarket] = useState<'BR' | 'US' | null>(null)
+  const [saving, setSaving] = useState(false)
 
-  const apply = (next: Partial<ShippingSettings> | undefined) => {
-    setSettings((current) => mergeSettings({ ...current, ...(next || {}) }))
-  }
+  const dirty = loaded && JSON.stringify(rulesOf(settings, market)) !== JSON.stringify(rulesOf(saved, market))
+  const savedHqReady = headquartersReady(saved, market)
+  const simulatorNeedsHq = market === 'BR' || saved.us.quote_mode === 'ups'
 
   const load = async () => {
     if (!token) return
     try {
       setError('')
       const response = await apiRequest<SettingsResponse>('/admin/shipping/settings', { token })
-      setSettings(mergeSettings(response.data.settings))
+      const next = mergeSettings(response.data.settings)
+      setSettings(next)
+      setSaved(next)
       setLoaded(true)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar frete')
@@ -156,35 +202,77 @@ export function ShippingPage() {
     updateUs({ allowed_service_codes: UPS_SERVICES.map(([item]) => item).filter((item) => next.includes(item)) })
   }
 
-  // Each tab saves only its own rules; headquarters addresses are saved from their cards.
-  const save = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!token) return
-    const brRules = { enabled: settings.br.enabled, label: settings.br.label, rule: settings.br.rule }
-    const usRules = {
-      enabled: settings.us.enabled,
-      cost: settings.us.cost,
-      carrier: settings.us.carrier,
-      delivery: settings.us.delivery,
-      label: settings.us.label,
-      quote_mode: settings.us.quote_mode,
-      fallback_enabled: settings.us.fallback_enabled,
-      package: settings.us.package,
-      allowed_service_codes: settings.us.allowed_service_codes,
-    }
+  const setParam = (key: 'aba' | 'mercado', value: string | null) => {
+    setSearchParams((params) => {
+      if (value) params.set(key, value)
+      else params.delete(key)
+      return params
+    })
+  }
+
+  const selectTab = (next: ShippingTab) => {
+    setParam('aba', next === defaultTab ? null : next)
+  }
+
+  // Arrow keys move between tabs, following the WAI-ARIA tabs pattern.
+  const moveTabFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+    const index = TABS.findIndex((option) => option.id === tab)
+    const next = TABS[(index + (event.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length].id
+    selectTab(next)
+    document.getElementById(`shipping-tab-${next}`)?.focus()
+  }
+
+  const switchMarket = (next: 'BR' | 'US') => {
+    setParam('mercado', next === 'US' ? 'us' : null)
+    setZipCode('')
+    setBrResult(null)
+    setUsResult(null)
+    setTestError('')
+    setMessage('')
+    setPendingMarket(null)
+  }
+
+  // Switching market with unsaved rules asks first, so edits are neither lost nor saved to the wrong market.
+  const requestMarket = (next: 'BR' | 'US') => {
+    if (next === market) return
+    if (dirty) setPendingMarket(next)
+    else switchMarket(next)
+  }
+
+  const discardRules = () => {
+    setSettings((current) => (market === 'BR'
+      ? { ...current, br: { ...saved.br, center: current.br.center } }
+      : { ...current, us: { ...saved.us, ship_from: current.us.ship_from } }))
+  }
+
+  const saveRules = async () => {
+    if (!token) return false
     try {
+      setSaving(true)
       setError('')
       setMessage('')
       const response = await apiRequest<SettingsResponse>('/admin/shipping/settings', {
         token,
         method: 'PUT',
-        body: tab === 'BR' ? { br: brRules } : { us: usRules },
+        body: market === 'BR' ? { br: rulesOf(settings, 'BR') } : { us: rulesOf(settings, 'US') },
       })
-      apply(response.data.settings)
-      setMessage(tab === 'BR' ? 'Regras do Brasil salvas.' : 'Regras dos Estados Unidos salvas.')
+      const next = mergeSettings(response.data.settings)
+      setSaved(next)
+      setSettings((current) => (market === 'BR' ? { ...current, br: { ...next.br } } : { ...current, us: { ...next.us } }))
+      setMessage(market === 'BR' ? 'Regras do Brasil salvas.' : 'Regras dos Estados Unidos salvas.')
+      return true
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar')
+      return false
+    } finally {
+      setSaving(false)
     }
+  }
+
+  const save = (event: FormEvent) => {
+    event.preventDefault()
+    void saveRules()
   }
 
   const testZip = async (event: FormEvent) => {
@@ -198,24 +286,15 @@ export function ShippingPage() {
       const response = await apiRequest<{ success: boolean; data: BrQuote | UsTestResult }>('/admin/shipping/test', {
         token,
         method: 'POST',
-        body: { zipCode, country: tab },
+        body: { zipCode, country: market },
       })
-      if (tab === 'US') setUsResult(response.data as UsTestResult)
+      if (market === 'US') setUsResult(response.data as UsTestResult)
       else setBrResult(response.data as BrQuote)
     } catch (requestError) {
-      setTestError(tab === 'BR' ? brQuoteError(requestError) : (requestError instanceof Error ? requestError.message : 'Falha na simulação'))
+      setTestError(market === 'BR' ? brQuoteError(requestError) : (requestError instanceof Error ? requestError.message : 'Falha na simulação'))
     } finally {
       setTesting(false)
     }
-  }
-
-  const switchTab = (market: 'BR' | 'US') => {
-    setPickedTab(market)
-    setZipCode('')
-    setBrResult(null)
-    setUsResult(null)
-    setTestError('')
-    setMessage('')
   }
 
   const br = settings.br
@@ -223,44 +302,49 @@ export function ShippingPage() {
   const upsMode = us.quote_mode === 'ups'
 
   return (
-    <PageFrame title="Frete" description="Sedes, regras de entrega e simulação de frete por país.">
-      {error ? <div className="alert">{error}</div> : null}
-      {message ? <div className="success" role="status">{message}</div> : null}
-
-      <Section title="Sedes" description="Endereços de onde as entregas saem. Todo endereço é validado antes de salvar.">
-        <div className={tabs.length > 1 ? 'ship-hq-grid' : 'ship-hq-grid ship-hq-grid-single'}>
-          {loaded
-            ? tabs.map((market) => (
-              <HeadquartersCard
-                key={market}
-                market={market}
-                settings={settings}
-                token={token}
-                canWrite={canWrite}
-                onSaved={(next, text) => {
-                  apply(next)
-                  setError('')
-                  setMessage(text)
-                }}
-              />
-            ))
-            : <p className="muted">Carregando…</p>}
-        </div>
-      </Section>
-
-      {tabs.length > 1 ? (
-        <div className="tabs ship-tabs" role="tablist">
-          {tabs.map((market) => (
-            <button key={market} type="button" role="tab" aria-selected={tab === market} className={tab === market ? 'tab active' : 'tab'} onClick={() => switchTab(market)}>
-              {market === 'US' ? 'Estados Unidos' : 'Brasil'}
+    <PageFrame
+      title="Frete"
+      description="Regras de entrega, sede e simulação de frete do mercado escolhido."
+      actions={bothMarkets ? (
+        <div className="segmented" role="group" aria-label="Mercado">
+          {(['BR', 'US'] as const).map((option) => (
+            <button key={option} type="button" aria-pressed={market === option} className={market === option ? 'active' : ''} onClick={() => requestMarket(option)}>
+              {MARKET_NAME[option]}
             </button>
           ))}
         </div>
+      ) : undefined}
+    >
+      {error ? <div className="alert">{error}</div> : null}
+      {message ? <div className="success" role="status">{message}</div> : null}
+
+      <div className="page-tabs" role="tablist" aria-label="Frete" onKeyDown={moveTabFocus}>
+        {TABS.map((option) => (
+          <button
+            key={option.id}
+            id={`shipping-tab-${option.id}`}
+            type="button"
+            role="tab"
+            aria-selected={tab === option.id}
+            aria-controls={`shipping-panel-${option.id}`}
+            tabIndex={tab === option.id ? 0 : -1}
+            className={tab === option.id ? 'page-tab active' : 'page-tab'}
+            onClick={() => selectTab(option.id)}
+          >
+            {option.label}
+            {option.id === 'regras' && dirty ? <span className="page-tab-flag">não salvo</span> : null}
+            {option.id === 'sede' && loaded && !savedHqReady ? <span className="page-tab-flag">pendente</span> : null}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'regras' && !loaded ? (
+        <p id="shipping-panel-regras" role="tabpanel" aria-labelledby="shipping-tab-regras" className="muted" aria-busy="true">Carregando…</p>
       ) : null}
 
-      <div className="ship-layout">
-        <form className="ship-rules" onSubmit={save}>
-          {tab === 'BR' ? (
+      {tab === 'regras' && loaded ? (
+        <form id="shipping-panel-regras" role="tabpanel" aria-labelledby="shipping-tab-regras" className="ship-rules" onSubmit={save}>
+          {market === 'BR' ? (
             <Section title="Entrega local" description="Entrega própria, avulsa, no mesmo dia do preparo.">
               <div className="ship-summary">
                 <div><small>Raio</small><strong>{br.rule.max_distance_km} km</strong></div>
@@ -341,23 +425,66 @@ export function ShippingPage() {
           )}
           {canWrite ? (
             <div className="ship-actions ship-save-bar">
-              <button className="primary-button" type="submit">{tab === 'BR' ? 'Salvar regras do Brasil' : 'Salvar regras dos EUA'}</button>
+              {dirty ? <span className="ship-hint">Alterações não salvas.</span> : null}
+              <button className="primary-button" type="submit" disabled={saving}>{market === 'BR' ? 'Salvar regras do Brasil' : 'Salvar regras dos EUA'}</button>
             </div>
           ) : null}
         </form>
+      ) : null}
 
-        <aside className="ship-simulator">
+      {tab === 'sede' ? (
+        <div id="shipping-panel-sede" role="tabpanel" aria-labelledby="shipping-tab-sede" className="ship-panel">
+          {loaded ? (
+            <HeadquartersCard
+              key={market}
+              market={market}
+              settings={settings}
+              token={token}
+              canWrite={canWrite}
+              onSaved={(next, text) => {
+                const merged = mergeSettings(next)
+                setSaved(merged)
+                // Keep unsaved rule edits: take only the address the card saved.
+                setSettings((current) => ({
+                  ...current,
+                  br: { ...current.br, center: merged.br.center },
+                  us: { ...current.us, ship_from: merged.us.ship_from },
+                }))
+                setError('')
+                setMessage(text)
+              }}
+            />
+          ) : <p className="muted">Carregando…</p>}
+        </div>
+      ) : null}
+
+      {tab === 'simulador' ? (
+        <div id="shipping-panel-simulador" role="tabpanel" aria-labelledby="shipping-tab-simulador" className="ship-panel ship-simulator">
           <Section
-            title={tab === 'US' ? 'Simular frete por ZIP' : 'Simular frete por CEP'}
-            description={tab === 'US' ? 'Roda todas as chamadas da UPS no sandbox (CIE). Nada é cobrado.' : 'Mesmo cálculo da loja, a partir da sede.'}
-            actions={tab === 'US' ? <span className="badge-info">UPS sandbox</span> : undefined}
+            title={market === 'US' ? 'Simular frete por ZIP' : 'Simular frete por CEP'}
+            description={market === 'US'
+              ? 'Usa as regras salvas dos EUA e roda todas as chamadas da UPS no sandbox (CIE). Nada é cobrado.'
+              : 'Usa as regras salvas do Brasil: mesmo cálculo da loja, a partir da sede.'}
+            actions={market === 'US' ? <span className="badge-info">UPS sandbox</span> : undefined}
           >
+            {dirty ? (
+              <div className="warning ship-notice">
+                <span>Há alterações não salvas nas regras {RULES_OF[market]}. A simulação usa as regras salvas.</span>
+                <button type="button" className="link-button" onClick={() => selectTab('regras')}>Ir para Regras</button>
+              </div>
+            ) : null}
+            {loaded && simulatorNeedsHq && !savedHqReady ? (
+              <div className="warning ship-notice">
+                <span>A sede {market === 'BR' ? 'do Brasil' : 'dos EUA'} não tem endereço validado. {market === 'BR' ? 'Sem ela, o frete não é calculado.' : 'Sem ela, a UPS não cota.'}</span>
+                <button type="button" className="link-button" onClick={() => selectTab('sede')}>{canWrite ? 'Cadastrar sede' : 'Ver sede'}</button>
+              </div>
+            ) : null}
             <form className="ship-sim-form" onSubmit={testZip}>
               <input
-                aria-label={tab === 'US' ? 'ZIP code' : 'CEP'}
+                aria-label={market === 'US' ? 'ZIP code' : 'CEP'}
                 value={zipCode}
                 onChange={(event) => setZipCode(event.target.value)}
-                placeholder={tab === 'US' ? '94105' : '01310-100'}
+                placeholder={market === 'US' ? '94105' : '01310-100'}
                 inputMode="numeric"
               />
               <button className="primary-button" type="submit" disabled={testing || !zipCode.trim()}>{testing ? 'Simulando…' : 'Simular'}</button>
@@ -436,8 +563,45 @@ export function ShippingPage() {
               </div>
             ) : null}
           </Section>
-        </aside>
-      </div>
+        </div>
+      ) : null}
+
+      <Dialog
+        title="Alterações não salvas"
+        open={Boolean(pendingMarket)}
+        onClose={() => setPendingMarket(null)}
+        footer={(
+          <>
+            <button className="ghost-button" type="button" onClick={() => setPendingMarket(null)}>Continuar editando</button>
+            <button
+              className="danger-button"
+              type="button"
+              onClick={() => {
+                const next = pendingMarket
+                discardRules()
+                if (next) switchMarket(next)
+              }}
+            >
+              Descartar e trocar
+            </button>
+            {canWrite ? (
+              <button
+                className="primary-button"
+                type="button"
+                disabled={saving}
+                onClick={async () => {
+                  const next = pendingMarket
+                  if (await saveRules() && next) switchMarket(next)
+                }}
+              >
+                Salvar e trocar
+              </button>
+            ) : null}
+          </>
+        )}
+      >
+        <p>Você tem alterações não salvas nas regras {RULES_OF[market]}. Salve ou descarte antes de abrir {pendingMarket ? MARKET_NAME[pendingMarket] : ''}.</p>
+      </Dialog>
     </PageFrame>
   )
 }

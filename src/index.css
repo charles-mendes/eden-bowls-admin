@@ -2297,17 +2297,6 @@ button.table-link {
 }
 
 /* Shipping page */
-.ship-hq-grid {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-}
-
-.ship-hq-grid-single {
-  grid-template-columns: minmax(0, 640px);
-}
-
 .ship-hq-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -2488,17 +2477,6 @@ button.table-link {
   gap: var(--space-2);
 }
 
-.ship-tabs {
-  margin: var(--space-5) 0 var(--space-4);
-}
-
-.ship-layout {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr);
-  align-items: start;
-}
-
 .ship-rules {
   display: grid;
   gap: var(--space-4);
@@ -2513,10 +2491,30 @@ button.table-link {
   margin-bottom: 0;
 }
 
-.ship-simulator {
-  position: sticky;
-  top: var(--space-4);
+/* Each Frete tab is one column, kept to a readable width. */
+.ship-panel,
+.ship-rules {
+  max-width: 880px;
   min-width: 0;
+}
+
+.ship-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.page-tab-flag {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 18px;
 }
 
 .ship-simulator .section-head > span {
@@ -2857,21 +2855,21 @@ button.table-link {
   color: var(--text-soft);
 }
 
-@media (max-width: 1100px) {
-  .ship-layout,
-  .ship-hq-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .ship-simulator {
-    position: static;
-  }
-}
-
 @media (max-width: 720px) {
   .ship-summary,
   .ship-mode-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* On narrow screens the flag shrinks to a dot so all three tabs fit; its text stays for screen readers. */
+  .page-tab-flag {
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    overflow: hidden;
+    color: transparent;
+    font-size: 0;
+    background: var(--warning-text);
   }
 
   .ship-fields-4 {
