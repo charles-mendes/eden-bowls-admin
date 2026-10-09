@@ -1,8 +1,8 @@
-# Regras de Negocio para Implementacao na Nova Stack
+# Regras de negocio do painel
 
-Somente o que precisa sobreviver **independentemente** de WordPress, WooCommerce, options, nonces, CPT e hooks.
+Regras que o painel React e a API Node implementam hoje. O painel nao e WordPress nem WooCommerce.
 
-Nao inclui: slugs de menu, capabilities WP, AES no `AUTH_KEY`, transients, `admin-ajax.php`, HPOS, dashicons.
+Nao inclui: CMS, plugins, hooks, nonces, options nem capabilities de um painel antigo.
 
 Marcacao: **[REGRA CONFIRMADA]** no codigo atual. Itens **[INFERENCIA]** ou **[DUVIDA]** nao entram aqui como obrigatorios.
 
@@ -13,9 +13,9 @@ Marcacao: **[REGRA CONFIRMADA]** no codigo atual. Itens **[INFERENCIA]** ou **[D
 1. Existem tres papeis operacionais: **Administrador**, **Operador** e **Nutricionista**.
 2. Nutricionista so executa **simulacao nutricional**. Nao ve pedidos, frete, Stripe, catalogo, usuarios.
 3. Operador ve pedidos/clientes/catalogo, onboarding 360, frete, simulador, ledger Stripe e cupons. Nao precisa de ferramentas de CMS.
-4. Administrador ve tudo o que o operador ve, mais ferramentas de plataforma (hoje: CPT Flexible Subscriptions, settings WP).
+4. Administrador ve tudo o que o operador ve, mais ferramentas de plataforma do painel.
 5. Os rotulos "Colaborador Brasil" e "Colaborador EUA" **nao isolam dados** no codigo atual. Nao implementar isolamento por mercado sem nova decisao de produto.
-6. Toda acao mutavel exige autenticacao + autorizacao no servidor. CSRF/nonce WP vira token de sessao do painel novo.
+6. Toda acao mutavel exige autenticacao e autorizacao no servidor, com JWT. O menu do painel nao autoriza sozinho.
 
 ---
 
@@ -41,7 +41,7 @@ Marcacao: **[REGRA CONFIRMADA]** no codigo atual. Itens **[INFERENCIA]** ou **[D
 3. Recorrencia exibida e o **snapshot do onboarding** (`weekly|biweekly|monthly`), nao o intervalo vivo da Stripe.
 4. Vinculo Stripe = presenca do id de assinatura no pedido; status Stripe = ultimo valor persistido (webhook/API), nao live query.
 5. Recomendacao "simplificada" (diario / mensal / packs por pet) vem da sessao de onboarding, nao e recalculada so com o pedido.
-6. Export CSV e a mesma consulta filtrada (no WP ha teto de 500 no scan profundo — na nova stack paginar/filtrar de verdade e avisar limites).
+6. Export CSV e a mesma consulta filtrada. Paginar e filtrar de verdade, e avisar limites. Nao varrer no maximo 500 registros sem dizer isso.
 7. Pedido sem dados de onboarding deve mostrar empty state, nao erro.
 
 ---
@@ -124,13 +124,13 @@ Marcacao: **[REGRA CONFIRMADA]** no codigo atual. Itens **[INFERENCIA]** ou **[D
 ## 9. Cliente
 
 1. Instrucoes de entrega sao texto livre no cadastro do cliente (mesmo dado do app).
-2. Avatar/e-mail/senha/endereco de entrega sao do app (`/profile*`), nao telas admin custom — o admin WP nativo cobre o resto do usuario.
+2. Avatar, e-mail, senha e endereco de entrega sao da conta do cliente (`/api/v1/profile*`). O painel edita instrucoes de entrega.
 
 ---
 
 ## 10. Pagamento
 
-1. Nao ha caminho operacional para configurar gateway WooCommerce. Cobranca e Stripe.
+1. Nao ha gateway de loja para configurar no painel. Cobranca e Stripe.
 2. Runtime de chaves Stripe e **ambiente** (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`), nao formulario admin. Se existir UI de chaves, e diagnostico, nao source of truth.
 3. Webhook Stripe e o alimentador do ledger; replay, se existir, exige usuario autenticado, janela de tempo, limite de tentativas, rate limit por usuario, recusa de payload grande/inconsistente.
 4. Kill-switch por tipo de evento (ignorar internamente sem mudar o endpoint na Stripe) existe no codigo; so repor se o modulo de ops for priorizado.
@@ -143,7 +143,7 @@ Marcacao: **[REGRA CONFIRMADA]** no codigo atual. Itens **[INFERENCIA]** ou **[D
 |---|---|
 | Stripe | Produtos/prices, assinaturas, invoices, PDF, cupons, dashboard |
 | ViaCEP + geocode + OSRM | Cotacao BR (teste admin = mesma cadeia, sem rate limit) |
-| Woo (hoje) | Pedidos, produtos, clientes — na nova stack viram entidades proprias |
+| API Node | Pedidos, produtos e clientes do painel |
 
 ---
 
@@ -158,11 +158,11 @@ Marcacao: **[REGRA CONFIRMADA]** no codigo atual. Itens **[INFERENCIA]** ou **[D
 - Dois roles regionais com as mesmas permissoes fingindo isolamento.
 - NEM 3600 forcado no simulador para gato sem decisao explicita.
 - Telas Stripe de dashboard/webhooks/logs como se ja estivessem no menu (nao estao).
-- CPT Flexible Subscriptions como UI principal de operacao.
+- Um CMS de assinaturas como tela principal. A operacao e o ledger no painel.
 
 ---
 
-## 13. Mapa minimo de telas na nova stack
+## 13. Mapa minimo de telas
 
 Equivalente funcional ao que o operador **consegue usar hoje**:
 

@@ -90,4 +90,30 @@ describe('UsersPage', () => {
     expect(screen.getByText('Atribua um mercado a esta conta.').closest('.alert')).toBeTruthy()
     expect(screen.queryByRole('columnheader', { name: 'E-mail' })).not.toBeInTheDocument()
   })
+
+  it('changes the page size from the toolbar select', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorUser)
+    renderAuthedPage(<UsersPage />, '/users')
+
+    await screen.findByRole('link', { name: 'ana@edenbowls.com' })
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Por página' }), '50')
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === '/api/v1/admin/users' && call.search.includes('perPage=50') && call.search.includes('page=1'))).toBe(true)
+    })
+  })
+
+  it('says when the search finds no account', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUser, {
+      routes: ({ path, method }) => (path === '/api/v1/admin/users' && method === 'GET'
+        ? jsonResponse({ total: 0, page: 1, perPage: 20, totalPages: 1, items: [] })
+        : undefined),
+    })
+    renderAuthedPage(<UsersPage />, '/users')
+
+    expect(await screen.findByText('Nenhuma conta encontrada.')).toBeInTheDocument()
+  })
 })

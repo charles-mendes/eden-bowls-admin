@@ -34,6 +34,7 @@ describe('format helpers', () => {
     expect(formatStripeStatus('all')).toBe('Todas')
     expect(formatSyncJobStatus('queued')).toBe('na fila')
     expect(formatSyncJobStatus('completed')).toBe('concluído')
+    expect(formatSyncJobStatus('failed')).toBe('falhou')
     expect(formatSyncJobStatus(null)).toBe('nenhum job')
     expect(formatFrequency('monthly')).toBe('Mensal')
     expect(formatFrequency('every_4_weeks')).toBe('A cada 4 semanas')

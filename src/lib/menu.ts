@@ -2,7 +2,7 @@ import { type AdminRole } from './roles'
 
 export type { AdminRole }
 
-export type MenuGroup = 'Visão geral' | 'Operação' | 'Catálogo' | 'Cobrança' | 'Equipe'
+export type MenuGroup = 'Visão geral' | 'Operação' | 'Clientes' | 'Loja' | 'Ferramentas' | 'Administração'
 
 export type MenuItem = {
   label: string
@@ -11,20 +11,32 @@ export type MenuItem = {
   group: MenuGroup
 }
 
+// Grouped by the job: ship orders, look after customers, run the store, run the team.
 export const adminMenu: MenuItem[] = [
-  { label: 'Dashboard', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Visão geral' },
-  { label: 'Simulador nutricional', href: '/nutrition/simulate', roles: ['admin', 'operator', 'nutritionist'], group: 'Operação' },
-  { label: 'Onboarding 360', href: '/onboarding/sessions', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
-  { label: 'Produção', href: '/operations/production', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
-  { label: 'Feedbacks', href: '/feedbacks', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
+  { label: 'Hoje', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Visão geral' },
+  { label: 'Fila de produção', href: '/operations/production', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
+  { label: 'Feriados e fechamentos', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Frete', href: '/config/shipping', roles: ['admin', 'operator'], group: 'Operação' },
-  { label: 'Produtos', href: '/catalog/products', roles: ['admin', 'operator', 'readonly'], group: 'Catálogo' },
-  { label: 'Assinantes', href: '/billing', roles: ['admin', 'operator', 'readonly'], group: 'Cobrança' },
-  { label: 'Cupons 1ª compra', href: '/billing/coupons', roles: ['admin', 'operator'], group: 'Cobrança' },
-  { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Equipe' },
-  { label: 'Privacidade', href: '/privacy/requests', roles: ['admin', 'operator', 'readonly'], group: 'Equipe' },
-  { label: 'Papéis', href: '/users/roles', roles: ['admin'], group: 'Equipe' },
+  { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
+  { label: 'Assinantes', href: '/billing', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
+  { label: 'Onboarding 360', href: '/onboarding/sessions', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
+  { label: 'Produtos', href: '/catalog/products', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
+  { label: 'Cupons 1ª compra', href: '/billing/coupons', roles: ['admin', 'operator'], group: 'Loja' },
+  { label: 'Feedbacks', href: '/feedbacks', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
+  { label: 'Simulador nutricional', href: '/nutrition/simulate', roles: ['admin', 'operator', 'nutritionist'], group: 'Ferramentas' },
+  { label: 'Equipe e papéis', href: '/users/roles', roles: ['admin'], group: 'Administração' },
+  { label: 'Privacidade', href: '/privacy/requests', roles: ['admin', 'operator', 'readonly'], group: 'Administração' },
 ]
+
+// The longest menu href that prefixes the path, so a list and its sub-page are never both active.
+export function activeMenuHref(pathname: string, items: MenuItem[]) {
+  let best = ''
+  for (const item of items) {
+    const matches = pathname === item.href || pathname.startsWith(`${item.href}/`)
+    if (matches && item.href.length > best.length) best = item.href
+  }
+  return best
+}
 
 export function visibleMenuItems(roles: AdminRole[]) {
   const roleSet = new Set(roles)

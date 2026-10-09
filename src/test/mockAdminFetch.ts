@@ -12,6 +12,7 @@ import {
   productsList,
   promotionCodesList,
   shippingSettings,
+  todayOverview,
   staffList,
   staffUser,
   subscriptionItem,
@@ -29,7 +30,10 @@ import {
   productionQueueList,
   userPrivacySnapshot,
   marketConflicts,
+  webhookHealth,
 } from './fixtures'
+import type { WebhookHealthFixture } from './fixtures'
+import { checkMockedCall } from './apiContract'
 
 export type FetchCall = {
   url: string
@@ -40,14 +44,40 @@ export type FetchCall = {
   body: unknown
 }
 
+export const customerInvoice = {
+  id: 12,
+  invoice_number: 'EB-2026-000418',
+  stripe_invoice_id: 'in_test_0',
+  stripe_account: 'us',
+  locale: 'en-US',
+  currency: 'usd',
+  total_minor: 14450,
+  amount_paid_minor: 14450,
+  invoice_status: 'paid',
+  billing_reason: 'subscription_cycle',
+  issued_at: '2026-09-01T15:00:00.000Z',
+  pdf_available: true,
+  pdf_generated_at: '2026-09-01T15:00:05.000Z',
+  email_to: 'ana@edenbowls.com',
+  email_status: 'sent',
+  email_sent_at: '2026-09-01T15:00:06.000Z',
+  email_attempts: 1,
+  email_last_error: null,
+  email_next_attempt_at: null,
+}
+
 function parseUrl(input: RequestInfo | URL) {
   return new URL(String(input), 'http://admin.local')
 }
 
 export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, options: {
   marketConflicts?: typeof marketConflicts.items
+  webhookHealth?: WebhookHealthFixture | { status: number; message: string }
+  syncStatus?: Record<string, unknown>
   subscriptionInScope?: boolean
+  customerInvoices?: Array<Record<string, unknown>>
   productionInScope?: boolean
+  productionQueue?: Array<Record<string, unknown>>
   subscriptionSnapshot?: {
     petsSnapshot?: unknown
     planSelection?: unknown
@@ -57,6 +87,8 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   products?: typeof productsList.items
   product?: typeof productDetail
   catalogDelete?: 'in_use' | 'archive'
+  // Answered before the fixed routes; return undefined to fall through.
+  routes?: (call: FetchCall) => Response | undefined
 } = {}) {
   const calls: FetchCall[] = []
   let catalogItems = (options.products ?? productsList.items).map((item) => ({
@@ -77,6 +109,12 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     const search = url.search
 
     calls.push({ url: String(input), path, search, method, authorization, body })
+    checkMockedCall(method, path)
+
+    const routed = options.routes?.({ url: String(input), path, search, method, authorization, body })
+    if (routed) {
+      return routed
+    }
 
     if (path === '/api/v1/auth/token' && method === 'POST') {
       return jsonResponse({ token: 'access-token' })
@@ -285,7 +323,22 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (path === '/api/v1/admin/markets/conflicts' && method === 'GET') {
-      return jsonResponse({ items: options.marketConflicts ?? marketConflicts.items })
+      const items = options.marketConflicts ?? marketConflicts.items
+      const page = Math.max(1, Number(url.searchParams.get('page')) || 1)
+      const perPage = Math.min(100, Math.max(1, Number(url.searchParams.get('perPage')) || 20))
+      return jsonResponse({
+        total: items.length,
+        page,
+        perPage,
+        totalPages: Math.max(1, Math.ceil(items.length / perPage)),
+        items: items.slice((page - 1) * perPage, page * perPage),
+      })
+    }
+
+    if (path === '/api/v1/admin/billing/webhooks/health' && method === 'GET') {
+      const health = options.webhookHealth ?? webhookHealth
+      if ('status' in health) return jsonResponse({ success: false, message: health.message }, health.status)
+      return jsonResponse(health)
     }
 
     if (path === '/api/v1/admin/catalog/sync/health') {
@@ -293,17 +346,19 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (path === '/api/v1/admin/catalog/sync/status') {
-      return jsonResponse(syncStatus)
+      return jsonResponse(options.syncStatus ?? syncStatus)
     }
 
     if (path === '/api/v1/admin/production/queue' && method === 'GET') {
       const productionStatus = url.searchParams.get('productionStatus')
-      const items = productionStatus && productionStatus !== productionQueueItem.productionStatus
-        ? []
-        : [{
-          ...productionQueueItem,
-          customerProfileInScope: options.productionInScope ?? productionQueueItem.customerProfileInScope,
-        }]
+      const items = options.productionQueue
+        ? options.productionQueue
+        : productionStatus && productionStatus !== productionQueueItem.productionStatus
+          ? []
+          : [{
+            ...productionQueueItem,
+            customerProfileInScope: options.productionInScope ?? productionQueueItem.customerProfileInScope,
+          }]
       return jsonResponse({
         ...productionQueueList,
         total: items.length,
@@ -338,6 +393,23 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (path === '/api/v1/admin/billing/subscriptions/backfill-links' && method === 'POST') {
       return jsonResponse({ success: true, data: { linked: 2 } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/customer-invoices$/.test(path) && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: options.customerInvoices ?? [customerInvoice] } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/customer-invoices$/.test(path) && method === 'POST') {
+      const stripeInvoiceId = String((body as { stripe_invoice_id?: string } | null)?.stripe_invoice_id || 'in_test_1')
+      return jsonResponse({ success: true, data: { ...customerInvoice, id: 13, stripe_invoice_id: stripeInvoiceId, email_status: 'pending', email_sent_at: null } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/customer-invoices\/[^/]+\/send$/.test(path) && method === 'POST') {
+      return jsonResponse({ success: true, data: { ...customerInvoice, email_status: 'sent', email_sent_at: '2026-09-02T10:30:00.000Z' } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/customer-invoices\/[^/]+\/pdf$/.test(path) && method === 'GET') {
+      return new Response('%PDF-1.3', { status: 200, headers: { 'Content-Type': 'application/pdf' } })
     }
 
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/sync-invoices$/.test(path) && method === 'POST') {
@@ -415,6 +487,19 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       })
     }
 
+    if (path === '/api/v1/admin/today' && method === 'GET') {
+      const only = profile.markets?.length === 1 ? profile.markets[0] : ''
+      const inScope = (market: string) => !only || market === only
+      return jsonResponse({
+        success: true,
+        data: {
+          ...todayOverview,
+          items: todayOverview.items.filter((item) => inScope(item.market)),
+          closedDays: todayOverview.closedDays.filter((day) => inScope(day.market)),
+        },
+      })
+    }
+
     if (path === '/api/v1/admin/shipping/settings' && method === 'GET') {
       return jsonResponse(shippingSettings)
     }
@@ -429,18 +514,71 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         return jsonResponse({
           success: true,
           data: {
-            shipping: 18.45,
-            delivery_days: 4,
-            currency: 'USD',
-            label: 'UPS Ground',
-            carrier: 'UPS',
-            source: 'ups',
+            country: 'US',
+            quote_mode: 'ups',
+            fixed: null,
+            ups: {
+              environment: 'cie',
+              destination: { city: 'San Francisco', state: 'CA', zipcode: '94105' },
+              steps: [
+                { key: 'oauth', label: 'Autenticação OAuth', status: 'ok', detail: 'Token emitido pela UPS sandbox (CIE).', ms: 120 },
+                { key: 'destination', label: 'Cidade e estado do ZIP', status: 'ok', detail: 'San Francisco, CA 94105', ms: 80 },
+                { key: 'origin', label: 'Endereço da sede (XAV)', status: 'skipped', detail: 'O sandbox da UPS só valida endereços de NY e CA.' },
+                { key: 'rating', label: 'Cotação com prazo (Shoptimeintransit)', status: 'ok', detail: '2 serviço(s) cotado(s).', ms: 340 },
+              ],
+              rates: [
+                { service_code: '03', label: 'UPS Ground', amount: 18.45, currency: 'USD', delivery_days: 4, allowed: true },
+                { service_code: '01', label: 'UPS Next Day Air', amount: 72.1, currency: 'USD', delivery_days: 1, allowed: false },
+              ],
+              selected: { service_code: '03', label: 'UPS Ground', amount: 18.45, currency: 'USD', delivery_days: 4 },
+            },
           },
         })
       }
       return jsonResponse({
         success: true,
-        data: { distance: 8.2, shipping: 12.5, delivery_days: 2, distance_source: 'haversine' },
+        data: {
+          distance: 8.2,
+          shipping: 12.5,
+          delivery_days: 1,
+          distance_source: 'osrm',
+          destination: { city: 'São Paulo', state: 'SP', zipcode: '01310-100' },
+          breakdown: { minimum_applied: false },
+        },
+      })
+    }
+
+    if (path === '/api/v1/admin/shipping/headquarters/validate' && method === 'POST') {
+      const address = (body?.address || {}) as Record<string, string>
+      if (body?.country === 'BR') {
+        return jsonResponse({
+          success: true,
+          data: {
+            valid: true,
+            country: 'BR',
+            address: { ...address, city: 'São Paulo', state: 'SP', zipcode: '01310-100', neighborhood: 'Bela Vista' },
+            location: { lat: -23.5652, lng: -46.6514, precision: 'address' },
+            errors: {},
+            warnings: [],
+          },
+        })
+      }
+      return jsonResponse({
+        success: true,
+        data: {
+          valid: false,
+          country: 'US',
+          address,
+          errors: { state: 'O ZIP 33101 é de FL.' },
+          warnings: [],
+        },
+      })
+    }
+
+    if (path === '/api/v1/onboarding/zipcode/lookup' && method === 'POST') {
+      return jsonResponse({
+        success: true,
+        data: { status: 'found', street: 'Avenida Paulista', neighborhood: 'Bela Vista', city: 'São Paulo', state: 'SP' },
       })
     }
 

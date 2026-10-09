@@ -7,7 +7,8 @@ import { MetricCard } from '../components/MetricCard'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, getApiBaseUrl } from '../lib/api'
 import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
-import { formatDate } from '../lib/format'
+import { formatDate, formatStripeStatus } from '../lib/format'
+import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
 
 type SubscriptionDetail = {
@@ -56,16 +57,25 @@ type UpsShipment = {
   updated_at: string | null
 }
 
+const SHIPMENT_STATUS: Record<string, { label: string; badge: string }> = {
+  created: { label: 'Etiqueta criada', badge: 'badge-success' },
+  pending: { label: 'Gerando', badge: 'badge-info' },
+  unknown: { label: 'Verificar na UPS', badge: 'badge-warning' },
+  voided: { label: 'Anulada', badge: 'badge-error' },
+}
+
 export function SubscriptionDetailPage() {
   const { token, hasPermission } = useAuth()
   const { id } = useParams()
   const [data, setData] = useState<SubscriptionDetail | null>(null)
   const [invoices, setInvoices] = useState<InvoiceItem[]>([])
   const [shipments, setShipments] = useState<UpsShipment[]>([])
+  const [customerInvoices, setCustomerInvoices] = useState<CustomerInvoice[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const canReadShipping = hasPermission('shipping.read')
   const canWriteShipping = hasPermission('shipping.write')
+  const canSyncBilling = hasPermission('billing.subscribers.sync')
   const profileInScope = isProfileInScope(data?.customerProfileInScope)
 
   const loadShipments = async () => {
@@ -81,13 +91,26 @@ export function SubscriptionDetailPage() {
     }
   }
 
+  const loadCustomerInvoices = async () => {
+    if (!token || !id) return
+    try {
+      const response = await apiRequest<{ success: boolean; data: { items: CustomerInvoice[] } }>(
+        `/admin/billing/subscriptions/${id}/customer-invoices`,
+        { token },
+      )
+      setCustomerInvoices(response.data?.items || [])
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar invoices')
+    }
+  }
+
   const load = async () => {
     if (!token || !id) return
     try {
       setError('')
       const response = await apiRequest<SubscriptionDetail>(`/admin/billing/subscriptions/${id}`, { token })
       setData(response)
-      await loadShipments()
+      await Promise.all([loadShipments(), loadCustomerInvoices()])
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar assinatura')
     }
@@ -116,6 +139,67 @@ export function SubscriptionDetailPage() {
     const response = await apiRequest<{ url: string }>(`/admin/billing/invoices/${invoiceId}/pdf`, { token })
     if (response.url) {
       window.open(response.url, '_blank', 'noopener,noreferrer')
+    }
+  }
+
+  const issueCustomerInvoice = async (stripeInvoiceId: string) => {
+    if (!token || !id) return
+    try {
+      setError('')
+      await apiRequest(`/admin/billing/subscriptions/${id}/customer-invoices`, {
+        token,
+        method: 'POST',
+        body: { stripe_invoice_id: stripeInvoiceId },
+      })
+      setMessage('Invoice gerada. Use "Enviar ao cliente" para mandar por e-mail.')
+      await loadCustomerInvoices()
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao gerar invoice')
+    }
+  }
+
+  const downloadCustomerInvoice = async (item: CustomerInvoice) => {
+    if (!token) return
+    try {
+      setError('')
+      const response = await fetch(`${getApiBaseUrl()}/admin/billing/customer-invoices/${item.id}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null) as { message?: string } | null
+        throw new Error(errorBody?.message || 'Falha ao baixar invoice')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `${item.invoice_number}.pdf`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao baixar invoice')
+    }
+  }
+
+  const sendCustomerInvoice = async (item: CustomerInvoice) => {
+    if (!token) return
+    try {
+      setError('')
+      const response = await apiRequest<{ success: boolean; data: CustomerInvoice }>(
+        `/admin/billing/customer-invoices/${item.id}/send`,
+        { token, method: 'POST' },
+      )
+      const updated = response.data
+      if (updated) {
+        setCustomerInvoices((current) => current.map((row) => (row.id === updated.id ? updated : row)))
+      }
+      if (response.success) {
+        setMessage(`Invoice ${item.invoice_number} enviada para ${updated?.email_to || item.email_to}.`)
+      } else {
+        setError(`Invoice ${item.invoice_number} não foi enviada: ${describeInvoiceDelivery(updated || item).detail}`)
+      }
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao enviar invoice')
     }
   }
 
@@ -206,20 +290,28 @@ export function SubscriptionDetailPage() {
     },
   }
 
+  const customerInvoiceByStripeId = new Map(customerInvoices.map((item) => [item.stripe_invoice_id, item]))
+
   const activeByInvoice = new Map(
     shipments
       .filter((item) => item.status !== 'voided')
       .map((item) => [item.stripe_invoice_id, item]),
   )
 
+  // Paid invoices still waiting for a label: the shipping team starts here.
+  const awaitingLabel = invoices.filter((item) => item.status === 'paid' && !activeByInvoice.has(item.id))
+
   return (
-    <PageFrame title={data?.stripeSubscriptionId ?? 'Assinatura'} description="Detalhe do registro local. Pausa e cancelamento permanecem na API do cliente.">
+    <PageFrame
+      title={data?.user.email || data?.stripeSubscriptionId || 'Assinatura'}
+      description={data ? `Assinatura ${data.stripeSubscriptionId}${data.planLabel ? ` · ${data.planLabel}` : ''}. Pausa e cancelamento são feitos pelo cliente na loja.` : 'Carregando assinatura…'}
+    >
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
 
       <div className="grid cards-4">
-        <MetricCard label="Status" value={data?.status ?? '—'} />
-        <MetricCard label="Cliente" value={data?.user.email ?? '—'} />
+        <MetricCard label="Status" value={data ? formatStripeStatus(data.status) : '—'} />
+        <MetricCard label="Produto" value={data?.planLabel || '—'} />
         <MetricCard label="Renovação" value={formatDate(data?.currentPeriodEnd)} />
         <MetricCard label="Cancelando" value={data?.cancelAtPeriodEnd ? 'Sim' : 'Não'} />
       </div>
@@ -243,53 +335,8 @@ export function SubscriptionDetailPage() {
         </div>
       </Section>
 
-      <Section title="Faturas">
-        {hasPermission('billing.subscribers.sync') ? (
-          <button className="primary-button" type="button" onClick={() => void syncInvoices()}>Sincronizar faturas</button>
-        ) : null}
-        <div className="table-shell table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Número</th>
-                <th>Status</th>
-                <th>Valor</th>
-                <th>Em</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {invoices.map((item) => {
-                const existing = activeByInvoice.get(item.id)
-                return (
-                  <tr key={item.id}>
-                    <td>{item.number ?? item.id}</td>
-                    <td>{item.status}</td>
-                    <td>{item.amountPaid} {item.currency}</td>
-                    <td>{formatDate(item.createdAt)}</td>
-                    <td>
-                      <div className="inline-actions">
-                        <button className="ghost-button" type="button" onClick={() => void openPdf(item.id)}>PDF</button>
-                        {canWriteShipping && !existing ? (
-                          <button className="ghost-button" type="button" onClick={() => void createShipment(item.id)}>
-                            Gerar etiqueta UPS
-                          </button>
-                        ) : null}
-                        {existing ? (
-                          <span className="muted">UPS {existing.tracking_number || existing.status}</span>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
       {canReadShipping ? (
-        <Section title="Envio UPS" description="Etiqueta por fatura paga. Valor cotado no checkout comparado ao custo UPS na etiqueta.">
+        <Section title="Envio UPS" description="Uma etiqueta por fatura paga. Compare o frete cobrado no checkout com o custo da UPS.">
           <div className="table-shell table-scroll">
             <table>
               <thead>
@@ -305,15 +352,29 @@ export function SubscriptionDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {shipments.length === 0 ? (
+                {awaitingLabel.map((item) => (
+                  <tr key={`awaiting-${item.id}`}>
+                    <td>{item.number ?? item.id}</td>
+                    <td><span className="badge-warning">Sem etiqueta</span></td>
+                    <td colSpan={5} className="muted">Fatura paga em {formatDate(item.createdAt)}.</td>
+                    <td>
+                      {canWriteShipping ? (
+                        <button className="primary-button" type="button" onClick={() => void createShipment(item.id)}>
+                          Gerar etiqueta UPS
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+                {shipments.length === 0 && awaitingLabel.length === 0 ? (
                   <tr>
-                    <td colSpan={8}>Nenhuma etiqueta ainda.</td>
+                    <td colSpan={8}>Nenhuma etiqueta ainda. Faturas pagas aparecem aqui para gerar a etiqueta.</td>
                   </tr>
                 ) : (
                   shipments.map((item) => (
                     <tr key={item.id}>
                       <td>{item.stripe_invoice_id}</td>
-                      <td>{item.status}</td>
+                      <td><span className={SHIPMENT_STATUS[item.status]?.badge ?? 'badge-info'}>{SHIPMENT_STATUS[item.status]?.label ?? item.status}</span></td>
                       <td>{item.tracking_number || '—'}</td>
                       <td>{item.service_code || '—'}</td>
                       <td>{item.quoted_shipping_cost != null ? item.quoted_shipping_cost : '—'}</td>
@@ -346,6 +407,117 @@ export function SubscriptionDetailPage() {
           </div>
         </Section>
       ) : null}
+
+      <Section
+        title="Invoices Eden Bowls"
+        description="PDF no padrão Eden Bowls, gerado quando a Stripe confirma o pagamento e enviado ao cliente por e-mail com o PDF anexado."
+      >
+        <div className="table-shell table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Número</th>
+                <th>Emissão</th>
+                <th>Total</th>
+                <th>Pagamento</th>
+                <th>Envio ao cliente</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {customerInvoices.length === 0 ? (
+                <tr>
+                  <td colSpan={6}>Nenhuma invoice gerada ainda.</td>
+                </tr>
+              ) : (
+                customerInvoices.map((item) => {
+                  const delivery = describeInvoiceDelivery(item)
+                  return (
+                    <tr key={item.id}>
+                      <td>
+                        {item.invoice_number}
+                        <div className="muted">{item.stripe_invoice_id}</div>
+                      </td>
+                      <td>{formatDate(item.issued_at)}</td>
+                      <td>{formatMinorAmount(item.total_minor, item.currency)}</td>
+                      <td>{formatInvoiceStatus(item.invoice_status)}</td>
+                      <td>
+                        <span className={`badge-${delivery.tone}`}>{delivery.label}</span>
+                        <div className="muted">{delivery.detail}</div>
+                      </td>
+                      <td>
+                        <div className="inline-actions">
+                          <button className="ghost-button" type="button" onClick={() => void downloadCustomerInvoice(item)}>
+                            Baixar PDF
+                          </button>
+                          {canSyncBilling ? (
+                            <button className="ghost-button" type="button" onClick={() => void sendCustomerInvoice(item)}>
+                              {item.email_status === 'sent' ? 'Reenviar' : 'Enviar ao cliente'}
+                            </button>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+
+      <Section title="Faturas Stripe">
+        {canSyncBilling ? (
+          <button className="primary-button" type="button" onClick={() => void syncInvoices()}>Sincronizar faturas</button>
+        ) : null}
+        <div className="table-shell table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Número</th>
+                <th>Status</th>
+                <th>Valor</th>
+                <th>Em</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoices.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>Nenhuma fatura carregada. {canSyncBilling ? 'Use "Sincronizar faturas" para buscar na Stripe.' : ''}</td>
+                </tr>
+              ) : null}
+              {invoices.map((item) => {
+                const existing = activeByInvoice.get(item.id)
+                const customerInvoice = customerInvoiceByStripeId.get(item.id)
+                return (
+                  <tr key={item.id}>
+                    <td>{item.number ?? item.id}</td>
+                    <td>{formatInvoiceStatus(item.status)}</td>
+                    <td>{item.amountPaid} {item.currency?.toUpperCase()}</td>
+                    <td>{formatDate(item.createdAt)}</td>
+                    <td>
+                      <div className="inline-actions">
+                        <button className="ghost-button" type="button" onClick={() => void openPdf(item.id)}>PDF Stripe</button>
+                        {customerInvoice ? (
+                          <span className="muted">{customerInvoice.invoice_number}</span>
+                        ) : canSyncBilling && item.status === 'paid' ? (
+                          <button className="ghost-button" type="button" onClick={() => void issueCustomerInvoice(item.id)}>
+                            Gerar invoice
+                          </button>
+                        ) : null}
+                        {existing ? (
+                          <span className="muted">UPS {existing.tracking_number || existing.status}</span>
+                        ) : null}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Section>
 
       {data ? (
         <LedgerSnapshotSections

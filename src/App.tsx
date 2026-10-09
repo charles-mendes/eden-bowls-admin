@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/react'
 import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom'
 import { AdminLayout } from './components/AdminLayout'
 import { AuthProvider } from './contexts/AuthContext'
@@ -9,6 +10,7 @@ import { ProductDetailPage } from './pages/ProductDetailPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { OnboardingSessionPage } from './pages/OnboardingSessionPage'
 import { ProductionQueuePage } from './pages/ProductionQueuePage'
+import { DeliveryCalendarPage } from './pages/DeliveryCalendarPage'
 import { BillingPage } from './pages/BillingPage'
 import { SubscriptionDetailPage } from './pages/SubscriptionDetailPage'
 import { CouponsPage } from './pages/CouponsPage'
@@ -39,10 +41,12 @@ function ProtectedShell() {
   )
 }
 
+const SentryRoutes = Sentry.withSentryReactRouterV7Routing(Routes)
+
 function App() {
   return (
     <AuthProvider>
-      <Routes>
+      <SentryRoutes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedShell />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
@@ -53,6 +57,7 @@ function App() {
           <Route path="/onboarding/sessions" element={<OnboardingPage />} />
           <Route path="/onboarding/sessions/:id" element={<OnboardingSessionPage />} />
           <Route path="/operations/production" element={<ProductionQueuePage />} />
+          <Route path="/operations/delivery-calendar" element={<DeliveryCalendarPage />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/billing/subscriptions/:id" element={<SubscriptionDetailPage />} />
           <Route path="/billing/coupons" element={<CouponsPage />} />
@@ -71,7 +76,7 @@ function App() {
           <Route path="/orders/:orderId" element={<LegacyCheckoutRedirect />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
-      </Routes>
+      </SentryRoutes>
     </AuthProvider>
   )
 }

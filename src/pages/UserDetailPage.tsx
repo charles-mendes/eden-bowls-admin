@@ -242,7 +242,7 @@ export function UserDetailPage() {
         </form>
       </Section>
 
-      <Section title="Privacidade" description="Consentimentos atuais, marketing e atalho para a fila DSAR. Sem mutação nesta tela.">
+      <Section title="Privacidade" description="Consentimentos do cliente e pedidos sobre os dados dele. Para tratar um pedido, abra Privacidade.">
         <p>Marketing: {privacy?.marketingOptIn ? 'opt-in' : 'opt-out'}</p>
         <p className="muted">
           Cookies: analytics {privacy?.cookiePreferences?.analytics || '—'} · ads {privacy?.cookiePreferences?.ads || '—'}

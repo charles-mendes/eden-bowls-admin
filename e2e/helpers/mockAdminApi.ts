@@ -38,6 +38,7 @@ const WRITE_PERMISSIONS = [
   'users.status.write',
   'users.roles.write',
   'users.access.write',
+  'system.health.read',
   'feedbacks.read',
   'feedbacks.write',
   'production.read',
@@ -58,7 +59,7 @@ const operatorWriteProfile: Profile = {
   roles: ['operator'],
   markets: ['BR'],
   permissions: [
-    ...WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write'),
+    ...WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write' && permission !== 'system.health.read'),
     'market.br',
   ],
 }
@@ -177,6 +178,156 @@ const userDetail = {
   },
 }
 
+type CalendarRow = {
+  id: number
+  market: 'BR' | 'US'
+  closedOn: string
+  label: string
+  origin: string
+  type: 'national' | 'regional' | 'carrier' | 'adhoc'
+  active: boolean
+  closesPreparation: boolean
+  closesPickup: boolean
+  closesDelivery: boolean
+}
+
+type CalendarState = {
+  rows: CalendarRow[]
+  history: Array<Record<string, unknown>>
+  syncs: Array<Record<string, unknown>>
+  nextId: number
+}
+
+function calendarState(): CalendarState {
+  const national = (id: number, closedOn: string, label: string, origin = 'fixed'): CalendarRow => ({
+    id, market: 'BR', closedOn, label, origin, type: 'national', active: true,
+    closesPreparation: true, closesPickup: true, closesDelivery: true,
+  })
+  return {
+    rows: [
+      national(1, '2027-01-01', 'Confraternização Universal'),
+      national(2, '2027-02-08', 'Carnaval (segunda)', 'movable'),
+      national(3, '2027-12-25', 'Natal'),
+    ],
+    history: [],
+    syncs: [
+      { id: 11, stripeSubscriptionId: 'sub_late', market: 'BR', auditEventId: 1, expectedTrialEnd: '2027-02-08T03:00:00.000Z', targetTrialEnd: '2027-02-10T03:00:00.000Z', foundTrialEnd: '2027-02-15T03:00:00.000Z', status: 'conflict', attempts: 1, lastError: null, createdAt: '2027-01-20T12:00:00.000Z' },
+      { id: 12, stripeSubscriptionId: 'sub_down', market: 'BR', auditEventId: 1, expectedTrialEnd: '2027-02-08T03:00:00.000Z', targetTrialEnd: '2027-02-10T03:00:00.000Z', foundTrialEnd: null, status: 'failed', attempts: 8, lastError: 'Stripe timeout', createdAt: '2027-01-20T12:00:00.000Z' },
+    ],
+    nextId: 100,
+  }
+}
+
+// Previews by date: 2027-03-29 moves two deliveries, 2027-03-30 hits a delivery in production.
+function calendarAffected(closedOn: string) {
+  if (closedOn === '2027-03-29') {
+    return [
+      { stripeSubscriptionId: 'sub_ana', ledgerId: 42, userId: 7, deliveryId: 'current', preparationDay: '2027-03-29', deliveryDate: '2027-03-29', newPreparationDay: '2027-03-31', newDeliveryDate: '2027-03-31', locked: false, lockReason: null, move: 'stripe_sync', expectedTrialEnd: '2027-03-29T03:00:00.000Z', targetTrialEnd: '2027-03-31T03:00:00.000Z' },
+      { stripeSubscriptionId: 'sub_bia', ledgerId: 43, userId: 8, deliveryId: 'current', preparationDay: '2027-03-29', deliveryDate: '2027-03-29', newPreparationDay: '2027-03-31', newDeliveryDate: '2027-03-31', locked: false, lockReason: null, move: 'projection_only' },
+    ]
+  }
+  if (closedOn === '2027-03-30') {
+    return [
+      { stripeSubscriptionId: 'sub_cris', ledgerId: 44, userId: 9, deliveryId: 'current', preparationDay: '2027-03-30', deliveryDate: '2027-03-30', newPreparationDay: '2027-03-31', newDeliveryDate: '2027-03-31', locked: true, lockReason: 'in_production', move: 'projection_only' },
+    ]
+  }
+  return []
+}
+
+async function handleDeliveryCalendar(route: Route, method: string, path: string, url: URL, body: unknown, state: CalendarState, profile: Profile) {
+  const base = '/api/v1/admin/delivery-calendar'
+  if (!path.startsWith(base)) return false
+  const input = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>
+  const market = String(url.searchParams.get('market') || input.market || 'BR') as 'BR' | 'US'
+  const year = Number(url.searchParams.get('year') || 2027)
+  const audit = (action: string, metadata: Record<string, unknown>) => {
+    state.history.unshift({ id: state.history.length + 1, actorUserId: 1, actorEmail: profile.email, action, createdAt: '2027-01-20T12:00:00.000Z', metadata: { market, ...metadata } })
+  }
+  const values = (row: CalendarRow | null) => row ? { active: row.active, closesPreparation: row.closesPreparation, closesPickup: row.closesPickup, closesDelivery: row.closesDelivery } : null
+
+  if (path === base && method === 'GET') {
+    await fulfillJson(route, { market, year, items: state.rows.filter((row) => row.market === market && row.closedOn.startsWith(`${year}-`)) })
+    return true
+  }
+  if (path === `${base}/history` && method === 'GET') {
+    await fulfillJson(route, { market, year, items: state.history.filter((item) => (item.metadata as { market: string }).market === market) })
+    return true
+  }
+  if (path === `${base}/syncs` && method === 'GET') {
+    const mine = state.syncs.filter((item) => item.market === market)
+    await fulfillJson(route, { market, delayMinutes: 15, delayed: [], problems: mine.filter((item) => item.status === 'failed' || item.status === 'conflict') })
+    return true
+  }
+  if (path === `${base}/alerts` && method === 'GET') {
+    await fulfillJson(route, { market, upsCalendar: market === 'US' ? { coveredThrough: '2027-12-31', missingYear: 2028, daysLeft: 80, warn: true } : null })
+    return true
+  }
+  if (path === `${base}/preview` && method === 'POST') {
+    const existing = input.id != null ? state.rows.find((row) => row.id === Number(input.id)) : null
+    const closedOn = String(existing ? existing.closedOn : input.closedOn)
+    const turnsOn = !existing || (input.active === true && !existing.active)
+    await fulfillJson(route, { market, change: { ...(existing || {}), ...input }, affected: turnsOn ? calendarAffected(closedOn) : [], shortNotice: closedOn === '2027-01-22' })
+    return true
+  }
+  if (path === base && method === 'POST') {
+    const affected = calendarAffected(String(input.closedOn))
+    const locked = affected.filter((item) => item.locked)
+    if (locked.length > 0) {
+      await fulfillJson(route, { message: 'Há entregas travadas nessa data. Resolva-as antes de fechar o dia.', details: { code: 'delivery_locked', subscriptions: locked.map((item) => ({ stripeSubscriptionId: item.stripeSubscriptionId, deliveryId: item.deliveryId, lockReason: item.lockReason })) } }, 409)
+      return true
+    }
+    const row: CalendarRow = {
+      id: state.nextId++, market, closedOn: String(input.closedOn), label: String(input.label), origin: input.type === 'adhoc' ? 'one_off' : String(input.type),
+      type: input.type as CalendarRow['type'], active: true,
+      closesPreparation: Boolean(input.closesPreparation), closesPickup: Boolean(input.closesPickup), closesDelivery: Boolean(input.closesDelivery),
+    }
+    state.rows.push(row)
+    audit('delivery_calendar.create', {
+      closedOn: row.closedOn, type: row.type, label: row.label, before: null, after: values(row),
+      moved: affected.map((item) => ({ stripeSubscriptionId: item.stripeSubscriptionId, deliveryId: item.deliveryId, previousPreparationDay: item.preparationDay, newPreparationDay: item.newPreparationDay, move: item.move })),
+    })
+    await fulfillJson(route, { market, row, affected, syncIds: [], auditEventId: state.history.length })
+    return true
+  }
+  const idMatch = path.match(/^\/api\/v1\/admin\/delivery-calendar\/(\d+)$/)
+  if (idMatch && (method === 'PATCH' || method === 'DELETE')) {
+    const row = state.rows.find((item) => item.id === Number(idMatch[1]))
+    if (!row) {
+      await fulfillJson(route, { message: 'Linha não encontrada.', details: { code: 'not_found' } }, 404)
+      return true
+    }
+    const before = values(row)
+    if (method === 'DELETE') {
+      if (row.type === 'national') {
+        await fulfillJson(route, { message: 'Feriado nacional não pode ser removido. Desative-o.', details: { code: 'national_not_removable' } }, 422)
+        return true
+      }
+      state.rows = state.rows.filter((item) => item.id !== row.id)
+      audit('delivery_calendar.remove', { closedOn: row.closedOn, type: row.type, label: row.label, before, after: null, moved: [] })
+      await fulfillJson(route, { market, removed: row })
+      return true
+    }
+    Object.assign(row, Object.fromEntries(Object.entries(input).filter(([key]) => ['active', 'closesPreparation', 'closesPickup', 'closesDelivery'].includes(key))))
+    const action = before && before.active !== row.active ? (row.active ? 'delivery_calendar.activate' : 'delivery_calendar.deactivate') : 'delivery_calendar.update'
+    audit(action, { closedOn: row.closedOn, type: row.type, label: row.label, before, after: values(row), moved: [] })
+    await fulfillJson(route, { market, row, affected: [], syncIds: [], auditEventId: state.history.length })
+    return true
+  }
+  const resend = path.match(/^\/api\/v1\/admin\/delivery-calendar\/syncs\/(\d+)\/resend$/)
+  if (resend && method === 'POST') {
+    const sync = state.syncs.find((item) => item.id === Number(resend[1]))
+    if (!sync) {
+      await fulfillJson(route, { message: 'Sincronização não encontrada.', details: { code: 'not_found' } }, 404)
+      return true
+    }
+    audit('delivery_calendar.sync_resend', { closedOn: '2027-02-08', syncId: sync.id, stripeSubscriptionId: sync.stripeSubscriptionId, previousStatus: sync.status, expectedTrialEnd: sync.expectedTrialEnd, foundTrialEnd: sync.foundTrialEnd, targetTrialEnd: sync.targetTrialEnd })
+    sync.status = 'pending'
+    await fulfillJson(route, { market, syncId: sync.id, status: 'pending', auditEventId: state.history.length })
+    return true
+  }
+  return false
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -189,6 +340,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
   const profile = options.profile ?? operatorProfile
   const tokenStatus = options.tokenStatus ?? 200
   const captured: CapturedAdminRequest[] = []
+  const calendar = calendarState()
   const catalog = {
     items: [{
       id: 'prod-1',
@@ -229,6 +381,10 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     }
 
     captured.push({ method, path, search: url.search, authorization, body })
+
+    if (await handleDeliveryCalendar(route, method, path, url, body, calendar, profile)) {
+      return
+    }
 
     if (path === '/api/v1/auth/token' && method === 'POST') {
       if (tokenStatus !== 200) {
@@ -429,7 +585,23 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
 
     if (path === '/api/v1/admin/markets/conflicts' && method === 'GET') {
       await fulfillJson(route, {
+        total: 1,
+        page: 1,
+        perPage: 20,
+        totalPages: 1,
         items: [{ userId: 'u-ana', email: 'ana@edenbowls.com', profileMarket: 'BR', stripeAccount: 'us' }],
+      })
+      return
+    }
+
+    if (path === '/api/v1/admin/billing/webhooks/health' && method === 'GET') {
+      await fulfillJson(route, {
+        generatedAt: '2026-10-08T12:00:00.000Z',
+        staleAfterHours: 72,
+        accounts: [
+          { account: 'br', status: 'attention', lastEventAt: '2026-10-08T09:00:00.000Z', lastEventType: 'invoice.payment_failed', failedLast24h: 2, pendingOverdue: 0 },
+          { account: 'us', status: 'ok', lastEventAt: '2026-10-08T11:30:00.000Z', lastEventType: 'invoice.paid', failedLast24h: 0, pendingOverdue: 0 },
+        ],
       })
       return
     }
@@ -440,7 +612,30 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     }
 
     if (path === '/api/v1/admin/catalog/sync/status') {
-      await fulfillJson(route, { syncJobId: 'job-1', status: 'idle', summary: { scope: 'catalog' } })
+      const brRun = { syncJobId: 'sync_12', status: 'completed', scope: 'market', market: 'BR', currency: 'BRL', summary: { created: 1, updated: 0, skipped: [] }, error: null, createdAt: '2026-10-08T10:00:00.000Z', updatedAt: '2026-10-08T10:01:00.000Z' }
+      await fulfillJson(route, { ...brRun, byMarket: { BR: brRun } })
+      return
+    }
+
+    if (path === '/api/v1/admin/today' && method === 'GET') {
+      await fulfillJson(route, {
+        success: true,
+        data: {
+          generatedAt: '2026-10-07T12:00:00.000Z',
+          timezone: 'America/Sao_Paulo',
+          today: '2026-10-07',
+          totals: { overdue: 0, today: 1, tomorrow: 0 },
+          byMarket: { BR: { overdue: 0, today: 1, tomorrow: 0 }, US: { overdue: 0, today: 0, tomorrow: 0 } },
+          truncated: false,
+          total: 1,
+          items: [{
+            id: 1, market: 'BR', dueBucket: 'today', dueLabel: 'Hoje', displayName: 'Ana Ledger', email: 'ana@edenbowls.com',
+            city: 'São Paulo', flavorMix: 'beef × 2', packCount: 2, packSizeLabel: '500 g',
+            productionStatus: 'to_prepare', paymentState: 'paid', note: null, upsLabel: null,
+          }],
+          closedDays: [],
+        },
+      })
       return
     }
 
@@ -573,6 +768,36 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         planSelection: {},
         shipping: {},
         address: {},
+      })
+      return
+    }
+
+    if (path === '/api/v1/admin/billing/subscriptions/sub-row-1/customer-invoices' && method === 'GET') {
+      await fulfillJson(route, {
+        success: true,
+        data: {
+          items: [{
+            id: 12,
+            invoice_number: 'EB-2026-000418',
+            stripe_invoice_id: 'in_test_0',
+            stripe_account: 'us',
+            locale: 'en-US',
+            currency: 'usd',
+            total_minor: 14450,
+            amount_paid_minor: 14450,
+            invoice_status: 'paid',
+            billing_reason: 'subscription_cycle',
+            issued_at: '2026-09-01T15:00:00.000Z',
+            pdf_available: true,
+            pdf_generated_at: '2026-09-01T15:00:05.000Z',
+            email_to: 'ana@edenbowls.com',
+            email_status: 'sent',
+            email_sent_at: '2026-09-01T15:00:06.000Z',
+            email_attempts: 1,
+            email_last_error: null,
+            email_next_attempt_at: null,
+          }],
+        },
       })
       return
     }

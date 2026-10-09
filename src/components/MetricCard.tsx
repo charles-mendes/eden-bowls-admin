@@ -10,7 +10,7 @@ export function MetricCard({
   return (
     <article className="stat-card">
       <span className="eyebrow">{label}</span>
-      <strong className="stat-card-value">{value}</strong>
+      <strong className={typeof value === 'string' && value.length > 12 ? 'stat-card-value stat-card-text' : 'stat-card-value'}>{value}</strong>
       {hint ? <span className="muted">{hint}</span> : null}
     </article>
   )
