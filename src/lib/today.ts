@@ -1,3 +1,5 @@
+import { productionQueueHref } from './productionQueue'
+
 export type Bucket = 'overdue' | 'today' | 'tomorrow'
 export type Counts = Record<Bucket, number>
 
@@ -43,7 +45,7 @@ export type Tone = 'error' | 'warning' | 'info' | 'success'
 // What the team does next with one order, in the order the work happens.
 export function nextStep(item: TodayItem): { text: string; tone: Tone; to: string } {
   const subscription = `/billing/subscriptions/${item.id}`
-  const production = '/operations/production'
+  const production = productionQueueHref({ busca: item.email, mercado: item.market === 'US' ? 'us' : 'br' })
   if (item.paymentState === 'past_due') return { text: 'Pagamento recusado: falar com o cliente', tone: 'error', to: subscription }
   if (item.paymentState === 'awaiting_payment') return { text: 'Aguardando a cobrança', tone: 'info', to: subscription }
   if (item.productionStatus === 'blocked') return { text: 'Resolver o bloqueio', tone: 'error', to: production }

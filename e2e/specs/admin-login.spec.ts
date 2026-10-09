@@ -29,22 +29,14 @@ test.describe('Admin login', () => {
     await expect.poll(() => page.evaluate(() => localStorage.getItem('eden-bowls-admin-token'))).toBe('e2e-access-token')
   })
 
-  test('loads dashboard catalog health for the session market', async ({ page }) => {
+  test('an operator sees the day without the system health panel', async ({ page }) => {
     const { captured } = await openAuthed(page, '/dashboard', e2eProfiles.operator)
 
     await expect(page.getByRole('heading', { name: 'Hoje', exact: true })).toBeVisible()
     await expect(page.getByText('Ana Ledger')).toBeVisible()
-    await page.getByText('Saúde do sistema').click()
-    await expect(page.getByText('Completo')).toBeVisible()
-    await expect(page.getByText(/As 10 variações do catálogo BR já têm um Price ID em BRL/)).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Conflitos de mercado' })).toHaveCount(0)
-    await expect(page.getByRole('combobox', { name: 'Mercado' })).toHaveCount(0)
-    await expect.poll(() => captured.some((item) => (
-      item.method === 'GET'
-      && item.path === '/api/v1/admin/catalog/sync/health'
-      && item.search.includes('market=BR')
-      && item.search.includes('currency=BRL')
-    ))).toBe(true)
+    await expect(page.getByText('Saúde do sistema')).toHaveCount(0)
+    await expect(page.getByRole('group', { name: 'Mercado' })).toHaveCount(0)
+    await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/catalog/sync/health')).toBe(false)
     await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/markets/conflicts')).toBe(false)
   })
 
@@ -53,7 +45,7 @@ test.describe('Admin login', () => {
 
     await page.getByText('Saúde do sistema').click()
     await expect(page.getByRole('heading', { name: 'Conflitos de mercado' })).toBeVisible()
-    await expect(page.locator('.today-health').getByText('ana@edenbowls.com')).toBeVisible()
+    await expect(page.locator('.day-health').getByText('ana@edenbowls.com')).toBeVisible()
     await expect.poll(() => captured.some((item) => (
       item.method === 'GET'
       && item.path === '/api/v1/admin/markets/conflicts'

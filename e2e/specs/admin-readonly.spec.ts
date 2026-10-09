@@ -23,14 +23,14 @@ test.describe('Admin readonly', () => {
   test('opens production queue without status-advance controls', async ({ page }) => {
     await openAuthed(page, '/operations/production', e2eProfiles.readonly)
 
-    await expect(page.getByRole('heading', { name: 'Produção' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Fila de produção' })).toBeVisible()
     await expect(page.getByText('Ana Ledger')).toBeVisible()
-    await expect(page.getByLabel('Conta')).toHaveValue('br')
-    await expect(page.getByLabel('Conta')).toBeDisabled()
-    await expect(page.getByRole('option', { name: 'US' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Em produção' })).toHaveCount(0)
-    await expect(page.getByRole('button', { name: 'Bloquear' })).toHaveCount(0)
-    await expect(page.getByRole('link', { name: 'Assinante', exact: true })).toBeVisible()
+    await expect(page.getByRole('group', { name: 'Mercado' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Iniciar preparo' })).toHaveCount(0)
+    await page.getByRole('button', { name: 'Mais opções para Ana Ledger' }).click()
+    const menu = page.getByRole('menu')
+    await expect(menu.getByRole('menuitem', { name: 'Bloquear' })).toHaveCount(0)
+    await expect(menu.getByRole('menuitem', { name: 'Assinatura' })).toBeVisible()
   })
 
   test('opens the delivery calendar without write controls', async ({ page }) => {

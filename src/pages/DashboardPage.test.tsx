@@ -2,6 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DashboardPage } from './DashboardPage'
+import { SystemHealth } from '../components/SystemHealth'
 import { nextStep } from '../lib/today'
 import { adminUser, operatorUsUser, operatorUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
@@ -16,7 +17,7 @@ describe('DashboardPage', () => {
   it('loads onboarding metrics and catalog sync health with Bearer', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorUser)
-    renderAuthedPage(<DashboardPage />, '/dashboard')
+    renderAuthedPage(<SystemHealth />, '/dashboard')
 
     await waitFor(() => {
       expect(screen.getByText('10 / 10')).toBeInTheDocument()
@@ -41,7 +42,7 @@ describe('DashboardPage', () => {
   it('requests US catalog health for a US operator', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorUsUser)
-    renderAuthedPage(<DashboardPage />, '/dashboard')
+    renderAuthedPage(<SystemHealth />, '/dashboard')
 
     await waitFor(() => {
       expect(screen.getByText('10 / 10')).toBeInTheDocument()
@@ -88,7 +89,7 @@ describe('DashboardPage', () => {
     expect(screen.getByText('10 / 10')).toBeInTheDocument()
   })
 
-  it('opens on today: counts, blockers, closed days and the next step of each order', async () => {
+  it('opens on today: numbers, blockers worst first, closed days and the orders that need action', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(adminUser)
     renderAuthedPage(<DashboardPage />, '/dashboard')
@@ -98,23 +99,58 @@ describe('DashboardPage', () => {
       expect(screen.getByText(/Quarta-feira, 7 de outubro/)).toBeInTheDocument()
     })
 
-    const forToday = screen.getByRole('link', { name: /Para hoje/ })
+    const forToday = screen.getByRole('link', { name: /^Hoje/ })
     expect(within(forToday).getByText('2')).toBeInTheDocument()
     expect(within(forToday).getByText('Brasil 1 · EUA 1')).toBeInTheDocument()
-    expect(within(screen.getByRole('link', { name: /Sem etiqueta UPS/ })).getByText('2')).toBeInTheDocument()
+    expect(forToday).toHaveAttribute('href', '/operations/production?prazo=hoje')
+    expect(screen.getByRole('link', { name: /^Atrasados/ })).toHaveAttribute('href', '/operations/production?prazo=atrasados')
+    expect(screen.getByRole('link', { name: /^Amanhã/ })).toHaveAttribute('href', '/operations/production?prazo=amanha')
+    const ups = screen.getByRole('link', { name: /^Sem etiqueta UPS/ })
+    // Only ready orders wait for a label, the same rule the blocker uses.
+    expect(within(ups).getByText('1')).toBeInTheDocument()
+    expect(ups).toHaveAttribute('href', '/operations/production?status=ready&mercado=us')
 
-    expect(screen.getByText(/Amanhã \(Brasil\): Folga da cozinha · sem preparo, sem entrega/)).toBeInTheDocument()
-    expect(screen.getByText('pedido(s) dos EUA pronto(s) sem etiqueta UPS')).toBeInTheDocument()
-    expect(screen.getByText('pagamento(s) recusado(s) travando a produção')).toBeInTheDocument()
-    expect(screen.getByText('pedido(s) pago(s) para hoje com preparo não iniciado')).toBeInTheDocument()
+    expect(screen.getByText(/Amanhã \(Brasil\): Folga da cozinha/)).toBeInTheDocument()
 
-    expect(screen.getByRole('link', { name: /Gerar etiqueta UPS/ })).toHaveAttribute('href', '/billing/subscriptions/31')
-    expect(screen.getByRole('link', { name: /Iniciar o preparo/ })).toHaveAttribute('href', '/operations/production')
+    const pending = within(screen.getByRole('region', { name: 'Pendências' })).getAllByRole('listitem')
+    expect(pending.map((item) => within(item).getByText(/^(Alta|Média|Baixa)$/).textContent)).toEqual(['Alta', 'Média', 'Baixa'])
+    expect(within(pending[0]).getByText('1 pagamento recusado')).toBeInTheDocument()
+    expect(within(pending[0]).getByText('Davi Rocha: falar com o cliente antes de preparar.')).toBeInTheDocument()
+    expect(within(pending[0]).getByRole('link', { name: 'Abrir pedido' })).toHaveAttribute('href', '/billing/subscriptions/34')
+    expect(within(pending[1]).getByText('1 pedido de hoje com preparo não iniciado')).toBeInTheDocument()
+    expect(within(pending[1]).getByRole('link', { name: 'Ver na fila' })).toHaveAttribute('href', '/operations/production?prazo=hoje&status=to_prepare')
+    expect(within(pending[2]).getByText('1 pedido pronto sem etiqueta UPS')).toBeInTheDocument()
+
+    const needsYou = within(screen.getByRole('region', { name: 'Precisa de você' }))
+    expect(needsYou.getAllByRole('listitem')).toHaveLength(4)
+    expect(needsYou.getByRole('link', { name: 'Abrir pedido: Ana Costa' })).toHaveAttribute('href', '/billing/subscriptions/31')
+    expect(needsYou.getByRole('link', { name: 'Abrir na fila: Bruno Lima' }).getAttribute('href')).toMatch(/^\/operations\/production\?busca=.+&mercado=br$/)
     expect(screen.getByText('Saúde do sistema')).toBeInTheDocument()
 
     const today = calls.find((call) => call.path === '/api/v1/admin/today')
     expect(today?.search).toContain('timezone=')
     expect(today?.authorization).toBe('Bearer access-token')
+  })
+
+  it('keeps system health for admins only', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUser)
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    await screen.findByText('Bruno Lima')
+    expect(screen.queryByText('Saúde do sistema')).not.toBeInTheDocument()
+  })
+
+  it('keeps the picked market in the links to the queue', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(adminUser)
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    await user.click(await screen.findByRole('button', { name: 'Brasil' }))
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /^Atrasados/ })).toHaveAttribute('href', '/operations/production?prazo=atrasados&mercado=br')
+    })
   })
 
   it('filters the day by market', async () => {
@@ -136,7 +172,7 @@ describe('DashboardPage', () => {
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
     await screen.findByText('Bruno Lima')
-    expect(screen.queryByRole('link', { name: /Sem etiqueta UPS/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^Sem etiqueta UPS/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
   })
 
