@@ -122,7 +122,7 @@ export function DashboardPage() {
 
       {data?.closedDays.map((day) => (
         <div key={`${day.market}-${day.date}-${day.label}`} className="warning today-closed">
-          {closedDayText(day, data.today)} · <Link to="/operations/delivery-calendar">Ver calendário</Link>
+          {closedDayText(day, data.today)} · <Link to="/operations/delivery-calendar">Ver feriados e fechamentos</Link>
         </div>
       ))}
 

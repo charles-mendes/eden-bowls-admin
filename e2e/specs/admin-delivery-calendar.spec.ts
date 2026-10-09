@@ -3,7 +3,7 @@ import { e2eProfiles, openAuthed } from '../helpers/mockAdminApi'
 
 async function openYear(page: Page, profile = e2eProfiles.operatorWrite) {
   const mocks = await openAuthed(page, '/operations/delivery-calendar', profile)
-  await expect(page.getByRole('heading', { name: 'Calendário de entregas' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Feriados e fechamentos' })).toBeVisible()
   await page.getByLabel('Ano').selectOption('2027')
   await expect(page.getByRole('cell', { name: 'Natal', exact: true })).toBeVisible()
   return mocks

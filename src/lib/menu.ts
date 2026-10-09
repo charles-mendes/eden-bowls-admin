@@ -15,7 +15,7 @@ export type MenuItem = {
 export const adminMenu: MenuItem[] = [
   { label: 'Hoje', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Visão geral' },
   { label: 'Produção', href: '/operations/production', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
-  { label: 'Calendário de entregas', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
+  { label: 'Feriados e fechamentos', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Frete', href: '/config/shipping', roles: ['admin', 'operator'], group: 'Operação' },
   { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
   { label: 'Assinantes', href: '/billing', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },

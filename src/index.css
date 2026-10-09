@@ -857,13 +857,26 @@ pre {
 }
 
 .dialog-panel {
+  display: flex;
+  flex-direction: column;
   width: min(520px, 100%);
-  max-height: calc(100vh - 48px);
-  overflow: auto;
+  max-height: calc(100dvh - 48px);
+  overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow);
+  box-shadow: 0 12px 32px rgba(24, 24, 27, 0.16), 0 2px 6px rgba(24, 24, 27, 0.08);
+}
+
+.dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.dialog-header,
+.dialog-footer {
+  flex: 0 0 auto;
 }
 
 .dialog-header,
@@ -891,6 +904,187 @@ pre {
   justify-content: flex-end;
   gap: var(--space-2);
   border-top: 1px solid var(--border);
+}
+
+.dialog-footer {
+  background: var(--surface-muted);
+}
+
+@media (max-width: 560px) {
+  .dialog-overlay {
+    place-items: end stretch;
+    padding: 0;
+  }
+
+  .dialog-panel {
+    width: 100%;
+    max-height: calc(100dvh - 32px);
+    border-bottom: 0;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+  }
+
+  .dialog-footer {
+    flex-direction: column-reverse;
+    padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+  }
+
+  .dialog-footer > button {
+    width: 100%;
+    min-height: 40px;
+  }
+}
+
+/* Closure form (Feriados e fechamentos) */
+.closure-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.closure-context {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.closure-context strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.closure-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.closure-field {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.closure-field input,
+.closure-field select {
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-strong);
+  font-weight: 400;
+  transition: border-color var(--duration), box-shadow var(--duration);
+}
+
+.closure-field input:hover,
+.closure-field select:hover {
+  border-color: #a1a1aa;
+}
+
+.closure-field input:focus-visible,
+.closure-field select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.closure-flags {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.closure-flags legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.closure-flag-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.closure-flag {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color var(--duration), background var(--duration);
+}
+
+.closure-flag:hover {
+  border-color: #a1a1aa;
+}
+
+.closure-flag.is-checked {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.closure-flag:focus-within {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.closure-flag input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.closure-flag input:focus-visible {
+  outline: none;
+}
+
+.closure-flag-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.closure-flag-text strong {
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.closure-flag-text span {
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+
+@media (max-width: 560px) {
+  .closure-row,
+  .closure-flag-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .closure-field input,
+  .closure-field select {
+    min-height: 42px;
+    font-size: 16px;
+  }
 }
 
 .page-stack {

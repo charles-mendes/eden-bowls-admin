@@ -47,6 +47,12 @@ const FLAG_LABELS: Record<keyof ClosedDayFlags, string> = {
   closesDelivery: 'Entrega',
 }
 
+const FLAG_HINTS: Record<keyof ClosedDayFlags, string> = {
+  closesPreparation: 'Cozinha não produz',
+  closesPickup: 'Transportadora não coleta',
+  closesDelivery: 'Não há entrega ao cliente',
+}
+
 const FLAGS = Object.keys(FLAG_LABELS) as Array<keyof ClosedDayFlags>
 
 const MOVE_LABELS: Record<AffectedDelivery['move'], string> = {
@@ -172,14 +178,26 @@ function AffectedList({ affected, timeZone }: { affected: AffectedDelivery[]; ti
 
 function FlagCheckboxes({ values, onChange }: { values: ClosedDayFlags; onChange: (flag: keyof ClosedDayFlags, value: boolean) => void }) {
   return (
-    <fieldset>
-      <legend>Fecha</legend>
-      {FLAGS.map((flag) => (
-        <label key={flag} className="checkbox-field">
-          <input type="checkbox" checked={values[flag]} onChange={(event) => onChange(flag, event.target.checked)} />
-          {FLAG_LABELS[flag]}
-        </label>
-      ))}
+    <fieldset className="closure-flags">
+      <legend>O que fecha neste dia</legend>
+      <div className="closure-flag-grid">
+        {FLAGS.map((flag) => (
+          <label key={flag} className={values[flag] ? 'closure-flag is-checked' : 'closure-flag'}>
+            <input
+              type="checkbox"
+              checked={values[flag]}
+              aria-labelledby={`closure-flag-${flag}-label`}
+              aria-describedby={`closure-flag-${flag}-hint`}
+              onChange={(event) => onChange(flag, event.target.checked)}
+            />
+            <span className="closure-flag-text">
+              <strong id={`closure-flag-${flag}-label`}>{FLAG_LABELS[flag]}</strong>
+              <span id={`closure-flag-${flag}-hint`}>{FLAG_HINTS[flag]}</span>
+            </span>
+          </label>
+        ))}
+      </div>
+      <p className="field-hint">Marque pelo menos uma opção.</p>
     </fieldset>
   )
 }
@@ -236,7 +254,7 @@ export function DeliveryCalendarPage() {
         setError('')
       } catch (requestError) {
         if (cancelled) return
-        setError(errorMessage(requestError, 'Falha ao carregar o calendário de entregas.'))
+        setError(errorMessage(requestError, 'Falha ao carregar feriados e fechamentos.'))
         setRows([])
       } finally {
         if (!cancelled) setLoadedKey(requestKey)
@@ -389,7 +407,7 @@ export function DeliveryCalendarPage() {
 
   return (
     <PageFrame
-      title="Calendário de entregas"
+      title="Feriados e fechamentos"
       description="Dias fechados para preparo, coleta e entrega de cada mercado."
       actions={canWrite && market ? (
         <button className="primary-button" type="button" onClick={() => { setDraft({ ...EMPTY_DRAFT, closedOn: `${year}-01-01` }); setDialogError('') }}>
@@ -623,28 +641,37 @@ export function DeliveryCalendarPage() {
             <AffectedList affected={preview.affected} timeZone={timeZone} />
           </>
         ) : draft ? (
-          <form id="delivery-calendar-form" onSubmit={submitDraft}>
-            <label>
-              Tipo
-              <select aria-label="Tipo" value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as Draft['type'] })}>
-                <option value="adhoc">Pontual</option>
-                <option value="regional">Regional</option>
-                {market === 'US' ? <option value="carrier">Transportadora (UPS)</option> : null}
-              </select>
-            </label>
-            <label>
-              Data
-              <input aria-label="Data" type="date" value={draft.closedOn} onChange={(event) => setDraft({ ...draft, closedOn: event.target.value })} />
-            </label>
-            <label>
+          <form id="delivery-calendar-form" className="closure-form" onSubmit={submitDraft}>
+            {market ? <p className="closure-context">Mercado <strong>{market}</strong></p> : null}
+            <div className="closure-row">
+              <label className="closure-field">
+                Tipo
+                <select aria-label="Tipo" value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as Draft['type'] })}>
+                  <option value="adhoc">Pontual</option>
+                  <option value="regional">Regional</option>
+                  {market === 'US' ? <option value="carrier">Transportadora (UPS)</option> : null}
+                </select>
+              </label>
+              <label className="closure-field">
+                Data
+                <input aria-label="Data" type="date" value={draft.closedOn} onChange={(event) => setDraft({ ...draft, closedOn: event.target.value })} />
+              </label>
+            </div>
+            <label className="closure-field">
               Rótulo
-              <input aria-label="Rótulo" maxLength={191} value={draft.label} onChange={(event) => setDraft({ ...draft, label: event.target.value })} />
+              <input
+                aria-label="Rótulo"
+                maxLength={191}
+                placeholder="Ex.: Carnaval, Inventário"
+                value={draft.label}
+                onChange={(event) => setDraft({ ...draft, label: event.target.value })}
+              />
             </label>
             <FlagCheckboxes values={draft} onChange={(flag, value) => setDraft({ ...draft, [flag]: value })} />
           </form>
         ) : editing && editFlags ? (
-          <form id="delivery-calendar-form" onSubmit={submitEdit}>
-            <p>{editing.label} · {formatDay(editing.closedOn)}</p>
+          <form id="delivery-calendar-form" className="closure-form" onSubmit={submitEdit}>
+            <p className="closure-context"><strong>{editing.label}</strong> · {formatDay(editing.closedOn)}</p>
             <FlagCheckboxes values={editFlags} onChange={(flag, value) => setEditFlags({ ...editFlags, [flag]: value })} />
           </form>
         ) : null}

@@ -36,7 +36,7 @@ test.describe('Admin readonly', () => {
   test('opens the delivery calendar without write controls', async ({ page }) => {
     await openAuthed(page, '/operations/delivery-calendar', e2eProfiles.readonly)
 
-    await expect(page.getByRole('heading', { name: 'Calendário de entregas' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Feriados e fechamentos' })).toBeVisible()
     await page.getByLabel('Ano').selectOption('2027')
     await expect(page.getByRole('cell', { name: 'Natal', exact: true })).toBeVisible()
     await expect(page.getByLabel('Mercado')).toBeDisabled()
