@@ -194,13 +194,13 @@ export function SystemHealth() {
   const syncRuns = Object.entries(syncStatus?.byMarket ?? {}).sort(([a], [b]) => a.localeCompare(b))
 
   return (
-    <div className="page-stack">
+    <div className="health-sections">
       {error ? <div className="alert">{error}</div> : null}
 
       {isAdmin ? (
         <Section
           title="Webhooks Stripe"
-          description={`Último evento recebido por conta. Atenção quando há falha nas últimas 24 h, evento parado há mais de 1 h ou nenhum evento há mais de ${webhooks?.staleAfterHours ?? 72} h.`}
+          description={`Último evento recebido por conta. Atenção: falha nas últimas 24 h, evento parado há mais de 1 h ou nenhum evento há mais de ${webhooks?.staleAfterHours ?? 72} h.`}
         >
           {webhooksError ? <div className="alert">{webhooksError}</div> : null}
           {webhooks ? (
@@ -237,20 +237,25 @@ export function SystemHealth() {
 
       <Section
         title="Preços Stripe no catálogo"
-        description={`Cada variação vendável (sabor/peso) precisa de um Price ID no Stripe. Este recorte é o mercado ${catalogLabel} em ${currency || '—'}.`}
-      >
-        <div className="stack">
-          {bothMarkets ? (
-            <MarketSelect
-              user={user}
-              value={market}
-              onChange={(value) => setPickedMarket(value === 'US' ? 'US' : 'BR')}
-            />
-          ) : null}
-
+        description={`Cada variação vendável (sabor/peso) precisa de um Price ID no Stripe. Recorte: ${catalogLabel} em ${currency || '—'}.`}
+        actions={(
           <div className="inline-actions">
+            <Link className="ghost-button" to="/catalog/products">Ver produtos</Link>
+            <Link className="ghost-button" to="/billing">Sincronizar e assinantes</Link>
+          </div>
+        )}
+      >
+        <div className="health-body">
+          <div className="inline-actions">
+            {bothMarkets ? (
+              <MarketSelect
+                user={user}
+                value={market}
+                onChange={(value) => setPickedMarket(value === 'US' ? 'US' : 'BR')}
+              />
+            ) : null}
             <span className={coverage.badgeClass}>{coverage.badgeLabel}</span>
-            <span>{coverage.summary}</span>
+            <span className="muted">{coverage.summary}</span>
           </div>
 
           <div className="grid cards-3">
@@ -277,23 +282,16 @@ export function SystemHealth() {
             </div>
           ) : null}
 
-          {syncRuns.length === 0 ? (
-            <p className="muted">Última sincronização: nenhuma sincronização registrada.</p>
-          ) : (
-            <ul className="stack">
-              {syncRuns.map(([runMarket, run]) => (
-                <li key={runMarket} className="muted">
-                  Última sincronização {marketLabel(runMarket)}: {formatSyncJobStatus(run.status)} em {formatDate(run.updatedAt)}
-                  {run.status === 'failed' && run.error ? ` · ${run.error}` : null}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <div className="inline-actions">
-            <Link className="ghost-button" to="/catalog/products">Ver produtos</Link>
-            <Link className="ghost-button" to="/billing">Sincronizar e assinantes</Link>
-          </div>
+          <ul className="health-meta">
+            {syncRuns.length === 0 ? (
+              <li>Última sincronização: nenhuma sincronização registrada.</li>
+            ) : syncRuns.map(([runMarket, run]) => (
+              <li key={runMarket}>
+                Última sincronização {marketLabel(runMarket)}: {formatSyncJobStatus(run.status)} em {formatDate(run.updatedAt)}
+                {run.status === 'failed' && run.error ? ` · ${run.error}` : null}
+              </li>
+            ))}
+          </ul>
         </div>
       </Section>
 
@@ -301,13 +299,15 @@ export function SystemHealth() {
         <Section
           title="Conflitos de mercado"
           description="Clientes cujo mercado do perfil não bate com a conta Stripe de uma assinatura. Um por cliente e conta."
+          actions={conflicts && conflicts.total > 0 ? (
+            <span className="badge-warning">{conflicts.total === 1 ? '1 conflito' : `${conflicts.total} conflitos`}</span>
+          ) : null}
         >
           {conflictsError ? <div className="alert">{conflictsError}</div> : null}
           {conflicts == null ? null : conflicts.total === 0 ? (
             <p>Nenhum conflito perfil vs Stripe.</p>
           ) : (
-            <div className="stack">
-              <p className="muted">{conflicts.total === 1 ? '1 conflito' : `${conflicts.total} conflitos`}</p>
+            <div className="health-body">
               <div className="table-shell table-scroll">
                 <table>
                   <thead>

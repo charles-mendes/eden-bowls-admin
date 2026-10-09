@@ -294,7 +294,7 @@ export function DashboardPage() {
 
       {hasRole('admin') ? (
         <details className="day-health">
-          <summary>Saúde do sistema <span className="muted">· checkouts, preços Stripe e conflitos de mercado</span></summary>
+          <summary>Saúde do sistema <span className="day-health-hint">Webhooks Stripe, preços do catálogo e conflitos de mercado</span></summary>
           <SystemHealth />
         </details>
       ) : null}
