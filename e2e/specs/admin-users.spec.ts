@@ -18,7 +18,7 @@ test.describe('Admin users', () => {
   test('loads customer detail', async ({ page }) => {
     const { captured } = await openAuthed(page, '/users/u-ana', e2eProfiles.operator)
 
-    await expect(page.getByRole('heading', { name: 'ana@edenbowls.com' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Ana Costa' })).toBeVisible()
     await expect(page.getByRole('textbox', { name: 'Endereço' })).toHaveValue('Rua Augusta 100')
     await expect.poll(() => captured.some((item) => (
       item.method === 'GET'

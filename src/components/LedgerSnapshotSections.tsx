@@ -36,7 +36,7 @@ export function LedgerSnapshotSections({
           <MetaGrid items={snapshots.plan.items} />
           {snapshots.plan.pets.length ? (
             <div className="table-shell table-scroll table-compact">
-              <table>
+              <table className="stack-table">
                 <thead>
                   <tr>
                     <th>Pet</th>
@@ -46,8 +46,8 @@ export function LedgerSnapshotSections({
                 <tbody>
                   {snapshots.plan.pets.map((item, index) => (
                     <tr key={`${item.petName}-${index}`}>
-                      <td>{item.petName}</td>
-                      <td>{item.flavors}</td>
+                      <td className="stack-table-title">{item.petName}</td>
+                      <td data-label="Sabores">{item.flavors}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -56,7 +56,7 @@ export function LedgerSnapshotSections({
           ) : null}
           {snapshots.plan.lineItems.length ? (
             <div className="table-shell table-scroll table-compact">
-              <table>
+              <table className="stack-table">
                 <thead>
                   <tr>
                     <th>Pet</th>
@@ -70,12 +70,12 @@ export function LedgerSnapshotSections({
                 <tbody>
                   {snapshots.plan.lineItems.map((item, index) => (
                     <tr key={`${item.petName}-${item.product}-${index}`}>
-                      <td>{item.petName}</td>
-                      <td>{item.product}</td>
-                      <td>{item.quantity}</td>
-                      <td>{item.packSize}</td>
-                      <td>{item.unitPrice}</td>
-                      <td>{item.lineTotal}</td>
+                      <td className="stack-table-title">{item.petName}</td>
+                      <td data-label="Item">{item.product}</td>
+                      <td data-label="Qtd">{item.quantity}</td>
+                      <td data-label="Embalagem">{item.packSize}</td>
+                      <td data-label="Unitário">{item.unitPrice}</td>
+                      <td data-label="Total">{item.lineTotal}</td>
                     </tr>
                   ))}
                 </tbody>

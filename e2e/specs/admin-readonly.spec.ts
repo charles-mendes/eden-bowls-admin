@@ -48,7 +48,7 @@ test.describe('Admin readonly', () => {
 
   test('hides delivery and catalog mutations', async ({ page }) => {
     await openAuthed(page, '/users/u-ana', e2eProfiles.readonly)
-    await expect(page.getByRole('heading', { name: 'ana@edenbowls.com' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Ana Costa' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Salvar instruções' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Salvar endereço' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Desativar conta' })).toHaveCount(0)
