@@ -49,10 +49,10 @@ describe('SubscriptionDetailPage', () => {
 
     expect(screen.queryByRole('button', { name: 'Sincronizar faturas' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Cliente' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: '360' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Checkout' })).not.toBeInTheDocument()
   })
 
-  it('links Cliente and 360 only when the profile is in scope', async () => {
+  it('links Cliente and Checkout only when the profile is in scope', async () => {
     seedAuth()
     installAdminFetchMock(operatorWriteUser, { subscriptionInScope: true })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
@@ -62,7 +62,7 @@ describe('SubscriptionDetailPage', () => {
     })
 
     expect(screen.getByRole('link', { name: 'Cliente' })).toHaveAttribute('href', '/users/u-ana')
-    expect(screen.getByRole('link', { name: '360' })).toHaveAttribute('href', '/onboarding/sessions/u-ana')
+    expect(screen.getByRole('link', { name: 'Checkout' })).toHaveAttribute('href', '/users/u-ana?aba=checkout')
   })
 
   it('keeps ledger identity as text when the profile is out of scope', async () => {
@@ -75,9 +75,9 @@ describe('SubscriptionDetailPage', () => {
     })
 
     expect(screen.queryByRole('link', { name: 'Cliente' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: '360' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Checkout' })).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/users/u-ana"]')).toBeNull()
-    expect(document.querySelector('a[href="/onboarding/sessions/u-ana"]')).toBeNull()
+    expect(document.querySelector('a[href="/users/u-ana?aba=checkout"]')).toBeNull()
     expect(screen.getAllByText('Cliente').length).toBeGreaterThan(0)
   })
 

@@ -27,7 +27,6 @@ describe('admin menu', () => {
     const hrefs = visibleMenuItems(['readonly']).map((item) => item.href)
 
     expect(hrefs).toContain('/dashboard')
-    expect(hrefs).toContain('/onboarding/sessions')
     expect(hrefs).toContain('/operations/production')
     expect(hrefs).toContain('/feedbacks')
     expect(hrefs).toContain('/privacy/requests')
@@ -36,10 +35,10 @@ describe('admin menu', () => {
     expect(hrefs).not.toContain('/orders')
   })
 
-  it('keeps a single operational checkout screen', () => {
+  it('keeps checkout screens out of the menu: checkouts live in the customer detail', () => {
     const hrefs = visibleMenuItems(['admin', 'operator']).map((item) => item.href)
 
-    expect(hrefs).toContain('/onboarding/sessions')
+    expect(hrefs).not.toContain('/onboarding/sessions')
     expect(hrefs).not.toContain('/orders')
   })
 

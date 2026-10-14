@@ -282,7 +282,7 @@ export function ProductionQueuePage() {
       ? [
         { label: 'Cliente', to: `/users/${item.userId}` },
         { label: 'Assinatura', to: `/billing/subscriptions/${item.id}` },
-        { label: 'Onboarding 360', to: `/onboarding/sessions/${item.userId}` },
+        { label: 'Checkout', to: `/users/${item.userId}?aba=checkout` },
       ]
       : [{ label: 'Perfil fora do seu mercado', disabled: true }]
     if (canWrite && item.productionStatus === 'ready') {

@@ -150,7 +150,7 @@ export function OnboardingPage() {
               {data?.items.map((item) => (
                 <tr key={item.userId}>
                   <td>
-                    <Link className="table-link" to={`/onboarding/sessions/${item.userId}`}>{item.email}</Link>
+                    <Link className="table-link" to={`/users/${item.userId}?aba=checkout`}>{item.email}</Link>
                     <div className="muted">{item.displayName} · {item.userId}</div>
                   </td>
                   <td>{item.petCount}</td>

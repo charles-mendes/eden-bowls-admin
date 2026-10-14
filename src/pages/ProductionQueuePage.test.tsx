@@ -49,7 +49,7 @@ describe('ProductionQueuePage', () => {
     const menu = await openRowMenu()
     expect(within(menu).getByRole('menuitem', { name: 'Cliente' })).toHaveAttribute('href', '/users/7')
     expect(within(menu).getByRole('menuitem', { name: 'Assinatura' })).toHaveAttribute('href', '/billing/subscriptions/42')
-    expect(within(menu).getByRole('menuitem', { name: 'Onboarding 360' })).toHaveAttribute('href', '/onboarding/sessions/7')
+    expect(within(menu).getByRole('menuitem', { name: 'Checkout' })).toHaveAttribute('href', '/users/7?aba=checkout')
     expect(within(menu).getByRole('menuitem', { name: 'Bloquear' })).toBeInTheDocument()
   })
 
@@ -169,7 +169,7 @@ describe('ProductionQueuePage', () => {
     expect(within(menu).queryByRole('menuitem', { name: 'Cliente' })).not.toBeInTheDocument()
     expect(within(menu).getByRole('menuitem', { name: 'Perfil fora do seu mercado' })).toHaveAttribute('aria-disabled', 'true')
     expect(document.querySelector('a[href="/users/7"]')).toBeNull()
-    expect(document.querySelector('a[href="/onboarding/sessions/7"]')).toBeNull()
+    expect(document.querySelector('a[href="/users/7?aba=checkout"]')).toBeNull()
   })
 
   it('shows a cycle awaiting payment without the start action (3.12)', async () => {

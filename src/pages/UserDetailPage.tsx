@@ -1,9 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { CheckoutSnapshotPanels } from '../components/CheckoutSnapshotPanels'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
-import { apiRequest } from '../lib/api'
+import { ApiRequestError, apiRequest } from '../lib/api'
+import { parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
+import { formatDate, formatStripeStatus } from '../lib/format'
 import {
   accountStatusBadgeClass,
   accountStatusLabel,
@@ -28,7 +31,37 @@ type UserDetail = {
     zipCode: string
     deliveryInstructions: string
   } | null
+  subscriptions?: Array<{ id: string; stripeSubscriptionId: string; status: string; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean; planLabel: string | null }>
 }
+
+// Pets and checkout come from the onboarding record; it is fetched only when one of those tabs opens.
+type OnboardingDetail = {
+  empty: boolean
+  updatedAt: string | null
+  pets: Array<{ id: string; name: string; breed: string; ageYears: number; ageMonths: number; weightInput: number; weightUnit: string; activityLevel: string; simplified?: { daily?: { formatted?: string } } | null }>
+  recurrence: unknown
+  planSelection: unknown
+  address: unknown
+  shipping: unknown
+  discount: { promotionCodeId?: string | null; percent?: number | null; eligibilityReason?: string | null; amountPaid?: number | null }
+  lineItems: unknown[]
+  checkoutReference: unknown
+  paymentReference: unknown
+}
+
+type OnboardingState =
+  | { status: 'loading' | 'forbidden' }
+  | { status: 'ready'; data: OnboardingDetail }
+  | { status: 'error'; message: string }
+
+type CustomerTab = 'cadastro' | 'pets' | 'assinaturas' | 'checkout'
+
+const TABS: Array<{ id: CustomerTab; label: string }> = [
+  { id: 'cadastro', label: 'Cadastro' },
+  { id: 'pets', label: 'Pets' },
+  { id: 'assinaturas', label: 'Assinaturas' },
+  { id: 'checkout', label: 'Checkout' },
+]
 
 type DeliveryForm = {
   address: string
@@ -62,7 +95,14 @@ function deliveryFromUser(user: UserDetail | null): DeliveryForm {
 export function UserDetailPage() {
   const { token, user, hasPermission } = useAuth()
   const { userId } = useParams()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedTab = searchParams.get('aba')
+  const tab: CustomerTab = TABS.some((option) => option.id === requestedTab) ? requestedTab as CustomerTab : 'cadastro'
   const [data, setData] = useState<UserDetail | null>(null)
+  // Keyed by user so a different customer reads as loading until their own response lands.
+  const [onboardingResult, setOnboardingResult] = useState<{ userId: string; state: OnboardingState } | null>(null)
+  const onboardingRequestedFor = useRef<string | null>(null)
+  const onboarding: OnboardingState = onboardingResult && onboardingResult.userId === userId ? onboardingResult.state : { status: 'loading' }
   const [privacy, setPrivacy] = useState<UserPrivacySnapshot | null>(null)
   const [delivery, setDelivery] = useState<DeliveryForm>(emptyDelivery)
   const [message, setMessage] = useState('')
@@ -97,6 +137,41 @@ export function UserDetailPage() {
   useEffect(() => {
     void load()
   }, [token, userId])
+
+  const needsOnboarding = tab === 'pets' || tab === 'checkout'
+  useEffect(() => {
+    if (!needsOnboarding || !token || !userId || onboardingRequestedFor.current === userId) return
+    onboardingRequestedFor.current = userId
+
+    // The backend owns onboarding.read; a 403 becomes its own state, distinct from "no checkout".
+    const settle = (state: OnboardingState) => setOnboardingResult({ userId, state })
+    apiRequest<OnboardingDetail>(`/admin/onboarding/checkouts/${userId}`, { token })
+      .then((response) => settle({ status: 'ready', data: response }))
+      .catch((requestError) => {
+        if (requestError instanceof ApiRequestError && requestError.status === 403) {
+          settle({ status: 'forbidden' })
+          return
+        }
+        settle({ status: 'error', message: requestError instanceof Error ? requestError.message : 'Falha ao carregar onboarding' })
+      })
+  }, [needsOnboarding, token, userId])
+
+  const selectTab = (next: CustomerTab) => {
+    setSearchParams((params) => {
+      if (next === 'cadastro') params.delete('aba')
+      else params.set('aba', next)
+      return params
+    })
+  }
+
+  // Arrow keys move between tabs, following the WAI-ARIA tabs pattern.
+  const moveTabFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+    const index = TABS.findIndex((option) => option.id === tab)
+    const next = TABS[(index + (event.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length].id
+    selectTab(next)
+    document.getElementById(`customer-tab-${next}`)?.focus()
+  }
 
   const saveDelivery = async (event: FormEvent) => {
     event.preventDefault()
@@ -158,119 +233,249 @@ export function UserDetailPage() {
   }
 
   return (
-    <PageFrame title={data?.email ?? 'Cliente'} description="Cadastro, endereço de entrega e status da conta.">
+    <PageFrame title={data?.email ?? 'Cliente'} description="Cadastro, pets, assinaturas e checkout do cliente.">
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
 
-      <Section title="Identidade">
-        <p>{data?.profile?.fullName ?? '-'} · <span className={accountStatusBadgeClass(data?.status)}>{accountStatusLabel(data?.status)}</span></p>
-        <p className="muted">{data?.profile?.phone || 'sem telefone'}</p>
-        <p>Papel: {data?.roles?.filter((role) => role !== 'customer').join(', ') || 'cliente'}{data?.lockedByAllowlist ? ' (ADMIN_EMAILS)' : ''}</p>
-        <div className="inline-actions">
-          <Link className="ghost-button" to={`/onboarding/sessions/${userId}`}>Onboarding 360</Link>
-          {hasPermission('users.roles.write') ? <Link className="ghost-button" to="/users/roles">Alterar papéis</Link> : null}
-          {canToggleStatus ? (
-            <button
-              className={isDeactivatedStatus(data?.status) ? 'primary-button' : 'danger-button'}
-              type="button"
-              onClick={() => void toggleStatus()}
-            >
-              {isDeactivatedStatus(data?.status) ? 'Reativar conta' : 'Desativar conta'}
-            </button>
-          ) : null}
+      <div className="page-tabs" role="tablist" aria-label="Cliente" onKeyDown={moveTabFocus}>
+        {TABS.map((option) => (
+          <button
+            key={option.id}
+            id={`customer-tab-${option.id}`}
+            type="button"
+            role="tab"
+            aria-selected={tab === option.id}
+            aria-controls={`customer-panel-${option.id}`}
+            tabIndex={tab === option.id ? 0 : -1}
+            className={tab === option.id ? 'page-tab active' : 'page-tab'}
+            onClick={() => selectTab(option.id)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'cadastro' ? (
+        <div id="customer-panel-cadastro" role="tabpanel" aria-labelledby="customer-tab-cadastro" className="page-stack">
+          <Section title="Identidade">
+            <p>{data?.profile?.fullName ?? '-'} · <span className={accountStatusBadgeClass(data?.status)}>{accountStatusLabel(data?.status)}</span></p>
+            <p className="muted">{data?.profile?.phone || 'sem telefone'}</p>
+            <p>Papel: {data?.roles?.filter((role) => role !== 'customer').join(', ') || 'cliente'}{data?.lockedByAllowlist ? ' (ADMIN_EMAILS)' : ''}</p>
+            <div className="inline-actions">
+              {hasPermission('users.roles.write') ? <Link className="ghost-button" to="/users/roles">Alterar papéis</Link> : null}
+              {canToggleStatus ? (
+                <button
+                  className={isDeactivatedStatus(data?.status) ? 'primary-button' : 'danger-button'}
+                  type="button"
+                  onClick={() => void toggleStatus()}
+                >
+                  {isDeactivatedStatus(data?.status) ? 'Reativar conta' : 'Desativar conta'}
+                </button>
+              ) : null}
+            </div>
+          </Section>
+
+          <Section title="Endereço" description="Mesmo endereço de entrega do app do cliente.">
+            <form className="form-grid" onSubmit={saveDelivery}>
+              <label>
+                Endereço
+                <input
+                  value={delivery.address}
+                  onChange={(event) => setDelivery((current) => ({ ...current, address: event.target.value }))}
+                  disabled={!canWriteDelivery}
+                />
+              </label>
+              <label>
+                Complemento
+                <input
+                  value={delivery.complement}
+                  onChange={(event) => setDelivery((current) => ({ ...current, complement: event.target.value }))}
+                  disabled={!canWriteDelivery}
+                />
+              </label>
+              <label>
+                Cidade
+                <input
+                  value={delivery.city}
+                  onChange={(event) => setDelivery((current) => ({ ...current, city: event.target.value }))}
+                  disabled={!canWriteDelivery}
+                />
+              </label>
+              <label>
+                Estado
+                <input
+                  value={delivery.state}
+                  onChange={(event) => setDelivery((current) => ({ ...current, state: event.target.value }))}
+                  disabled={!canWriteDelivery}
+                />
+              </label>
+              <label>
+                CEP
+                <input
+                  value={delivery.zipCode}
+                  onChange={(event) => setDelivery((current) => ({ ...current, zipCode: event.target.value }))}
+                  disabled={!canWriteDelivery}
+                />
+              </label>
+              {canWriteDelivery ? <button className="primary-button" type="submit">Salvar endereço</button> : null}
+            </form>
+          </Section>
+
+          <Section title="Instruções de entrega" description="Portão, local de entrega ou cuidados com o pet para quem faz a entrega.">
+            <form className="stack" onSubmit={saveInstructions}>
+              <label>
+                Instruções
+                <textarea
+                  rows={6}
+                  value={delivery.deliveryInstructions}
+                  onChange={(event) => setDelivery((current) => ({ ...current, deliveryInstructions: event.target.value }))}
+                  disabled={!canWriteDelivery}
+                />
+              </label>
+              {canWriteDelivery ? <button className="primary-button" type="submit">Salvar instruções</button> : null}
+            </form>
+          </Section>
+
+          <Section title="Privacidade" description="Consentimentos do cliente e pedidos sobre os dados dele. Para tratar um pedido, abra Privacidade.">
+            <p>Marketing: {privacy?.marketingOptIn ? 'opt-in' : 'opt-out'}</p>
+            <p className="muted">
+              Cookies: analytics {privacy?.cookiePreferences?.analytics || '—'} · ads {privacy?.cookiePreferences?.ads || '—'}
+            </p>
+            {privacy?.consents?.length ? (
+              <ul>
+                {privacy.consents.slice(0, 8).map((consent) => (
+                  <li key={consent.id}>{consent.consentType} · {consent.status} · {consent.source}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">Sem histórico de consentimento.</p>
+            )}
+            {privacy?.requests?.length ? (
+              <ul>
+                {privacy.requests.map((requestItem) => (
+                  <li key={requestItem.id}>
+                    <Link className="table-link" to={`/privacy/requests/${requestItem.id}`}>
+                      #{requestItem.id} {formatPrivacyType(requestItem.type)} · {formatPrivacyStatus(requestItem.status)} · {formatPrivacyIdentity(requestItem.identityStatus)}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <div className="inline-actions">
+              <Link className="ghost-button" to={`/privacy/requests?userId=${userId}`}>Ver solicitações</Link>
+            </div>
+          </Section>
         </div>
-      </Section>
+      ) : null}
 
-      <Section title="Endereço" description="Mesmo endereço de entrega do app do cliente.">
-        <form className="form-grid" onSubmit={saveDelivery}>
-          <label>
-            Endereço
-            <input
-              value={delivery.address}
-              onChange={(event) => setDelivery((current) => ({ ...current, address: event.target.value }))}
-              disabled={!canWriteDelivery}
-            />
-          </label>
-          <label>
-            Complemento
-            <input
-              value={delivery.complement}
-              onChange={(event) => setDelivery((current) => ({ ...current, complement: event.target.value }))}
-              disabled={!canWriteDelivery}
-            />
-          </label>
-          <label>
-            Cidade
-            <input
-              value={delivery.city}
-              onChange={(event) => setDelivery((current) => ({ ...current, city: event.target.value }))}
-              disabled={!canWriteDelivery}
-            />
-          </label>
-          <label>
-            Estado
-            <input
-              value={delivery.state}
-              onChange={(event) => setDelivery((current) => ({ ...current, state: event.target.value }))}
-              disabled={!canWriteDelivery}
-            />
-          </label>
-          <label>
-            CEP
-            <input
-              value={delivery.zipCode}
-              onChange={(event) => setDelivery((current) => ({ ...current, zipCode: event.target.value }))}
-              disabled={!canWriteDelivery}
-            />
-          </label>
-          {canWriteDelivery ? <button className="primary-button" type="submit">Salvar endereço</button> : null}
-        </form>
-      </Section>
-
-      <Section title="Instruções de entrega" description="Portão, local de entrega ou cuidados com o pet para quem faz a entrega.">
-        <form className="stack" onSubmit={saveInstructions}>
-          <label>
-            Instruções
-            <textarea
-              rows={6}
-              value={delivery.deliveryInstructions}
-              onChange={(event) => setDelivery((current) => ({ ...current, deliveryInstructions: event.target.value }))}
-              disabled={!canWriteDelivery}
-            />
-          </label>
-          {canWriteDelivery ? <button className="primary-button" type="submit">Salvar instruções</button> : null}
-        </form>
-      </Section>
-
-      <Section title="Privacidade" description="Consentimentos do cliente e pedidos sobre os dados dele. Para tratar um pedido, abra Privacidade.">
-        <p>Marketing: {privacy?.marketingOptIn ? 'opt-in' : 'opt-out'}</p>
-        <p className="muted">
-          Cookies: analytics {privacy?.cookiePreferences?.analytics || '—'} · ads {privacy?.cookiePreferences?.ads || '—'}
-        </p>
-        {privacy?.consents?.length ? (
-          <ul>
-            {privacy.consents.slice(0, 8).map((consent) => (
-              <li key={consent.id}>{consent.consentType} · {consent.status} · {consent.source}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted">Sem histórico de consentimento.</p>
-        )}
-        {privacy?.requests?.length ? (
-          <ul>
-            {privacy.requests.map((requestItem) => (
-              <li key={requestItem.id}>
-                <Link className="table-link" to={`/privacy/requests/${requestItem.id}`}>
-                  #{requestItem.id} {formatPrivacyType(requestItem.type)} · {formatPrivacyStatus(requestItem.status)} · {formatPrivacyIdentity(requestItem.identityStatus)}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <div className="inline-actions">
-          <Link className="ghost-button" to={`/privacy/requests?userId=${userId}`}>Ver solicitações</Link>
+      {tab === 'assinaturas' ? (
+        <div id="customer-panel-assinaturas" role="tabpanel" aria-labelledby="customer-tab-assinaturas">
+          <Section title="Assinaturas Stripe" description="Assinaturas deste cliente na Stripe.">
+            {data && !data.subscriptions?.length ? <p className="muted">Nenhuma assinatura.</p> : (
+              <div className="table-shell table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Assinatura</th>
+                      <th>Status</th>
+                      <th>Plano</th>
+                      <th>Período</th>
+                      <th>Cancelando</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data?.subscriptions?.map((item) => (
+                      <tr key={item.id}>
+                        <td><Link className="table-link" to={`/billing/subscriptions/${item.id}`}>{item.stripeSubscriptionId}</Link></td>
+                        <td>{formatStripeStatus(item.status)}</td>
+                        <td>{item.planLabel ?? '-'}</td>
+                        <td>{formatDate(item.currentPeriodEnd)}</td>
+                        <td>{item.cancelAtPeriodEnd ? 'Sim' : 'Não'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Section>
         </div>
-      </Section>
+      ) : null}
+
+      {needsOnboarding ? (
+        <div id={`customer-panel-${tab}`} role="tabpanel" aria-labelledby={`customer-tab-${tab}`} className="page-stack">
+          <OnboardingPanel tab={tab} state={onboarding} />
+        </div>
+      ) : null}
     </PageFrame>
+  )
+}
+
+function OnboardingPanel({ tab, state }: { tab: CustomerTab; state: OnboardingState }) {
+  if (state.status === 'forbidden') {
+    return <div className="warning">Seu papel não tem acesso aos dados de onboarding deste cliente.</div>
+  }
+  if (state.status === 'error') {
+    return <div className="alert">{state.message}</div>
+  }
+  if (state.status !== 'ready') {
+    return <p className="muted" aria-busy="true">Carregando…</p>
+  }
+
+  const { data } = state
+  if (tab === 'pets') {
+    return (
+      <Section title="Pets" description="Pets atuais do cliente. Sem nome aparece como Pet sem nome.">
+        {data.pets.length ? (
+          <div className="table-shell table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pet</th>
+                  <th>Raça</th>
+                  <th>Idade</th>
+                  <th>Peso</th>
+                  <th>Atividade</th>
+                  <th>Simplificado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.pets.map((item) => (
+                  <tr key={item.id}>
+                    <td>{item.name}</td>
+                    <td>{item.breed || '-'}</td>
+                    <td>{item.ageYears}a {item.ageMonths}m</td>
+                    <td>{item.weightInput} {item.weightUnit}</td>
+                    <td>{item.activityLevel || '-'}</td>
+                    <td>{item.simplified?.daily?.formatted ?? 'Sem dados simplificados'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="muted">Nenhum pet cadastrado.</p>}
+      </Section>
+    )
+  }
+
+  if (data.empty) {
+    return <p className="muted">Este cliente ainda não fez checkout.</p>
+  }
+
+  return (
+    <>
+      <p className="muted">Atualizado em {formatDate(data.updatedAt)}</p>
+      <CheckoutSnapshotPanels
+        snapshots={parseCheckoutSnapshots(data)}
+        raw={{
+          planSelection: data.planSelection,
+          address: data.address,
+          shipping: data.shipping,
+          lineItems: data.lineItems,
+          checkoutReference: data.checkoutReference,
+          paymentReference: data.paymentReference,
+          recurrence: data.recurrence,
+        }}
+      />
+    </>
   )
 }

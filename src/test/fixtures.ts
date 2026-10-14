@@ -294,6 +294,9 @@ export const userDetail = {
     zipCode: '01310-100',
     deliveryInstructions: 'Deixar na portaria',
   },
+  subscriptions: [
+    { id: 'sub-row-1', stripeSubscriptionId: 'sub_123', stripeAccount: 'br', status: 'active', currentPeriodEnd: '2026-09-01T12:00:00.000Z', cancelAtPeriodEnd: false, planLabel: 'Adult 1m' },
+  ],
 }
 
 export const productItem = {

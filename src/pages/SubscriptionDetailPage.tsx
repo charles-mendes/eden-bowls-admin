@@ -324,12 +324,12 @@ export function SubscriptionDetailPage() {
           {profileInScope && data?.user.id ? (
             <>
               <Link className="ghost-button" to={`/users/${data.user.id}`}>Cliente</Link>
-              <Link className="ghost-button" to={`/onboarding/sessions/${data.user.id}`}>360</Link>
+              <Link className="ghost-button" to={`/users/${data.user.id}?aba=checkout`}>Checkout</Link>
             </>
           ) : (
             <>
               <span>Cliente</span>
-              <span>360</span>
+              <span>Checkout</span>
             </>
           )}
         </div>

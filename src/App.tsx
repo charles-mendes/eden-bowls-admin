@@ -8,7 +8,6 @@ import { DashboardPage } from './pages/DashboardPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
 import { OnboardingPage } from './pages/OnboardingPage'
-import { OnboardingSessionPage } from './pages/OnboardingSessionPage'
 import { ProductionQueuePage } from './pages/ProductionQueuePage'
 import { DeliveryCalendarPage } from './pages/DeliveryCalendarPage'
 import { BillingPage } from './pages/BillingPage'
@@ -26,9 +25,10 @@ import { PrivacyRequestsPage } from './pages/PrivacyRequestsPage'
 import { PrivacyRequestDetailPage } from './pages/PrivacyRequestDetailPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
+// The old 360 detail and /orders/:id both keyed on the user id; their content now lives in the customer's Checkout tab.
 function LegacyCheckoutRedirect() {
-  const { orderId } = useParams()
-  return <Navigate to={orderId ? `/onboarding/sessions/${orderId}` : '/onboarding/sessions'} replace />
+  const { id } = useParams()
+  return <Navigate to={id ? `/users/${id}?aba=checkout` : '/onboarding/sessions'} replace />
 }
 
 function ProtectedShell() {
@@ -55,7 +55,7 @@ function App() {
           <Route path="/catalog/products" element={<ProductsPage />} />
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
           <Route path="/onboarding/sessions" element={<OnboardingPage />} />
-          <Route path="/onboarding/sessions/:id" element={<OnboardingSessionPage />} />
+          <Route path="/onboarding/sessions/:id" element={<LegacyCheckoutRedirect />} />
           <Route path="/operations/production" element={<ProductionQueuePage />} />
           <Route path="/operations/delivery-calendar" element={<DeliveryCalendarPage />} />
           <Route path="/billing" element={<BillingPage />} />
@@ -73,7 +73,7 @@ function App() {
           <Route path="/users/:userId" element={<UserDetailPage />} />
           <Route path="/account/password" element={<ChangePasswordPage />} />
           <Route path="/orders" element={<Navigate to="/onboarding/sessions" replace />} />
-          <Route path="/orders/:orderId" element={<LegacyCheckoutRedirect />} />
+          <Route path="/orders/:id" element={<LegacyCheckoutRedirect />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />
       </SentryRoutes>
