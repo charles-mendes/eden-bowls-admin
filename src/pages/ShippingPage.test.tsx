@@ -12,14 +12,17 @@ describe('ShippingPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('opens on the rules for a writer and saves only the Brazil rules, without the headquarters address', async () => {
+  it('opens on the simulator for a writer too, and saves only the Brazil rules from Regras', async () => {
     const user = userEvent.setup()
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<ShippingPage />, '/config/shipping')
 
+    expect(await screen.findByRole('heading', { name: 'Simular frete por CEP' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Simulador de frete' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('tab', { name: /Regras de entrega/ }))
     expect(await screen.findByRole('heading', { name: 'Entrega local' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Regras de entrega/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
     expect(screen.queryByText('CD SP')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Latitude')).not.toBeInTheDocument()
@@ -123,7 +126,7 @@ describe('ShippingPage', () => {
     const user = userEvent.setup()
     seedAuth()
     const { calls } = installAdminFetchMock(adminUser)
-    renderAuthedPage(<ShippingPage />, '/config/shipping')
+    renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
 
     await user.click(await screen.findByRole('button', { name: 'EUA' }))
     expect(await screen.findByRole('heading', { name: 'Valor fixo' })).toBeInTheDocument()
@@ -176,7 +179,7 @@ describe('ShippingPage', () => {
     const user = userEvent.setup()
     seedAuth()
     const { calls } = installAdminFetchMock(adminUser)
-    renderAuthedPage(<ShippingPage />, '/config/shipping')
+    renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
 
     const radius = await screen.findByRole('spinbutton', { name: /Raio de entrega/ })
     await user.clear(radius)
@@ -206,7 +209,7 @@ describe('ShippingPage', () => {
     const user = userEvent.setup()
     seedAuth()
     const { calls } = installAdminFetchMock(adminUser)
-    renderAuthedPage(<ShippingPage />, '/config/shipping')
+    renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
 
     const radius = await screen.findByRole('spinbutton', { name: /Raio de entrega/ })
     const original = (radius as HTMLInputElement).value
@@ -227,7 +230,7 @@ describe('ShippingPage', () => {
     const user = userEvent.setup()
     seedAuth()
     installAdminFetchMock(adminUser)
-    renderAuthedPage(<ShippingPage />, '/config/shipping')
+    renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
 
     const radius = await screen.findByRole('spinbutton', { name: /Raio de entrega/ })
     await user.clear(radius)

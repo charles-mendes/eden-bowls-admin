@@ -32,7 +32,7 @@ describe('readonly admin shell', () => {
     expect(screen.getByRole('link', { name: 'Privacidade' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Onboarding 360' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Checkouts' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Frete' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Frete' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Cupons 1ª compra' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Equipe e papéis' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sincronizar catálogo' })).not.toBeInTheDocument()

@@ -114,10 +114,11 @@ function brQuoteError(error: unknown) {
 
 type ShippingTab = 'regras' | 'sede' | 'simulador'
 
+// The simulator comes first: quoting a CEP is the daily job; rules and headquarters change rarely.
 const TABS: Array<{ id: ShippingTab; label: string }> = [
+  { id: 'simulador', label: 'Simulador de frete' },
   { id: 'regras', label: 'Regras de entrega' },
   { id: 'sede', label: 'Sede' },
-  { id: 'simulador', label: 'Simulador' },
 ]
 
 const MARKET_NAME: Record<'BR' | 'US', string> = { BR: 'Brasil', US: 'EUA' }
@@ -151,8 +152,7 @@ export function ShippingPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedMarket = searchParams.get('mercado') === 'us' ? 'US' : 'BR'
   const market: 'BR' | 'US' = bothMarkets ? requestedMarket : (defaultMarket(user) ?? 'BR')
-  // Daily use is the simulator; people who can edit land on the rules.
-  const defaultTab: ShippingTab = canWrite ? 'regras' : 'simulador'
+  const defaultTab: ShippingTab = 'simulador'
   const requestedTab = searchParams.get('aba')
   const tab: ShippingTab = TABS.some((option) => option.id === requestedTab) ? requestedTab as ShippingTab : defaultTab
 

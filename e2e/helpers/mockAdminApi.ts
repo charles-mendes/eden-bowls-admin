@@ -77,7 +77,7 @@ const readonlyProfile: Profile = {
   email: 'read@edenbowls.com',
   roles: ['readonly'],
   markets: ['BR'],
-  permissions: ['onboarding.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'production.read', 'market.br'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'production.read', 'market.br'],
 }
 
 const checkoutItem = {

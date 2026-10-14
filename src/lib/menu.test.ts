@@ -23,14 +23,14 @@ describe('admin menu', () => {
     expect(adminHrefs).toContain('/users/roles')
   })
 
-  it('does not show write-heavy items to readonly', () => {
+  it('shows readonly the read screens, including the shipping simulator, but not write-heavy items', () => {
     const hrefs = visibleMenuItems(['readonly']).map((item) => item.href)
 
     expect(hrefs).toContain('/dashboard')
     expect(hrefs).toContain('/operations/production')
     expect(hrefs).toContain('/feedbacks')
     expect(hrefs).toContain('/privacy/requests')
-    expect(hrefs).not.toContain('/config/shipping')
+    expect(hrefs).toContain('/config/shipping')
     expect(hrefs).not.toContain('/billing/coupons')
     expect(hrefs).not.toContain('/orders')
   })
