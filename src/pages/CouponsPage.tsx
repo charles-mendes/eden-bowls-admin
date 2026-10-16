@@ -108,6 +108,7 @@ export function CouponsPage() {
   const [error, setError] = useState('')
   const [syncing, setSyncing] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
   const account = (bothMarkets ? pickedAccount : null) || defaultStripeAccount(user)
 
   const applyHealth = (nextHealth: PromoHealth) => {
@@ -186,6 +187,7 @@ export function CouponsPage() {
     setName('')
     setMaxRedemptions(0)
     setAssignSlot(true)
+    setCreateError('')
     setCreateOpen(true)
   }
 
@@ -193,7 +195,7 @@ export function CouponsPage() {
     event.preventDefault()
     if (!token || !account) return
     try {
-      setError('')
+      setCreateError('')
       setCreating(true)
       await apiRequest('/admin/stripe/first-purchase-coupons', {
         token,
@@ -211,7 +213,8 @@ export function CouponsPage() {
       setCreateOpen(false)
       await load()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao criar cupom')
+      // The dialog stays open with the typed values so the operator can fix and retry.
+      setCreateError(requestError instanceof Error ? requestError.message : 'Falha ao criar cupom')
     } finally {
       setCreating(false)
     }
@@ -387,7 +390,7 @@ export function CouponsPage() {
               <input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder={`BEMVINDO${percent}`} required />
             </label>
             <label>
-              Nome
+              Nome (opcional)
               <input value={name} onChange={(event) => setName(event.target.value)} placeholder={`First purchase ${term}m (${percent}%)`} />
             </label>
             <label>
@@ -400,6 +403,9 @@ export function CouponsPage() {
               Usar no checkout de {formatTermMonths(term)}
             </label>
           </div>
+          {createError ? (
+            <div className="alert" role="alert">Não foi possível criar o cupom: {createError}</div>
+          ) : null}
           {assignSlot && currentForTerm ? (
             <div className="warning">Substitui o código atual de {formatTermMonths(term)} ({currentCode || currentForTerm}). O antigo continua na Stripe.</div>
           ) : null}

@@ -76,6 +76,35 @@ describe('CouponsPage', () => {
     })
   })
 
+  it('shows a create failure inside the dialog and keeps the typed code', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      routes: (call) => (
+        call.method === 'POST' && call.path === '/api/v1/admin/stripe/first-purchase-coupons'
+          ? new Response(JSON.stringify({ success: false, message: 'Received unknown parameter: coupon' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          })
+          : undefined
+      ),
+    })
+    renderAuthedPage(<CouponsPage />, '/billing/coupons')
+
+    await user.click(await screen.findByRole('button', { name: 'Substituir cupom de 1 mês' }))
+    const dialog = screen.getByRole('dialog', { name: 'Criar cupom na Stripe' })
+    await user.type(within(dialog).getByLabelText('Código'), 'first_purchase_1m')
+    await user.click(within(dialog).getByRole('button', { name: 'Criar na Stripe' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Não foi possível criar o cupom: Received unknown parameter: coupon')
+    expect(within(dialog).getByLabelText('Código')).toHaveValue('FIRST_PURCHASE_1M')
+    expect(screen.queryByText('Cupom criado na Stripe e gravado no banco.')).not.toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+    await user.click(screen.getByRole('button', { name: 'Substituir cupom de 1 mês' }))
+    expect(within(screen.getByRole('dialog')).queryByRole('alert')).not.toBeInTheDocument()
+  })
+
   it('saves a manual promo map with PUT', async () => {
     const user = userEvent.setup()
     seedAuth()
