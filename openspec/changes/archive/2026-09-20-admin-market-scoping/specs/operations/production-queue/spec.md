@@ -33,16 +33,16 @@ Each queue item MUST support these grid columns, in order: Vencimento (datetime 
 
 ### Requirement: Production screen is an Operação queue for kitchen staff
 
-The admin app MUST expose **Produção** at `/operations/production` in the Operação menu for `admin`, `operator`, and `readonly`, and MUST hide it from nutritionist-only accounts. The page MUST show four metric cards bound to `metrics`: Vence hoje (`today`), Amanhã (`tomorrow`), Próximos Nd (`upcoming`, N = `windowDays`), Atrasados (`overdue`). Filters: window 7/14/30, account (admin: todas|BR|US; single-market staff: only their Stripe account, locked), production status todos|a preparar|em produção|pronto|bloqueado, search `q`, include overdue, clear. Single-market staff MUST send their account on every queue request and MUST NOT be able to select the other account. The table MUST use the grid columns defined above, group visible rows by `dueBucket`, and MUST NOT display last4, street, or postal code. Empty state MUST read “Nenhuma renovação nesta janela.” Loading MUST use the panel table skeleton. Errors MUST render in `div.alert`. Callers with `production.write` MUST see status-advance actions; others MUST not. Dense mix MAY open a dialog of `lineItems`. Blocking MUST prompt for a required note.
+The admin app MUST expose **Produção** at `/operations/production` in the Operação menu for `admin`, `operator`, and `readonly`, and MUST hide it from veterinarian-only accounts. The page MUST show four metric cards bound to `metrics`: Vence hoje (`today`), Amanhã (`tomorrow`), Próximos Nd (`upcoming`, N = `windowDays`), Atrasados (`overdue`). Filters: window 7/14/30, account (admin: todas|BR|US; single-market staff: only their Stripe account, locked), production status todos|a preparar|em produção|pronto|bloqueado, search `q`, include overdue, clear. Single-market staff MUST send their account on every queue request and MUST NOT be able to select the other account. The table MUST use the grid columns defined above, group visible rows by `dueBucket`, and MUST NOT display last4, street, or postal code. Empty state MUST read “Nenhuma renovação nesta janela.” Loading MUST use the panel table skeleton. Errors MUST render in `div.alert`. Callers with `production.write` MUST see status-advance actions; others MUST not. Dense mix MAY open a dialog of `lineItems`. Blocking MUST prompt for a required note.
 
 #### Scenario: Operator opens Produção
 
 - **WHEN** an operator with `production.read` opens `/operations/production`
 - **THEN** they see the four KPIs, filters, and the grid columns of due subscriptions
 
-#### Scenario: Nutritionist cannot reach the screen via the menu
+#### Scenario: Veterinarian cannot reach the screen via the menu
 
-- **WHEN** a nutritionist-only session loads the shell
+- **WHEN** a veterinarian-only session loads the shell
 - **THEN** Produção is absent from the menu and the only Operação item remains the nutrition simulator
 
 #### Scenario: Readonly can view but not change status

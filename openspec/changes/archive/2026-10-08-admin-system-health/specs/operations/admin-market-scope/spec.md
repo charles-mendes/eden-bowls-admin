@@ -25,7 +25,7 @@ The panel MUST show a conflicts card only to admin sessions. The card MUST load 
 
 ### Requirement: Conflicts endpoint is admin-only
 
-`GET /api/v1/admin/markets/conflicts` MUST return `401` without a valid Bearer token and `403` for any authenticated session whose roles do not include `admin` (operator, readonly, nutritionist). It MUST NOT be narrowed by the caller's market assignment: an admin sees conflicts from both markets.
+`GET /api/v1/admin/markets/conflicts` MUST return `401` without a valid Bearer token and `403` for any authenticated session whose roles do not include `admin` (operator, readonly, veterinarian). It MUST NOT be narrowed by the caller's market assignment: an admin sees conflicts from both markets.
 
 #### Scenario: No token
 

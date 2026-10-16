@@ -5,11 +5,11 @@ Apply after the sibling backend change `admin-market-scoping` exposes `/admin/me
 ## 1. Session identity
 
 - [x] 1.1 Add `src/lib/markets.ts` with `sessionMarkets`, `hasBothMarkets`, `defaultMarket`, `stripeAccountForMarket`, and `currencyForMarket`. Verify with `npx vitest run src/lib/markets.test.ts` (admin both → default BR; operator `["US"]` → US/`us`/`USD`; empty markets → no out-of-scope default).
-- [x] 1.2 Extend `AdminUser` with `markets` and set fixtures (`adminUser` both, operator/readonly/nutritionist one market, `market.br`/`market.us` on permissions only as API-derived strings — not in `ROLE_OPTIONS`). Verify `npx vitest run --related src/contexts/AuthContext.tsx src/lib/roles.ts` still bootstraps from `/admin/me` and does not write markets to `localStorage`.
+- [x] 1.2 Extend `AdminUser` with `markets` and set fixtures (`adminUser` both, operator/readonly/veterinarian one market, `market.br`/`market.us` on permissions only as API-derived strings — not in `ROLE_OPTIONS`). Verify `npx vitest run --related src/contexts/AuthContext.tsx src/lib/roles.ts` still bootstraps from `/admin/me` and does not write markets to `localStorage`.
 
 ## 2. Staff assignment
 
-- [x] 2.1 Add required Mercado select to the Users access dialog (hidden for role `admin`; required for operator/readonly/nutritionist). Create/PATCH bodies include `market` only for non-admin. Preserve allowlist lock. Verify `npx vitest run --related src/pages/UsersPage.tsx` (invite without market does not call the API; invite operator US sends `market: "US"`; list `403 market_required` shows `div.alert` and not an empty success table).
+- [x] 2.1 Add required Mercado select to the Users access dialog (hidden for role `admin`; required for operator/readonly/veterinarian). Create/PATCH bodies include `market` only for non-admin. Preserve allowlist lock. Verify `npx vitest run --related src/pages/UsersPage.tsx` (invite without market does not call the API; invite operator US sends `market: "US"`; list `403 market_required` shows `div.alert` and not an empty success table).
 - [x] 2.2 Add the same Mercado field on Roles save (`PUT` `{ role, market }` for non-admin). Verify `npx vitest run --related src/pages/RolesPage.tsx` (admin save omits `market`; allowlist still disables the form).
 
 ## 3. Locked pickers

@@ -23,7 +23,7 @@ Implement sections 1–3 in `eden-bowls-backend` before any admin work in this r
 ## 4. Admin screen, menu, and Vitest (eden-bowls-admin)
 
 - [x] 4.1 Mirror `production.read` / `production.write` in `src/test/fixtures.ts` and handle GET/PATCH `/api/v1/admin/production/queue` in `src/test/mockAdminFetch.ts` with the design DTO; verify fixtures include the keys and the mock returns `metrics` + `lineItems`.
-- [x] 4.2 Add Operação menu item Produção (`/operations/production`, roles admin|operator|readonly) in `src/lib/menu.ts` and route `ProductionQueuePage` in `src/App.tsx`; verify `npx vitest run src/lib/menu.test.ts` shows the href for those roles and hides it from nutritionist.
+- [x] 4.2 Add Operação menu item Produção (`/operations/production`, roles admin|operator|readonly) in `src/lib/menu.ts` and route `ProductionQueuePage` in `src/App.tsx`; verify `npx vitest run src/lib/menu.test.ts` shows the href for those roles and hides it from veterinarian.
 - [x] 4.3 Add `src/pages/ProductionQueuePage.tsx` (four MetricCards, filters including includeOverdue, spec grid columns, `production.write` actions, required-note Dialog, dense `lineItems` Dialog) and write `src/pages/ProductionQueuePage.test.tsx` (load KPIs/row, readonly hides status buttons, empty copy). Verify `npx vitest run --related src/pages/ProductionQueuePage.tsx`.
 
 ## 5. Playwright (eden-bowls-admin)

@@ -58,7 +58,7 @@ O SPA é um **blueprint de contrato**. Quase toda tela chama `/admin/*` ou `/bil
 
 ## MVP do portal (paridade com o que o operador usa hoje no WP)
 
-1. Login com papéis `admin` / `operator` / `nutritionist`.
+1. Login com papéis `admin` / `operator` / `veterinarian`.
 2. Simulador nutricional (sem persistência).
 3. Consulta Onboarding 360 (lista, detalhe, CSV).
 4. Configuração de frete BR/US + teste de CEP.

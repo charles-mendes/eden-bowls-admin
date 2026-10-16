@@ -16,9 +16,9 @@ On catalog, billing, production, coupons, feedbacks, privacy, shipping, nutritio
 - **WHEN** an operator assigned `BR` opens cupons
 - **THEN** the account control is `br` and the first load requests the BR Stripe account
 
-#### Scenario: Nutritionist country is locked
+#### Scenario: Veterinarian country is locked
 
-- **WHEN** a nutritionist assigned `US` opens the simulator
+- **WHEN** a veterinarian assigned `US` opens the simulator
 - **THEN** country is `US`, the other country cannot be selected, and submit sends `country` `US`
 
 #### Scenario: Admin may still pick one market

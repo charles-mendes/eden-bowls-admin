@@ -20,7 +20,7 @@ Existing shell patterns to reuse: `PageFrame`, `Section`, `Dialog` + `form-grid`
 - Implementing scoping SQL or the flag in this repo
 - Topbar market chip, new SPA routes, or a markets settings page
 - Letting operator hold both markets
-- Changing nutritionist-only shell routing (`/nutrition/simulate`)
+- Changing veterinarian-only shell routing (`/nutrition/simulate`)
 
 ## Decisions
 

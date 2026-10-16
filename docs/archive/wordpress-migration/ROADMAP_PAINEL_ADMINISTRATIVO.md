@@ -34,7 +34,7 @@ Não existem no SPA hoje. Ordenadas por prioridade conforme a auditoria interna 
 
 | # | Tela | Rota React | Prioridade | Por que importa |
 |---|---|---|---|---|
-| 1 | Simulador nutricional | `/nutrition/simulate` | **P0** | Único uso do papel *nutricionista*. Motor de cálculo já existe no core (`nutrition-recommendation.js`), só falta expor via rota admin dedicada, sem persistir nada. |
+| 1 | Simulador nutricional | `/nutrition/simulate` | **P0** | Único uso do papel *veterinário(a)*. Motor de cálculo já existe no core (`nutrition-recommendation.js`), só falta expor via rota admin dedicada, sem persistir nada. |
 | 2 | Configuração de frete | `/config/shipping` | **P0** | Hoje só existe a tela genérica `business-rules`, que **não é isso**. Precisa de abas BR (regra por km + CD + piso/teto) e US (taxa fixa), mais um sandbox de teste de CEP. |
 | 3 | Cupons de 1ª compra | `/billing/coupons` | **P0** | Mapa incompleto (slots 1/3/6 meses) **bloqueia checkout** de cliente elegível. É o gap com maior impacto direto em receita. |
 | 4 | Detalhe de assinante | `/billing/subscriptions/:id` | **P0** | A tela `/billing` atual só lista; falta abrir uma assinatura, ver período, cupom aplicado, faturas e disparar sync. |
@@ -150,7 +150,7 @@ O ponto importante: **os motores existem**. O gap é quase todo em **rota HTTP a
 Direto da auditoria interna — evita retrabalho e discussão duplicada:
 
 1. **Sem isolamento BR/US por papel.** Mercado é filtro opcional na listagem, não define quem acessa o quê.
-2. **`readonly` e `nutritionist` são papéis diferentes**, não devem ser fundidos.
+2. **`readonly` e `veterinarian` são papéis diferentes**, não devem ser fundidos.
 3. **Sem PATCH de status de pedido no MVP.** Não existia paridade no wp-admin; só entra se a logística pedir de verdade.
 4. **NEM do simulador usa o default do motor** (3800 gato / 3600 cão) — não replicar o bug do wp-admin antigo, que forçava 3600 também para gato.
 5. **Sem UI de chaves Stripe no admin.** Continua em variável de ambiente / runtime.
