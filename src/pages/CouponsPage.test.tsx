@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CouponsPage } from './CouponsPage'
@@ -12,24 +12,27 @@ describe('CouponsPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('loads mapped slots from the database and syncs with Stripe', async () => {
+  it('shows one card per term from the stored map and syncs with Stripe', async () => {
     const user = userEvent.setup()
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<CouponsPage />, '/billing/coupons')
 
+    const oneMonth = await screen.findByRole('article', { name: 'Prazo 1 mês' })
     await waitFor(() => {
-      expect(screen.getByDisplayValue('promo_1m')).toBeInTheDocument()
+      expect(within(oneMonth).getByText('FIRST_1M')).toBeInTheDocument()
     })
+    expect(within(oneMonth).getByText('10% na 1ª fatura')).toBeInTheDocument()
+    expect(within(oneMonth).getByText('Ativo')).toBeInTheDocument()
+    expect(within(oneMonth).getByText('promo_1m')).toBeInTheDocument()
+    expect(within(oneMonth).getByText('coupon_1')).toBeInTheDocument()
+    expect(within(screen.getByRole('article', { name: 'Prazo 3 meses' })).getByText('Vinculado')).toBeInTheDocument()
 
-    expect(screen.getByText('FIRST_1M')).toBeInTheDocument()
-    expect(screen.getByText('1 mês')).toBeInTheDocument()
-    expect(screen.queryByText('1m')).not.toBeInTheDocument()
-    expect(screen.getByText('coupon_1')).toBeInTheDocument()
-    expect(screen.getByText('10%')).toBeInTheDocument()
-    expect(screen.getByText('once')).toBeInTheDocument()
-    expect(screen.getByText('Não expira')).toBeInTheDocument()
-    expect(screen.queryByText(/Slots também definidos via env/)).not.toBeInTheDocument()
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('OPEN')).toBeInTheDocument()
+    expect(within(table).getByText('Não expira')).toBeInTheDocument()
+    expect(within(table).getByText('Só a 1ª fatura')).toBeInTheDocument()
+    expect(within(table).queryByText('1m')).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Sincronizar com Stripe' }))
 
@@ -43,7 +46,37 @@ describe('CouponsPage', () => {
     expect(sync?.body).toMatchObject({ account: 'br' })
   })
 
-  it('saves the promo map with PUT', async () => {
+  it('creates a coupon in Stripe from a term card', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<CouponsPage />, '/billing/coupons')
+
+    await user.click(await screen.findByRole('button', { name: 'Substituir cupom de 3 meses' }))
+
+    const dialog = screen.getByRole('dialog', { name: 'Criar cupom na Stripe' })
+    expect(within(dialog).getByLabelText('Prazo')).toHaveValue('3')
+    expect(within(dialog).getByText(/Substitui o código atual de 3 meses/)).toBeInTheDocument()
+
+    await user.type(within(dialog).getByLabelText('Código'), 'bemvindo25')
+    await user.click(within(dialog).getByRole('button', { name: 'Criar na Stripe' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Cupom criado na Stripe e gravado no banco.')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+    const create = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/stripe/first-purchase-coupons')
+    expect(create?.body).toMatchObject({
+      term_months: 3,
+      code: 'BEMVINDO25',
+      max_redemptions: 0,
+      assign_first_purchase_slot: true,
+      account: 'br',
+    })
+  })
+
+  it('saves a manual promo map with PUT', async () => {
     const user = userEvent.setup()
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser)
@@ -53,6 +86,7 @@ describe('CouponsPage', () => {
       expect(screen.getByDisplayValue('promo_1m')).toBeInTheDocument()
     })
 
+    await user.click(screen.getByText('Vincular ID manualmente'))
     await user.click(screen.getByRole('button', { name: 'Salvar mapa' }))
 
     await waitFor(() => {
