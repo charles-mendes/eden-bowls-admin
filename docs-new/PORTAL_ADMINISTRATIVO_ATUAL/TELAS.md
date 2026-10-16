@@ -12,25 +12,33 @@ Arquivo: `src/pages/LoginPage.tsx`.
 
 ## Dashboard — `/dashboard`
 
-Arquivo: `src/pages/DashboardPage.tsx`.
+Arquivo: `src/pages/DashboardPage.tsx`. A tela abre em **Hoje** (`GET /admin/today`): números do dia, pendências e pedidos que precisam de ação.
 
-Carrega em paralelo:
+### Saúde do sistema (só admin)
 
-1. `GET /admin/onboarding/metrics`
-2. `GET /billing/catalog/sync/health?market=BR&currency=BRL`
+`<details>` recolhido no fim da página, renderizado só com `hasRole('admin')`. Componente: `src/components/SystemHealth.tsx`. Operator, readonly e nutritionist não veem a seção e não chamam as rotas abaixo.
 
-Depois tenta `GET /billing/catalog/sync/status`. Se essa terceira chamada falhar, o dashboard **não** entra em erro global: `syncStatus` fica `null` e o card mostra “sem job”.
+| Bloco | Fonte | O que mostra |
+|---|---|---|
+| Webhooks Stripe | `GET /admin/billing/webhooks/health` | Uma linha por conta (Brasil, EUA): badge OK / Atenção / Sem eventos, último evento (hora · tipo), falhas em 24 h e eventos parados há mais de 1 h. Atenção = falha em 24 h, evento parado > 1 h ou nenhum evento há mais de 72 h. Erro → `div.alert`, nenhuma conta aparece como OK. |
+| Preços Stripe no catálogo | `GET /admin/catalog/sync/health`, `GET /admin/catalog/sync/status` | Cobertura de Price IDs do mercado escolhido (seletor só para quem tem BR e US) e a última sincronização de cada mercado em `byMarket`: resultado, hora e, se falhou, a mensagem de erro. Sem execução → "nenhuma sincronização registrada". |
+| Conflitos de mercado | `GET /admin/markets/conflicts?page&perPage=20` | Total e linhas (e-mail, mercado do perfil, conta Stripe), um por cliente + conta, com paginação. Lista vazia → "Nenhum conflito perfil vs Stripe." |
 
-KPIs:
+Os cards de checkout (Checkouts, Vinculados Stripe, Stripe ativos, Com simplificado) saíram desta seção; continuam em Onboarding 360.
 
-| Card | Fonte |
+## Frete — `/config/shipping`
+
+Arquivo: `src/pages/ShippingPage.tsx`. Um escopo só: o mercado, num seletor no cabeçalho (Brasil / EUA, só para quem tem os dois). Abaixo, três abas por tarefa, todas do mercado escolhido:
+
+| Aba | Conteúdo |
 |---|---|
-| Sessões | `metrics.totalSessions` + `generatedAt` |
-| Expiram em 24h | `metrics.expiringIn24h` |
-| Sync health | `totalMapped/totalExpected` e quantidade de `gaps` |
-| Último sync | `syncStatus.status` e `summary.scope` |
+| Regras de entrega | BR: entrega local (raio, valor por km, taxas). EUA: modo de cotação (UPS ou valor fixo), serviços, caixa padrão, valor de reserva. Salva só as regras do mercado (`PUT /admin/shipping/settings` com `br` ou `us`). Selo **não salvo** quando há edição pendente. |
+| Sede | Cartão da sede do mercado; endereço validado antes de salvar. Selo **pendente** sem endereço validado. Salvar a sede não descarta regras não salvas. |
+| Simulador | CEP/ZIP → `POST /admin/shipping/test`. Usa as regras **salvas**; avisa quando há edição não salva e quando a sede necessária (BR sempre, EUA em modo UPS) não está validada, com atalho para a aba. |
 
-Abaixo: pills de `metrics.byStatus` e texto dos gaps do catálogo Stripe (mercado/moeda fixos BR/BRL nesta tela).
+- URL: `?aba=regras|sede|simulador&mercado=br|us`. Aba padrão: Regras para quem tem `shipping.write`, Simulador para os demais. O botão voltar do navegador troca de aba.
+- Trocar de mercado com regras não salvas abre **Alterações não salvas**: Continuar editando, Descartar e trocar, ou Salvar e trocar (só com `shipping.write`). Nada é salvo no mercado errado.
+- Sem `shipping.write`: nenhum botão de salvar nem de cadastrar endereço; campos desabilitados.
 
 ## Onboarding — `/onboarding/sessions`
 

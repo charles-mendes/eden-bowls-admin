@@ -1,5 +1,4 @@
 import { screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BillingPage } from './BillingPage'
 import { operatorWriteUser, readonlyUser } from '../test/fixtures'
@@ -12,30 +11,22 @@ describe('BillingPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('loads subscriptions and POSTs catalog sync', async () => {
-    const user = userEvent.setup()
+  it('loads subscriptions and leaves catalog sync to the products page', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<BillingPage />, '/billing')
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'sub_123' })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'ana@edenbowls.com' })).toBeInTheDocument()
     })
 
-    expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'sub_123' })).toBeInTheDocument()
     expect(screen.queryByText('Webhooks Stripe')).not.toBeInTheDocument()
     expect(calls.some((call) => call.path === '/api/v1/admin/billing/webhooks')).toBe(false)
     expect(document.querySelector('.badge-info')?.textContent).toBe('US')
 
-    await user.click(screen.getByRole('button', { name: 'Sincronizar catálogo' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Sincronização: na fila')).toBeInTheDocument()
-    })
-
-    const sync = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/catalog/sync')
-    expect(sync?.body).toEqual({ market: 'BR', currency: 'BRL' })
-    expect(sync?.authorization).toBe('Bearer access-token')
+    expect(screen.queryByRole('button', { name: 'Sincronizar catálogo' })).not.toBeInTheDocument()
+    expect(screen.getByText('Manutenção da Stripe')).toBeInTheDocument()
   })
 
   it('locks the account filter to the operator market', async () => {
@@ -44,7 +35,7 @@ describe('BillingPage', () => {
     renderAuthedPage(<BillingPage />, '/billing')
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'sub_123' })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'ana@edenbowls.com' })).toBeInTheDocument()
     })
 
     const account = screen.getByLabelText('Conta')
@@ -70,7 +61,7 @@ describe('BillingPage', () => {
     renderAuthedPage(<BillingPage />, '/billing')
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: 'sub_123' })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'ana@edenbowls.com' })).toBeInTheDocument()
     })
 
     expect(screen.queryByRole('button', { name: 'Sincronizar catálogo' })).not.toBeInTheDocument()

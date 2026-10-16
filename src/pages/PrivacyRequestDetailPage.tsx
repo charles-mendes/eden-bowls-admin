@@ -114,7 +114,7 @@ export function PrivacyRequestDetailPage() {
       </Section>
 
       {canWrite && !closed ? (
-        <Section title="Ações" description="Uma prorrogação por pedido. Completar acesso/exclusão/portabilidade fica bloqueado enquanto a identidade estiver unverified.">
+        <Section title="Ações" description="Uma prorrogação por pedido. Completar acesso/exclusão/portabilidade fica bloqueado enquanto a identidade não for verificada.">
           <div className="inline-actions">
             <button
               className="ghost-button"

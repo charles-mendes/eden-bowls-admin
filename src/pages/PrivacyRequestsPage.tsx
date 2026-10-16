@@ -100,7 +100,7 @@ export function PrivacyRequestsPage() {
   return (
     <PageFrame
       title="Privacidade"
-      description="Fila DSAR com prazo, identidade e opt-out. Pedidos por e-mail só avançam depois da verificação do titular."
+      description="Pedidos de clientes sobre os próprios dados (acesso, correção, exclusão). Pedidos por e-mail só avançam depois de confirmar a identidade."
     >
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
@@ -202,7 +202,7 @@ export function PrivacyRequestsPage() {
       </Section>
 
       {canWrite ? (
-        <Section title="Abrir pedido por e-mail" description="Use só o user_id interno. Identidade começa como não verificada.">
+        <Section title="Abrir pedido por e-mail" description="Registre um pedido recebido por e-mail. Informe o ID do cliente, que aparece na tela do cliente.">
           <form className="form-grid" onSubmit={createRequest}>
             <label>
               User ID

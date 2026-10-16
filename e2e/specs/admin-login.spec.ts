@@ -22,40 +22,45 @@ test.describe('Admin login', () => {
     await page.getByLabel('Senha').fill('secret')
     await page.getByRole('button', { name: 'Entrar' }).click()
 
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Hoje', exact: true })).toBeVisible()
     await expect(page.getByText('ops@edenbowls.com')).toBeVisible()
     expect(tokenBodies).toEqual([{ username: 'ops@edenbowls.com', password: 'secret' }])
     expect(meAuth.some((value) => value === 'Bearer e2e-access-token')).toBe(true)
     await expect.poll(() => page.evaluate(() => localStorage.getItem('eden-bowls-admin-token'))).toBe('e2e-access-token')
   })
 
-  test('loads dashboard catalog health for the session market', async ({ page }) => {
+  test('an operator sees the day without the system health panel', async ({ page }) => {
     const { captured } = await openAuthed(page, '/dashboard', e2eProfiles.operator)
 
-    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible()
-    await expect(page.getByText('Completo')).toBeVisible()
-    await expect(page.getByText(/As 10 variações do catálogo BR já têm um Price ID em BRL/)).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Conflitos de mercado' })).toHaveCount(0)
-    await expect(page.getByRole('combobox', { name: 'Mercado' })).toHaveCount(0)
-    await expect.poll(() => captured.some((item) => (
-      item.method === 'GET'
-      && item.path === '/api/v1/admin/catalog/sync/health'
-      && item.search.includes('market=BR')
-      && item.search.includes('currency=BRL')
-    ))).toBe(true)
+    await expect(page.getByRole('heading', { name: 'Hoje', exact: true })).toBeVisible()
+    await expect(page.getByText('Ana Ledger')).toBeVisible()
+    await expect(page.getByText('Saúde do sistema')).toHaveCount(0)
+    await expect(page.getByRole('group', { name: 'Mercado' })).toHaveCount(0)
+    await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/catalog/sync/health')).toBe(false)
     await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/markets/conflicts')).toBe(false)
+    await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/billing/webhooks/health')).toBe(false)
   })
 
-  test('admin dashboard lists market conflicts', async ({ page }) => {
+  test('admin dashboard shows webhooks, market conflicts and the last sync', async ({ page }) => {
     const { captured } = await openAuthed(page, '/dashboard', e2eProfiles.admin)
 
-    await expect(page.getByRole('heading', { name: 'Conflitos de mercado' })).toBeVisible()
-    await expect(page.getByText('ana@edenbowls.com')).toBeVisible()
+    await page.getByText('Saúde do sistema').click()
+    const health = page.locator('.day-health')
+
+    await expect(health.getByRole('heading', { name: 'Webhooks Stripe' })).toBeVisible()
+    await expect(health.getByRole('row', { name: /Brasil/ }).getByText('Atenção')).toBeVisible()
+    await expect(health.getByRole('row', { name: /EUA/ }).getByText('OK')).toBeVisible()
+    await expect(health.getByRole('heading', { name: 'Conflitos de mercado' })).toBeVisible()
+    await expect(health.getByRole('row', { name: /ana@edenbowls\.com/ })).toBeVisible()
+    await expect(health.getByText(/Última sincronização Brasil: concluído/)).toBeVisible()
+    await expect(health.getByText('Checkouts', { exact: true })).toHaveCount(0)
     await expect.poll(() => captured.some((item) => (
       item.method === 'GET'
       && item.path === '/api/v1/admin/markets/conflicts'
       && item.authorization === 'Bearer e2e-access-token'
     ))).toBe(true)
+    await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/billing/webhooks/health')).toBe(true)
+    expect(captured.some((item) => item.path === '/api/v1/admin/onboarding/metrics')).toBe(false)
   })
 
   test('blocks a customer account from the shell', async ({ page }) => {
@@ -81,7 +86,7 @@ test.describe('Admin login', () => {
 
     await expect(page.getByRole('heading', { name: 'Nutrition simulator' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Simulador nutricional' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Dashboard' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'Hoje' })).toHaveCount(0)
 
     await page.goto('/users')
     await expect(page).toHaveURL(/\/nutrition\/simulate/)

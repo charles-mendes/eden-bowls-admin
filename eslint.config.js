@@ -18,5 +18,11 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      'react-refresh/only-export-components': ['error', { allowConstantExport: true, allowExportNames: ['useAuth'] }],
+      // As páginas buscam dados em useEffect com apiRequest (sem TanStack Query/SWR, por regra do projeto).
+      // A regra marca o setError/setLoading antes do primeiro await; fica como aviso até migrar esse padrão.
+      'react-hooks/set-state-in-effect': 'warn',
+    },
   },
 ])

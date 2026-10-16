@@ -16,9 +16,11 @@
     "test:all": "npm run test && npm run test:e2e",
     "test:e2e:install": "playwright install chromium",
     "test:e2e:headed": "playwright test --workers=4 --headed",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "contract:sync": "node scripts/sync-backend-routes.mjs"
   },
   "dependencies": {
+    "@sentry/react": "^11.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.1"
@@ -26,6 +28,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
+    "@sentry/vite-plugin": "^5.4.0",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.5",

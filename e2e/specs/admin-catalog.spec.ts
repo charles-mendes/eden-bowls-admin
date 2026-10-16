@@ -8,8 +8,8 @@ test.describe('Admin catalog', () => {
     await expect(page.getByRole('heading', { name: 'Produtos', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Bowl Adulto' })).toBeVisible()
     await expect(page.getByPlaceholder('slug, nome pt ou en')).toHaveValue('')
-    await expect(page.getByRole('combobox', { name: 'Mercado' })).toHaveValue('BR')
-    await expect(page.getByRole('combobox', { name: 'Mercado' })).toBeDisabled()
+    await expect(page.getByRole('combobox', { name: 'Mercado', exact: true })).toHaveValue('BR')
+    await expect(page.getByRole('combobox', { name: 'Mercado', exact: true })).toBeDisabled()
     await expect(page.getByRole('option', { name: 'Estados Unidos' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Limpar busca' })).toHaveCount(0)
     await expect.poll(() => captured.some((item) => (
@@ -37,8 +37,8 @@ test.describe('Admin catalog', () => {
 
     await page.getByRole('button', { name: 'Limpar busca' }).click()
     await expect(page.getByPlaceholder('slug, nome pt ou en')).toHaveValue('')
-    await expect(page.getByRole('combobox', { name: 'Mercado' })).toHaveValue('BR')
-    await expect(page.getByRole('combobox', { name: 'Mercado' })).toBeDisabled()
+    await expect(page.getByRole('combobox', { name: 'Mercado', exact: true })).toHaveValue('BR')
+    await expect(page.getByRole('combobox', { name: 'Mercado', exact: true })).toBeDisabled()
     await expect.poll(() => {
       const lastList = [...captured].reverse().find((item) => item.method === 'GET' && item.path === '/api/v1/admin/catalog/products')
       return Boolean(lastList && !lastList.search.includes('search=') && lastList.search.includes('market=BR'))
@@ -48,6 +48,7 @@ test.describe('Admin catalog', () => {
   test('creates a product from the catalog list', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products', e2eProfiles.operatorWrite)
 
+    await page.getByText('Novo produto', { exact: true }).click()
     await page.getByPlaceholder('Ex.: Plano Adulto BR').fill('Plano novo')
     await page.getByRole('button', { name: 'Criar produto' }).click()
     await expect.poll(() => captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/catalog/products')).toMatchObject({

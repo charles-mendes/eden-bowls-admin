@@ -136,18 +136,18 @@ export function RolesPage() {
 
   if (!canWrite) {
     return (
-      <PageFrame title="Papéis" description="Somente admin pode atribuir papéis no painel.">
+      <PageFrame title="Equipe e papéis" description="Somente admin pode atribuir papéis no painel.">
         <div className="alert">Sua conta não tem permissão para gerenciar papéis.</div>
       </PageFrame>
     )
   }
 
   return (
-    <PageFrame title="Papéis" description="Atribui admin, operator, nutritionist ou readonly. ADMIN_EMAILS continua promovendo admin automaticamente.">
+    <PageFrame title="Equipe e papéis" description="Quem acessa o painel e o que cada pessoa pode fazer: administrador, operador, nutricionista ou só leitura.">
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
 
-      <Section title="Atribuir papel" description="Busque qualquer conta existente e grave o papel em _eden_admin_roles.">
+      <Section title="Atribuir papel" description="Busque a conta pelo e-mail ou nome e escolha o papel.">
         <form className="filters-bar" onSubmit={findUsers}>
           <label>
             E-mail ou nome
@@ -240,9 +240,9 @@ export function RolesPage() {
         ) : null}
       </Section>
 
-      <Section title="Equipe do painel" description="Contas com papel operacional ou e-mail na allowlist.">
+      <Section title="Equipe do painel" description="Contas com acesso ao painel.">
         {data?.bootstrapEmails?.length ? (
-          <p className="muted">Bootstrap ADMIN_EMAILS: {data.bootstrapEmails.join(', ')}</p>
+          <p className="muted">Administradores fixos, configurados no servidor: {data.bootstrapEmails.join(', ')}</p>
         ) : (
           <p className="muted">Nenhum e-mail em ADMIN_EMAILS. O primeiro admin precisa ser gravado aqui ou na variável de ambiente.</p>
         )}

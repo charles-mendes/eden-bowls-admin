@@ -188,36 +188,30 @@ Query: `market`, `currency`. Dashboard força `BR` + `BRL`. Billing usa os input
 }
 ```
 
-### `GET /billing/catalog/sync/status`
+### `GET /billing/catalog/sync/status` (também `/admin/catalog/sync/status`)
 
-Chamada **opcional**: falha → UI mostra “sem job”, sem alerta.
+Permissão `catalog.read`, filtrada pelo escopo de mercado: operator vê só os próprios mercados (`?market=` de fora → 403 `market_forbidden`), admin vê BR e US. A chamada é **opcional** na UI: falha → sem status, sem alerta.
 
-Dashboard espera:
-
-```ts
-{
-  syncJobId: string
-  status: string
-  summary: { scope: string; market?: string; currency?: string; productId?: string }
-}
-```
-
-Billing espera o job “achatado”:
+Cada sync de catálogo grava uma linha por mercado em `catalog_sync_runs`, inclusive quando falha (`status: 'failed'` + `error`, até 500 caracteres). Retenção: as 50 execuções mais recentes por mercado; gravar a 51ª apaga a mais antiga do mesmo mercado.
 
 ```ts
-{
-  syncJobId: string
-  status: string
-  scope: string
-  market?: string
+type SyncRun = {
+  syncJobId: string            // `sync_<id>`
+  status: 'completed' | 'completed_with_skips' | 'failed'
+  scope: 'market' | 'product'
+  market: 'BR' | 'US'
   currency?: string
   productId?: string
-  createdAt: string
-  updatedAt: string
+  summary: { created: number; updated: number; skipped: Array<{ variationId: string; reason: string }> } | null
+  error: string | null
+  createdAt: string            // início
+  updatedAt: string            // fim
 }
-```
 
-O mesmo endpoint, dois shapes. Se a API devolver só um deles, um dos dois cards fica incompleto.
+// Topo = execução mais recente no escopo (formato que CatalogPricesSection lê); byMarket = a mais recente de cada mercado.
+type SyncStatus = (SyncRun & { byMarket: Partial<Record<'BR' | 'US', SyncRun>> })
+  | { status: null; byMarket: {} }
+```
 
 ### `POST /billing/catalog/sync`
 
@@ -249,6 +243,45 @@ Item:
 ```
 
 Envelope: `{ total, page, perPage, items }`.
+
+### `GET /admin/billing/webhooks/health`
+
+Só admin (permissão `system.health.read`). Sem token → 401; operator, readonly e nutritionist → 403. Sempre devolve as duas contas, sem filtro de mercado.
+
+```ts
+{
+  generatedAt: string
+  staleAfterHours: 72
+  accounts: Array<{
+    account: 'br' | 'us'
+    status: 'ok' | 'attention' | 'no_events'
+    lastEventAt: string | null   // created_at do evento mais novo (recebimento)
+    lastEventType: string | null
+    failedLast24h: number        // failed_at nas últimas 24 h
+    pendingOverdue: number       // recebido há mais de 1 h, nem processado nem falho
+  }>
+}
+```
+
+Status: `no_events` sem nenhum evento; `attention` com `failedLast24h > 0`, `pendingOverdue > 0` ou o último evento com mais de 72 h; `ok` no resto. Eventos processados são apagados após 90 dias, então uma conta parada há mais tempo que isso volta a `no_events`.
+
+### `GET /admin/markets/conflicts`
+
+Só admin (`system.health.read`), mesmo 401/403 da rota acima, sem filtro de mercado. Query: `page` (1), `perPage` (20, máx. 100).
+
+Um item por par cliente + conta Stripe em que o mercado do perfil (`hsr_market_country`) é `BR`/`US`, a assinatura está em `br`/`us` e os dois não batem. Várias assinaturas do mesmo cliente na mesma conta contam uma vez. É a mesma regra do `--dry-run` de `src/scripts/backfill-admin-markets.js`.
+
+```ts
+{
+  total: number
+  page: number
+  perPage: number
+  totalPages: number
+  items: Array<{ userId: string; email: string; profileMarket: 'BR' | 'US'; stripeAccount: 'br' | 'us' }>
+}
+```
+
+Ordem: e-mail, depois conta.
 
 ### `GET /admin/billing/subscriptions`
 

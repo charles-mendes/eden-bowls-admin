@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { groupedMenuItems, visibleMenuItems } from './menu'
+import { activeMenuHref, groupedMenuItems, visibleMenuItems } from './menu'
 
 describe('admin menu', () => {
   it('hides operational sections from nutritionist-only accounts', () => {
@@ -23,23 +23,22 @@ describe('admin menu', () => {
     expect(adminHrefs).toContain('/users/roles')
   })
 
-  it('does not show write-heavy items to readonly', () => {
+  it('shows readonly the read screens, including the shipping simulator, but not write-heavy items', () => {
     const hrefs = visibleMenuItems(['readonly']).map((item) => item.href)
 
     expect(hrefs).toContain('/dashboard')
-    expect(hrefs).toContain('/onboarding/sessions')
     expect(hrefs).toContain('/operations/production')
     expect(hrefs).toContain('/feedbacks')
     expect(hrefs).toContain('/privacy/requests')
-    expect(hrefs).not.toContain('/config/shipping')
+    expect(hrefs).toContain('/config/shipping')
     expect(hrefs).not.toContain('/billing/coupons')
     expect(hrefs).not.toContain('/orders')
   })
 
-  it('keeps a single operational checkout screen', () => {
+  it('keeps checkout screens out of the menu: checkouts live in the customer detail', () => {
     const hrefs = visibleMenuItems(['admin', 'operator']).map((item) => item.href)
 
-    expect(hrefs).toContain('/onboarding/sessions')
+    expect(hrefs).not.toContain('/onboarding/sessions')
     expect(hrefs).not.toContain('/orders')
   })
 
@@ -52,9 +51,20 @@ describe('admin menu', () => {
     expect(groups.map((group) => group.group)).toEqual([
       'Visão geral',
       'Operação',
-      'Catálogo',
-      'Cobrança',
-      'Equipe',
+      'Clientes',
+      'Loja',
+      'Ferramentas',
+      'Administração',
     ])
+  })
+
+  it('activates only the most specific menu item', () => {
+    const items = visibleMenuItems(['admin'])
+
+    expect(activeMenuHref('/billing/coupons', items)).toBe('/billing/coupons')
+    expect(activeMenuHref('/billing/subscriptions/12', items)).toBe('/billing')
+    expect(activeMenuHref('/users/roles', items)).toBe('/users/roles')
+    expect(activeMenuHref('/users/u-1', items)).toBe('/users')
+    expect(activeMenuHref('/billingx', items)).toBe('')
   })
 })

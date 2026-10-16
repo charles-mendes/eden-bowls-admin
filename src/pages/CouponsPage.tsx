@@ -172,7 +172,7 @@ export function CouponsPage() {
   const percent = term === 6 ? 40 : term === 3 ? 25 : 10
 
   return (
-    <PageFrame title="Cupons de 1ª compra" description="O mapa prazo → promo_ é por conta Stripe. BR e US não compartilham cupom; o mapa duplicado é de propósito.">
+    <PageFrame title="Cupons de 1ª compra" description="Desconto automático da primeira compra, por prazo do plano. Brasil e EUA têm cupons separados na Stripe.">
       <FiltersBar>
         <AccountSelect
           user={user}
@@ -202,7 +202,7 @@ export function CouponsPage() {
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{noticeCopy[message] || message}</div> : null}
 
-      <Section title="Mapear slots" description="IDs persistidos no banco precisam começar com promo_ e existir na Stripe.">
+      <Section title="Mapear slots" description="Qual código de promoção da Stripe vale para cada prazo. O ID começa com promo_.">
         <div className="page-stack">
           <div className="inline-actions">
             <button className="ghost-button" type="button" onClick={() => void syncStripe()} disabled={syncing}>
@@ -222,7 +222,7 @@ export function CouponsPage() {
         </div>
       </Section>
 
-      <Section title="Criar na Stripe" description="Cria Coupon duration=once + Promotion Code first_time_transaction=true e grava o slot no banco. Percentual não é editável.">
+      <Section title="Criar na Stripe" description="Cria o cupom e o código na Stripe, válidos só na primeira compra, e já liga ao prazo escolhido. O percentual é fixo por prazo.">
         <form className="form-toolbar" onSubmit={createCoupon}>
           <div className="form-grid">
             <label>

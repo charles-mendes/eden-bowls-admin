@@ -19,6 +19,7 @@ const SYNC_JOB_STATUS_LABELS: Record<string, string> = {
   queued: 'na fila',
   completed: 'concluído',
   completed_with_skips: 'concluído com variações ignoradas',
+  failed: 'falhou',
 }
 
 const FREQUENCY_LABELS: Record<string, string> = {

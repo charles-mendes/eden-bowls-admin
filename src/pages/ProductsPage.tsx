@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { CatalogPricesSection } from '../components/CatalogPricesSection'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { Pager } from '../components/Pager'
@@ -224,63 +225,14 @@ export function ProductsPage() {
   return (
     <PageFrame
       title="Produtos"
-      description="Crie o produto já no Stripe; no detalhe você adiciona as variações."
+      description="Planos à venda na loja, suas variações (sabor e peso) e os preços na Stripe."
     >
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
 
-      {canWrite ? (
-        <Section title="Novo produto" description="Cria em rascunho, vincula um Product no Stripe e abre o detalhe para as variações.">
-          <form className="stack" onSubmit={createProduct}>
-            <div className="form-grid">
-              <label>
-                Nome
-                <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Plano Adulto BR" required />
-              </label>
-              <label>
-                País do plano
-                <select
-                  value={form.planCountry}
-                  disabled={!bothMarkets}
-                  onChange={(event) => setForm((current) => ({ ...current, planCountry: event.target.value }))}
-                >
-                  {(planCountries.length ? planCountries : ['BR']).map((country) => (
-                    <option key={country} value={country}>{country === 'US' ? 'US / USD' : 'BR / BRL'}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Duração (dias)
-                <input type="number" min={1} value={form.planDays} onChange={(event) => setForm((current) => ({ ...current, planDays: Number(event.target.value) }))} />
-              </label>
-            </div>
-            <p className="muted">Variação inicial (opcional). Depois você cria as demais no detalhe do produto.</p>
-            <div className="form-grid">
-              <label>
-                SKU da variação
-                <input value={form.variantSku} onChange={(event) => setForm((current) => ({ ...current, variantSku: event.target.value }))} placeholder="ADULTO-300" />
-              </label>
-              <label>
-                Nome da variação
-                <input value={form.variantName} onChange={(event) => setForm((current) => ({ ...current, variantName: event.target.value }))} placeholder="Frango 300g" />
-              </label>
-              <label>
-                Sabor
-                <input value={form.variantFlavor} onChange={(event) => setForm((current) => ({ ...current, variantFlavor: event.target.value }))} placeholder="Ex.: Beef" />
-              </label>
-              <label>
-                Preço
-                <input type="number" min={0} step="0.01" value={form.variantPrice} onChange={(event) => setForm((current) => ({ ...current, variantPrice: event.target.value }))} placeholder="0.00" />
-              </label>
-            </div>
-            <div className="inline-actions">
-              <button className="primary-button" type="submit" disabled={creating}>{creating ? 'Criando…' : 'Criar produto'}</button>
-            </div>
-          </form>
-        </Section>
-      ) : null}
+      <CatalogPricesSection />
 
-      <Section title="Filtros" description="A busca começa vazia. Com um só mercado na sessão, a lista já vem filtrada por ele.">
+      <Section title="Filtros">
         <FiltersBar>
           <label>
             Busca
@@ -379,6 +331,61 @@ export function ProductsPage() {
 
         <Pager page={data?.page ?? page} totalPages={Math.max(1, Math.ceil((data?.total ?? 0) / (data?.perPage ?? perPage)))} onPrev={() => setPage((current) => Math.max(1, current - 1))} onNext={() => setPage((current) => current + 1)} />
       </Section>
+
+      {canWrite ? (
+        <details className="section-card create-panel">
+          <summary>
+            <strong>Novo produto</strong>
+            <span className="muted">Nasce como rascunho e já ganha um produto na Stripe. As variações são adicionadas no detalhe.</span>
+          </summary>
+          <form className="stack" onSubmit={createProduct}>
+            <div className="form-grid">
+              <label>
+                Nome
+                <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Plano Adulto BR" required />
+              </label>
+              <label>
+                País do plano
+                <select
+                  value={form.planCountry}
+                  disabled={!bothMarkets}
+                  onChange={(event) => setForm((current) => ({ ...current, planCountry: event.target.value }))}
+                >
+                  {(planCountries.length ? planCountries : ['BR']).map((country) => (
+                    <option key={country} value={country}>{country === 'US' ? 'US / USD' : 'BR / BRL'}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Duração (dias)
+                <input type="number" min={1} value={form.planDays} onChange={(event) => setForm((current) => ({ ...current, planDays: Number(event.target.value) }))} />
+              </label>
+            </div>
+            <p className="muted">Variação inicial (opcional). Depois você cria as demais no detalhe do produto.</p>
+            <div className="form-grid">
+              <label>
+                SKU da variação
+                <input value={form.variantSku} onChange={(event) => setForm((current) => ({ ...current, variantSku: event.target.value }))} placeholder="ADULTO-300" />
+              </label>
+              <label>
+                Nome da variação
+                <input value={form.variantName} onChange={(event) => setForm((current) => ({ ...current, variantName: event.target.value }))} placeholder="Frango 300g" />
+              </label>
+              <label>
+                Sabor
+                <input value={form.variantFlavor} onChange={(event) => setForm((current) => ({ ...current, variantFlavor: event.target.value }))} placeholder="Ex.: Beef" />
+              </label>
+              <label>
+                Preço
+                <input type="number" min={0} step="0.01" value={form.variantPrice} onChange={(event) => setForm((current) => ({ ...current, variantPrice: event.target.value }))} placeholder="0.00" />
+              </label>
+            </div>
+            <div className="inline-actions">
+              <button className="primary-button" type="submit" disabled={creating}>{creating ? 'Criando…' : 'Criar produto'}</button>
+            </div>
+          </form>
+        </details>
+      ) : null}
     </PageFrame>
   )
 }
