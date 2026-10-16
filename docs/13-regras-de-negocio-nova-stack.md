@@ -10,8 +10,8 @@ Marcacao: **[REGRA CONFIRMADA]** no codigo atual. Itens **[INFERENCIA]** ou **[D
 
 ## 1. Identidade, acesso e papeis
 
-1. Existem tres papeis operacionais: **Administrador**, **Operador** e **Nutricionista**.
-2. Nutricionista so executa **simulacao nutricional**. Nao ve pedidos, frete, Stripe, catalogo, usuarios.
+1. Existem tres papeis operacionais: **Administrador**, **Operador** e **Veterinário(a)**.
+2. Veterinário(a) so executa **simulacao nutricional**. Nao ve pedidos, frete, Stripe, catalogo, usuarios.
 3. Operador ve pedidos/clientes/catalogo, onboarding 360, frete, simulador, ledger Stripe e cupons. Nao precisa de ferramentas de CMS.
 4. Administrador ve tudo o que o operador ve, mais ferramentas de plataforma do painel.
 5. Os rotulos "Colaborador Brasil" e "Colaborador EUA" **nao isolam dados** no codigo atual. Nao implementar isolamento por mercado sem nova decisao de produto.
@@ -29,7 +29,7 @@ Marcacao: **[REGRA CONFIRMADA]** no codigo atual. Itens **[INFERENCIA]** ou **[D
 6. Gato: 3 refeicoes. Cao filhote/crescimento: 3. Demais caes: 2.
 7. Porte do cao pelo peso: mini ≤5, pequeno ≤10, medio ≤25, grande ≤40, gigante >40 kg.
 8. Peso deve ser > 0; caso contrario o calculo falha.
-9. Simulador admin e onboarding devem usar o **mesmo motor**. Hoje o admin forca NEM=3600 inclusive para gato (o motor default de gato seria 3800). Alinhar com nutricionista; nao silenciar essa divergencia.
+9. Simulador admin e onboarding devem usar o **mesmo motor**. Hoje o admin forca NEM=3600 inclusive para gato (o motor default de gato seria 3800). Alinhar com veterinário(a); nao silenciar essa divergencia.
 10. Simulacao do painel **nao persiste**.
 
 ---

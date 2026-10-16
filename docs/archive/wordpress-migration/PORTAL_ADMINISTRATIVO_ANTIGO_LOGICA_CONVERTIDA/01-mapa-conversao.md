@@ -17,7 +17,7 @@
 | Perfil WP → Delivery Instructions | `/users` e `/users/:id` | `UsersPage.tsx` (só lista) | `skip`/`take`, sem detalhe | `ProfileService` é do próprio JWT; admin precisa de get/patch por `userId` |
 | (código sem menu) Dashboard/webhooks/logs Stripe | backlog `/billing/ops` | Billing já lista webhooks no contrato assumido | — | `POST /stripe/v1/webhook` alimenta; listagem admin ainda não existe |
 
-Menu SPA atual (`src/lib/menu.ts`): Dashboard, Onboarding, Produtos, Preços, Billing, Regras de negócio, Usuários, Pedidos. **Não há** Simulador, Frete, Cupons, detalhe de produto, detalhe de assinante, detalhe de cliente. Papel `nutritionist` **não existe** no tipo `AdminRole`.
+Menu SPA atual (`src/lib/menu.ts`): Dashboard, Onboarding, Produtos, Preços, Billing, Regras de negócio, Usuários, Pedidos. **Não há** Simulador, Frete, Cupons, detalhe de produto, detalhe de assinante, detalhe de cliente. Papel `veterinarian` **não existe** no tipo `AdminRole`.
 
 ## O que o operador fazia no WP e o que o SPA já cobre
 
@@ -26,7 +26,7 @@ O SPA atual (`PORTAL_ADMINISTRATIVO_ATUAL`) é um **blueprint de contrato**, nã
 - Chama `/admin/*` e `/billing/catalog/sync*` que **não estão** em `src/app.js`.
 - Assume sessão de onboarding (`sessionPets`, `expiresAt`, `answers`, `recommendationRuns`) — modelo WP, não o Node.
 - Inventou máquina de status de pedido (`new → confirmed → preparing…`) que **não existia** nas telas custom PawBowl (o WP usava status nativo Woo, e as customizações eram só leitura).
-- Tem `readonly` no menu; o WP tinha **nutricionista**.
+- Tem `readonly` no menu; o WP tinha **veterinário(a)**.
 - Não tem simulador, frete, cupons nem instruções de entrega.
 - `RequireAuth` só exige JWT. Papéis filtram o **menu**, não a rota.
 
@@ -38,13 +38,13 @@ A conversão abaixo é a especificação **alvo**. O SPA deve convergir para ela
 |---|---|---|
 | `administrator` | `admin` | Tudo do operador + sync catálogo, cupons, reconciliação, config de frete |
 | `eden_bowls_colaborador_*` | `operator` | Nutrição, 360, frete (leitura+write), catálogo, pedidos/checkout, ledger, cupons, clientes |
-| `nutricionista` | `nutritionist` | Só simulador |
+| `veterinário(a)` | `veterinarian` | Só simulador |
 | — | `readonly` | GET only (inventado no SPA; o WP não tinha). Manter se o produto quiser |
 | — | `customer` | **Não entra no portal.** JWT de loja não autoriza `/admin/*` |
 
 Não criar dois operadores BR/US. Filtro de mercado nas listagens é query opcional (`market=BR|US`), não papel.
 
-O papel `readonly` do SPA atual **não** é equivalente ao nutricionista. São papéis diferentes; não fundir.
+O papel `readonly` do SPA atual **não** é equivalente ao(à) veterinário(a). São papéis diferentes; não fundir.
 
 ## Fluxo de entrada
 
@@ -52,8 +52,8 @@ O papel `readonly` do SPA atual **não** é equivalente ao nutricionista. São p
 Portal /login
   → POST /api/v1/auth/token   { username, password }
   → GET  /api/v1/admin/me     { userId, email, roles, permissions }
-  → se roles ∩ {admin, operator, nutritionist, readonly} vazio → 403 no portal
-  → nutritionist → só /nutrition/simulate
+  → se roles ∩ {admin, operator, veterinarian, readonly} vazio → 403 no portal
+  → veterinarian → só /nutrition/simulate
   → demais → /dashboard
 ```
 
@@ -81,7 +81,7 @@ Logout: apagar `eden-bowls-admin-token` no `localStorage`. **Não** chamar `POST
 | Item | href | Papéis |
 |---|---|---|
 | Dashboard | `/dashboard` | admin, operator, readonly |
-| Simulador nutricional | `/nutrition/simulate` | admin, operator, nutritionist |
+| Simulador nutricional | `/nutrition/simulate` | admin, operator, veterinarian |
 | Onboarding 360 | `/onboarding/sessions` | admin, operator, readonly |
 | Frete | `/config/shipping` | admin, operator |
 | Produtos | `/catalog/products` | admin, operator, readonly |
@@ -91,7 +91,7 @@ Logout: apagar `eden-bowls-admin-token` no `localStorage`. **Não** chamar `POST
 | Clientes | `/users` | admin, operator, readonly |
 | Checkouts / pedidos | `/orders` (alias da lista 360) | admin, operator |
 
-`nutritionist` só vê o simulador. `readonly` vê listagens, sem mutação. Remover ou decompor **Regras de negócio** (`/config/business-rules`) — não existia no WP; frete e cupom têm telas próprias.
+`veterinarian` só vê o simulador. `readonly` vê listagens, sem mutação. Remover ou decompor **Regras de negócio** (`/config/business-rules`) — não existia no WP; frete e cupom têm telas próprias.
 
 ## Guardrails WP que viram “não criar tela”
 
@@ -100,4 +100,4 @@ Logout: apagar `eden-bowls-admin-token` no `localStorage`. **Não** chamar `POST
 | Frontend WP bloqueado (`pawbowl-admin-only-mode`) | Headless | Não copiar; loja e admin são apps separados |
 | Aba Payments Woo oculta | Cobrança = Stripe | Não criar tela de gateway |
 | Flexible Subscriptions escondido para não-admin | Operação vive no ledger PawBowl | Não criar UI do CPT `fsb_subscription` |
-| Roles nativos escondidos (shop_manager, author…) | Lista de papéis curta | Só `admin` / `operator` / `nutritionist` / `readonly` no seletor, se houver |
+| Roles nativos escondidos (shop_manager, author…) | Lista de papéis curta | Só `admin` / `operator` / `veterinarian` / `readonly` no seletor, se houver |

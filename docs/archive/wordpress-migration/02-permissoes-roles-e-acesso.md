@@ -8,7 +8,7 @@ Controle de acesso do painel administrativo PawBowl.
 
 Definir quem entra no wp-admin, quais menus ve e quais acoes pode executar nas telas customizadas.
 
-Problema de negocio: separar administrador, operacao regional e nutricionista, sem expor ferramentas de CMS (posts, temas, plugins) para colaboradores.
+Problema de negocio: separar administrador, operacao regional e veterinário(a), sem expor ferramentas de CMS (posts, temas, plugins) para colaboradores.
 
 Atores: todos os usuarios do wp-admin.
 
@@ -66,7 +66,7 @@ Menus WooCommerce permitidos (por titulo/slug): Orders, Customers, Coupons, e o 
 
 **[REGRA CONFIRMADA]** Se o submenu Pedidos nao existir, o codigo injeta um item `pawbowl-orders` que apenas redireciona para `admin.php?page=wc-orders`.
 
-### nutricionista
+### veterinário(a)
 
 Caps **somente**:
 
@@ -80,7 +80,7 @@ access_pawbowl_nutrition
 
 **[REGRA CONFIRMADA]** No `admin_menu` prioridade 1000, todos os menus top-level sao apagados, restando so `hsr-nutrition-simulator`. Submenus Onboarding 360 e Frete tambem sao removidos para este role (mesmo que o usuario hipoteticamente tivesse `manage_woocommerce`, o que nao tem).
 
-**[REGRA CONFIRMADA]** Filtro `woocommerce_prevent_admin_access` retorna `false` para nutricionista, para o WooCommerce nao expulsar o usuario do wp-admin (o role nao tem caps Woo).
+**[REGRA CONFIRMADA]** Filtro `woocommerce_prevent_admin_access` retorna `false` para veterinário(a), para o WooCommerce nao expulsar o usuario do wp-admin (o role nao tem caps Woo).
 
 ### Roles escondidos da UI de usuarios
 
@@ -105,7 +105,7 @@ Nao significa que esses roles deixam de existir no WP; apenas nao aparecem no se
 | Instrucoes de entrega no usuario | n/a | `edit_user` no save |
 | REST sync Stripe | n/a | `manage_woocommerce` **ou** `manage_options` (`require_shop_manager`) |
 
-**[REGRA CONFIRMADA]** Ha assimetria: o menu do simulador exige `access_pawbowl_nutrition`, mas o render aceita `manage_options` como fallback. Nutricionista nao tem `manage_options`; admin tem ambos.
+**[REGRA CONFIRMADA]** Ha assimetria: o menu do simulador exige `access_pawbowl_nutrition`, mas o render aceita `manage_options` como fallback. Veterinário(a) nao tem `manage_options`; admin tem ambos.
 
 **[REGRA CONFIRMADA]** REST de sync (`POST /custom/v1/sync-stripe-products/{id}`) exige `manage_woocommerce`/`manage_options`, **nao** `access_pawbowl_stripe`. Um usuario so com cap Stripe (se existisse) nao sincronizaria produto. Na pratica, colaboradores tem as duas.
 
@@ -129,7 +129,7 @@ Nao ha tela PawBowl para criar roles. A criacao e **codigo + `init`**. Atribuica
 
 ## Observacoes para migracao
 
-- Modelar **tres perfis**: Admin, Operador, Nutricionista.
+- Modelar **tres perfis**: Admin, Operador, Veterinário(a).
 - Nao copiar dois operadores (BR/US) ate existir regra real de isolamento; hoje sao o mesmo perfil.
 - Capabilities WP (`manage_woocommerce`, `edit_post`) devem virar permissoes de dominio: `nutrition.simulate`, `onboarding.read`, `shipping.write`, `billing.subscribers.read`, `catalog.product.sync`, `users.delivery_instructions.write`.
 - Sempre revalidar permissao no backend de cada acao (o WP ja faz isso no render e no AJAX/REST).

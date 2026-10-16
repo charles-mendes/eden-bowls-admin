@@ -143,7 +143,7 @@ export function RolesPage() {
   }
 
   return (
-    <PageFrame title="Equipe e papéis" description="Quem acessa o painel e o que cada pessoa pode fazer: administrador, operador, nutricionista ou só leitura.">
+    <PageFrame title="Equipe e papéis" description="Quem acessa o painel e o que cada pessoa pode fazer: administrador, operador, veterinário(a) ou só leitura.">
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
 

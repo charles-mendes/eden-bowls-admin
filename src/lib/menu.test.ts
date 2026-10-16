@@ -2,17 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { activeMenuHref, groupedMenuItems, visibleMenuItems } from './menu'
 
 describe('admin menu', () => {
-  it('hides operational sections from nutritionist-only accounts', () => {
-    const hrefs = visibleMenuItems(['nutritionist']).map((item) => item.href)
+  it('hides operational sections from veterinarian-only accounts', () => {
+    const hrefs = visibleMenuItems(['veterinarian']).map((item) => item.href)
 
     expect(hrefs).toEqual(['/nutrition/simulate'])
   })
 
-  it('shows Produção to operator and readonly, not nutritionist', () => {
+  it('shows Produção to operator and readonly, not veterinarian', () => {
     expect(visibleMenuItems(['admin']).map((item) => item.href)).toContain('/operations/production')
     expect(visibleMenuItems(['operator']).map((item) => item.href)).toContain('/operations/production')
     expect(visibleMenuItems(['readonly']).map((item) => item.href)).toContain('/operations/production')
-    expect(visibleMenuItems(['nutritionist']).map((item) => item.href)).not.toContain('/operations/production')
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/operations/production')
   })
 
   it('keeps role assignment exclusive to admin', () => {

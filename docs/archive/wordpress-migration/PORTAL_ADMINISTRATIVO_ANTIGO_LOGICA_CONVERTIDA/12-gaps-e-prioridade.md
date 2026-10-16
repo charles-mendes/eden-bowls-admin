@@ -15,13 +15,13 @@ Distância entre (1) wp-admin real, (2) SPA `eden-bowls-admin` atual, (3) `eden-
 | Usuários | `UsersPage.tsx` | lista skip/take, sem detalhe, sem busca | Lista `page`/`perPage` + instruções de entrega |
 | Pedidos | `OrdersPage.tsx`, `OrderDetailPage.tsx` | máquina de status inventada | Read-only checkout; sem PATCH no MVP |
 
-`RequireAuth` não valida papel. `nutritionist` não existe no tipo `AdminRole` nem no menu.
+`RequireAuth` não valida papel. `veterinarian` não existe no tipo `AdminRole` nem no menu.
 
 ## Telas WP que o SPA ainda não tem
 
 | WP | Portal a criar | Prioridade | Por que |
 |---|---|---|---|
-| Simulador nutricional | `/nutrition/simulate` | **P0** | Único uso do nutricionista; motor já existe |
+| Simulador nutricional | `/nutrition/simulate` | **P0** | Único uso do(a) veterinário(a); motor já existe |
 | Frete | `/config/shipping` | **P0** | Checkout BR/US já depende do JSON/env |
 | Cupons 1ª compra | `/billing/coupons` | **P0** | Mapa incompleto **bloqueia checkout** elegível |
 | Detalhe de assinante | `/billing/subscriptions/:id` | **P0** | Lista Billing não abre a sub |
@@ -58,8 +58,8 @@ Distância entre (1) wp-admin real, (2) SPA `eden-bowls-admin` atual, (3) `eden-
 
 ## Ordem sugerida
 
-1. **Auth admin** — `/admin/me`, middleware de permission, SPA login no `/auth/token`, incluir `nutritionist` no menu. Sem isso o resto é UI morta.
-2. **Simulador** — P0 UX do nutricionista; reusa core; não persiste.
+1. **Auth admin** — `/admin/me`, middleware de permission, SPA login no `/auth/token`, incluir `veterinarian` no menu. Sem isso o resto é UI morta.
+2. **Simulador** — P0 UX do(a) veterinário(a); reusa core; não persiste.
 3. **Cupons** — P0 de negócio (mapa incompleto derruba checkout). Service ~80% pronto; falta create + HTTP.
 4. **Frete settings + teste** — checkout BR/US já depende do JSON/env.
 5. **360 checkouts read-only** — operação diária; reorientar Dashboard, sessões e pedidos para `user_id`. Listar N assinaturas.
@@ -72,7 +72,7 @@ Distância entre (1) wp-admin real, (2) SPA `eden-bowls-admin` atual, (3) `eden-
 ## Decisões de produto explícitas (não inferir)
 
 1. Isolar dados por mercado (BR vs US)? **Hoje não.** Só filtro opcional.
-2. `readonly` vs `nutritionist`? São papéis diferentes; não fundir.
+2. `readonly` vs `veterinarian`? São papéis diferentes; não fundir.
 3. PATCH de status de pedido? **Não** na paridade WP. Só se logística pedir.
 4. NEM do gato no simulador? Usar default do motor (**3800**), não o 3600 do wp-admin.
 5. UI de chaves Stripe? **Não.** Env/runtime.

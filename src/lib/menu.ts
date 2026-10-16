@@ -22,7 +22,7 @@ export const adminMenu: MenuItem[] = [
   { label: 'Produtos', href: '/catalog/products', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
   { label: 'Cupons 1ª compra', href: '/billing/coupons', roles: ['admin', 'operator'], group: 'Loja' },
   { label: 'Feedbacks', href: '/feedbacks', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
-  { label: 'Simulador nutricional', href: '/nutrition/simulate', roles: ['admin', 'operator', 'nutritionist'], group: 'Ferramentas' },
+  { label: 'Simulador nutricional', href: '/nutrition/simulate', roles: ['admin', 'operator', 'veterinarian'], group: 'Ferramentas' },
   { label: 'Equipe e papéis', href: '/users/roles', roles: ['admin'], group: 'Administração' },
   { label: 'Privacidade', href: '/privacy/requests', roles: ['admin', 'operator', 'readonly'], group: 'Administração' },
 ]

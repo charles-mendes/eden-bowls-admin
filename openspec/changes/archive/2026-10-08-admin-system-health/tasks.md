@@ -2,7 +2,7 @@
 
 ## 1. Backend – permissão e regra de conflitos compartilhada
 
-- [x] 1.1 Adicionar `system.health.read` só em `ROLE_PERMISSIONS.admin` (`src/core/admin-roles.js`); verificar com `npx jest tests/admin-roles.test.js` que admin tem a permissão e operator/readonly/nutritionist não.
+- [x] 1.1 Adicionar `system.health.read` só em `ROLE_PERMISSIONS.admin` (`src/core/admin-roles.js`); verificar com `npx jest tests/admin-roles.test.js` que admin tem a permissão e operator/readonly/veterinarian não.
 - [x] 1.2 Criar `src/infrastructure/repositories/market-conflicts.repository.js` com o SQL da regra (pares distintos cliente+conta), `count()` e `list({ offset, perPage })` com e-mail de `wp_users` e nomes de tabela configuráveis; fazer `backfill-admin-markets.js` usar o `count` do módulo; verificar com `npx jest tests/backfill-admin-markets.test.js` ajustado para a contagem distinta.
 - [x] 1.3 Teste de integração MySQL `tests/integration/market-conflicts.integration.test.js` (tabelas `it_*`): sem conflito → 0; `BR` com 2 assinaturas `us` → 1 linha e, após `applyBackfill`, perfil segue `BR` e as 2 assinaturas seguem `us`; perfil sem mercado → ignorado; paginação respeita `perPage`; `countMarketConflicts` do script devolve o mesmo total da listagem. Verificar com `RUN_DB_INTEGRATION_TESTS=true npx jest tests/integration/market-conflicts`.
 

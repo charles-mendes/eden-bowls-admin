@@ -14,7 +14,7 @@ Dar visao operacional **somente leitura** dos pedidos originados do checkout de 
 
 Problema de negocio: suporte/operacao precisa achar um pedido de onboarding por cliente, sessao ou assinatura Stripe sem abrir pedido a pedido.
 
-Atores: Colaborador e Administrador (`manage_woocommerce` ou `manage_options`). Nutricionista **nao** ve esta tela.
+Atores: Colaborador e Administrador (`manage_woocommerce` ou `manage_options`). Veterinário(a) **nao** ve esta tela.
 
 ## Pre-condicoes
 

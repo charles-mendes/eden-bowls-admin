@@ -246,7 +246,7 @@ Envelope: `{ total, page, perPage, items }`.
 
 ### `GET /admin/billing/webhooks/health`
 
-Só admin (permissão `system.health.read`). Sem token → 401; operator, readonly e nutritionist → 403. Sempre devolve as duas contas, sem filtro de mercado.
+Só admin (permissão `system.health.read`). Sem token → 401; operator, readonly e veterinarian → 403. Sempre devolve as duas contas, sem filtro de mercado.
 
 ```ts
 {

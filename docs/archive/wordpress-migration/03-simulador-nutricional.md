@@ -12,11 +12,11 @@ Racas: `class-breeds-repository.php` / tabela `wp_hsr_breeds`
 
 ## Objetivo
 
-Permitir que nutricionista ou operador **valide o calculo de energia e quantidade de alimento** para um pet, usando o mesmo motor do onboarding, sem criar sessao, pedido ou assinatura.
+Permitir que veterinário(a) ou operador **valide o calculo de energia e quantidade de alimento** para um pet, usando o mesmo motor do onboarding, sem criar sessao, pedido ou assinatura.
 
 Problema de negocio: conferir se a recomendacao apresentada ao cliente faz sentido antes/depois do atendimento.
 
-Atores: Nutricionista, Colaborador, Administrador.
+Atores: Veterinário(a), Colaborador, Administrador.
 
 ## Pre-condicoes
 
@@ -73,7 +73,7 @@ Formula central **[REGRA CONFIRMADA]** (preservar):
 
 O motor, se NEM viesse vazio, usaria 3600 (cao) ou 3800 (gato). Como o admin sempre envia 3600, **gato no simulador usa NEM de cao**.
 
-Classificacao: regra de interface do simulador (nao necessariamente a regra do onboarding). **[DUVIDA]** se isso e intencional. Na nova stack, alinhar simulador e onboarding; nao copiar o 3600 cego sem confirmar com nutricionista.
+Classificacao: regra de interface do simulador (nao necessariamente a regra do onboarding). **[DUVIDA]** se isso e intencional. Na nova stack, alinhar simulador e onboarding; nao copiar o 3600 cego sem confirmar com veterinário(a).
 
 ### Fator — precedencia **[REGRA CONFIRMADA]** (preservar)
 

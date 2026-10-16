@@ -29,7 +29,7 @@ Arquivo: `src/contexts/AuthContext.tsx`.
 - Guarda `eden-bowls-admin-token` no `localStorage`.
 - Não chama logout no backend.
 - `RequireAuth` só exige token. Papéis filtram **menu**, não rota.
-- `AdminRole` = `'admin' | 'operator' | 'readonly' | 'customer'` — **sem `nutritionist`**.
+- `AdminRole` = `'admin' | 'operator' | 'readonly' | 'customer'` — **sem `veterinarian`**.
 
 O backend **não tem** `POST /auth/login`. O validator **não aceita** o campo `email`; aceita `username` (que na prática é o e-mail do `wp_users.user_login` / lookup de autenticação).
 
@@ -73,7 +73,7 @@ Shape alvo do portal:
 {
   userId: string
   email: string
-  roles: Array<'admin' | 'operator' | 'nutritionist' | 'readonly' | 'customer'>
+  roles: Array<'admin' | 'operator' | 'veterinarian' | 'readonly' | 'customer'>
   permissions: string[]
 }
 ```
@@ -115,7 +115,7 @@ Mapeamento papel → permissions:
 
 | Papel | Permissions |
 |---|---|
-| `nutritionist` | `nutrition.simulate` |
+| `veterinarian` | `nutrition.simulate` |
 | `operator` | todas as da tabela, **incluindo** `catalog.sync` (no WP o colaborador tinha sync) |
 | `admin` | todas |
 | `readonly` | só `*.read` + opcionalmente `nutrition.simulate` |
@@ -136,9 +136,9 @@ Assimetria WP a **não** copiar: o menu do simulador exigia `access_pawbowl_nutr
 Além do token (`RequireAuth`):
 
 1. Sem papel operacional → tela “sem permissão”, não o shell completo.
-2. `nutritionist` → rotas fora de `/nutrition/simulate` redirecionam.
+2. `veterinarian` → rotas fora de `/nutrition/simulate` redirecionam.
 3. Mutações escondidas (e rotas POST/PUT/PATCH bloqueadas) para `readonly`.
-4. Incluir `nutritionist` em `AdminRole` e no menu.
+4. Incluir `veterinarian` em `AdminRole` e no menu.
 
 ### CSRF / cookie
 

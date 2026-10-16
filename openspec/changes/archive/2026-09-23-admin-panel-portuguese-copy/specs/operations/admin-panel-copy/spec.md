@@ -40,12 +40,12 @@ Onboarding, checkout snapshots, the customer delivery-instructions section, prod
 
 #### Scenario: US nutrition simulator stays English
 
-- **WHEN** a nutritionist session is on the US market and opens the nutrition simulator
+- **WHEN** a veterinarian session is on the US market and opens the nutrition simulator
 - **THEN** the page title is **Nutrition simulator**
 
 ### Requirement: Some English stays on purpose
 
-The panel MUST keep showing DSAR, opt-in, opt-out, and **Opt-out de share**. It MUST keep role values `admin`, `operator`, `nutritionist`, and `readonly`. It MUST keep Stripe id prefixes (`promo_`, `sub_`, `cus_`, and any `price_`, `pm_`, `seti_`, or `pi_` prefix) as typed search or id text. The create-coupon name placeholder MUST stay English and MUST NOT be submitted unless the operator enters a name.
+The panel MUST keep showing DSAR, opt-in, opt-out, and **Opt-out de share**. It MUST keep role values `admin`, `operator`, `veterinarian`, and `readonly`. It MUST keep Stripe id prefixes (`promo_`, `sub_`, `cus_`, and any `price_`, `pm_`, `seti_`, or `pi_` prefix) as typed search or id text. The create-coupon name placeholder MUST stay English and MUST NOT be submitted unless the operator enters a name.
 
 #### Scenario: Privacy terms are unchanged
 

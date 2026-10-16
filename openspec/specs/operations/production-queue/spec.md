@@ -210,7 +210,7 @@ Any other edge, including `to_prepare → ready` and `ready → blocked`, MUST b
 
 ### Requirement: Production screen is an Operação queue for kitchen staff
 
-The admin app MUST expose **Produção** at `/operations/production` in the Operação menu for `admin`, `operator`, and `readonly`, and MUST hide it from nutritionist-only accounts. The page MUST show four metric cards bound to `metrics`: Vence hoje (`today`), Amanhã (`tomorrow`), Próximos Nd (`upcoming`, N = `windowDays`), Atrasados (`overdue`). Filters: window 7/14/30, account (admin: todas|BR|US; single-market staff: only their Stripe account, locked), production status todos|a preparar|em produção|pronto|bloqueado, search `q`, include overdue, clear. Single-market staff MUST send their account on every queue request and MUST NOT be able to select the other account. The table MUST use the grid columns defined above, group visible rows by `dueBucket`, key rows by subscription and cycle, and MUST NOT display last4, street, or postal code. The Vencimento column MUST show a paid cycle's preparation day and an unpaid cycle's charge. The Produção column MUST show the payment label when there is one. Empty state MUST read “Nenhuma renovação nesta janela.” Loading MUST use the panel table skeleton. Errors MUST render in `div.alert`. Callers with `production.write` MUST see status-advance actions; others MUST not. "Em produção" MUST NOT be offered for an unpaid cycle. Dense mix MAY open a dialog of `lineItems`. Blocking MUST prompt for a required note.
+The admin app MUST expose **Produção** at `/operations/production` in the Operação menu for `admin`, `operator`, and `readonly`, and MUST hide it from veterinarian-only accounts. The page MUST show four metric cards bound to `metrics`: Vence hoje (`today`), Amanhã (`tomorrow`), Próximos Nd (`upcoming`, N = `windowDays`), Atrasados (`overdue`). Filters: window 7/14/30, account (admin: todas|BR|US; single-market staff: only their Stripe account, locked), production status todos|a preparar|em produção|pronto|bloqueado, search `q`, include overdue, clear. Single-market staff MUST send their account on every queue request and MUST NOT be able to select the other account. The table MUST use the grid columns defined above, group visible rows by `dueBucket`, key rows by subscription and cycle, and MUST NOT display last4, street, or postal code. The Vencimento column MUST show a paid cycle's preparation day and an unpaid cycle's charge. The Produção column MUST show the payment label when there is one. Empty state MUST read “Nenhuma renovação nesta janela.” Loading MUST use the panel table skeleton. Errors MUST render in `div.alert`. Callers with `production.write` MUST see status-advance actions; others MUST not. "Em produção" MUST NOT be offered for an unpaid cycle. Dense mix MAY open a dialog of `lineItems`. Blocking MUST prompt for a required note.
 
 #### Scenario: Operator opens Produção
 
@@ -222,9 +222,9 @@ The admin app MUST expose **Produção** at `/operations/production` in the Oper
 - **WHEN** an operator with `production.write` sees an unpaid cycle and a paid cycle
 - **THEN** the unpaid row shows "Aguardando pagamento" and only "Bloquear", and the paid row offers "Em produção"
 
-#### Scenario: Nutritionist cannot reach the screen via the menu
+#### Scenario: Veterinarian cannot reach the screen via the menu
 
-- **WHEN** a nutritionist-only session loads the shell
+- **WHEN** a veterinarian-only session loads the shell
 - **THEN** Produção is absent from the menu and the only Operação item remains the nutrition simulator
 
 #### Scenario: Readonly can view but not change status

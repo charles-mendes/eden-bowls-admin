@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import App from '../../App'
 import { TOKEN_KEY } from '../../contexts/AuthContext'
-import { jsonResponse, nutritionistUser, operatorUser } from '../fixtures'
+import { jsonResponse, veterinarianUser, operatorUser } from '../fixtures'
 
-function mockAdminApi(profile: typeof operatorUser | typeof nutritionistUser) {
+function mockAdminApi(profile: typeof operatorUser | typeof veterinarianUser) {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input)
 
@@ -88,9 +88,9 @@ describe('admin auth shell', () => {
     expect(localStorage.getItem(TOKEN_KEY)).toBe('session-token')
   })
 
-  it('keeps a nutritionist inside the simulator', async () => {
+  it('keeps a veterinarian inside the simulator', async () => {
     localStorage.setItem(TOKEN_KEY, 'nutri-token')
-    vi.stubGlobal('fetch', mockAdminApi(nutritionistUser))
+    vi.stubGlobal('fetch', mockAdminApi(veterinarianUser))
 
     render(
       <MemoryRouter initialEntries={['/dashboard']}>

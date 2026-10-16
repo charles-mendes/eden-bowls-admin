@@ -70,6 +70,6 @@ Não use `npx playwright test --ui` no fluxo do agente. Mantenha 4 workers. Não
 - Perfil do painel: `GET /api/v1/admin/me`. Não use o `GET /auth/me` da loja.
 - Toda chamada autenticada usa `Authorization: Bearer <token>`.
 - Conta só `customer` (ou sem papel operacional) não entra no shell.
-- `nutritionist` sem `admin`/`operator` fica em `/nutrition/simulate`.
+- `veterinarian` sem `admin`/`operator` fica em `/nutrition/simulate`.
 - Mutações de `readonly` devem permanecer escondidas na UI; a autorização real é o middleware do backend.
 - Não reconstrua sessão a partir do perfil persistido. Só o token em `eden-bowls-admin-token`; o perfil vem de `/admin/me`.

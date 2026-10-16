@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { type ReactNode } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { isNutritionistOnly, isOperationalUser } from '../lib/roles'
+import { isVeterinarianOnly, isOperationalUser } from '../lib/roles'
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { token, user, isReady } = useAuth()
@@ -23,7 +23,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
     return <Navigate to="/account/password" replace />
   }
 
-  if (isNutritionistOnly(user?.roles) && location.pathname !== '/nutrition/simulate' && location.pathname !== '/account/password') {
+  if (isVeterinarianOnly(user?.roles) && location.pathname !== '/nutrition/simulate' && location.pathname !== '/account/password') {
     return <Navigate to="/nutrition/simulate" replace />
   }
 

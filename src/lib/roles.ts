@@ -1,10 +1,10 @@
-export type AdminRole = 'admin' | 'operator' | 'nutritionist' | 'readonly' | 'customer'
+export type AdminRole = 'admin' | 'operator' | 'veterinarian' | 'readonly' | 'customer'
 
-export const OPERATIONAL_ROLES: AdminRole[] = ['admin', 'operator', 'nutritionist', 'readonly']
+export const OPERATIONAL_ROLES: AdminRole[] = ['admin', 'operator', 'veterinarian', 'readonly']
 
 export const ROLE_OPTIONS = [
   { value: 'customer', label: 'Sem acesso ao painel' },
-  { value: 'nutritionist', label: 'Nutricionista' },
+  { value: 'veterinarian', label: 'Veterinário(a)' },
   { value: 'readonly', label: 'Somente leitura' },
   { value: 'operator', label: 'Operador' },
   { value: 'admin', label: 'Admin' },
@@ -23,7 +23,7 @@ export function primaryRole(roles: string[] | undefined) {
   if (roles.includes('admin')) return 'admin'
   if (roles.includes('operator')) return 'operator'
   if (roles.includes('readonly')) return 'readonly'
-  if (roles.includes('nutritionist')) return 'nutritionist'
+  if (roles.includes('veterinarian')) return 'veterinarian'
   return 'customer'
 }
 
@@ -31,15 +31,15 @@ export function isOperationalUser(roles: AdminRole[] | undefined | null) {
   return Boolean(roles?.some((role) => operationalRoleSet.has(role)))
 }
 
-export function isNutritionistOnly(roles: AdminRole[] | undefined | null) {
-  return Boolean(roles?.includes('nutritionist') && !roles.includes('admin') && !roles.includes('operator'))
+export function isVeterinarianOnly(roles: AdminRole[] | undefined | null) {
+  return Boolean(roles?.includes('veterinarian') && !roles.includes('admin') && !roles.includes('operator'))
 }
 
 export function getPostLoginPath(roles: AdminRole[], from?: string, options?: { mustChangePassword?: boolean }) {
   if (options?.mustChangePassword) {
     return '/account/password'
   }
-  if (isNutritionistOnly(roles)) {
+  if (isVeterinarianOnly(roles)) {
     return '/nutrition/simulate'
   }
 

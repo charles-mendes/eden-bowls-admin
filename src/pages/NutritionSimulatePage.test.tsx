@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NutritionSimulatePage } from './NutritionSimulatePage'
-import { nutritionistUser, nutritionistUsUser } from '../test/fixtures'
+import { veterinarianUser, veterinarianUsUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -15,7 +15,7 @@ describe('NutritionSimulatePage', () => {
   it('POSTs a simulation payload with Bearer and shows the result', async () => {
     const user = userEvent.setup()
     seedAuth()
-    const { calls } = installAdminFetchMock(nutritionistUsUser)
+    const { calls } = installAdminFetchMock(veterinarianUsUser)
     renderAuthedPage(<NutritionSimulatePage />, '/nutrition/simulate')
 
     await waitFor(() => {
@@ -57,7 +57,7 @@ describe('NutritionSimulatePage', () => {
   it('sends age in months and localizes BR fields', async () => {
     const user = userEvent.setup()
     seedAuth()
-    const { calls } = installAdminFetchMock(nutritionistUser)
+    const { calls } = installAdminFetchMock(veterinarianUser)
     renderAuthedPage(<NutritionSimulatePage />, '/nutrition/simulate')
 
     await waitFor(() => {

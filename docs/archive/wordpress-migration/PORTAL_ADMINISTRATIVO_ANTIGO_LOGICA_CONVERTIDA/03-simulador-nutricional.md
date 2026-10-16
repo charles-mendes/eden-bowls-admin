@@ -10,9 +10,9 @@ Onboarding da loja: `GET|POST /api/v1/onboarding/recommendation` — persiste re
 
 ## Objetivo no portal
 
-Nutricionista/operador valida energia e gramas **com o mesmo motor da loja**, sem criar pet, checkout ou assinatura.
+Veterinário(a)/operador valida energia e gramas **com o mesmo motor da loja**, sem criar pet, checkout ou assinatura.
 
-Rota React alvo: `/nutrition/simulate` (**criar**). Menu visível para `admin`, `operator`, `nutritionist`. Este é o **único** destino do nutricionista.
+Rota React alvo: `/nutrition/simulate` (**criar**). Menu visível para `admin`, `operator`, `veterinarian`. Este é o **único** destino do(a) veterinário(a).
 
 ## Regras a preservar
 
@@ -176,7 +176,7 @@ Não criar GET. Não histórico.
 
 | Papel | Acesso |
 |---|---|
-| nutritionist, operator, admin | sim |
+| veterinarian, operator, admin | sim |
 | readonly | se o produto quiser (WP não tinha) |
 | customer | não |
 

@@ -22,7 +22,7 @@ Classificacao: Autenticacao/autorizacao + regra especifica do WordPress. **Nao e
 | Administrador | `administrator` | Acesso total, inclusive Flexible Subscriptions e Stripe |
 | Colaborador Brasil | `eden_bowls_colaborador_brasil` | WooCommerce (pedidos, clientes, cupons, produtos), Nutrition, Frete, Onboarding 360, Stripe |
 | Colaborador EUA | `eden_bowls_colaborador_estados_unidos` | Identico ao colaborador Brasil |
-| Nutricionista | `nutricionista` | Somente o Simulador Nutricional |
+| Veterinário(a) | `veterinário(a)` | Somente o Simulador Nutricional |
 
 **[REGRA CONFIRMADA]** Os dois roles regionais recebem o **mesmo conjunto de capabilities**. Nao ha filtro de pais/mercado nas queries das telas admin. A distincao Brasil/EUA e apenas rotulo de role.
 
