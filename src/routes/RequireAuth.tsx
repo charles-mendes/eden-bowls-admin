@@ -1,7 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { type ReactNode } from 'react'
-import { isOperationalUser, useAuth } from '../contexts/AuthContext'
-import { isNutritionistOnly } from '../lib/roles'
+import { useAuth } from '../contexts/AuthContext'
+import { isNutritionistOnly, isOperationalUser } from '../lib/roles'
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { token, user, isReady } = useAuth()

@@ -107,7 +107,7 @@ describe('SubscriptionDetailPage', () => {
     expect(calls.some((call) => (
       call.method === 'POST'
       && call.path === '/api/v1/admin/billing/subscriptions/sub-row-1/shipments'
-      && call.body?.invoice_id === 'in_test_1'
+      && (call.body as { invoice_id?: string } | null)?.invoice_id === 'in_test_1'
     ))).toBe(true)
   })
 

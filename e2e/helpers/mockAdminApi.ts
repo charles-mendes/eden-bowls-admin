@@ -376,7 +376,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     const url = new URL(request.url())
     const path = url.pathname
     const authorization = request.headers().authorization ?? ''
-    let body: unknown = null
+    let body: unknown
     try {
       body = method === 'GET' ? null : request.postDataJSON()
     } catch {

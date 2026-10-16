@@ -256,6 +256,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
                   id: variant.id,
                   sku: variant.sku,
                   variantPrices: previous?.variantPrices ?? [],
+                  canDelete: previous?.canDelete ?? true,
                 }
               }),
             }

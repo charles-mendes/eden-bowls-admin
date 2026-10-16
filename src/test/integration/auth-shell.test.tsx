@@ -99,7 +99,7 @@ describe('admin auth shell', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Nutrition simulator' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Simulador nutricional' })).toBeInTheDocument()
     })
 
     expect(screen.queryByRole('link', { name: 'Hoje' })).not.toBeInTheDocument()

@@ -33,7 +33,7 @@ test.describe('Admin onboarding 360', () => {
     expect(captured.some((item) => item.path === '/api/v1/admin/onboarding/checkouts/u-ana')).toBe(false)
 
     await page.getByRole('tab', { name: 'Pets' }).click()
-    await expect(page.getByRole('cell', { name: 'Luna' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Luna', level: 4 })).toBeVisible()
     await expect.poll(() => captured.some((item) => item.method === 'GET' && item.path === '/api/v1/admin/onboarding/checkouts/u-ana')).toBe(true)
   })
 })

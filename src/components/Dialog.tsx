@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useId, useRef } from 'react'
+import { type ReactNode, useEffect, useEffectEvent, useId, useRef } from 'react'
 
 type DialogProps = {
   title: string
@@ -13,8 +13,7 @@ export function Dialog({ title, description, open, onClose, children, footer }: 
   const titleId = useId()
   const descriptionId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
-  const onCloseRef = useRef(onClose)
-  onCloseRef.current = onClose
+  const closeOnEscape = useEffectEvent(onClose)
 
   useEffect(() => {
     if (!open) return undefined
@@ -27,7 +26,7 @@ export function Dialog({ title, description, open, onClose, children, footer }: 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onCloseRef.current()
+        closeOnEscape()
       }
     }
 
