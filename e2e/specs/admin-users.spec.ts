@@ -74,14 +74,14 @@ test.describe('Admin users', () => {
     await page.getByRole('button', { name: 'Novo acesso' }).click()
     await page.getByLabel('Nome').fill('Lia')
     await page.getByLabel('E-mail').fill('lia@edenbowls.com')
-    await page.getByLabel('Papel').selectOption('nutritionist')
+    await page.getByLabel('Papel').selectOption('veterinarian')
     await page.getByLabel('Mercado').selectOption('US')
     await page.getByRole('button', { name: 'Criar acesso' }).click()
 
     await expect(page.getByText(/Acesso criado para lia@edenbowls.com/)).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/users')).toMatchObject({
       authorization: 'Bearer e2e-access-token',
-      body: { name: 'Lia', email: 'lia@edenbowls.com', role: 'nutritionist', market: 'US' },
+      body: { name: 'Lia', email: 'lia@edenbowls.com', role: 'veterinarian', market: 'US' },
     })
   })
 

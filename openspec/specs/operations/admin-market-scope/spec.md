@@ -53,9 +53,9 @@ On catalog, billing, production, coupons, feedbacks, privacy, shipping, nutritio
 - **WHEN** an operator assigned `BR` opens cupons
 - **THEN** the account control is `br` and the first load requests the BR Stripe account
 
-#### Scenario: Nutritionist country is locked
+#### Scenario: Veterinarian country is locked
 
-- **WHEN** a nutritionist assigned `US` opens the simulator
+- **WHEN** a veterinarian assigned `US` opens the simulator
 - **THEN** country is `US`, the other country cannot be selected, and submit sends `country` `US`
 
 #### Scenario: Admin may still pick one market
@@ -122,7 +122,7 @@ The panel MUST show a conflicts card only to admin sessions. The card MUST load 
 
 ### Requirement: Conflicts endpoint is admin-only
 
-`GET /api/v1/admin/markets/conflicts` MUST return `401` without a valid Bearer token and `403` for any authenticated session whose roles do not include `admin` (operator, readonly, nutritionist). It MUST NOT be narrowed by the caller's market assignment: an admin sees conflicts from both markets.
+`GET /api/v1/admin/markets/conflicts` MUST return `401` without a valid Bearer token and `403` for any authenticated session whose roles do not include `admin` (operator, readonly, veterinarian). It MUST NOT be narrowed by the caller's market assignment: an admin sees conflicts from both markets.
 
 #### Scenario: No token
 

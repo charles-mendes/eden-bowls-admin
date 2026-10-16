@@ -999,10 +999,10 @@ export const e2eProfiles = {
   operator: operatorProfile,
   operatorWrite: operatorWriteProfile,
   admin: adminProfile,
-  nutritionist: {
-    userId: 'u-nutritionist',
+  veterinarian: {
+    userId: 'u-veterinarian',
     email: 'nutri@edenbowls.com',
-    roles: ['nutritionist'],
+    roles: ['veterinarian'],
     markets: ['US'],
     permissions: ['nutrition.simulate', 'market.us'],
   },

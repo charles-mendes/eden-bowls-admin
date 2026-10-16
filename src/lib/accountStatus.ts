@@ -1,4 +1,4 @@
-const STAFF_ROLES = new Set(['admin', 'operator', 'nutritionist', 'readonly'])
+const STAFF_ROLES = new Set(['admin', 'operator', 'veterinarian', 'readonly'])
 
 export function isStaffAccount(roles: string[] | undefined) {
   return (roles || []).some((role) => STAFF_ROLES.has(role))

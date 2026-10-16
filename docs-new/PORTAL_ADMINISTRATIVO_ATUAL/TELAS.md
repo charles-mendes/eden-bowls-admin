@@ -16,7 +16,7 @@ Arquivo: `src/pages/DashboardPage.tsx`. A tela abre em **Hoje** (`GET /admin/tod
 
 ### Saúde do sistema (só admin)
 
-`<details>` recolhido no fim da página, renderizado só com `hasRole('admin')`. Componente: `src/components/SystemHealth.tsx`. Operator, readonly e nutritionist não veem a seção e não chamam as rotas abaixo.
+`<details>` recolhido no fim da página, renderizado só com `hasRole('admin')`. Componente: `src/components/SystemHealth.tsx`. Operator, readonly e veterinarian não veem a seção e não chamam as rotas abaixo.
 
 | Bloco | Fonte | O que mostra |
 |---|---|---|

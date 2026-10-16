@@ -40,7 +40,7 @@ describe('UsersPage access CRUD', () => {
     await user.click(screen.getByRole('button', { name: 'Novo acesso' }))
     await user.type(screen.getByLabelText('Nome'), 'Lia')
     await user.type(screen.getByLabelText('E-mail'), 'nova.lia@edenbowls.com')
-    await user.selectOptions(screen.getByLabelText('Papel'), 'nutritionist')
+    await user.selectOptions(screen.getByLabelText('Papel'), 'veterinarian')
     await user.selectOptions(screen.getByLabelText('Mercado'), 'US')
     await user.click(screen.getByRole('button', { name: 'Criar acesso' }))
 
@@ -52,7 +52,7 @@ describe('UsersPage access CRUD', () => {
     expect(create?.body).toEqual({
       name: 'Lia',
       email: 'nova.lia@edenbowls.com',
-      role: 'nutritionist',
+      role: 'veterinarian',
       market: 'US',
     })
     expect(JSON.stringify(create?.body)).not.toMatch(/password/i)
@@ -132,7 +132,7 @@ describe('UsersPage access CRUD', () => {
 
     const dialog = screen.getByRole('dialog', { name: 'Editar acesso' })
     expect(within(dialog).getByLabelText('Papel')).toHaveValue('')
-    expect(within(dialog).queryByRole('option', { name: 'Nutricionista', selected: true })).not.toBeInTheDocument()
+    expect(within(dialog).queryByRole('option', { name: 'Veterinário(a)', selected: true })).not.toBeInTheDocument()
     expect(within(dialog).getByText('Sem papel, a conta continua só com acesso à loja.')).toBeInTheDocument()
     expect(within(dialog).queryByLabelText('Mercado')).not.toBeInTheDocument()
 
@@ -181,7 +181,7 @@ describe('UsersPage access CRUD', () => {
     await user.click(screen.getAllByRole('button', { name: 'Editar' })[1])
     const dialog = screen.getByRole('dialog', { name: 'Editar acesso' })
 
-    expect(within(dialog).getByLabelText('Papel')).toHaveValue('nutritionist')
+    expect(within(dialog).getByLabelText('Papel')).toHaveValue('veterinarian')
     expect(within(dialog).queryByRole('option', { name: 'Selecione um papel' })).not.toBeInTheDocument()
     expect(within(dialog).getByText('Acessa só o simulador nutricional.')).toBeInTheDocument()
   })

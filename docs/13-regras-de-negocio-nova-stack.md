@@ -10,8 +10,8 @@ Marcacao: **[REGRA CONFIRMADA]** no codigo atual. Itens **[INFERENCIA]** ou **[D
 
 ## 1. Identidade, acesso e papeis
 
-1. Existem tres papeis operacionais: **Administrador**, **Operador** e **Nutricionista**.
-2. Nutricionista so executa **simulacao nutricional**. Nao ve pedidos, frete, Stripe, catalogo, usuarios.
+1. Existem tres papeis operacionais: **Administrador**, **Operador** e **Veterinário(a)**.
+2. Veterinário(a) so executa **simulacao nutricional**. Nao ve pedidos, frete, Stripe, catalogo, usuarios.
 3. Operador ve pedidos/clientes/catalogo, onboarding 360, frete, simulador, ledger Stripe e cupons. Nao precisa de ferramentas de CMS.
 4. Administrador ve tudo o que o operador ve, mais ferramentas de plataforma do painel.
 5. Os rotulos "Colaborador Brasil" e "Colaborador EUA" **nao isolam dados** no codigo atual. Nao implementar isolamento por mercado sem nova decisao de produto.

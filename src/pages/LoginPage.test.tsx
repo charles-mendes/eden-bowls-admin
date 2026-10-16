@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { LoginPage } from './LoginPage'
 import { TOKEN_KEY } from '../contexts/AuthContext'
-import { jsonResponse, nutritionistUser, operatorUser } from '../test/fixtures'
+import { jsonResponse, veterinarianUser, operatorUser } from '../test/fixtures'
 import { renderWithAuth } from '../test/renderWithAuth'
 
 describe('LoginPage', () => {
@@ -35,7 +35,7 @@ describe('LoginPage', () => {
     })
   })
 
-  it('keeps nutritionists on the simulator after login', async () => {
+  it('keeps veterinarians on the simulator after login', async () => {
     const user = userEvent.setup()
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
@@ -43,7 +43,7 @@ describe('LoginPage', () => {
         return jsonResponse({ token: 'nutri-token' })
       }
 
-      return jsonResponse(nutritionistUser)
+      return jsonResponse(veterinarianUser)
     }))
 
     renderWithAuth(<LoginPage />, '/login')

@@ -39,7 +39,7 @@ export function LoginPage() {
         <div className="login-card">
           <p className="eyebrow">Eden Bowls</p>
           <h1>Entrar no painel</h1>
-          <p className="muted">Use uma conta admin, operator, nutricionista ou somente leitura.</p>
+          <p className="muted">Use uma conta admin, operator, veterinário(a) ou somente leitura.</p>
 
           <form className="stack" onSubmit={handleSubmit}>
             <label>

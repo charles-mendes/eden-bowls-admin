@@ -65,7 +65,7 @@ const PER_PAGE_OPTIONS = [10, 20, 50, 100]
 
 // What each panel role can do, shown under the role picker.
 const ROLE_HINTS: Record<string, string> = {
-  nutritionist: 'Acessa só o simulador nutricional.',
+  veterinarian: 'Acessa só o simulador nutricional.',
   readonly: 'Vê as telas do painel sem alterar nada.',
   operator: 'Opera pedidos, produção, catálogo e clientes do mercado escolhido.',
   admin: 'Acesso total, inclusive equipe e papéis, nos dois mercados.',

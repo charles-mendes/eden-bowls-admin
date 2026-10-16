@@ -76,8 +76,8 @@ test.describe('Admin login', () => {
     expect(await page.evaluate(() => localStorage.getItem('eden-bowls-admin-token'))).toBeNull()
   })
 
-  test('keeps a nutritionist on the simulator', async ({ page }) => {
-    await installAdminApiMocks(page, { profile: e2eProfiles.nutritionist })
+  test('keeps a veterinarian on the simulator', async ({ page }) => {
+    await installAdminApiMocks(page, { profile: e2eProfiles.veterinarian })
 
     await page.goto('/login')
     await page.getByLabel('E-mail').fill('nutri@edenbowls.com')

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
 import { AuthProvider, TOKEN_KEY } from '../contexts/AuthContext'
 import { RequireAuth } from './RequireAuth'
-import { jsonResponse, nutritionistUser, operatorUser } from '../test/fixtures'
+import { jsonResponse, veterinarianUser, operatorUser } from '../test/fixtures'
 
 function renderGuard(route: string) {
   return render(
@@ -68,9 +68,9 @@ describe('RequireAuth', () => {
     })
   })
 
-  it('keeps nutritionist-only accounts on the simulator', async () => {
+  it('keeps veterinarian-only accounts on the simulator', async () => {
     localStorage.setItem(TOKEN_KEY, 'nutri-token')
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(nutritionistUser)))
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(veterinarianUser)))
 
     renderGuard('/dashboard')
 

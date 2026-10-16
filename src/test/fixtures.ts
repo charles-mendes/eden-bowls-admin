@@ -68,18 +68,18 @@ export const adminUser: AdminUser = {
   permissions: [...WRITE_PERMISSIONS, 'market.br', 'market.us'],
 }
 
-export const nutritionistUser: AdminUser = {
-  userId: 'u-nutritionist',
+export const veterinarianUser: AdminUser = {
+  userId: 'u-veterinarian',
   email: 'nutri@edenbowls.com',
-  roles: ['nutritionist'],
+  roles: ['veterinarian'],
   markets: ['BR'],
   permissions: ['nutrition.simulate', 'market.br'],
 }
 
-export const nutritionistUsUser: AdminUser = {
-  userId: 'u-nutritionist-us',
+export const veterinarianUsUser: AdminUser = {
+  userId: 'u-veterinarian-us',
   email: 'nutri.us@edenbowls.com',
-  roles: ['nutritionist'],
+  roles: ['veterinarian'],
   markets: ['US'],
   permissions: ['nutrition.simulate', 'market.us'],
 }
@@ -267,8 +267,8 @@ export const staffAccessItem = {
   email: 'lia@edenbowls.com',
   status: 'pending',
   createdAt: '2026-08-02T12:00:00.000Z',
-  roles: ['nutritionist'],
-  storedRoles: ['nutritionist'],
+  roles: ['veterinarian'],
+  storedRoles: ['veterinarian'],
   lockedByAllowlist: false,
   inviteMailStatus: 'failed',
   mustChangePassword: true,
