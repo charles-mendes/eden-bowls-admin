@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { FiltersBar } from '../components/FiltersBar'
+import { Dialog } from '../components/Dialog'
 import { AccountSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
@@ -36,12 +37,27 @@ type PromoCode = {
   dashboard_url: string
 }
 
+type Term = 1 | 3 | 6
+
+type SlotStatus = 'empty' | 'missing' | 'inactive' | 'active' | 'linked'
+
+const TERMS: Term[] = [1, 3, 6]
+const TERM_PERCENT: Record<Term, number> = { 1: 10, 3: 25, 6: 40 }
+
 const emptyMapping = { 1: '', 3: '', 6: '' }
 
 const noticeCopy: Record<string, string> = {
   mapped: 'Mapa salvo no banco.',
   created: 'Cupom criado na Stripe e gravado no banco.',
   synced: 'Mapa sincronizado com a Stripe.',
+}
+
+const statusBadge: Record<SlotStatus, { label: string; className: string }> = {
+  empty: { label: 'Sem cupom', className: 'badge-error' },
+  missing: { label: 'Não encontrado na Stripe', className: 'badge-error' },
+  inactive: { label: 'Inativo na Stripe', className: 'badge-warning' },
+  active: { label: 'Ativo', className: 'badge-success' },
+  linked: { label: 'Vinculado', className: 'badge-info' },
 }
 
 function mappingFromHealth(health: PromoHealth) {
@@ -52,19 +68,38 @@ function mappingFromHealth(health: PromoHealth) {
   }
 }
 
+const durationCopy: Record<string, string> = {
+  once: 'Só a 1ª fatura',
+  repeating: 'Alguns meses',
+  forever: 'Todas as faturas',
+}
+
 function formatPromoDuration(duration: string | null | undefined) {
   const raw = String(duration || '').trim()
-  return raw || 'Não expira'
+  if (!raw) return 'Não expira'
+  return durationCopy[raw] || raw
+}
+
+function slotStatus(term: Term, promoId: string, health: PromoHealth | null, listed: PromoCode | undefined): SlotStatus {
+  if (!promoId) return 'empty'
+  if (health?.missing_in_stripe?.includes(term)) return 'missing'
+  if (health?.inactive?.includes(term)) return 'inactive'
+  if (listed) return listed.active ? 'active' : 'inactive'
+  const synced = health?.slots?.[term]
+  if (synced) return synced.active ? 'active' : 'inactive'
+  return 'linked'
 }
 
 export function CouponsPage() {
-  const { token, user } = useAuth()
+  const { token, user, hasPermission } = useAuth()
+  const canWrite = hasPermission('billing.coupons.write')
   const bothMarkets = hasBothMarkets(user)
   const [pickedAccount, setPickedAccount] = useState<StripeAccount | ''>('')
   const [health, setHealth] = useState<PromoHealth | null>(null)
   const [mapping, setMapping] = useState(emptyMapping)
   const [codes, setCodes] = useState<PromoCode[]>([])
-  const [term, setTerm] = useState(1)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [term, setTerm] = useState<Term>(1)
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [maxRedemptions, setMaxRedemptions] = useState(0)
@@ -72,6 +107,7 @@ export function CouponsPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [syncing, setSyncing] = useState(false)
+  const [creating, setCreating] = useState(false)
   const account = (bothMarkets ? pickedAccount : null) || defaultStripeAccount(user)
 
   const applyHealth = (nextHealth: PromoHealth) => {
@@ -81,19 +117,23 @@ export function CouponsPage() {
 
   const accountQuery = buildQueryString({ account })
 
+  const loadCodes = async () => {
+    const codesResponse = await apiRequest<{ success?: boolean; data?: { items: PromoCode[] }; message?: string }>(`/admin/stripe/promotion-codes${accountQuery}`, { token })
+    setCodes(codesResponse.data?.items || [])
+    if (codesResponse.success === false && codesResponse.message) {
+      setError(codesResponse.message)
+    }
+  }
+
   const load = async () => {
     if (!token || !user || !account) return
     try {
       setError('')
-      const [healthResponse, codesResponse] = await Promise.all([
+      const [healthResponse] = await Promise.all([
         apiRequest<PromoHealth>(`/admin/stripe/first-purchase-promos${accountQuery}`, { token }),
-        apiRequest<{ success?: boolean; data?: { items: PromoCode[] }; message?: string }>(`/admin/stripe/promotion-codes${accountQuery}`, { token }),
+        loadCodes(),
       ])
       applyHealth(healthResponse)
-      setCodes(codesResponse.data?.items || [])
-      if (codesResponse.success === false && codesResponse.message) {
-        setError(codesResponse.message)
-      }
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar cupons')
     }
@@ -132,11 +172,7 @@ export function CouponsPage() {
       })
       applyHealth(response)
       setMessage('synced')
-      const codesResponse = await apiRequest<{ success?: boolean; data?: { items: PromoCode[] }; message?: string }>(`/admin/stripe/promotion-codes${accountQuery}`, { token })
-      setCodes(codesResponse.data?.items || [])
-      if (codesResponse.success === false && codesResponse.message) {
-        setError(codesResponse.message)
-      }
+      await loadCodes()
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao sincronizar com a Stripe')
     } finally {
@@ -144,11 +180,21 @@ export function CouponsPage() {
     }
   }
 
+  const openCreate = (nextTerm: Term) => {
+    setTerm(nextTerm)
+    setCode('')
+    setName('')
+    setMaxRedemptions(0)
+    setAssignSlot(true)
+    setCreateOpen(true)
+  }
+
   const createCoupon = async (event: FormEvent) => {
     event.preventDefault()
     if (!token || !account) return
     try {
       setError('')
+      setCreating(true)
       await apiRequest('/admin/stripe/first-purchase-coupons', {
         token,
         method: 'POST',
@@ -162,14 +208,18 @@ export function CouponsPage() {
         },
       })
       setMessage('created')
-      setCode('')
+      setCreateOpen(false)
       await load()
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao criar cupom')
+    } finally {
+      setCreating(false)
     }
   }
 
-  const percent = term === 6 ? 40 : term === 3 ? 25 : 10
+  const percent = TERM_PERCENT[term]
+  const currentForTerm = mapping[term]
+  const currentCode = codes.find((item) => item.id === currentForTerm)?.code
 
   return (
     <PageFrame title="Cupons de 1ª compra" description="Desconto automático da primeira compra, por prazo do plano. Brasil e EUA têm cupons separados na Stripe.">
@@ -180,105 +230,185 @@ export function CouponsPage() {
           onChange={(value) => {
             setPickedAccount(value === 'us' ? 'us' : 'br')
             setMessage('')
+            setHealth(null)
+            setCodes([])
             setMapping(emptyMapping)
           }}
         />
       </FiltersBar>
-      <div className="muted-panel">
-        Desconto de 1ª compra aplica-se somente à primeira fatura mensal. Nos planos de 3 e 6 meses, os meses seguintes cobram o preço cheio. O percentual maior (25%/40%) é benefício de compromisso, não desconto sobre o valor total do contrato.
-      </div>
+
       {health && !health.complete ? (
-        <div className="alert">Mapa incompleto ({health.missing_terms.map((item) => `${item}m`).join(', ')}). Checkout de cliente elegível fica bloqueado.</div>
+        <div className="alert">Faltam cupons para {health.missing_terms.map((item) => formatTermMonths(item)).join(', ')}. O checkout de cliente elegível fica bloqueado até cada prazo ter um cupom.</div>
       ) : null}
       {health && health.misconfig_count > 0 ? (
         <div className="warning">Configurações inconsistentes: {health.misconfig_count}</div>
       ) : null}
-      {health?.missing_in_stripe?.length ? (
-        <div className="warning">Não encontrados na Stripe: {health.missing_in_stripe.map((item) => `${item}m`).join(', ')}</div>
-      ) : null}
-      {health?.inactive?.length ? (
-        <div className="warning">Inativos na Stripe: {health.inactive.map((item) => `${item}m`).join(', ')}</div>
-      ) : null}
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{noticeCopy[message] || message}</div> : null}
 
-      <Section title="Mapear slots" description="Qual código de promoção da Stripe vale para cada prazo. O ID começa com promo_.">
-        <div className="page-stack">
-          <div className="inline-actions">
-            <button className="ghost-button" type="button" onClick={() => void syncStripe()} disabled={syncing}>
-              {syncing ? 'Sincronizando…' : 'Sincronizar com Stripe'}
-            </button>
-          </div>
-          <form className="form-toolbar" onSubmit={saveMap}>
-            <div className="form-grid">
-              <label>1 mês(es) — 10%<input value={mapping[1]} onChange={(event) => setMapping((current) => ({ ...current, 1: event.target.value }))} placeholder="promo_..." /></label>
-              <label>3 mês(es) — 25%<input value={mapping[3]} onChange={(event) => setMapping((current) => ({ ...current, 3: event.target.value }))} placeholder="promo_..." /></label>
-              <label>6 mês(es) — 40%<input value={mapping[6]} onChange={(event) => setMapping((current) => ({ ...current, 6: event.target.value }))} placeholder="promo_..." /></label>
-            </div>
-            <div className="inline-actions">
-              <button className="primary-button" type="submit">Salvar mapa</button>
-            </div>
-          </form>
+      <Section
+        title="Cupom por prazo"
+        description="Cada prazo do plano usa um código de promoção. Crie aqui para gerar o cupom na Stripe e vincular na hora, ou use Sincronizar para trazer os que já existem na conta."
+        actions={canWrite ? (
+          <button className="ghost-button" type="button" onClick={() => void syncStripe()} disabled={syncing}>
+            {syncing ? 'Sincronizando…' : 'Sincronizar com Stripe'}
+          </button>
+        ) : undefined}
+      >
+        <div className="coupon-slots">
+          {TERMS.map((slotTerm) => {
+            const promoId = mapping[slotTerm]
+            const listed = codes.find((item) => item.id === promoId)
+            const status = slotStatus(slotTerm, promoId, health, listed)
+            const badge = statusBadge[status]
+            const couponId = listed?.coupon_id || health?.slots?.[slotTerm]?.coupon_id || ''
+            const needsCoupon = status === 'empty' || status === 'missing' || status === 'inactive'
+            return (
+              <article key={slotTerm} className="coupon-slot" aria-label={`Prazo ${formatTermMonths(slotTerm)}`}>
+                <header className="coupon-slot-head">
+                  <div>
+                    <h4>{formatTermMonths(slotTerm)}</h4>
+                    <p className="muted">{TERM_PERCENT[slotTerm]}% na 1ª fatura</p>
+                  </div>
+                  <span className={badge.className}>{badge.label}</span>
+                </header>
+                {promoId ? (
+                  <dl className="coupon-slot-meta">
+                    <div><dt>Código</dt><dd>{listed?.code || '-'}</dd></div>
+                    <div><dt>Promo</dt><dd className="coupon-id">{promoId}</dd></div>
+                    <div><dt>Cupom</dt><dd className="coupon-id">{couponId || '-'}</dd></div>
+                  </dl>
+                ) : (
+                  <p className="muted coupon-slot-empty">Nenhum cupom vinculado a este prazo.</p>
+                )}
+                <div className="coupon-slot-actions">
+                  {canWrite ? (
+                    <button
+                      className={needsCoupon ? 'primary-button' : 'ghost-button'}
+                      type="button"
+                      onClick={() => openCreate(slotTerm)}
+                      aria-label={`${needsCoupon ? 'Criar cupom' : 'Substituir cupom'} de ${formatTermMonths(slotTerm)}`}
+                    >
+                      {needsCoupon ? 'Criar cupom' : 'Substituir'}
+                    </button>
+                  ) : null}
+                  {listed ? (
+                    <a className="table-link" href={listed.dashboard_url} target="_blank" rel="noreferrer">Abrir na Stripe</a>
+                  ) : null}
+                </div>
+              </article>
+            )
+          })}
         </div>
+
+        <div className="muted-panel coupon-note">
+          O desconto vale só na primeira fatura mensal. Nos planos de 3 e 6 meses, os meses seguintes cobram o preço cheio. O percentual maior (25%/40%) é benefício de compromisso, não desconto sobre o total do contrato.
+        </div>
+
+        {canWrite ? (
+          <details className="maintenance-panel">
+            <summary>Vincular ID manualmente</summary>
+            <p className="muted">Só para um código criado direto no painel da Stripe que a sincronização não reconheceu. O ID começa com promo_.</p>
+            <form className="form-toolbar" onSubmit={saveMap}>
+              <div className="form-grid">
+                {TERMS.map((slotTerm) => (
+                  <label key={slotTerm}>
+                    {`${formatTermMonths(slotTerm)} — ${TERM_PERCENT[slotTerm]}%`}
+                    <input
+                      value={mapping[slotTerm]}
+                      onChange={(event) => setMapping((current) => ({ ...current, [slotTerm]: event.target.value }))}
+                      placeholder="promo_..."
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="inline-actions">
+                <button className="ghost-button" type="submit">Salvar mapa</button>
+              </div>
+            </form>
+          </details>
+        ) : null}
       </Section>
 
-      <Section title="Criar na Stripe" description="Cria o cupom e o código na Stripe, válidos só na primeira compra, e já liga ao prazo escolhido. O percentual é fixo por prazo.">
-        <form className="form-toolbar" onSubmit={createCoupon}>
-          <div className="form-grid">
-            <label>
-              Prazo
-              <select value={term} onChange={(event) => setTerm(Number(event.target.value))}>
-                <option value={1}>1 mês — 10%</option>
-                <option value={3}>3 meses — 25%</option>
-                <option value={6}>6 meses — 40%</option>
-              </select>
-            </label>
-            <label>Código<input value={code} onChange={(event) => setCode(event.target.value)} required /></label>
-            <label>Nome<input value={name} onChange={(event) => setName(event.target.value)} placeholder={`First purchase ${term}m (${percent}%)`} /></label>
-            <label>Máximo de usos<input type="number" min={0} value={maxRedemptions} onChange={(event) => setMaxRedemptions(Number(event.target.value))} /></label>
-            <label className="checkbox-field">
-              <input type="checkbox" checked={assignSlot} onChange={(event) => setAssignSlot(event.target.checked)} />
-              Atribuir à vaga da primeira compra
-            </label>
-          </div>
-          <div className="inline-actions">
-            <button className="primary-button" type="submit">Criar</button>
-          </div>
-        </form>
-      </Section>
-
-      <Section title="Códigos de promoção recentes" description="Até 25 códigos da Stripe.">
+      <Section title="Códigos na Stripe" description="Os 25 códigos de promoção mais recentes desta conta.">
         <div className="table-shell table-scroll">
-          <table>
+          <table className="stack-table">
             <thead>
               <tr>
                 <th>Código</th>
-                <th>Promo id</th>
-                <th>Coupon</th>
-                <th>%</th>
+                <th>Desconto</th>
                 <th>Duração</th>
-                <th>Ativo</th>
-                <th>Slot</th>
-                <th>Stripe</th>
+                <th>Status</th>
+                <th>Prazo</th>
+                <th><span className="sr-only">Stripe</span></th>
               </tr>
             </thead>
             <tbody>
-              {codes.map((item) => (
+              {codes.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="muted">Nenhum código de promoção nesta conta.</td>
+                </tr>
+              ) : codes.map((item) => (
                 <tr key={item.id}>
-                  <td>{item.code}</td>
-                  <td>{item.id}</td>
-                  <td>{item.coupon_id || '-'}</td>
-                  <td>{item.percent_off == null ? '-' : `${item.percent_off}%`}</td>
-                  <td>{formatPromoDuration(item.duration)}</td>
-                  <td>{item.active ? 'Sim' : 'Não'}</td>
-                  <td>{formatTermMonths(item.slot)}</td>
-                  <td><a className="table-link" href={item.dashboard_url} target="_blank" rel="noreferrer">Abrir</a></td>
+                  <td className="stack-table-title">
+                    <strong>{item.code}</strong>
+                    <div className="coupon-id muted">{item.id}{item.coupon_id ? ` · ${item.coupon_id}` : ''}</div>
+                  </td>
+                  <td data-label="Desconto">{item.percent_off == null ? '-' : `${item.percent_off}%`}</td>
+                  <td data-label="Duração">{formatPromoDuration(item.duration)}</td>
+                  <td data-label="Status"><span className={item.active ? 'badge-success' : 'badge-warning'}>{item.active ? 'Ativo' : 'Inativo'}</span></td>
+                  <td data-label="Prazo">{formatTermMonths(item.slot)}</td>
+                  <td data-label="Stripe"><a className="table-link" href={item.dashboard_url} target="_blank" rel="noreferrer">Abrir</a></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </Section>
+
+      <Dialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        title="Criar cupom na Stripe"
+        description={`Cria o cupom e o código na conta ${String(account || '').toUpperCase()}, válidos só na primeira compra. O percentual é fixo por prazo.`}
+      >
+        <form className="form-toolbar" onSubmit={createCoupon}>
+          <div className="form-grid">
+            <label>
+              Prazo
+              <select value={term} onChange={(event) => setTerm(Number(event.target.value) as Term)}>
+                {TERMS.map((slotTerm) => (
+                  <option key={slotTerm} value={slotTerm}>{`${formatTermMonths(slotTerm)} — ${TERM_PERCENT[slotTerm]}%`}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Código
+              <input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder={`BEMVINDO${percent}`} required />
+            </label>
+            <label>
+              Nome
+              <input value={name} onChange={(event) => setName(event.target.value)} placeholder={`First purchase ${term}m (${percent}%)`} />
+            </label>
+            <label>
+              Máximo de usos
+              <input type="number" min={0} value={maxRedemptions} onChange={(event) => setMaxRedemptions(Number(event.target.value))} />
+              <span className="muted">0 = sem limite</span>
+            </label>
+            <label className="checkbox-field">
+              <input type="checkbox" checked={assignSlot} onChange={(event) => setAssignSlot(event.target.checked)} />
+              Usar no checkout de {formatTermMonths(term)}
+            </label>
+          </div>
+          {assignSlot && currentForTerm ? (
+            <div className="warning">Substitui o código atual de {formatTermMonths(term)} ({currentCode || currentForTerm}). O antigo continua na Stripe.</div>
+          ) : null}
+          <div className="inline-actions">
+            <button className="ghost-button" type="button" onClick={() => setCreateOpen(false)}>Cancelar</button>
+            <button className="primary-button" type="submit" disabled={creating}>{creating ? 'Criando…' : 'Criar na Stripe'}</button>
+          </div>
+        </form>
+      </Dialog>
     </PageFrame>
   )
 }

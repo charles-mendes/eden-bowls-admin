@@ -46,7 +46,7 @@ test.describe('Admin billing', () => {
     const { captured } = await openAuthed(page, '/billing/coupons', e2eProfiles.operatorWrite)
 
     await expect(page.getByRole('heading', { name: 'Cupons de 1ª compra' })).toBeVisible()
-    await expect(page.getByLabel('1 mês(es) — 10%')).toHaveValue('promo_1m')
+    await expect(page.getByRole('article', { name: 'Prazo 1 mês' }).getByText('promo_1m')).toBeVisible()
     await expect(page.getByText(/Slots também definidos via env/)).toHaveCount(0)
     await expect(page.getByLabel('Conta')).toHaveValue('br')
     await expect(page.getByLabel('Conta')).toBeDisabled()
@@ -62,5 +62,33 @@ test.describe('Admin billing', () => {
       authorization: 'Bearer e2e-access-token',
       search: '?account=br',
     })
+  })
+
+  test('creates a first-purchase coupon in Stripe from a term card', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/billing/coupons', e2eProfiles.operatorWrite)
+
+    await page.getByRole('button', { name: 'Substituir cupom de 6 meses' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Criar cupom na Stripe' })
+    await expect(dialog.getByLabel('Prazo')).toHaveValue('6')
+    await dialog.getByLabel('Código').fill('bemvindo40')
+    await dialog.getByRole('button', { name: 'Criar na Stripe' }).click()
+
+    await expect(page.getByText('Cupom criado na Stripe e gravado no banco.')).toBeVisible()
+    await expect(dialog).toHaveCount(0)
+    await expect.poll(() => captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/stripe/first-purchase-coupons')?.body).toMatchObject({
+      term_months: 6,
+      code: 'BEMVINDO40',
+      assign_first_purchase_slot: true,
+      account: 'br',
+    })
+  })
+
+  test('fits a phone screen without sideways scroll', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 800 })
+    await openAuthed(page, '/billing/coupons', e2eProfiles.operatorWrite)
+
+    await expect(page.getByRole('article', { name: 'Prazo 6 meses' })).toBeVisible()
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+    expect(overflow).toBeLessThanOrEqual(0)
   })
 })
