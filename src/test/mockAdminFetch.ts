@@ -87,6 +87,8 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   products?: typeof productsList.items
   product?: typeof productDetail
   catalogDelete?: 'in_use' | 'archive'
+  catalogActivation?: 'refused' | 'in_use'
+  catalogPatch?: 'locked'
   // Answered before the fixed routes; return undefined to fall through.
   routes?: (call: FetchCall) => Response | undefined
 } = {}) {
@@ -287,6 +289,34 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'GET') {
       return jsonResponse(catalogDetail)
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/variations\/[^/]+\/activation$/.test(path) && method === 'POST') {
+      if (options.catalogActivation === 'refused') {
+        return jsonResponse({
+          message: 'Variation cannot be activated: missing stripe_price, final_image, label_data.',
+          details: { code: 'recipe_publish_refused', missing: ['stripe_price', 'final_image', 'label_data'] },
+        }, 422)
+      }
+      if (options.catalogActivation === 'in_use') {
+        return jsonResponse({
+          message: 'Variation is used by 3 active subscriptions and cannot be deactivated.',
+          details: { code: 'variation_in_active_subscriptions', activeSubscriptions: 3 },
+        }, 409)
+      }
+      const variationId = path.split('/')[path.split('/').length - 2]
+      catalogDetail = {
+        ...catalogDetail,
+        variants: catalogDetail.variants.map((item) => (item.id === variationId ? { ...item, active: Boolean(body?.active) } : item)),
+      }
+      return jsonResponse(catalogDetail)
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'PATCH' && options.catalogPatch === 'locked' && Array.isArray(body?.variants)) {
+      return jsonResponse({
+        message: 'Active variations of a published product cannot be edited.',
+        details: { code: 'variation_active_locked', variationIds: ['var-1'] },
+      }, 409)
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'PATCH') {

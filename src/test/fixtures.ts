@@ -335,6 +335,7 @@ export const productDetail = {
       sku: 'BOWL-1',
       name: 'Frango 1kg',
       flavor: 'Frango',
+      active: true,
       regularPrice: 89.9,
       stripeProductId: 'prod_stripe',
       stripePriceId: 'price_stripe',

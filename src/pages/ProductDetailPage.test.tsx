@@ -97,7 +97,7 @@ describe('ProductDetailPage', () => {
 
     const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patch?.body).toEqual({
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', lifeStage: 'adult', regularPrice: 89.9 }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', lifeStage: 'adult', finalImageReady: false, labelDataReady: false, regularPrice: 89.9 }],
     })
   })
 
@@ -119,6 +119,90 @@ describe('ProductDetailPage', () => {
     })
     const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect((patch?.body as { variants: Array<{ lifeStage: string }> }).variants[0].lifeStage).toBe('senior')
+  })
+
+  it('adds an inactive variation and edits it while the product is published, with active ones locked', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls, fetchMock } = installAdminFetchMock(operatorWriteUser)
+    rewriteProductGet(fetchMock, (product) => ({
+      ...product,
+      active: true,
+      variants: [
+        ...(product.variants as Array<Record<string, unknown>>),
+        { id: 'var-2', sku: 'SENIOR-BEEF-300', name: 'Sênior Carne 300g', flavor: 'Receita de Carne para Cães Sênior', active: false, regularPrice: 40, stripeProductId: null, stripePriceId: null, syncStatus: 'not_synced', requiresSync: true, canDelete: true },
+      ],
+    }))
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    expect(await screen.findByRole('button', { name: 'Editar variação Sênior Carne 300g' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Editar variação Frango 1kg' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Editar variação Sênior Carne 300g' }))
+    await user.click(screen.getByLabelText('Foto final confirmada'))
+    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+
+    await waitFor(() => {
+      const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
+      expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0]).toMatchObject({ id: 'var-2', finalImageReady: true, labelDataReady: false })
+    })
+  })
+
+  it('activates and deactivates a variation through the activation route', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    expect(await screen.findByRole('cell', { name: 'Ativa' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Desativar variação Frango 1kg' }))
+
+    expect(await screen.findByText('Variação "Frango 1kg" desativada.')).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Inativa' })).toBeInTheDocument()
+    const post = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/catalog/products/prod-1/variations/var-1/activation')
+    expect(post?.body).toEqual({ active: false })
+
+    await user.click(screen.getByRole('button', { name: 'Ativar variação Frango 1kg' }))
+    expect(await screen.findByText('Variação "Frango 1kg" ativada.')).toBeInTheDocument()
+  })
+
+  it('names the missing items when activation is refused', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      catalogActivation: 'refused',
+      product: { ...productDetail, variants: [{ ...productDetail.variants[0], active: false }] },
+    })
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    await user.click(await screen.findByRole('button', { name: 'Ativar variação Frango 1kg' }))
+
+    expect(await screen.findByText('Ativação recusada. Falta: preço no Stripe, foto final confirmada, dados de rótulo confirmados.')).toBeInTheDocument()
+  })
+
+  it('names the active subscriptions when deactivation is refused', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { catalogActivation: 'in_use' })
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    await user.click(await screen.findByRole('button', { name: 'Desativar variação Frango 1kg' }))
+
+    expect(await screen.findByText('Esta variação está em 3 assinaturas ativas e não pode ser desativada.')).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Ativa' })).toBeInTheDocument()
+  })
+
+  it('explains the lock when an active variation edit is refused', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { catalogPatch: 'locked' })
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+
+    expect(await screen.findByText('Variação ativa não pode ser editada com o produto publicado. Desative a variação antes.')).toBeInTheDocument()
   })
 
   it('shows the stored line of each variation', async () => {
@@ -150,7 +234,7 @@ describe('ProductDetailPage', () => {
 
     const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patch?.body).toEqual({
-      variants: [{ sku: 'NOVO-1', name: 'Cordeiro 300g', flavor: '', lifeStage: 'adult', regularPrice: null }],
+      variants: [{ sku: 'NOVO-1', name: 'Cordeiro 300g', flavor: '', lifeStage: 'adult', finalImageReady: false, labelDataReady: false, regularPrice: null }],
     })
   })
 
@@ -171,9 +255,9 @@ describe('ProductDetailPage', () => {
     })
 
     expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled()
-    expect(screen.queryByRole('button', { name: 'Adicionar variação' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Editar variação/ })).not.toBeInTheDocument()
-    expect(screen.getByText(/Volte para rascunho para editar/)).toBeInTheDocument()
+    expect(screen.getByText(/Variações inativas podem ser adicionadas e editadas/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Voltar' })).toHaveAttribute('href', '/catalog/products')
     expect(screen.getByText('Sincronizado')).toBeInTheDocument()
     const publishHeading = screen.getByRole('heading', { name: 'Publicação e sincronização' })
@@ -217,7 +301,7 @@ describe('ProductDetailPage', () => {
 
     const patches = calls.filter((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patches[0]?.body).toEqual({
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', lifeStage: 'adult', regularPrice: 30 }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', lifeStage: 'adult', finalImageReady: false, labelDataReady: false, regularPrice: 30 }],
     })
     expect(patches[1]?.body).toEqual({
       planCountry: 'BR',
@@ -522,7 +606,7 @@ describe('ProductDetailPage', () => {
     expect(screen.getByLabelText('Slug do sabor')).toBeDisabled()
   })
 
-  it('hides Editar on a published product', async () => {
+  it('locks active variations of a published product and still offers adding one', async () => {
     seedAuth()
     installAdminFetchMock(operatorWriteUser, {
       product: { ...productDetail, active: true },
@@ -531,6 +615,6 @@ describe('ProductDetailPage', () => {
 
     await screen.findByRole('button', { name: 'Desativar' })
     expect(screen.queryByRole('button', { name: /Editar variação/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Adicionar variação' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
   })
 })

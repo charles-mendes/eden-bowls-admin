@@ -24,6 +24,9 @@ type ProductVariant = {
   flavorSlug: string | null
   flavorAliases: string | null
   lifeStage?: LifeStage
+  active?: boolean
+  finalImageReady?: boolean
+  labelDataReady?: boolean
   regularPrice: number | null
   stripeProductId: string | null
   stripePriceId: string | null
@@ -55,6 +58,9 @@ type VariantDraft = {
   flavorSlug: string
   flavorAliases: string
   lifeStage: LifeStage
+  active: boolean
+  finalImageReady: boolean
+  labelDataReady: boolean
   regularPrice: string
   stripeProductId: string | null
   stripePriceId: string | null
@@ -100,6 +106,9 @@ function toVariantDraft(item: ProductVariant): VariantDraft {
     flavorSlug: item.flavorSlug || '',
     flavorAliases: item.flavorAliases || '',
     lifeStage: item.lifeStage ?? 'adult',
+    active: item.active === true,
+    finalImageReady: item.finalImageReady === true,
+    labelDataReady: item.labelDataReady === true,
     regularPrice: item.regularPrice == null ? '' : String(item.regularPrice),
     stripeProductId: item.stripeProductId,
     stripePriceId: item.stripePriceId,
@@ -120,6 +129,9 @@ function emptyVariantDraft(): VariantDraft {
     flavorSlug: '',
     flavorAliases: '',
     lifeStage: 'adult',
+    active: false,
+    finalImageReady: false,
+    labelDataReady: false,
     regularPrice: '',
     stripeProductId: null,
     stripePriceId: null,
@@ -139,6 +151,32 @@ function syncStatusLabel(status: string, requiresSync: boolean) {
   return requiresSync ? `${label} · precisa sincronizar` : label
 }
 
+const MISSING_LABELS: Record<string, string> = {
+  price: 'preço',
+  stripe_price: 'preço no Stripe',
+  final_image: 'foto final confirmada',
+  label_data: 'dados de rótulo confirmados',
+}
+
+function variationFailure(error: unknown, fallback: string) {
+  if (error instanceof ApiRequestError) {
+    if (error.code === 'recipe_publish_refused') {
+      const missing = Array.isArray(error.details?.missing) ? error.details.missing as string[] : []
+      const items = missing.map((item) => MISSING_LABELS[item] ?? item).join(', ')
+      return `Ativação recusada. Falta: ${items}.`
+    }
+    if (error.code === 'variation_in_active_subscriptions') {
+      const count = Number(error.details?.activeSubscriptions) || 0
+      const subscriptions = count === 1 ? '1 assinatura ativa' : `${count} assinaturas ativas`
+      return `Esta variação está em ${subscriptions} e não pode ser desativada.`
+    }
+    if (error.code === 'variation_active_locked') {
+      return 'Variação ativa não pode ser editada com o produto publicado. Desative a variação antes.'
+    }
+  }
+  return error instanceof Error ? error.message : fallback
+}
+
 function planDaysField(value: number | null) {
   return value != null && value > 0 ? String(value) : ''
 }
@@ -152,6 +190,8 @@ function variantPayload(item: VariantDraft) {
     ...(item.flavorSlug.trim() ? { flavorSlug: item.flavorSlug.trim() } : {}),
     ...(item.flavorAliases.trim() ? { flavorAliases: item.flavorAliases.trim() } : {}),
     lifeStage: item.lifeStage,
+    finalImageReady: item.finalImageReady,
+    labelDataReady: item.labelDataReady,
     regularPrice: item.regularPrice === '' ? null : Number(item.regularPrice),
   }
 }
@@ -170,10 +210,14 @@ export function ProductDetailPage() {
   const [variationDialog, setVariationDialog] = useState<VariationDialogState | null>(null)
   const [dialogError, setDialogError] = useState('')
   const [savingVariation, setSavingVariation] = useState(false)
+  const [togglingKey, setTogglingKey] = useState('')
 
   const canWrite = hasPermission('catalog.write')
   const canSync = hasPermission('catalog.sync')
   const canEdit = Boolean(canWrite && data && !data.active)
+  // A published product keeps active variations locked; inactive ones stay editable.
+  const canAddVariation = Boolean(canWrite && data)
+  const canEditVariation = (item: VariantDraft) => Boolean(canWrite && data && (!data.active || !item.active))
   const currency = planCountry === 'US' ? 'USD' : 'BRL'
   const countryOptions = sessionMarkets(user)
   const savedCountry = data?.planCountry || 'BR'
@@ -339,9 +383,31 @@ export function ProductDetailPage() {
       setError('')
       setMessage(draft.id ? 'Variação atualizada.' : 'Variação adicionada.')
     } catch (requestError) {
-      setDialogError(requestError instanceof Error ? requestError.message : 'Falha ao salvar variação')
+      setDialogError(variationFailure(requestError, 'Falha ao salvar variação'))
     } finally {
       setSavingVariation(false)
+    }
+  }
+
+  const toggleVariation = async (item: VariantDraft) => {
+    if (!token || !productId || !canWrite || !item.id) return
+    const label = item.name.trim() || item.sku.trim() || item.id
+    const active = !item.active
+    try {
+      setTogglingKey(item.key)
+      const response = await apiRequest<ProductDetail>(`/admin/catalog/products/${productId}/variations/${item.id}/activation`, {
+        token,
+        method: 'POST',
+        body: { active },
+      })
+      applyProduct(response)
+      setError('')
+      setMessage(active ? `Variação "${label}" ativada.` : `Variação "${label}" desativada.`)
+    } catch (requestError) {
+      setMessage('')
+      setError(variationFailure(requestError, active ? 'Falha ao ativar variação' : 'Falha ao desativar variação'))
+    } finally {
+      setTogglingKey('')
     }
   }
 
@@ -450,7 +516,7 @@ export function ProductDetailPage() {
           </div>
           {planDirty ? <p className="muted">País e duração alterados. Salve antes de sair.</p> : null}
           {canWrite && data?.active ? (
-            <p className="muted">Produto publicado. Volte para rascunho para editar país, duração, preços e variações.</p>
+            <p className="muted">Produto publicado. País e duração só mudam em rascunho. Variações inativas podem ser adicionadas e editadas; ative cada uma quando estiver pronta.</p>
           ) : null}
         </div>
 
@@ -483,8 +549,8 @@ export function ProductDetailPage() {
           title="Variações"
           description={canEdit
             ? 'Edite uma variação por vez. O slug não muda depois de gravado. Stripe cobra; o nome na loja vem do sabor.'
-            : 'Sabor, slug, mapeamento Stripe e status de sync. Edição só em rascunho; exclusão pode ser feita agora.'}
-          actions={canEdit ? (
+            : 'Variação nova entra inativa. Edite as inativas e ative cada uma depois das confirmações. Variações ativas ficam travadas.'}
+          actions={canAddVariation ? (
             <button className="ghost-button" type="button" onClick={() => openVariationDialog(emptyVariantDraft())}>
               Adicionar variação
             </button>
@@ -500,6 +566,7 @@ export function ProductDetailPage() {
                   <th>Slug</th>
                   <th>Aliases</th>
                   <th>Linha</th>
+                  <th>Situação</th>
                   <th>Preço ({currency})</th>
                   <th>Produto Stripe</th>
                   <th>Preço Stripe</th>
@@ -510,8 +577,8 @@ export function ProductDetailPage() {
               <tbody>
                 {variants.length === 0 ? (
                   <tr>
-                    <td colSpan={canWrite ? 11 : 10}>
-                      {canEdit
+                    <td colSpan={canWrite ? 12 : 11}>
+                      {canAddVariation
                         ? 'Nenhuma variação. Use Adicionar variação para criar SKU, nome e preço.'
                         : 'Nenhuma variação cadastrada.'}
                     </td>
@@ -526,6 +593,7 @@ export function ProductDetailPage() {
                     <td>{item.flavorSlug || '-'}</td>
                     <td>{item.flavorAliases || '-'}</td>
                     <td>{LIFE_STAGE_LABELS[item.lifeStage]}</td>
+                    <td>{item.active ? 'Ativa' : 'Inativa'}</td>
                     <td>{formatCurrency(item.regularPrice === '' ? null : Number(item.regularPrice), currency)}</td>
                     <td>{item.stripeProductId ?? '-'}</td>
                     <td>{item.stripePriceId ?? '-'}</td>
@@ -535,7 +603,7 @@ export function ProductDetailPage() {
                     {canWrite ? (
                       <td>
                         <div className="table-actions">
-                          {canEdit && item.id ? (
+                          {canEditVariation(item) && item.id ? (
                             <button
                               className="ghost-button"
                               type="button"
@@ -543,6 +611,17 @@ export function ProductDetailPage() {
                               onClick={() => openVariationDialog(item)}
                             >
                               Editar
+                            </button>
+                          ) : null}
+                          {item.id ? (
+                            <button
+                              className="ghost-button"
+                              type="button"
+                              aria-label={`${item.active ? 'Desativar' : 'Ativar'} variação ${label}`}
+                              disabled={togglingKey === item.key}
+                              onClick={() => void toggleVariation(item)}
+                            >
+                              {item.active ? 'Desativar' : 'Ativar'}
                             </button>
                           ) : null}
                           {item.id && item.canDelete ? (
@@ -629,6 +708,24 @@ export function ProductDetailPage() {
                   <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
                 ))}
               </select>
+            </label>
+            <label className="checkbox-field">
+              <input
+                type="checkbox"
+                aria-label="Foto final confirmada"
+                checked={variationDialog.draft.finalImageReady}
+                onChange={(event) => updateDialogDraft({ finalImageReady: event.target.checked })}
+              />
+              Foto final confirmada (sem imagem provisória)
+            </label>
+            <label className="checkbox-field">
+              <input
+                type="checkbox"
+                aria-label="Dados de rótulo confirmados"
+                checked={variationDialog.draft.labelDataReady}
+                onChange={(event) => updateDialogDraft({ labelDataReady: event.target.checked })}
+              />
+              Dados de rótulo confirmados{planCountry === 'US' ? ' (obrigatório para ativar nos EUA)' : ''}
             </label>
             <label>
               Preço ({currency})
