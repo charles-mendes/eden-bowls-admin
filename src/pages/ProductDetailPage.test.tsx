@@ -97,8 +97,40 @@ describe('ProductDetailPage', () => {
 
     const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patch?.body).toEqual({
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', regularPrice: 89.9 }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', lifeStage: 'adult', regularPrice: 89.9 }],
     })
+  })
+
+  it('saves the life stage line of a variation and shows it in the table', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+    await waitFor(() => {
+      expect(screen.getByLabelText('Linha')).toHaveValue('adult')
+    })
+    await user.selectOptions(screen.getByLabelText('Linha'), 'senior')
+    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Variação atualizada.')).toBeInTheDocument()
+    })
+    const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
+    expect((patch?.body as { variants: Array<{ lifeStage: string }> }).variants[0].lifeStage).toBe('senior')
+  })
+
+  it('shows the stored line of each variation', async () => {
+    seedAuth()
+    const { fetchMock } = installAdminFetchMock(operatorWriteUser)
+    rewriteProductGet(fetchMock, (product) => ({
+      ...product,
+      variants: (product.variants as Array<Record<string, unknown>>).map((variant) => ({ ...variant, lifeStage: 'puppy' })),
+    }))
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    expect(await screen.findByRole('cell', { name: 'Filhote' })).toBeInTheDocument()
   })
 
   it('creates a variation from draft and includes it in the save payload', async () => {
@@ -118,7 +150,7 @@ describe('ProductDetailPage', () => {
 
     const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patch?.body).toEqual({
-      variants: [{ sku: 'NOVO-1', name: 'Cordeiro 300g', flavor: '', regularPrice: null }],
+      variants: [{ sku: 'NOVO-1', name: 'Cordeiro 300g', flavor: '', lifeStage: 'adult', regularPrice: null }],
     })
   })
 
@@ -185,7 +217,7 @@ describe('ProductDetailPage', () => {
 
     const patches = calls.filter((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patches[0]?.body).toEqual({
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 30 }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', lifeStage: 'adult', regularPrice: 30 }],
     })
     expect(patches[1]?.body).toEqual({
       planCountry: 'BR',

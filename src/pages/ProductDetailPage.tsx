@@ -8,6 +8,14 @@ import { ApiRequestError, apiRequest } from '../lib/api'
 import { formatCurrency } from '../lib/format'
 import { sessionMarkets } from '../lib/markets'
 
+type LifeStage = 'adult' | 'puppy' | 'senior'
+
+const LIFE_STAGE_LABELS: Record<LifeStage, string> = {
+  adult: 'Adulto',
+  puppy: 'Filhote',
+  senior: 'Sênior',
+}
+
 type ProductVariant = {
   id: string
   sku: string
@@ -15,6 +23,7 @@ type ProductVariant = {
   flavor: string | null
   flavorSlug: string | null
   flavorAliases: string | null
+  lifeStage?: LifeStage
   regularPrice: number | null
   stripeProductId: string | null
   stripePriceId: string | null
@@ -45,6 +54,7 @@ type VariantDraft = {
   flavor: string
   flavorSlug: string
   flavorAliases: string
+  lifeStage: LifeStage
   regularPrice: string
   stripeProductId: string | null
   stripePriceId: string | null
@@ -89,6 +99,7 @@ function toVariantDraft(item: ProductVariant): VariantDraft {
     flavor: item.flavor || '',
     flavorSlug: item.flavorSlug || '',
     flavorAliases: item.flavorAliases || '',
+    lifeStage: item.lifeStage ?? 'adult',
     regularPrice: item.regularPrice == null ? '' : String(item.regularPrice),
     stripeProductId: item.stripeProductId,
     stripePriceId: item.stripePriceId,
@@ -108,6 +119,7 @@ function emptyVariantDraft(): VariantDraft {
     flavor: '',
     flavorSlug: '',
     flavorAliases: '',
+    lifeStage: 'adult',
     regularPrice: '',
     stripeProductId: null,
     stripePriceId: null,
@@ -139,6 +151,7 @@ function variantPayload(item: VariantDraft) {
     flavor: item.flavor.trim(),
     ...(item.flavorSlug.trim() ? { flavorSlug: item.flavorSlug.trim() } : {}),
     ...(item.flavorAliases.trim() ? { flavorAliases: item.flavorAliases.trim() } : {}),
+    lifeStage: item.lifeStage,
     regularPrice: item.regularPrice === '' ? null : Number(item.regularPrice),
   }
 }
@@ -486,6 +499,7 @@ export function ProductDetailPage() {
                   <th>Sabor</th>
                   <th>Slug</th>
                   <th>Aliases</th>
+                  <th>Linha</th>
                   <th>Preço ({currency})</th>
                   <th>Produto Stripe</th>
                   <th>Preço Stripe</th>
@@ -496,7 +510,7 @@ export function ProductDetailPage() {
               <tbody>
                 {variants.length === 0 ? (
                   <tr>
-                    <td colSpan={canWrite ? 10 : 9}>
+                    <td colSpan={canWrite ? 11 : 10}>
                       {canEdit
                         ? 'Nenhuma variação. Use Adicionar variação para criar SKU, nome e preço.'
                         : 'Nenhuma variação cadastrada.'}
@@ -511,6 +525,7 @@ export function ProductDetailPage() {
                     <td>{item.flavor || '-'}</td>
                     <td>{item.flavorSlug || '-'}</td>
                     <td>{item.flavorAliases || '-'}</td>
+                    <td>{LIFE_STAGE_LABELS[item.lifeStage]}</td>
                     <td>{formatCurrency(item.regularPrice === '' ? null : Number(item.regularPrice), currency)}</td>
                     <td>{item.stripeProductId ?? '-'}</td>
                     <td>{item.stripePriceId ?? '-'}</td>
@@ -602,6 +617,18 @@ export function ProductDetailPage() {
                 onChange={(event) => updateDialogDraft({ flavorAliases: event.target.value })}
                 placeholder="chicken, frango"
               />
+            </label>
+            <label>
+              Linha
+              <select
+                aria-label="Linha"
+                value={variationDialog.draft.lifeStage}
+                onChange={(event) => updateDialogDraft({ lifeStage: event.target.value as LifeStage })}
+              >
+                {(Object.keys(LIFE_STAGE_LABELS) as LifeStage[]).map((stage) => (
+                  <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
+                ))}
+              </select>
             </label>
             <label>
               Preço ({currency})
