@@ -24,6 +24,7 @@ type ProductVariant = {
   flavorSlug: string | null
   flavorAliases: string | null
   lifeStage?: LifeStage
+  shortLabel?: string | null
   active?: boolean
   finalImageReady?: boolean
   labelDataReady?: boolean
@@ -58,6 +59,7 @@ type VariantDraft = {
   flavorSlug: string
   flavorAliases: string
   lifeStage: LifeStage
+  shortLabel: string
   active: boolean
   finalImageReady: boolean
   labelDataReady: boolean
@@ -106,6 +108,7 @@ function toVariantDraft(item: ProductVariant): VariantDraft {
     flavorSlug: item.flavorSlug || '',
     flavorAliases: item.flavorAliases || '',
     lifeStage: item.lifeStage ?? 'adult',
+    shortLabel: item.shortLabel || '',
     active: item.active === true,
     finalImageReady: item.finalImageReady === true,
     labelDataReady: item.labelDataReady === true,
@@ -129,6 +132,7 @@ function emptyVariantDraft(): VariantDraft {
     flavorSlug: '',
     flavorAliases: '',
     lifeStage: 'adult',
+    shortLabel: '',
     active: false,
     finalImageReady: false,
     labelDataReady: false,
@@ -190,6 +194,7 @@ function variantPayload(item: VariantDraft) {
     ...(item.flavorSlug.trim() ? { flavorSlug: item.flavorSlug.trim() } : {}),
     ...(item.flavorAliases.trim() ? { flavorAliases: item.flavorAliases.trim() } : {}),
     lifeStage: item.lifeStage,
+    shortLabel: item.shortLabel.trim(),
     finalImageReady: item.finalImageReady,
     labelDataReady: item.labelDataReady,
     regularPrice: item.regularPrice === '' ? null : Number(item.regularPrice),
@@ -708,6 +713,16 @@ export function ProductDetailPage() {
                   <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
                 ))}
               </select>
+            </label>
+            <label>
+              Nome curto (fila de produção)
+              <input
+                aria-label="Nome curto"
+                value={variationDialog.draft.shortLabel}
+                maxLength={64}
+                onChange={(event) => updateDialogDraft({ shortLabel: event.target.value })}
+                placeholder="Ex.: Bovino · Sênior"
+              />
             </label>
             <label className="checkbox-field">
               <input

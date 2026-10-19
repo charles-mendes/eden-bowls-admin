@@ -122,7 +122,27 @@ function compactItems(items: MetaItem[]) {
   })
 }
 
-function parseFlavors(pet: Record<string, unknown>) {
+type FlavorNames = Record<string, string>
+
+// Billing shows the full recipe name and falls back to the key. Pet mixes only hold keys, so their names
+// come from the same plan's priced lines.
+function flavorNamesFrom(plan: Record<string, unknown> | null): FlavorNames {
+  const names: FlavorNames = {}
+  for (const item of asArray(asRecord(plan?.catalog_pricing)?.line_items)) {
+    const row = asRecord(item)
+    if (!row) continue
+    const flavor = readString(row, 'flavor')
+    const label = readString(row, 'flavor_label')
+    if (flavor && label && !names[flavor]) names[flavor] = label
+  }
+  return names
+}
+
+function flavorName(flavor: string, names: FlavorNames) {
+  return formatFlavor(names[flavor] || flavor)
+}
+
+function parseFlavors(pet: Record<string, unknown>, names: FlavorNames) {
   const selected = asArray(pet.selected_flavors).map((item) => String(item))
   const weights = asArray(pet.flavor_weights)
   if (selected.length) {
@@ -130,8 +150,8 @@ function parseFlavors(pet: Record<string, unknown>) {
       const quantity = weights[index]
       const amount = typeof quantity === 'number' ? quantity : Number(quantity)
       return Number.isFinite(amount)
-        ? `${formatFlavor(flavor)} × ${formatNumber(amount)}`
-        : formatFlavor(flavor)
+        ? `${flavorName(flavor, names)} × ${formatNumber(amount)}`
+        : flavorName(flavor, names)
     }).join(', ')
   }
 
@@ -141,8 +161,8 @@ function parseFlavors(pet: Record<string, unknown>) {
   return Object.entries(nested).map(([flavor, quantity]) => {
     const amount = typeof quantity === 'number' ? quantity : Number(quantity)
     return Number.isFinite(amount)
-      ? `${formatFlavor(flavor)} × ${formatNumber(amount)}`
-      : formatFlavor(flavor)
+      ? `${flavorName(flavor, names)} × ${formatNumber(amount)}`
+      : flavorName(flavor, names)
   }).join(', ') || '-'
 }
 
@@ -150,7 +170,7 @@ function parseLineItems(rawItems: unknown[], fallbackCurrency: string): PlanLine
   return rawItems.map((item) => {
     const row = asRecord(item) || {}
     const currency = readString(row, 'currency') || fallbackCurrency || 'BRL'
-    const flavor = readString(row, 'flavor')
+    const flavor = readString(row, 'flavor_label') || readString(row, 'flavor')
     const sku = readString(row, 'sku')
     const quantity = readNumber(row, 'quantity')
 
@@ -165,22 +185,23 @@ function parseLineItems(rawItems: unknown[], fallbackCurrency: string): PlanLine
   })
 }
 
-function mapPetRows(items: unknown[]) {
+function mapPetRows(items: unknown[], names: FlavorNames) {
   return items.flatMap((item) => {
     const pet = asRecord(item)
     if (!pet) return []
     return [{
       id: readString(pet, 'pet_id', 'id'),
       petName: readString(pet, 'pet_name', 'name') || 'Pet sem nome',
-      flavors: parseFlavors(pet),
+      flavors: parseFlavors(pet, names),
     }]
   })
 }
 
 function identifiedPlanPets(plan: Record<string, unknown> | null) {
-  const fromPets = mapPetRows(asArray(plan?.pets))
+  const names = flavorNamesFrom(plan)
+  const fromPets = mapPetRows(asArray(plan?.pets), names)
   if (fromPets.length) return fromPets
-  return mapPetRows(asArray(plan?.flavors_by_pet))
+  return mapPetRows(asArray(plan?.flavors_by_pet), names)
 }
 
 function parsePlanPets(plan: Record<string, unknown> | null): PlanPetMix[] {

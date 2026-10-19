@@ -32,7 +32,7 @@ describe('ProductionQueuePage', () => {
     expect(screen.getByRole('button', { name: /^Hoje/ })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByText('Ana Ledger')).toBeInTheDocument()
     expect(screen.queryByText('WordPress Name')).not.toBeInTheDocument()
-    expect(screen.getByText('beef × 2, turkey × 1')).toBeInTheDocument()
+    expect(screen.getByText('Bovino × 2, Frango × 1')).toBeInTheDocument()
     expect(screen.getByText('3 pacotes · 500 g')).toBeInTheDocument()
     expect(screen.getByText('Pago')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Iniciar preparo' })).toBeInTheDocument()
@@ -51,6 +51,24 @@ describe('ProductionQueuePage', () => {
     expect(within(menu).getByRole('menuitem', { name: 'Assinatura' })).toHaveAttribute('href', '/billing/subscriptions/42')
     expect(within(menu).getByRole('menuitem', { name: 'Checkout' })).toHaveAttribute('href', '/users/7?aba=checkout')
     expect(within(menu).getByRole('menuitem', { name: 'Bloquear' })).toBeInTheDocument()
+  })
+
+  it('shows the short recipe name the API sends for a senior plan', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{
+        ...productionQueueItem,
+        flavorMix: 'Bovino · Sênior × 4, Frango · Sênior × 2',
+        lineItems: [
+          { flavor: 'Bovino · Sênior', flavorKey: 'senior-beef', quantity: 4, packSize: '300 g', petName: 'Thor' },
+          { flavor: 'Frango · Sênior', flavorKey: 'senior-chicken', quantity: 2, packSize: '300 g', petName: 'Thor' },
+        ],
+      }],
+    })
+    renderQueue()
+
+    expect(await screen.findByText('Bovino · Sênior × 4, Frango · Sênior × 2')).toBeInTheDocument()
+    expect(screen.queryByText(/senior-beef/)).not.toBeInTheDocument()
   })
 
   it('opens filtered from the URL and sends the filters to the API', async () => {

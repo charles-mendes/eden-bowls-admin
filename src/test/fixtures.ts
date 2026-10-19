@@ -111,7 +111,7 @@ export const productionQueueItem = {
   displayName: 'WordPress Name',
   customerName: 'Ana Ledger',
   email: 'ana@edenbowls.com',
-  flavorMix: 'beef × 2, turkey × 1',
+  flavorMix: 'Bovino × 2, Frango × 1',
   packCount: 3,
   packSizeLabel: '500 g',
   planLabel: 'Plano adulto',
@@ -127,8 +127,8 @@ export const productionQueueItem = {
   dense: false,
   customerProfileInScope: true,
   lineItems: [
-    { flavor: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
-    { flavor: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
+    { flavor: 'Bovino', flavorKey: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
+    { flavor: 'Frango', flavorKey: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
   ],
 }
 
