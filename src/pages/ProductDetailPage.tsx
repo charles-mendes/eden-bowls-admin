@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { formatCurrency } from '../lib/format'
 import { sessionMarkets } from '../lib/markets'
+import { LABEL_STATUS_TEXT, recipePagePath, type RecipeLabelStatus } from '../lib/recipeContent'
 
 type LifeStage = 'adult' | 'puppy' | 'senior'
 
@@ -34,6 +35,9 @@ type ProductVariant = {
   syncStatus: string
   requiresSync: boolean
   canDelete?: boolean
+  recipeKey?: string | null
+  recipeImageUrl?: string | null
+  recipeLabelStatus?: RecipeLabelStatus
 }
 
 type ProductDetail = {
@@ -69,12 +73,19 @@ type VariantDraft = {
   syncStatus: string
   requiresSync: boolean
   canDelete: boolean
+  recipeKey: string | null
+  recipeImageUrl: string | null
+  recipeLabelStatus: RecipeLabelStatus
 }
 
 type VariationDialogState = {
   draft: VariantDraft
   slugLocked: boolean
+  // A new variation's recipe follows its flavor slug until the operator edits the recipe field.
+  recipeKeyTouched: boolean
 }
+
+type MarketRecipe = { key: string; name: string; variations: Array<{ id: string }> }
 
 let newVariantSeq = 0
 
@@ -118,6 +129,9 @@ function toVariantDraft(item: ProductVariant): VariantDraft {
     syncStatus: item.syncStatus,
     requiresSync: item.requiresSync,
     canDelete: item.canDelete === true,
+    recipeKey: item.recipeKey ?? null,
+    recipeImageUrl: item.recipeImageUrl ?? null,
+    recipeLabelStatus: item.recipeLabelStatus ?? 'missing',
   }
 }
 
@@ -142,6 +156,9 @@ function emptyVariantDraft(): VariantDraft {
     syncStatus: 'not_synced',
     requiresSync: true,
     canDelete: true,
+    recipeKey: null,
+    recipeImageUrl: null,
+    recipeLabelStatus: 'missing',
   }
 }
 
@@ -159,8 +176,8 @@ function pendingItems(item: VariantDraft, planCountry: string) {
   const pending: string[] = []
   if (item.regularPrice === '') pending.push('preço')
   if (!item.stripePriceId) pending.push('Stripe')
-  if (!item.finalImageReady) pending.push('foto')
-  if (planCountry === 'US' && !item.labelDataReady) pending.push('rótulo')
+  if (!item.finalImageReady && !item.recipeImageUrl) pending.push('foto')
+  if (planCountry === 'US' && !item.labelDataReady && item.recipeLabelStatus !== 'complete') pending.push('rótulo')
   return pending
 }
 
@@ -173,6 +190,9 @@ const MISSING_LABELS: Record<string, string> = {
 
 function variationFailure(error: unknown, fallback: string) {
   if (error instanceof ApiRequestError) {
+    if (error.code === 'recipe_not_registered') {
+      return 'Esta receita não está mais cadastrada no mercado. Escolha outra ou cadastre em Receitas.'
+    }
     if (error.code === 'recipe_publish_refused') {
       const missing = Array.isArray(error.details?.missing) ? error.details.missing as string[] : []
       const items = missing.map((item) => MISSING_LABELS[item] ?? item).join(', ')
@@ -207,6 +227,7 @@ function variantPayload(item: VariantDraft) {
     finalImageReady: item.finalImageReady,
     labelDataReady: item.labelDataReady,
     regularPrice: item.regularPrice === '' ? null : Number(item.regularPrice),
+    recipeKey: item.recipeKey?.trim() || null,
   }
 }
 
@@ -255,6 +276,26 @@ export function ProductDetailPage() {
     setError('')
     setVariationNotice({ tone, text })
   }
+
+  const [marketRecipes, setMarketRecipes] = useState<MarketRecipe[]>([])
+
+  // Recipe keys already used in the market, offered in the variation dialog; the field works without them.
+  const loadMarketRecipes = async (market: string | null) => {
+    if (!token || !market) return
+    try {
+      const response = await apiRequest<{ items: MarketRecipe[] }>(
+        `/admin/catalog/recipe-content?market=${encodeURIComponent(market)}`,
+        { token },
+      )
+      setMarketRecipes(response.items)
+    } catch {
+      setMarketRecipes([])
+    }
+  }
+
+  useEffect(() => {
+    if (canWrite) void loadMarketRecipes(data?.planCountry ?? null)
+  }, [token, canWrite, data?.planCountry])
 
   const applyProduct = (product: ProductDetail) => {
     setData(product)
@@ -363,6 +404,7 @@ export function ProductDetailPage() {
     setVariationDialog({
       draft,
       slugLocked: Boolean(draft.id && draft.flavorSlug),
+      recipeKeyTouched: Boolean(draft.id),
     })
   }
 
@@ -378,7 +420,14 @@ export function ProductDetailPage() {
         ))
         next.flavorSlug = sibling?.flavorSlug || suggestFlavorSlug(patch.flavor)
       }
-      return { ...current, draft: next }
+      const recipeKeyTouched = current.recipeKeyTouched || patch.recipeKey !== undefined
+      // A new variation starts on the registered recipe of its suggested slug, or on no recipe.
+      if (!recipeKeyTouched && (patch.flavor != null || patch.flavorSlug != null)) {
+        const sibling = variants.find((row) => row.key !== current.draft.key && row.flavorSlug && row.flavorSlug === next.flavorSlug)
+        const suggested = sibling?.recipeKey || next.flavorSlug.trim()
+        next.recipeKey = marketRecipes.some((recipe) => recipe.key === suggested) ? suggested : null
+      }
+      return { ...current, draft: next, recipeKeyTouched }
     })
   }
 
@@ -406,6 +455,7 @@ export function ProductDetailPage() {
       setVariationDialog(null)
       setDialogError('')
       notifyVariation('success', draft.id ? 'Variação atualizada.' : 'Variação adicionada.')
+      void loadMarketRecipes(response.planCountry)
     } catch (requestError) {
       setDialogError(variationFailure(requestError, 'Falha ao salvar variação'))
     } finally {
@@ -615,6 +665,7 @@ export function ProductDetailPage() {
                   <th>Linha</th>
                   <th className="numeric">Preço ({currency})</th>
                   <th>Stripe</th>
+                  <th>Conteúdo</th>
                   <th>Situação</th>
                   {canWrite ? <th><span className="sr-only">Ações</span></th> : null}
                 </tr>
@@ -622,7 +673,7 @@ export function ProductDetailPage() {
               <tbody>
                 {variants.length === 0 ? (
                   <tr>
-                    <td colSpan={canWrite ? 7 : 6} className="muted">
+                    <td colSpan={canWrite ? 8 : 7} className="muted">
                       {canAddVariation
                         ? 'Nenhuma variação. Use Adicionar variação para criar SKU, nome e preço.'
                         : 'Nenhuma variação cadastrada.'}
@@ -664,6 +715,30 @@ export function ProductDetailPage() {
                             </span>
                           ) : null}
                         </div>
+                      </td>
+                      <td>
+                        {item.recipeKey ? (
+                          <div className="cell-stack">
+                            <span className="cell-meta mono" title="Receita (conteúdo)">{item.recipeKey}</span>
+                            <span className={item.recipeImageUrl ? 'badge-success' : 'badge-neutral'}>
+                              {item.recipeImageUrl ? 'Imagem cadastrada' : 'Sem imagem'}
+                            </span>
+                            <span className={item.recipeLabelStatus === 'complete' ? 'badge-success' : item.recipeLabelStatus === 'incomplete' ? 'badge-warning' : 'badge-neutral'}>
+                              {LABEL_STATUS_TEXT[item.recipeLabelStatus]}
+                            </span>
+                            {item.id ? (
+                              <Link
+                                className="link-button"
+                                to={recipePagePath(planCountry, item.recipeKey)}
+                                aria-label={`Conteúdo da receita de ${label}`}
+                              >
+                                Conteúdo
+                              </Link>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <span className="cell-meta">Sem receita vinculada</span>
+                        )}
                       </td>
                       <td>
                         <div className="cell-stack">
@@ -829,40 +904,70 @@ export function ProductDetailPage() {
                     placeholder="chicken, frango"
                   />
                 </label>
+                <label className="access-field-wide">
+                  Receita (conteúdo) <span className="access-optional">imagem e rótulo</span>
+                  <select
+                    aria-label="Receita (conteúdo)"
+                    aria-describedby="recipe-key-hint"
+                    value={draft.recipeKey ?? ''}
+                    onChange={(event) => updateDialogDraft({ recipeKey: event.target.value || null })}
+                  >
+                    <option value="">Sem receita</option>
+                    {draft.recipeKey && !marketRecipes.some((recipe) => recipe.key === draft.recipeKey) ? (
+                      <option value={draft.recipeKey}>{draft.recipeKey}</option>
+                    ) : null}
+                    {marketRecipes.map((recipe) => (
+                      <option key={recipe.key} value={recipe.key}>{recipe.name} · {recipe.key}</option>
+                    ))}
+                  </select>
+                  <span id="recipe-key-hint" className="access-hint">
+                    Variações do mercado com a mesma receita usam a mesma imagem e o mesmo rótulo. Não achou?{' '}
+                    <Link to={`/catalog/recipes?market=${encodeURIComponent(planCountry)}`}>Cadastre em Receitas</Link>.
+                  </span>
+                </label>
               </div>
             </fieldset>
 
             <fieldset className="access-group">
               <legend>Confirmações para ativar</legend>
-              <div className="readiness-item">
-                <label className="checkbox-field">
-                  <input
-                    type="checkbox"
-                    aria-describedby="final-image-hint"
-                    checked={draft.finalImageReady}
-                    onChange={(event) => updateDialogDraft({ finalImageReady: event.target.checked })}
-                  />
-                  Foto definitiva já está na loja
-                </label>
-                <p id="final-image-hint" className="access-hint">
-                  A imagem da receita é um arquivo da loja. Marque só depois que a foto final do design substituir a provisória. Sem isso, a variação não pode ser ativada.
-                </p>
-              </div>
-              <div className="readiness-item">
-                <label className="checkbox-field">
-                  <input
-                    type="checkbox"
-                    aria-describedby="label-data-hint"
-                    checked={draft.labelDataReady}
-                    onChange={(event) => updateDialogDraft({ labelDataReady: event.target.checked })}
-                  />
-                  Dados de rótulo já estão na página da receita
-                </label>
-                <p id="label-data-hint" className="access-hint">
-                  Ingredientes, níveis de garantia, kcal e avisos.{' '}
-                  {planCountry === 'US' ? 'Obrigatório para ativar nos EUA.' : 'Opcional no Brasil; obrigatório para ativar nos EUA.'}
-                </p>
-              </div>
+              {draft.recipeImageUrl ? (
+                <p className="access-hint">Imagem cadastrada em Conteúdo da receita. Não precisa de confirmação.</p>
+              ) : (
+                <div className="readiness-item">
+                  <label className="checkbox-field">
+                    <input
+                      type="checkbox"
+                      aria-describedby="final-image-hint"
+                      checked={draft.finalImageReady}
+                      onChange={(event) => updateDialogDraft({ finalImageReady: event.target.checked })}
+                    />
+                    Foto definitiva já está na loja
+                  </label>
+                  <p id="final-image-hint" className="access-hint">
+                    Só para imagem no código da loja. Marque depois que a foto final do design substituir a provisória. Ou cadastre a imagem em Conteúdo da receita, que dispensa esta confirmação.
+                  </p>
+                </div>
+              )}
+              {draft.recipeLabelStatus === 'complete' ? (
+                <p className="access-hint">Rótulo completo cadastrado em Conteúdo da receita. Não precisa de confirmação.</p>
+              ) : (
+                <div className="readiness-item">
+                  <label className="checkbox-field">
+                    <input
+                      type="checkbox"
+                      aria-describedby="label-data-hint"
+                      checked={draft.labelDataReady}
+                      onChange={(event) => updateDialogDraft({ labelDataReady: event.target.checked })}
+                    />
+                    Dados de rótulo já estão na página da receita
+                  </label>
+                  <p id="label-data-hint" className="access-hint">
+                    Só para rótulo no código da loja: ingredientes, níveis de garantia, kcal e avisos.{' '}
+                    {planCountry === 'US' ? 'Obrigatório para ativar nos EUA.' : 'Opcional no Brasil; obrigatório para ativar nos EUA.'}
+                    {' '}Um rótulo completo em Conteúdo da receita dispensa esta confirmação.
+                  </p>
+                </div>
+              )}
             </fieldset>
           </form>
         ) : null}

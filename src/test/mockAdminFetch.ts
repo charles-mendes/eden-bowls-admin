@@ -10,6 +10,10 @@ import {
   operatorWriteUser,
   productDetail,
   productsList,
+  recipeContent as recipeContentFixture,
+  recipeList,
+  type RecipeListItem,
+  recipeImageUrl,
   promotionCodesList,
   shippingSettings,
   todayOverview,
@@ -89,6 +93,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   catalogDelete?: 'in_use' | 'archive'
   catalogActivation?: 'refused' | 'in_use'
   catalogPatch?: 'locked'
+  recipeContent?: typeof recipeContentFixture
+  recipes?: RecipeListItem[]
+  recipeImage?: 'invalid'
   // Answered before the fixed routes; return undefined to fall through.
   routes?: (call: FetchCall) => Response | undefined
 } = {}) {
@@ -100,6 +107,12 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   let catalogDetail = {
     ...(options.product ?? productDetail),
     variants: (options.product ?? productDetail).variants.map((item) => ({ ...item })),
+  }
+
+  let recipes = (options.recipes ?? recipeList.items).map((item) => ({ ...item, variations: item.variations.map((variation) => ({ ...variation })) }))
+  let recipeContent = {
+    ...(options.recipeContent ?? recipeContentFixture),
+    variations: (options.recipeContent ?? recipeContentFixture).variations.map((item) => ({ ...item })),
   }
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -291,6 +304,104 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(catalogDetail)
     }
 
+    if (path === '/api/v1/admin/catalog/recipe-content' && method === 'GET') {
+      return jsonResponse({ market: url.searchParams.get('market') || 'BR', items: recipes })
+    }
+
+    if (path === '/api/v1/admin/catalog/recipe-content' && method === 'POST') {
+      const key = String(body?.key ?? '')
+      const name = String(body?.name ?? '').trim()
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(key)) {
+        return jsonResponse({ message: 'Recipe key must use lowercase letters, digits and single hyphens.', details: { code: 'recipe_key_invalid' } }, 422)
+      }
+      if (!name) {
+        return jsonResponse({ message: 'Recipe name must have 1 to 120 characters.', details: { code: 'recipe_name_invalid' } }, 422)
+      }
+      if (recipes.some((item) => item.key === key)) {
+        return jsonResponse({ message: 'A recipe with this key already exists in the market.', details: { code: 'recipe_key_taken' } }, 409)
+      }
+      recipes = [...recipes, { key, name, imageUrl: null, labelStatus: 'missing', variations: [] }]
+      return jsonResponse({ ...recipeContentFixture, flavorSlug: key, name, imageUrl: null, label: null, labelStatus: 'missing', labelMissing: [], variations: [] })
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+$/.test(path) && ['GET', 'PATCH', 'DELETE'].includes(method)) {
+      const key = decodeURIComponent(path.split('/').pop() || '')
+      const listed = recipes.find((item) => item.key === key)
+      const current = key === recipeContent.flavorSlug
+        ? recipeContent
+        : listed
+          ? { ...recipeContentFixture, flavorSlug: key, name: listed.name, imageUrl: listed.imageUrl, label: null, labelStatus: listed.labelStatus, labelMissing: [], variations: listed.variations }
+          : null
+      if (!current) {
+        return jsonResponse({ message: 'Recipe not found.', details: { code: 'recipe_not_found' } }, 404)
+      }
+      if (method === 'PATCH') {
+        const name = String(body?.name ?? '').trim()
+        recipes = recipes.map((item) => (item.key === key ? { ...item, name } : item))
+        if (key === recipeContent.flavorSlug) recipeContent = { ...recipeContent, name }
+        return jsonResponse({ ...current, name })
+      }
+      if (method === 'DELETE') {
+        if (current.variations.length) {
+          return jsonResponse({
+            message: 'A recipe used by variations cannot be deleted.',
+            details: { code: 'recipe_in_use', variations: current.variations.map((item) => ({ id: item.id, sku: item.sku, name: item.name })) },
+          }, 409)
+        }
+        recipes = recipes.filter((item) => item.key !== key)
+        return jsonResponse({ deleted: true, market: 'BR', flavorSlug: key })
+      }
+      return jsonResponse(current)
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'PUT') {
+      if (options.recipeImage === 'invalid') {
+        return jsonResponse({
+          message: 'Image must be 1024 x 636 pixels.',
+          details: { code: 'recipe_image_invalid', reason: 'dimensions', width: 1200, height: 800, expectedWidth: 1024, expectedHeight: 636 },
+        }, 422)
+      }
+      recipeContent = { ...recipeContent, imageUrl: recipeImageUrl, imageUpdatedAt: '2026-10-23T12:00:00.000Z' }
+      return jsonResponse(recipeContent)
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'DELETE') {
+      const active = recipeContent.variations.filter((item) => item.active)
+      if (active.length) {
+        return jsonResponse({
+          message: 'The image of a recipe with an active variation cannot be removed.',
+          details: { code: 'recipe_content_in_use', activeVariations: active.map((item) => item.id) },
+        }, 409)
+      }
+      recipeContent = { ...recipeContent, imageUrl: null }
+      return jsonResponse(recipeContent)
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/label$/.test(path) && method === 'PUT') {
+      const label = body?.label ?? {}
+      const missing = [
+        ...(label.ingredients?.length ? [] : ['ingredients']),
+        ...(label.analysis?.length ? [] : ['analysis']),
+        ...(label.energyKg ? [] : ['energyKg']),
+        ...(label.energyPackage ? [] : ['energyPackage']),
+        ...(recipeContent.market === 'US' && !label.notices?.length ? ['notices'] : []),
+      ]
+      const active = recipeContent.variations.filter((item) => item.active)
+      if (recipeContent.market === 'US' && active.length && missing.length) {
+        return jsonResponse({
+          message: 'The label of a US recipe with an active variation must stay complete.',
+          details: { code: 'recipe_content_in_use', activeVariations: active.map((item) => item.id), missing },
+        }, 409)
+      }
+      recipeContent = {
+        ...recipeContent,
+        label,
+        labelStatus: missing.length ? 'incomplete' : 'complete',
+        labelMissing: missing,
+      }
+      return jsonResponse(recipeContent)
+    }
+
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/variations\/[^/]+\/activation$/.test(path) && method === 'POST') {
       if (options.catalogActivation === 'refused') {
         return jsonResponse({
@@ -317,6 +428,14 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         message: 'Active variations of a published product cannot be edited.',
         details: { code: 'variation_active_locked', variationIds: ['var-1'] },
       }, 409)
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'PATCH' && Array.isArray(body?.variants)
+      && body.variants.some((item: { recipeKey?: unknown }) => typeof item.recipeKey === 'string' && !recipes.some((recipe) => recipe.key === item.recipeKey))) {
+      return jsonResponse({
+        message: 'Recipe is not registered in the product market.',
+        details: { code: 'recipe_not_registered' },
+      }, 422)
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'PATCH') {

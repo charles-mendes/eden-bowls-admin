@@ -1,8 +1,8 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProductDetailPage } from './ProductDetailPage'
-import { adminUser, jsonResponse, operatorWriteUser, productDetail, readonlyUser } from '../test/fixtures'
+import { adminUser, jsonResponse, operatorWriteUser, productDetail, readonlyUser, recipeImageUrl } from '../test/fixtures'
 import { findCall, installAdminFetchMock, type FetchCall } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -97,7 +97,7 @@ describe('ProductDetailPage', () => {
 
     const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patch?.body).toEqual({
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', lifeStage: 'adult', shortLabel: '', finalImageReady: false, labelDataReady: false, regularPrice: 89.9 }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', lifeStage: 'adult', shortLabel: '', finalImageReady: false, labelDataReady: false, regularPrice: 89.9, recipeKey: 'turkey' }],
     })
   })
 
@@ -252,7 +252,7 @@ describe('ProductDetailPage', () => {
 
     const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patch?.body).toEqual({
-      variants: [{ sku: 'NOVO-1', name: 'Cordeiro 300g', flavor: '', lifeStage: 'adult', shortLabel: '', finalImageReady: false, labelDataReady: false, regularPrice: null }],
+      variants: [{ sku: 'NOVO-1', name: 'Cordeiro 300g', flavor: '', lifeStage: 'adult', shortLabel: '', finalImageReady: false, labelDataReady: false, regularPrice: null, recipeKey: null }],
     })
   })
 
@@ -319,7 +319,7 @@ describe('ProductDetailPage', () => {
 
     const patches = calls.filter((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patches[0]?.body).toEqual({
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', lifeStage: 'adult', shortLabel: '', finalImageReady: false, labelDataReady: false, regularPrice: 30 }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', lifeStage: 'adult', shortLabel: '', finalImageReady: false, labelDataReady: false, regularPrice: 30, recipeKey: 'turkey' }],
     })
     expect(patches[1]?.body).toEqual({
       planCountry: 'BR',
@@ -634,5 +634,167 @@ describe('ProductDetailPage', () => {
     await screen.findByRole('button', { name: 'Desativar' })
     expect(screen.getByRole('button', { name: 'Editar variação Frango 1kg' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
+  })
+
+  it('shows the stored image state and links each variation to its recipe content', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser, {
+      product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeImageUrl }] },
+    })
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    expect(await screen.findByText('Imagem cadastrada')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Conteúdo da receita de Frango 1kg' })).toHaveAttribute('href', '/catalog/recipes/BR/turkey')
+  })
+
+  it('hides the image confirmation when the flavor has a stored image', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeImageUrl }] },
+    })
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+
+    expect(screen.queryByLabelText('Foto definitiva já está na loja')).not.toBeInTheDocument()
+    expect(screen.getByText('Imagem cadastrada em Conteúdo da receita. Não precisa de confirmação.')).toBeInTheDocument()
+  })
+
+  it('keeps the image confirmation for a flavor without a stored image', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    expect(await screen.findByText('Sem imagem')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Editar variação Frango 1kg' }))
+
+    expect(screen.getByLabelText('Foto definitiva já está na loja')).toBeInTheDocument()
+  })
+
+  it('shows the label state and asks for the label confirmation only while the stored label is not complete', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeImageUrl, recipeLabelStatus: 'incomplete' }] },
+    })
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    expect(await screen.findByText('Imagem cadastrada')).toBeInTheDocument()
+    expect(screen.getByText('Rótulo incompleto')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Editar variação Frango 1kg' }))
+
+    expect(screen.queryByLabelText('Foto definitiva já está na loja')).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Dados de rótulo já estão na página da receita')).toBeInTheDocument()
+  })
+
+  it('hides the label confirmation when the stored label is complete', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeLabelStatus: 'complete' }] },
+    })
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    expect(await screen.findByText('Rótulo completo')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Editar variação Frango 1kg' }))
+
+    expect(screen.queryByLabelText('Dados de rótulo já estão na página da receita')).not.toBeInTheDocument()
+    expect(screen.getByText('Rótulo completo cadastrado em Conteúdo da receita. Não precisa de confirmação.')).toBeInTheDocument()
+  })
+
+  describe('recipe link', () => {
+    async function openDialog(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+      // The registered recipes arrive after the product.
+      await screen.findByRole('option', { name: 'Carne · beef' })
+    }
+
+    it('unlinks a variation by choosing Sem receita', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+      await openDialog(user)
+      expect(screen.getByLabelText('Receita (conteúdo)')).toHaveValue('turkey')
+      await user.selectOptions(screen.getByLabelText('Receita (conteúdo)'), 'Sem receita')
+      await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+
+      expect(await screen.findByText('Sem receita vinculada')).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: /Conteúdo da receita/ })).not.toBeInTheDocument()
+      const patch = calls.find((call) => call.method === 'PATCH')
+      expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0].recipeKey).toBeNull()
+    })
+
+    it('offers only the recipes registered in the market, with a link to register more', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+      await openDialog(user)
+
+      const select = screen.getByLabelText('Receita (conteúdo)')
+      expect(select.tagName).toBe('SELECT')
+      expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual([
+        'Sem receita',
+        'Carne · beef',
+        'Sênior Cordeiro · senior-lamb',
+        'Frango · turkey',
+      ])
+      expect(screen.getByRole('link', { name: 'Cadastre em Receitas' })).toHaveAttribute('href', '/catalog/recipes?market=BR')
+      expect(calls.some((call) => call.path === '/api/v1/admin/catalog/recipe-content' && call.search === '?market=BR')).toBe(true)
+    })
+
+    it('explains a recipe that is no longer registered and keeps the other fields', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        recipes: [{ key: 'beef', name: 'Carne', imageUrl: null, labelStatus: 'missing', variations: [] }],
+      })
+      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+      await openDialog(user)
+      await user.clear(screen.getByLabelText('Nome'))
+      await user.type(screen.getByLabelText('Nome'), 'Frango 1,2kg')
+      await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+
+      expect(await screen.findByText('Esta receita não está mais cadastrada no mercado. Escolha outra ou cadastre em Receitas.')).toBeInTheDocument()
+      expect(screen.getByLabelText('Nome')).toHaveValue('Frango 1,2kg')
+    })
+
+    it('starts a new variation on the registered recipe of its flavor slug, or on no recipe', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+      await user.click(await screen.findByRole('button', { name: 'Adicionar variação' }))
+      await screen.findByRole('option', { name: 'Carne · beef' })
+      await user.type(screen.getByLabelText('SKU'), 'SL-300')
+      await user.type(screen.getByLabelText('Sabor'), 'Pato')
+      expect(screen.getByLabelText('Receita (conteúdo)')).toHaveValue('')
+      await user.clear(screen.getByLabelText('Sabor'))
+      await user.type(screen.getByLabelText('Sabor'), 'Senior Lamb')
+      expect(screen.getByLabelText('Receita (conteúdo)')).toHaveValue('senior-lamb')
+      await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+
+      await screen.findByText('Variação adicionada.')
+      const patch = calls.find((call) => call.method === 'PATCH')
+      expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0].recipeKey).toBe('senior-lamb')
+    })
+
+    it('shows a variation without a recipe without a content link', async () => {
+      seedAuth()
+      installAdminFetchMock(readonlyUser, {
+        product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeKey: null }] },
+      })
+      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+      expect(await screen.findByText('Sem receita vinculada')).toBeInTheDocument()
+      expect(screen.queryByRole('link', { name: /Conteúdo da receita/ })).not.toBeInTheDocument()
+    })
   })
 })

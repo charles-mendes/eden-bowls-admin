@@ -12,9 +12,19 @@ Motivação em `proposal.md`. O contrato (rotas, formato `{ mimeType, imageBase6
 
 ## Decisions
 
-### 1. Página própria em vez de crescer o diálogo
+### 1. Área de Receitas fora do produto
 
-O rótulo tem doze campos e quatro listas, e o diálogo de 520 px não comporta isso. A página `RecipeContentPage.tsx` segue o shell e os cards (`Section`) do painel. O mercado vem do produto carregado, então o link carrega `productId` e `flavorSlug`.
+A receita é cadastrada por mercado e compartilhada entre produtos, então ela ganha um lugar próprio: o item **Receitas** no grupo Loja de `src/lib/menu.ts`, a lista `RecipesPage.tsx` em `/catalog/recipes` e a página `RecipeContentPage.tsx` em `/catalog/recipes/:market/:recipeKey`. A primeira versão abria a página dentro do produto (`/catalog/products/:productId/recipes/:recipeKey`), o que deixava a receita sem lugar quando nenhuma variação a usava e escondia as receitas sem conteúdo. Essa rota sai: ainda não foi publicada.
+
+- A lista lê `GET /admin/catalog/recipe-content?market=` e filtra no navegador ("Sem imagem", "Rótulo incompleto"). O mercado segue o filtro de Produtos (`sessionMarkets`).
+- **Nova receita** é um `Dialog` com Nome e Chave. A chave segue o nome como slug até o operador editá-la.
+- A página da receita usa o mercado da URL, não o do produto. **Renomear** é um `Dialog` só com Nome. **Excluir receita** aparece só sem variações.
+- O vínculo continua só na variação: a página da receita mostra as variações, mas não vincula nem desvincula. Assim existe um único caminho para o mesmo dado, sob as mesmas travas.
+- O campo **Receita (conteúdo)** da variação vira um `select` das receitas cadastradas do mercado, mais "Sem receita". Isso acaba com chaves digitadas erradas, e a API recusa uma chave sem cadastro (`recipe_not_registered`).
+
+### 1a. Página com as seções Imagem e Rótulo
+
+O rótulo tem doze campos e quatro listas, e o diálogo de 520 px não comporta isso. A página segue o shell e os cards (`Section`) do painel.
 
 ### 2. Conferência da imagem no navegador
 

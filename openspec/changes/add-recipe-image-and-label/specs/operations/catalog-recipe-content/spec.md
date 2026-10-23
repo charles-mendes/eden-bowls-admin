@@ -2,18 +2,89 @@
 
 ## Purpose
 
-Gives catalog staff a page in the panel to upload each recipe's banner image and fill its label per market, and shows on the variation table which flavors already have stored content.
+Gives catalog staff a Recipes area in the panel to register recipes per market, upload each recipe's banner image and fill its label, lets them choose which registered recipe each variation uses, and shows on the variation table which recipe and content each variation has.
 
 ## ADDED Requirements
 
-### Requirement: Variation opens its recipe content page
+### Requirement: Recipes menu lists the recipes of a market
 
-The variation table MUST link every saved variation to `/catalog/products/:productId/recipes/:flavorSlug` for its flavor. The content page MUST name the market and list every variation that shares the content, by name or SKU, so the operator knows a change applies to all of them.
+The panel MUST show a **Receitas** item in the Loja group of the menu for admin, operator and readonly, opening `/catalog/recipes`. The list MUST use the same market filter as Produtos, limited to the session's markets, and show for each registered recipe its name and key, its active and total variations, whether it has an image and its label status. It MUST offer the quick filters **Sem imagem** and **Rótulo incompleto**, the latter also matching recipes without a label.
+
+#### Scenario: Recipes of BR
+
+- **WHEN** a readonly session opens **Receitas** with BR recipes `beef` (2 of 3 variations active, with image) and `senior-lamb` (no variations, no image)
+- **THEN** the list shows both recipes with their names and keys, "2/3" and "0/0" variations, and the image and label states
+
+#### Scenario: Quick filter
+
+- **WHEN** an operator turns on **Sem imagem**
+- **THEN** only `senior-lamb` stays on the list
+
+### Requirement: Operator registers a recipe
+
+A session with `catalog.write` MUST see **Nova receita**, which opens a dialog with **Nome** and **Chave**. The key MUST be filled from the name as a lowercase slug until the operator edits it, and the dialog MUST say the key cannot change later. API refusals (`recipe_key_taken`, `recipe_key_invalid`, `recipe_name_invalid`) MUST appear in Portuguese inside the dialog, keeping what was typed. After registering, the panel MUST open the recipe page. Readonly MUST NOT see **Nova receita**.
+
+#### Scenario: Register Sênior Cordeiro
+
+- **WHEN** an operator types the name "Sênior Cordeiro" and saves
+- **THEN** the panel sends the key `senior-cordeiro` with that name for the selected market and opens `/catalog/recipes/BR/senior-cordeiro`
+
+#### Scenario: Key taken
+
+- **WHEN** the API answers 409 `recipe_key_taken`
+- **THEN** the dialog says a recipe with that key already exists in the market and keeps the name and key
+
+### Requirement: Recipe page stands on its own
+
+The recipe page MUST live at `/catalog/recipes/:market/:recipeKey`, independent of any product. It MUST show the recipe name, key and market, and list every variation that uses the key with its name or SKU, its product and a link to the product. Without variations, it MUST explain that a variation is linked through its **Receita (conteúdo)** field. A session with `catalog.write` MUST see **Renomear** and, only when no variation uses the recipe, **Excluir receita**, which asks for confirmation and returns to the list.
 
 #### Scenario: Content page names the sharing variations
 
-- **WHEN** an operator opens the content page of `senior-beef` from the 300 g variation of Flavors BR, which also has a 500 g `senior-beef` variation
-- **THEN** the page says the market is BR and lists both variations
+- **WHEN** an operator opens the page of `beef` in BR, used by "Beef 300g" and "Beef 500g" of Flavors BR and by "Bovino" of another product
+- **THEN** the page says the market is BR and the recipe is `beef`, and lists the three variations with their product names and links
+
+#### Scenario: Unused recipe can be deleted
+
+- **WHEN** an operator opens `senior-lamb`, which no variation uses, and confirms **Excluir receita**
+- **THEN** the panel sends the delete and returns to the list without `senior-lamb`
+
+#### Scenario: Recipe in use has no delete
+
+- **WHEN** an operator opens `beef`, which variations use
+- **THEN** the page shows **Renomear** and no **Excluir receita**
+
+### Requirement: Variation opens its recipe content page
+
+The variation table MUST show each variation's recipe key and link a saved variation that has one to `/catalog/recipes/:market/:recipeKey` of the product's market. A variation without a recipe key MUST say it has no linked recipe and MUST NOT link.
+
+#### Scenario: Link to the recipe page
+
+- **WHEN** a BR product detail loads a variation with the recipe key `turkey`
+- **THEN** its row links to `/catalog/recipes/BR/turkey`
+
+#### Scenario: Variation without a recipe
+
+- **WHEN** a product detail loads a variation whose recipe key is null
+- **THEN** its row says it has no linked recipe and has no content link
+
+### Requirement: Variation dialog sets the recipe key
+
+The variation dialog MUST have a **Receita (conteúdo)** select listing the recipes registered in the product's market as name and key, plus **Sem receita**. It MUST explain that variations with the same recipe share image and label and link to **Receitas** to register a new one. A new variation MUST start on the recipe whose key equals its suggested flavor slug when one is registered, otherwise on **Sem receita**. The saved value MUST be sent as `recipeKey`, **Sem receita** as `null`. A 422 `recipe_not_registered` MUST appear in the dialog.
+
+#### Scenario: Unlinking a variation
+
+- **WHEN** an operator picks **Sem receita** for the inactive variation SKU 3000 and saves
+- **THEN** the PATCH sends `recipeKey` null and the row says it has no linked recipe
+
+#### Scenario: Registered recipes only
+
+- **WHEN** an operator opens the dialog in a BR product and BR has the recipes `beef` and `senior-beef`
+- **THEN** the select offers "Sem receita", `beef` and `senior-beef` with their names, and no free text
+
+#### Scenario: Recipe removed meanwhile
+
+- **WHEN** the API refuses the save with 422 `recipe_not_registered`
+- **THEN** the dialog says the recipe is no longer registered in the market and keeps the other fields
 
 ### Requirement: Panel checks the image before sending
 
