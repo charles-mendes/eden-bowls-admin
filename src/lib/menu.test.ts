@@ -67,4 +67,14 @@ describe('admin menu', () => {
     expect(activeMenuHref('/users/u-1', items)).toBe('/users')
     expect(activeMenuHref('/billingx', items)).toBe('')
   })
+
+  it('shows Receitas next to Produtos in Loja for admin, operator and readonly', () => {
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      const loja = groupedMenuItems([role]).find((group) => group.group === 'Loja')
+      const hrefs = loja?.items.map((item) => item.href) ?? []
+      expect(hrefs.indexOf('/catalog/recipes')).toBe(hrefs.indexOf('/catalog/products') + 1)
+    }
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/catalog/recipes')
+    expect(activeMenuHref('/catalog/recipes/BR/beef', visibleMenuItems(['operator']))).toBe('/catalog/recipes')
+  })
 })

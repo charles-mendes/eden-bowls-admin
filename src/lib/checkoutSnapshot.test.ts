@@ -62,6 +62,38 @@ describe('parseCheckoutSnapshots', () => {
     expect(snapshots.payment.items).toEqual([])
   })
 
+  it('shows full recipe names in billing, with the key only when a line has no name', () => {
+    const snapshots = parseCheckoutSnapshots({
+      ...checkoutDetail,
+      planSelection: {
+        ...checkoutDetail.planSelection,
+        pets: [{ pet_id: 'pet-1', pet_name: 'Thor', selected_flavors: ['senior-beef', 'turkey', 'mystery'], flavor_weights: [4, 1, 1] }],
+        catalog_pricing: {
+          currency: 'BRL',
+          line_items: [
+            { flavor: 'senior-beef', flavor_label: 'Receita de Carne para Cães Sênior', short_label: 'Bovino · Sênior', pet_name: 'Thor', quantity: 4, unit_price: 40, line_total: 160, pack_size_label: '300 g', currency: 'BRL' },
+            { flavor: 'turkey', flavor_label: 'Frango', pet_name: 'Thor', quantity: 1, unit_price: 22.5, line_total: 22.5, pack_size_label: '300 g', currency: 'BRL' },
+          ],
+        },
+      },
+      lineItems: [
+        { flavor: 'senior-beef', flavor_label: 'Receita de Carne para Cães Sênior', pet_name: 'Thor', quantity: 4, unit_price: 40, line_total: 160, pack_size_label: '300 g', currency: 'BRL' },
+        { flavor: 'turkey', flavor_label: 'Frango', pet_name: 'Thor', quantity: 1, unit_price: 22.5, line_total: 22.5, pack_size_label: '300 g', currency: 'BRL' },
+        { flavor: 'mystery', pet_name: 'Thor', quantity: 1, unit_price: 10, line_total: 10, pack_size_label: '300 g', currency: 'BRL' },
+      ],
+    })
+
+    expect(snapshots.plan.pets[0]).toEqual({
+      petName: 'Thor',
+      flavors: 'Receita de Carne para Cães Sênior × 4, Frango × 1, mystery × 1',
+    })
+    expect(snapshots.plan.lineItems.map((item) => item.product)).toEqual([
+      'Receita de Carne para Cães Sênior',
+      'Frango',
+      'mystery',
+    ])
+  })
+
   it('keeps the plan name on a clash and appends snapshot-only pets with an empty flavor cell', () => {
     expect(mergeReadablePets(
       {

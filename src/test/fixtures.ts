@@ -111,7 +111,7 @@ export const productionQueueItem = {
   displayName: 'WordPress Name',
   customerName: 'Ana Ledger',
   email: 'ana@edenbowls.com',
-  flavorMix: 'beef × 2, turkey × 1',
+  flavorMix: 'Bovino × 2, Frango × 1',
   packCount: 3,
   packSizeLabel: '500 g',
   planLabel: 'Plano adulto',
@@ -127,8 +127,8 @@ export const productionQueueItem = {
   dense: false,
   customerProfileInScope: true,
   lineItems: [
-    { flavor: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
-    { flavor: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
+    { flavor: 'Bovino', flavorKey: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
+    { flavor: 'Frango', flavorKey: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
   ],
 }
 
@@ -335,15 +335,94 @@ export const productDetail = {
       sku: 'BOWL-1',
       name: 'Frango 1kg',
       flavor: 'Frango',
+      active: true,
       regularPrice: 89.9,
       stripeProductId: 'prod_stripe',
       stripePriceId: 'price_stripe',
       syncStatus: 'synced',
       requiresSync: false,
       canDelete: true,
+      recipeKey: 'turkey' as string | null,
+      recipeImageUrl: null as string | null,
+      recipeLabelStatus: 'missing' as 'missing' | 'incomplete' | 'complete',
     },
   ],
   canDelete: true,
+}
+
+export const recipeImageUrl = 'https://api.test/recipe-images/recipe-br-turkey-0123456789abcdef0123456789abcdef.webp'
+
+export type RecipeLabelFixture = {
+  productName: string
+  netWeight: string
+  freshnessNote: string
+  ingredients: string[]
+  analysis: Array<{ nutrient: string; value: string }>
+  energyKg: string
+  energyPackage: string
+  notices: string[]
+  storage: string[]
+  feeding: string[]
+  manufacturer: string
+  manufacturerLocation: string
+}
+
+export const recipeLabel: RecipeLabelFixture = {
+  productName: 'Alimento fresco congelado para cães – Receita de Frango',
+  netWeight: 'Peso líquido 300 g',
+  freshnessNote: 'Congelado rapidamente para preservar o frescor',
+  ingredients: ['Frango', 'Mandioca'],
+  analysis: [{ nutrient: 'Proteína bruta (mín.)', value: '9,0%' }],
+  energyKg: '1.200 kcal/kg',
+  energyPackage: '360 kcal por embalagem',
+  notices: [],
+  storage: ['Mantenha congelado.'],
+  feeding: [],
+  manufacturer: 'Pawl & Bowl LLC',
+  manufacturerLocation: 'Boca Raton, FL 33487',
+}
+
+export const recipeContent = {
+  market: 'BR',
+  flavorSlug: 'turkey',
+  name: 'Frango',
+  imageUrl: null as string | null,
+  imageUpdatedAt: null as string | null,
+  label: null as RecipeLabelFixture | null,
+  labelUpdatedAt: null as string | null,
+  labelStatus: 'missing' as 'missing' | 'incomplete' | 'complete',
+  labelMissing: [] as string[],
+  variations: [
+    { id: 'var-1', name: 'Frango 1kg', sku: 'BOWL-1', active: true, productId: 'prod-1', productName: 'Bowl Adulto' },
+    { id: 'var-2', name: 'Frango 500g', sku: 'BOWL-2', active: false, productId: 'prod-1', productName: 'Bowl Adulto' },
+  ],
+}
+
+export type RecipeListItem = {
+  key: string
+  name: string
+  imageUrl: string | null
+  labelStatus: 'missing' | 'incomplete' | 'complete'
+  variations: Array<{ id: string; name: string; sku: string; active: boolean; productId: string; productName: string }>
+}
+
+export const recipeList: { market: string; items: RecipeListItem[] } = {
+  market: 'BR',
+  items: [
+    {
+      key: 'beef',
+      name: 'Carne',
+      imageUrl: recipeImageUrl,
+      labelStatus: 'complete',
+      variations: [
+        { id: '1001', name: 'Beef 300g', sku: '1001', active: false, productId: 'prod-1', productName: 'Bowl Adulto' },
+        { id: '1005', name: 'Beef 500g', sku: '1005', active: true, productId: 'prod-1', productName: 'Bowl Adulto' },
+        { id: '3000', name: 'Bovino', sku: '3000', active: true, productId: 'prod-9', productName: 'Plano antigo' },
+      ],
+    },
+    { key: 'senior-lamb', name: 'Sênior Cordeiro', imageUrl: null, labelStatus: 'missing', variations: [] },
+    { key: 'turkey', name: 'Frango', imageUrl: null, labelStatus: 'incomplete', variations: recipeContent.variations },
+  ],
 }
 
 export const subscriptionItem = {
