@@ -91,7 +91,18 @@ test.describe('Admin catalog', () => {
       expect.objectContaining({
         authorization: 'Bearer e2e-access-token',
         body: {
-          variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 30 }],
+          variants: [{
+            id: 'var-1',
+            sku: 'BOWL-1',
+            name: 'Frango 1kg',
+            flavor: 'Frango',
+            lifeStage: 'adult',
+            shortLabel: '',
+            finalImageReady: false,
+            labelDataReady: false,
+            regularPrice: 30,
+            recipeKey: 'turkey',
+          }],
         },
       }),
       expect.objectContaining({
