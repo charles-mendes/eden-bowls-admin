@@ -136,11 +136,12 @@ describe('ProductDetailPage', () => {
     renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
 
     expect(await screen.findByRole('button', { name: 'Editar variação Sênior Carne 300g' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Editar variação Frango 1kg' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editar variação Frango 1kg' })).toBeDisabled()
+    expect(screen.getByText('Ativa e publicada: desative para editar.')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Editar variação Sênior Carne 300g' }))
-    await user.click(screen.getByLabelText('Foto final confirmada'))
+    await user.click(screen.getByLabelText('Foto definitiva já está na loja'))
     await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
 
     await waitFor(() => {
@@ -158,8 +159,9 @@ describe('ProductDetailPage', () => {
     expect(await screen.findByRole('cell', { name: 'Ativa' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Desativar variação Frango 1kg' }))
 
-    expect(await screen.findByText('Variação "Frango 1kg" desativada.')).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: 'Inativa' })).toBeInTheDocument()
+    const notice = await screen.findByText('Variação "Frango 1kg" desativada.')
+    expect(notice.closest('section')).toContainElement(screen.getByRole('heading', { name: 'Variações' }))
+    expect(screen.getByText('Inativa')).toBeInTheDocument()
     const post = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/catalog/products/prod-1/variations/var-1/activation')
     expect(post?.body).toEqual({ active: false })
 
@@ -178,7 +180,7 @@ describe('ProductDetailPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Ativar variação Frango 1kg' }))
 
-    expect(await screen.findByText('Ativação recusada. Falta: preço no Stripe, foto final confirmada, dados de rótulo confirmados.')).toBeInTheDocument()
+    expect(await screen.findByText('Ativação recusada. Falta: preço no Stripe, foto definitiva na loja, dados de rótulo na página da receita.')).toBeInTheDocument()
   })
 
   it('names the active subscriptions when deactivation is refused', async () => {
@@ -272,7 +274,7 @@ describe('ProductDetailPage', () => {
 
     expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Editar variação/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editar variação Frango 1kg' })).toBeDisabled()
     expect(screen.getByText(/Variações inativas podem ser adicionadas e editadas/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Voltar' })).toHaveAttribute('href', '/catalog/products')
     expect(screen.getByText('Sincronizado')).toBeInTheDocument()
@@ -630,7 +632,7 @@ describe('ProductDetailPage', () => {
     renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
 
     await screen.findByRole('button', { name: 'Desativar' })
-    expect(screen.queryByRole('button', { name: /Editar variação/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Editar variação Frango 1kg' })).toBeDisabled()
     expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
   })
 })

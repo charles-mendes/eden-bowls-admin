@@ -3832,3 +3832,54 @@ button.table-link {
     flex: 1 1 100%;
   }
 }
+
+/* Product detail: compact variation table with stacked cells. */
+.product-detail {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.variation-table .numeric {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-stack {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.cell-stack strong {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.cell-meta {
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.cell-actions {
+  justify-items: end;
+}
+
+.readiness-item {
+  display: grid;
+  gap: 2px;
+}
+
+/* Hint lines up with the checkbox label text (16px box + 8px gap). */
+.readiness-item .access-hint {
+  padding-left: 24px;
+}
