@@ -775,6 +775,20 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(promotionCodesList)
     }
 
+    if (path === '/api/v1/admin/nutrition/recipes' && method === 'GET') {
+      return jsonResponse({
+        success: true,
+        data: {
+          market: url.searchParams.get('market') || 'BR',
+          items: [
+            { key: 'pork', name: 'Suíno', life_stage: 'adult', energy_kcal_kg: 1200 },
+            { key: 'fish', name: 'Peixe', life_stage: 'adult', energy_kcal_kg: null },
+            { key: 'puppy-beef', name: 'Filhote carne e frango', life_stage: 'puppy', energy_kcal_kg: 1500 },
+          ],
+        },
+      })
+    }
+
     if (path === '/api/v1/admin/nutrition/simulate' && method === 'POST') {
       return jsonResponse({
         success: true,
@@ -786,7 +800,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
           fator_aplicado: 1.4,
           porte: 'médio',
           especie: 'cão',
-          nem_kcal_kg: 3600,
+          nem_kcal_kg: body?.recipe_key === 'puppy-beef' ? 1500 : 1200,
+          nem_source: body?.recipe_key ? 'recipe' : 'life_stage_average',
+          recipe_key: body?.recipe_key ?? null,
           display: { daily: '250 g', weight: '20 kg' },
         },
       })

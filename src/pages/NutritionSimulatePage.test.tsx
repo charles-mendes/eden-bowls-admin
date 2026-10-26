@@ -93,4 +93,35 @@ describe('NutritionSimulatePage', () => {
       },
     })
   })
+
+  it('lists the recipes of the life stage and sends the chosen recipe', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(veterinarianUser)
+    renderAuthedPage(<NutritionSimulatePage />, '/nutrition/simulate')
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Suíno · 1200 kcal/kg' })).toBeInTheDocument()
+    })
+    expect(calls.find((call) => call.path === '/api/v1/admin/nutrition/recipes')?.search).toBe('?market=BR')
+    expect(screen.getByRole('option', { name: 'Peixe · sem energia no rótulo' })).toBeDisabled()
+    expect(screen.queryByRole('option', { name: /Filhote carne e frango/ })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Calcular' }))
+    await waitFor(() => {
+      expect(screen.getByText('Média das receitas publicadas da fase: 1200 kcal/kg.')).toBeInTheDocument()
+    })
+    const average = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/nutrition/simulate')
+    expect(average?.body).not.toHaveProperty('recipe_key')
+
+    await user.selectOptions(screen.getByLabelText('Fase'), 'Filhote')
+    await user.selectOptions(screen.getByLabelText('Receita'), 'Filhote carne e frango · 1500 kcal/kg')
+    await user.click(screen.getByRole('button', { name: 'Calcular' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Densidade da receita Filhote carne e frango: 1500 kcal/kg (energia do rótulo).')).toBeInTheDocument()
+    })
+    const chosen = calls.filter((call) => call.method === 'POST' && call.path === '/api/v1/admin/nutrition/simulate').at(-1)
+    expect(chosen?.body).toMatchObject({ recipe_key: 'puppy-beef', pet: { life_stage: 'puppy' } })
+  })
 })
