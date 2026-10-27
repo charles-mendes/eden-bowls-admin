@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
+import { RecipePlanImageSection } from '../components/RecipePlanImageSection'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
@@ -485,8 +486,8 @@ export function RecipeContentPage() {
           </Section>
 
           <Section
-            title="Imagem"
-            description={`Banner da receita na loja. PNG, JPEG ou WebP com exatamente ${RECIPE_IMAGE_WIDTH} × ${RECIPE_IMAGE_HEIGHT} px e até 5 MB.`}
+            title="Imagem da tela inicial"
+            description={`Banner da receita no carrossel da tela inicial e na página da receita. PNG, JPEG ou WebP com exatamente ${RECIPE_IMAGE_WIDTH} × ${RECIPE_IMAGE_HEIGHT} px e até 5 MB.`}
           >
             {imageNotice ? (
               <div className={imageNotice.tone === 'error' ? 'alert' : 'success'} role={imageNotice.tone === 'error' ? 'alert' : 'status'}>
@@ -542,6 +543,15 @@ export function RecipeContentPage() {
               </div>
             </div>
           </Section>
+
+          <RecipePlanImageSection
+            token={token}
+            market={market}
+            recipeKey={recipeKey}
+            content={content}
+            canWrite={canWrite}
+            onSaved={setContent}
+          />
 
           <Section
             title="Rótulo"

@@ -389,6 +389,8 @@ export const recipeContent = {
   lifeStage: 'adult' as 'adult' | 'puppy' | 'senior',
   imageUrl: null as string | null,
   imageUpdatedAt: null as string | null,
+  planImageUrl: null as string | null,
+  planImageUpdatedAt: null as string | null,
   label: null as RecipeLabelFixture | null,
   labelUpdatedAt: null as string | null,
   labelStatus: 'missing' as 'missing' | 'incomplete' | 'complete',

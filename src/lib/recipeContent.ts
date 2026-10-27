@@ -32,6 +32,8 @@ export type RecipeContent = {
   lifeStage: LifeStage
   imageUrl: string | null
   imageUpdatedAt: string | null
+  planImageUrl?: string | null
+  planImageUpdatedAt?: string | null
   label: Partial<RecipeLabel> | null
   labelUpdatedAt: string | null
   labelStatus: RecipeLabelStatus

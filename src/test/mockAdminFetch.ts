@@ -379,6 +379,13 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(recipeContent)
     }
 
+    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/plan-image$/.test(path) && ['PUT', 'DELETE'].includes(method)) {
+      recipeContent = method === 'PUT'
+        ? { ...recipeContent, planImageUrl: '/recipe-images/recipe-br-turkey-plan-1.webp', planImageUpdatedAt: '2026-10-27T12:00:00.000Z' }
+        : { ...recipeContent, planImageUrl: null }
+      return jsonResponse(recipeContent)
+    }
+
     if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/label$/.test(path) && method === 'PUT') {
       const label = body?.label ?? {}
       const missing = [

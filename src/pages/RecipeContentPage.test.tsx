@@ -9,15 +9,18 @@ import { renderAuthedPage, seedAuth } from '../test/renderPage'
 // jsdom does not decode images, so each test file name maps to a pixel size.
 const imageSizes = new Map<string, { width: number; height: number }>()
 
+function testImageSize(file: File) {
+  const size = imageSizes.get(file.name)
+  if (!size) throw new Error('unknown test image')
+  return size
+}
+
 vi.mock('../lib/imageUpload', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/imageUpload')>()
   return {
     ...actual,
-    checkRecipeImage: (file: File) => actual.checkRecipeImage(file, async () => {
-      const size = imageSizes.get(file.name)
-      if (!size) throw new Error('unknown test image')
-      return size
-    }),
+    checkRecipeImage: (file: File) => actual.checkRecipeImage(file, async () => testImageSize(file)),
+    checkRecipePlanImage: (file: File) => actual.checkRecipePlanImage(file, async () => testImageSize(file)),
   }
 })
 
@@ -151,6 +154,54 @@ describe('RecipeContentPage', () => {
     expect(screen.queryByRole('button', { name: /Renomear|Excluir receita/ })).not.toBeInTheDocument()
   })
 
+  describe('plan thumbnail', () => {
+    it('says the plan uses the home image while no thumbnail is stored', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      expect(await screen.findByRole('heading', { name: 'Miniatura do plano' })).toBeInTheDocument()
+      expect(screen.getByText('Sem miniatura. O plano usa a imagem da tela inicial.')).toBeInTheDocument()
+    })
+
+    it('stops the banner size and saves a 400 px square, then removes it', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      const input = await screen.findByLabelText('Escolher miniatura')
+      await user.upload(input, png('banner.png', 1024, 636))
+      expect(await screen.findByText('A imagem tem 1024 × 636 px e precisa ter 400 × 400 px ou 200 × 200 px.')).toBeInTheDocument()
+      expect(calls.some((call) => call.path.endsWith('/plan-image'))).toBe(false)
+
+      await user.upload(input, png('pacote.png', 400, 400))
+      await user.click(await screen.findByRole('button', { name: 'Salvar miniatura' }))
+      expect(await screen.findByText('Miniatura salva. A tela Plano passa a usar esta imagem.')).toBeInTheDocument()
+      expect(screen.getByRole('img', { name: 'Miniatura cadastrada do plano' })).toHaveAttribute('src', '/recipe-images/recipe-br-turkey-plan-1.webp')
+      expect(calls.find((call) => call.method === 'PUT' && call.path.endsWith('/plan-image'))).toMatchObject({
+        path: '/api/v1/admin/catalog/recipe-content/turkey/plan-image',
+        search: '?market=BR',
+        body: { mimeType: 'image/png' },
+      })
+
+      await user.click(screen.getByRole('button', { name: 'Remover miniatura' }))
+      expect(await screen.findByText('Miniatura removida. A tela Plano volta a usar a imagem da tela inicial.')).toBeInTheDocument()
+      expect(calls.some((call) => call.method === 'DELETE' && call.path.endsWith('/plan-image'))).toBe(true)
+    })
+
+    it('accepts a 200 px square', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      await user.upload(await screen.findByLabelText('Escolher miniatura'), png('pequena.png', 200, 200))
+      expect(await screen.findByText('Nova miniatura: pequena.png · 200 × 200 px. Ainda não foi salva.')).toBeInTheDocument()
+    })
+  })
+
   it('stops an image of the wrong size in the panel without sending it', async () => {
     const user = userEvent.setup()
     seedAuth()
@@ -196,7 +247,7 @@ describe('RecipeContentPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Salvar imagem' }))
 
     const alert = await screen.findByText('A imagem tem 1200 × 800 px e precisa ter 1024 × 636 px.')
-    expect(alert.closest('section')).toContainElement(screen.getByRole('heading', { name: 'Imagem' }))
+    expect(alert.closest('section')).toContainElement(screen.getByRole('heading', { name: 'Imagem da tela inicial' }))
   })
 
   it('keeps the image when the API refuses removal for an active variation', async () => {

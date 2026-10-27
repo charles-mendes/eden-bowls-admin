@@ -3928,6 +3928,20 @@ button.table-link {
   background: var(--surface-muted);
 }
 
+.recipe-plan-image {
+  grid-template-columns: 200px minmax(0, 1fr);
+}
+
+.recipe-plan-preview {
+  display: block;
+  width: 200px;
+  aspect-ratio: 1;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
 .recipe-banner-empty {
   display: grid;
   place-items: center;

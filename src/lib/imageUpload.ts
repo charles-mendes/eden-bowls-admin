@@ -14,6 +14,8 @@ const IMAGE_MIME_TYPES: Record<string, ImagePayload['mimeType']> = {
 export const RECIPE_IMAGE_WIDTH = 1024
 export const RECIPE_IMAGE_HEIGHT = 636
 export const MAX_RECIPE_IMAGE_BYTES = 5 * 1024 * 1024
+// Square package thumbnail of the plan flavor picker: 400 px for retina screens, or 200 px.
+export const RECIPE_PLAN_IMAGE_SIZES = [400, 200]
 
 export function imageMimeType(file: File) {
   return IMAGE_MIME_TYPES[file.type] ?? null
@@ -67,8 +69,24 @@ export type RecipeImageCheck =
   | { ok: true; width: number; height: number }
   | { ok: false; message: string }
 
+function sizesText(sizes: Array<{ width: number; height: number }>) {
+  return sizes.map(({ width, height }) => `${width} × ${height} px`).join(' ou ')
+}
+
 // Type, weight and exact size, checked before any upload so a wrong file never leaves the browser.
-export async function checkRecipeImage(file: File, readSize = readImageSize): Promise<RecipeImageCheck> {
+export function checkRecipeImage(file: File, readSize = readImageSize): Promise<RecipeImageCheck> {
+  return checkImage(file, [{ width: RECIPE_IMAGE_WIDTH, height: RECIPE_IMAGE_HEIGHT }], readSize)
+}
+
+export function checkRecipePlanImage(file: File, readSize = readImageSize): Promise<RecipeImageCheck> {
+  return checkImage(file, RECIPE_PLAN_IMAGE_SIZES.map((side) => ({ width: side, height: side })), readSize)
+}
+
+async function checkImage(
+  file: File,
+  sizes: Array<{ width: number; height: number }>,
+  readSize: (file: File) => Promise<{ width: number; height: number }>,
+): Promise<RecipeImageCheck> {
   if (!imageMimeType(file)) {
     return { ok: false, message: `Use uma imagem PNG, JPEG ou WebP. Este arquivo é ${file.type || 'de tipo desconhecido'}.` }
   }
@@ -81,10 +99,10 @@ export async function checkRecipeImage(file: File, readSize = readImageSize): Pr
   } catch {
     return { ok: false, message: 'Não foi possível abrir a imagem. Escolha outro arquivo.' }
   }
-  if (size.width !== RECIPE_IMAGE_WIDTH || size.height !== RECIPE_IMAGE_HEIGHT) {
+  if (!sizes.some(({ width, height }) => size.width === width && size.height === height)) {
     return {
       ok: false,
-      message: `A imagem tem ${size.width} × ${size.height} px e precisa ter ${RECIPE_IMAGE_WIDTH} × ${RECIPE_IMAGE_HEIGHT} px.`,
+      message: `A imagem tem ${size.width} × ${size.height} px e precisa ter ${sizesText(sizes)}.`,
     }
   }
   return { ok: true, ...size }
