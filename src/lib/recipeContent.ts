@@ -48,6 +48,36 @@ export type RecipeSummary = {
   variations: RecipeContent['variations']
 }
 
+// Items of a list pasted from a label ("Brown Rice, Beef, Lentils." or one per line): split on commas,
+// semicolons and line breaks outside parentheses, without the closing period or blanks.
+export function splitPastedList(text: string) {
+  const items: string[] = []
+  let depth = 0
+  let current = ''
+  for (const char of text) {
+    if (char === '(') depth += 1
+    if (char === ')') depth = Math.max(0, depth - 1)
+    if (depth === 0 && /[,;\n]/.test(char)) {
+      items.push(current)
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  items.push(current)
+  return items.map((item) => item.trim().replace(/\.$/, '').trim()).filter(Boolean)
+}
+
+// A list of sentences edited as one text: one item per paragraph, paragraphs split by a blank line. Line
+// breaks inside a paragraph become spaces, since the store shows each item on one line.
+export function paragraphsToList(text: string) {
+  return text.split(/\n\s*\n/).map((paragraph) => paragraph.replace(/\s+/g, ' ').trim()).filter(Boolean)
+}
+
+export function listToParagraphs(items: string[]) {
+  return items.join('\n\n')
+}
+
 export function recipePagePath(market: string, recipeKey: string) {
   return `/catalog/recipes/${encodeURIComponent(market)}/${encodeURIComponent(recipeKey)}`
 }

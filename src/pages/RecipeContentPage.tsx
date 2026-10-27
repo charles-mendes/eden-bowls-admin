@@ -18,6 +18,9 @@ import {
   labelMissingText,
   recipeContentFailure,
   recipeContentPath,
+  listToParagraphs,
+  paragraphsToList,
+  splitPastedList,
   type RecipeContent,
   type LifeStage,
   type RecipeLabel,
@@ -39,12 +42,50 @@ const TEXT_FIELDS: Array<{ field: LabelTextField; label: string }> = [
   { field: 'manufacturer', label: 'Fabricante' },
 ]
 
-const LIST_FIELDS: Array<{ field: LabelListField; label: string; item: string }> = [
-  { field: 'ingredients', label: 'Ingredientes', item: 'Ingrediente' },
-  { field: 'notices', label: 'Avisos', item: 'Aviso' },
-  { field: 'storage', label: 'Armazenamento', item: 'Armazenamento' },
-  { field: 'feeding', label: 'Modo de servir', item: 'Modo de servir' },
+// Ingredients are short and come pasted from the label, one input each; the other lists hold sentences,
+// edited as paragraphs of one textarea.
+const LIST_FIELDS: Array<{ field: LabelListField; label: string; item: string; paragraphs?: boolean; pasteable?: boolean }> = [
+  { field: 'ingredients', label: 'Ingredientes', item: 'Ingrediente', pasteable: true },
+  { field: 'notices', label: 'Avisos', item: 'Aviso', paragraphs: true },
+  { field: 'storage', label: 'Armazenamento', item: 'Armazenamento', paragraphs: true },
+  { field: 'feeding', label: 'Modo de servir', item: 'Modo de servir', paragraphs: true },
 ]
+
+// One textarea for a list of sentences. The text typed is kept as is (blank lines included) and is
+// replaced only when the list changes from outside, such as a label loaded after the page.
+function ParagraphsEditor({ label, values, disabled, onChange }: {
+  label: string
+  values: string[]
+  disabled: boolean
+  onChange: (values: string[]) => void
+}) {
+  const [text, setText] = useState(() => listToParagraphs(values))
+  const parsed = paragraphsToList(text)
+  if (parsed.join('\u0000') !== values.join('\u0000')) {
+    setText(listToParagraphs(values))
+  }
+  const count = parsed.length
+
+  return (
+    <label className="label-paragraphs">
+      <span className="label-paragraphs-title">{label}</span>
+      <textarea
+        aria-label={label}
+        aria-describedby={`paragraphs-${label}-hint`}
+        rows={Math.max(4, text.split('\n').length + 1)}
+        value={text}
+        disabled={disabled}
+        onChange={(event) => {
+          setText(event.target.value)
+          onChange(paragraphsToList(event.target.value))
+        }}
+      />
+      <span id={`paragraphs-${label}-hint`} className="field-hint">
+        Um parágrafo por item, separados por uma linha em branco. {count === 1 ? '1 item' : `${count} itens`}.
+      </span>
+    </label>
+  )
+}
 
 function labelForm(label: Partial<RecipeLabel> | null): RecipeLabel {
   return {
@@ -76,13 +117,23 @@ function labelPayload(form: RecipeLabel): RecipeLabel {
   }
 }
 
-function ListEditor({ label, item, values, disabled, onChange }: {
+function ListEditor({ label, item, values, disabled, pasteable = false, onChange }: {
   label: string
   item: string
   values: string[]
   disabled: boolean
+  pasteable?: boolean
   onChange: (values: string[]) => void
 }) {
+  const [pasteOpen, setPasteOpen] = useState(false)
+  const [pasteText, setPasteText] = useState('')
+  const pasted = splitPastedList(pasteText)
+  const addPasted = () => {
+    onChange([...values.filter((value) => value.trim()), ...pasted])
+    setPasteText('')
+    setPasteOpen(false)
+  }
+
   return (
     <fieldset className="label-list">
       <legend>{label}</legend>
@@ -107,10 +158,40 @@ function ListEditor({ label, item, values, disabled, onChange }: {
           ) : null}
         </div>
       ))}
+      {!disabled && pasteable && pasteOpen ? (
+        <div className="label-paste">
+          <textarea
+            aria-label={`Colar lista de ${label.toLowerCase()}`}
+            aria-describedby={`paste-${item}-hint`}
+            rows={3}
+            value={pasteText}
+            placeholder="Arroz integral, Carne bovina, Lentilha, Abobrinha…"
+            onChange={(event) => setPasteText(event.target.value)}
+          />
+          <span id={`paste-${item}-hint`} className="field-hint">
+            Separe por vírgula, ponto e vírgula ou uma por linha. {pasted.length === 1 ? '1 item' : `${pasted.length} itens`} a adicionar.
+          </span>
+          <div className="inline-actions">
+            <button className="primary-button" type="button" disabled={pasted.length === 0} onClick={addPasted}>
+              Adicionar à lista
+            </button>
+            <button className="ghost-button" type="button" onClick={() => { setPasteText(''); setPasteOpen(false) }}>
+              Cancelar
+            </button>
+          </div>
+        </div>
+      ) : null}
       {!disabled ? (
-        <button className="link-button" type="button" onClick={() => onChange([...values, ''])}>
-          Adicionar {item.toLowerCase()}
-        </button>
+        <div className="inline-actions">
+          <button className="link-button" type="button" onClick={() => onChange([...values, ''])}>
+            Adicionar {item.toLowerCase()}
+          </button>
+          {pasteable && !pasteOpen ? (
+            <button className="link-button" type="button" onClick={() => setPasteOpen(true)}>
+              Colar lista
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </fieldset>
   )
@@ -532,16 +613,25 @@ export function RecipeContentPage() {
                 ) : null}
               </fieldset>
 
-              {LIST_FIELDS.map(({ field, label: text, item }) => (
+              {LIST_FIELDS.map(({ field, label: text, item, paragraphs, pasteable }) => (paragraphs ? (
+                <ParagraphsEditor
+                  key={field}
+                  label={text}
+                  values={label[field]}
+                  disabled={readOnlyLabel}
+                  onChange={(values) => updateLabel({ [field]: values })}
+                />
+              ) : (
                 <ListEditor
                   key={field}
                   label={text}
                   item={item}
                   values={label[field]}
                   disabled={readOnlyLabel}
+                  pasteable={pasteable}
                   onChange={(values) => updateLabel({ [field]: values })}
                 />
-              ))}
+              )))}
 
               {canWrite ? (
                 <div className="inline-actions">

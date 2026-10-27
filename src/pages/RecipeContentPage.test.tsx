@@ -274,24 +274,63 @@ describe('RecipeContentPage', () => {
       })
     })
 
+    it('pastes the ingredients of a label as separate items', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser, {
+        recipeContent: { ...usContent, variations: usContent.variations.map((item) => ({ ...item, active: false })) },
+      })
+      renderAuthedPage(<RecipeContentPage />, usRoute, pattern)
+
+      await user.click(await screen.findByRole('button', { name: 'Colar lista' }))
+      await user.click(screen.getByLabelText('Colar lista de ingredientes'))
+      await user.paste('Chicken thigh (skinless, boneless), Sweet potato, White rice.')
+      expect(screen.getByText(/3 itens a adicionar/)).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Adicionar à lista' }))
+
+      expect(screen.getByLabelText('Ingrediente 1')).toHaveValue('Chicken thigh (skinless, boneless)')
+      expect(screen.getByLabelText('Ingrediente 3')).toHaveValue('White rice')
+      expect(screen.queryByLabelText('Colar lista de ingredientes')).not.toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Salvar rótulo' }))
+      await waitFor(() => expect(calls.some((call) => call.method === 'PUT' && call.path.endsWith('/label'))).toBe(true))
+      const put = calls.find((call) => call.method === 'PUT' && call.path.endsWith('/label'))
+      expect((put?.body as { label: { ingredients: string[] } }).label.ingredients).toEqual(['Chicken thigh (skinless, boneless)', 'Sweet potato', 'White rice'])
+    })
+
     it('becomes complete once at least one notice is added', async () => {
       const user = userEvent.setup()
       seedAuth()
-      installAdminFetchMock(operatorWriteUser, {
+      const { calls } = installAdminFetchMock(operatorWriteUser, {
         recipeContent: { ...usContent, label: recipeLabel, labelStatus: 'incomplete', labelMissing: ['notices'] },
       })
       renderAuthedPage(<RecipeContentPage />, usRoute, pattern)
 
       expect(await screen.findByText('Falta: avisos.')).toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'Adicionar aviso' }))
-      await user.type(screen.getByLabelText('Aviso 1'), 'This product is intended for intermittent or supplemental feeding only.')
-      await user.click(screen.getByRole('button', { name: 'Adicionar aviso' }))
-      await user.type(screen.getByLabelText('Aviso 2'), 'Not formulated to meet AAFCO nutrient profiles.')
+      await user.type(
+        screen.getByRole('textbox', { name: 'Avisos' }),
+        'This product is intended for intermittent\nor supplemental feeding only.\n\nNot formulated to meet AAFCO nutrient profiles.\n\n',
+      )
+      expect(screen.getByText(/2 itens\./)).toBeInTheDocument()
       await user.click(screen.getByRole('button', { name: 'Salvar rótulo' }))
 
       expect(await screen.findByText('Rótulo salvo e completo.')).toBeInTheDocument()
       expect(screen.getByText('Rótulo completo')).toBeInTheDocument()
       expect(screen.getByText(/Rótulo em inglês · US/)).toBeInTheDocument()
+      const put = calls.find((call) => call.method === 'PUT' && call.path.endsWith('/label'))
+      expect((put?.body as { label: { notices: string[] } }).label.notices).toEqual([
+        'This product is intended for intermittent or supplemental feeding only.',
+        'Not formulated to meet AAFCO nutrient profiles.',
+      ])
+    })
+
+    it('shows a saved list of sentences as paragraphs of one textarea', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        recipeContent: { ...usContent, label: { ...recipeLabel, storage: ['Keep frozen.', 'Do not refreeze.'] } },
+      })
+      renderAuthedPage(<RecipeContentPage />, usRoute, pattern)
+
+      expect(await screen.findByRole('textbox', { name: 'Armazenamento' })).toHaveValue('Keep frozen.\n\nDo not refreeze.')
     })
 
     it('shows the 409 in the label card and keeps what was typed', async () => {
