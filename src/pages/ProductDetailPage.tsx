@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
@@ -400,6 +400,19 @@ export function ProductDetailPage() {
     })
   }
 
+  // ?variation=<id> (from a recipe page) scrolls to that variation, highlights it and opens it when editable.
+  const [searchParams] = useSearchParams()
+  const focusVariationId = searchParams.get('variation')
+  const focusedVariation = useRef<string | null>(null)
+  useEffect(() => {
+    if (!data || !focusVariationId || focusedVariation.current === focusVariationId) return
+    const item = variants.find((row) => row.id === focusVariationId)
+    if (!item) return
+    focusedVariation.current = focusVariationId
+    document.getElementById(`variation-${focusVariationId}`)?.scrollIntoView?.({ block: 'center' })
+    if (canEditVariation(item)) openVariationDialog(item)
+  }, [data, variants, focusVariationId])
+
   const updateDialogDraft = (patch: Partial<VariantDraft>) => {
     setVariationDialog((current) => {
       if (!current) return current
@@ -680,7 +693,11 @@ export function ProductDetailPage() {
                   const editable = canEditVariation(item)
                   const pending = item.active ? [] : pendingItems(item, planCountry)
                   return (
-                    <tr key={item.key}>
+                    <tr
+                      key={item.key}
+                      id={item.id ? `variation-${item.id}` : undefined}
+                      className={item.id && item.id === focusVariationId ? 'row-focused' : undefined}
+                    >
                       <td>
                         <div className="cell-stack">
                           <strong>{item.name || 'Sem nome'}</strong>

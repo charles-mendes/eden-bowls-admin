@@ -54,6 +54,7 @@ describe('RecipeContentPage', () => {
     expect(screen.getByText(/Receita turkey · mercado BR/)).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Frango' })).toBeInTheDocument()
     expect(within(section).getAllByRole('link', { name: 'Bowl Adulto' })[0]).toHaveAttribute('href', '/catalog/products/prod-1')
+    expect(within(section).getByRole('link', { name: 'Abrir variação Frango 500g' })).toHaveAttribute('href', '/catalog/products/prod-1?variation=var-2')
     expect(calls.some((call) => call.path === '/api/v1/admin/catalog/recipe-content/turkey' && call.search === '?market=BR')).toBe(true)
     expect(screen.getByRole('link', { name: 'Voltar às receitas' })).toHaveAttribute('href', '/catalog/recipes?market=BR')
   })

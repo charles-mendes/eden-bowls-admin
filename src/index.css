@@ -3884,6 +3884,11 @@ button.table-link {
   padding-left: 24px;
 }
 
+/* Product page: the variation opened from a recipe page. */
+.row-focused > td {
+  background: var(--accent-soft);
+}
+
 /* Recipe content page: banner preview at the store ratio. */
 .recipe-variations {
   display: grid;

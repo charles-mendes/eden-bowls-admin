@@ -382,7 +382,17 @@ export function RecipeContentPage() {
             <ul className="recipe-variations">
               {content.variations.map((item) => (
                 <li key={item.id}>
-                  <span>{item.name || item.sku}</span>
+                  {item.productId ? (
+                    <Link
+                      className="link-button"
+                      to={`/catalog/products/${item.productId}?variation=${encodeURIComponent(item.id)}`}
+                      aria-label={`Abrir variação ${item.name || item.sku}`}
+                    >
+                      {item.name || item.sku}
+                    </Link>
+                  ) : (
+                    <span>{item.name || item.sku}</span>
+                  )}
                   <span className="cell-meta mono">{item.sku}</span>
                   {item.productId ? (
                     <Link className="link-button" to={`/catalog/products/${item.productId}`}>{item.productName || 'Produto'}</Link>

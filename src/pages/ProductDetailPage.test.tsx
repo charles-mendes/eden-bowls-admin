@@ -101,6 +101,18 @@ describe('ProductDetailPage', () => {
     })
   })
 
+  it('opens the variation named in the link from a recipe page', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      product: { ...productDetail, variants: [{ ...productDetail.variants[0], active: false }] },
+    })
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1?variation=var-1', '/catalog/products/:productId')
+
+    expect(await screen.findByRole('heading', { name: 'Editar variação' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Nome')).toHaveValue('Frango 1kg')
+    expect(document.getElementById('variation-var-1')).toHaveClass('row-focused')
+  })
+
   it('locks the line of a variation linked to a recipe on the recipe life stage', async () => {
     const user = userEvent.setup()
     seedAuth()
