@@ -166,6 +166,7 @@ describe('RecipeContentPage', () => {
       const section = await presentationSection()
       expect(within(section).getByText('Cadastrada')).toBeInTheDocument()
       expect(within(section).getByLabelText('Título')).toHaveValue('Receita de Frango')
+      expect(within(section).getByLabelText(/^Nome curto/)).toHaveValue('Frango')
       expect(within(section).getByLabelText('Destaque 2')).toHaveValue('Arroz integral')
       expect(within(section).getByLabelText('Fundo da etiqueta')).toHaveValue('#F6E3DF')
 

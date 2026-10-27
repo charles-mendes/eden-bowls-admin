@@ -384,6 +384,7 @@ export const recipeLabel: RecipeLabelFixture = {
 }
 
 export type RecipePresentationFixture = {
+  tag: string
   title: string
   tagline: string
   resume: string
@@ -392,6 +393,7 @@ export type RecipePresentationFixture = {
 }
 
 export const recipePresentation: RecipePresentationFixture = {
+  tag: 'Frango',
   title: 'Receita de Frango',
   tagline: 'Leve e equilibrada',
   resume: 'Frango com arroz integral e legumes.',

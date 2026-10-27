@@ -17,6 +17,7 @@ const HEX_PATTERN = /^#[0-9A-Fa-f]{6}$/
 
 function presentationForm(presentation: RecipePresentation | null | undefined): RecipePresentation {
   return {
+    tag: presentation?.tag ?? '',
     title: presentation?.title ?? '',
     tagline: presentation?.tagline ?? '',
     resume: presentation?.resume ?? '',
@@ -76,7 +77,7 @@ export function RecipePresentationSection({ token, market, recipeKey, content, c
   return (
     <Section
       title="Apresentação na loja"
-      description={`${language}. Título, chamada, resumo, destaques e cores da página da receita e do carrossel da tela inicial.`}
+      description={`${language}. Nome curto, título, chamada, resumo, destaques e cores da página da receita, do carrossel da tela inicial e do plano.`}
       actions={<span className={content.presentation ? 'badge-success' : 'badge-warning'}>{content.presentation ? 'Cadastrada' : 'Sem apresentação'}</span>}
     >
       {notice ? (
@@ -89,6 +90,11 @@ export function RecipePresentationSection({ token, market, recipeKey, content, c
       ) : null}
       <form className="label-form" onSubmit={(event) => void save(event)}>
         <div className="form-grid">
+          <label>
+            Nome curto
+            <input value={form.tag} maxLength={PRESENTATION_LIMITS.tag} disabled={readOnly} aria-invalid={isInvalid('tag') || undefined} aria-describedby="presentation-tag-hint" onChange={(event) => update({ tag: event.target.value })} />
+            <span id="presentation-tag-hint" className="field-hint">Aba do carrossel e chip do plano, como “Carne” ou “Frango e Porco”.</span>
+          </label>
           <label>
             Título
             <input value={form.title} maxLength={PRESENTATION_LIMITS.title} disabled={readOnly} aria-invalid={isInvalid('title') || undefined} onChange={(event) => update({ title: event.target.value })} />

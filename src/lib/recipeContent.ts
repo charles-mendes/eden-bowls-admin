@@ -29,6 +29,8 @@ export type PresentationColor = 'color' | 'accentColor' | 'pillBg' | 'pillText' 
 
 // Store page of the recipe in the market language, saved whole (recipe-content).
 export type RecipePresentation = {
+  /** Short name of the store tabs and plan chips ("Carne", "Frango e Porco"). */
+  tag: string
   title: string
   tagline: string
   resume: string
@@ -37,7 +39,7 @@ export type RecipePresentation = {
 }
 
 // Same limits as the API, in characters after trimming.
-export const PRESENTATION_LIMITS = { title: 120, tagline: 80, resume: 300, highlight: 60, highlights: 8 }
+export const PRESENTATION_LIMITS = { tag: 40, title: 120, tagline: 80, resume: 300, highlight: 60, highlights: 8 }
 
 export const PRESENTATION_COLOR_FIELDS: Array<{ field: PresentationColor; label: string }> = [
   { field: 'color', label: 'Cor principal' },
@@ -48,6 +50,7 @@ export const PRESENTATION_COLOR_FIELDS: Array<{ field: PresentationColor; label:
 ]
 
 export const PRESENTATION_FIELD_TEXT: Record<string, string> = {
+  tag: 'nome curto',
   title: 'título',
   tagline: 'chamada',
   resume: 'resumo',

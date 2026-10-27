@@ -6,6 +6,7 @@ Fase 2 de 3. Sai depois do change de mesmo nome da API (`eden-bowls-backend`, PR
 
 - [x] 1.1 Acrescentar `RecipePresentation` a `src/lib/recipeContent.ts` (`presentation`/`presentationUpdatedAt` em `RecipeContent`, limites iguais aos da API, texto em português de `recipe_presentation_invalid`) e criar `src/components/RecipePresentationSection.tsx` (decisão 1), montado em `RecipeContentPage.tsx`. Verificar com `npx vitest run src/pages/RecipeContentPage.test.tsx`: os cenários "Seeded presentation", "Save a presentation", "Invalid color refused" e "Recipe without presentation", e a seção só leitura sem `catalog.write`.
 - [x] 1.2 Em `ProductDetailPage.tsx`, acrescentar "apresentação" às pendências (`recipePresentationReady`) e `presentation` a `MISSING_LABELS`. Verificar com `npx vitest run src/pages/ProductDetailPage.test.tsx`: o cenário "Activation refused without presentation".
+- [x] 1.3 Acrescentar "Nome curto" (`tag`, até 40) à seção, pedido pela remoção dos `.md` na loja. Verificar com `npx vitest run src/pages/RecipeContentPage.test.tsx`: o cenário "Seeded presentation" mostra o nome curto.
 
 ## 2. Percentual do cupom
 
