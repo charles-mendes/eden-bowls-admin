@@ -147,6 +147,81 @@ describe('CouponsPage', () => {
     expect(calls.some((call) => call.search === '?account=us')).toBe(false)
   })
 
+  describe('percent of a new coupon', () => {
+    it('raises the 3-month percent and warns about the terms of use', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<CouponsPage />, '/billing/coupons')
+
+      await within(await screen.findByRole('article', { name: 'Prazo 1 mês' })).findByText('FIRST_1M')
+      await user.click(screen.getByRole('button', { name: 'Substituir cupom de 3 meses' }))
+      const dialog = screen.getByRole('dialog', { name: 'Criar cupom na Stripe' })
+      const percent = within(dialog).getByLabelText('Desconto na 1ª fatura (%)')
+      expect(percent).toHaveValue(25)
+      expect(within(dialog).queryByText(/termos de uso/)).not.toBeInTheDocument()
+
+      await user.clear(percent)
+      await user.type(percent, '30')
+      expect(within(dialog).getByText(/Os novos checkouts de 3 meses passam de 25% para 30%.*Os termos de uso citam o percentual/)).toBeInTheDocument()
+      expect(within(dialog).getByLabelText('Código')).toHaveAttribute('placeholder', 'BEMVINDO30')
+
+      await user.click(within(dialog).getByLabelText('Usar no checkout de 3 meses'))
+      expect(within(dialog).getByText('Sem usar no checkout, o percentual de 3 meses continua 25%.')).toBeInTheDocument()
+      await user.click(within(dialog).getByLabelText('Usar no checkout de 3 meses'))
+
+      await user.type(within(dialog).getByLabelText('Código'), 'bemvindo30')
+      await user.click(within(dialog).getByRole('button', { name: 'Criar na Stripe' }))
+
+      await screen.findByText('Cupom criado na Stripe e gravado no banco.')
+      const create = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/stripe/first-purchase-coupons')
+      expect(create?.body).toMatchObject({ term_months: 3, percent_off: 30, assign_first_purchase_slot: true })
+    })
+
+    it('sends the stored percent when untouched and follows the chosen term', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<CouponsPage />, '/billing/coupons')
+
+      await within(await screen.findByRole('article', { name: 'Prazo 1 mês' })).findByText('FIRST_1M')
+      await user.click(screen.getByRole('button', { name: 'Substituir cupom de 3 meses' }))
+      const dialog = screen.getByRole('dialog', { name: 'Criar cupom na Stripe' })
+      await user.selectOptions(within(dialog).getByLabelText('Prazo'), '1')
+      expect(within(dialog).getByLabelText('Desconto na 1ª fatura (%)')).toHaveValue(10)
+
+      await user.type(within(dialog).getByLabelText('Código'), 'first10')
+      await user.click(within(dialog).getByRole('button', { name: 'Criar na Stripe' }))
+
+      await screen.findByText('Cupom criado na Stripe e gravado no banco.')
+      const create = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/stripe/first-purchase-coupons')
+      expect(create?.body).toMatchObject({ term_months: 1, percent_off: 10 })
+      expect(within(dialog).queryByText(/termos de uso/)).not.toBeInTheDocument()
+    })
+
+    it('warns on a term card whose coupon gives another percent', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        routes: (call) => (
+          call.method === 'GET' && call.path === '/api/v1/admin/stripe/first-purchase-promos'
+            ? jsonResponse({
+              ...firstPurchasePromoHealth,
+              slots: {
+                1: { promotion_code_id: 'promo_1m', coupon_id: 'coupon_1', active: true, source: 'stripe', percent_off: 15, percent_mismatch: true },
+                3: { promotion_code_id: 'promo_3m', coupon_id: 'coupon_3', active: true, source: 'stripe', percent_off: 25, percent_mismatch: false },
+              },
+            })
+            : undefined
+        ),
+      })
+      renderAuthedPage(<CouponsPage />, '/billing/coupons')
+
+      const oneMonth = await screen.findByRole('article', { name: 'Prazo 1 mês' })
+      expect(await within(oneMonth).findByText(/Cupom dá 15%, não 10%/)).toBeInTheDocument()
+      expect(within(screen.getByRole('article', { name: 'Prazo 3 meses' })).queryByText(/Cupom dá/)).not.toBeInTheDocument()
+    })
+  })
+
   describe('term percents', () => {
     // Coupon health answered with the given terms; every other route keeps the default mock.
     function withHealth(health: Record<string, unknown>) {

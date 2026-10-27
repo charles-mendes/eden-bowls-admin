@@ -159,6 +159,29 @@ describe('ShippingPage', () => {
     expect(screen.getByRole('switch', { name: /Se a UPS falhar/ })).not.toBeChecked()
   })
 
+  it('saves the US maximum transit days from the UPS section and warns above one day', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(adminUser)
+    renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+    await user.click(await screen.findByRole('button', { name: 'EUA' }))
+    await user.click(await screen.findByRole('radio', { name: /UPS/ }))
+    // The settings response has no max_transit_days, so the field starts at the value before the setting.
+    const transit = screen.getByRole('spinbutton', { name: /Prazo máximo de trânsito/ })
+    expect(transit).toHaveValue(1)
+    expect(screen.queryByText(/caixa térmica/)).not.toBeInTheDocument()
+
+    await user.clear(transit)
+    await user.type(transit, '2')
+    expect(screen.getByText(/A caixa térmica foi pensada para cerca de 48 horas\. Confirme que ela aguenta 2 dias úteis/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+    await screen.findByText('Regras dos Estados Unidos salvas.')
+    const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
+    expect(put?.body).toMatchObject({ us: { quote_mode: 'ups', max_transit_days: 2 } })
+  })
+
   it('simulates a Brazil CEP as same-day delivery', async () => {
     const user = userEvent.setup()
     seedAuth()

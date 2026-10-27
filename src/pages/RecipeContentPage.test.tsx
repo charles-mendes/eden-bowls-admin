@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RecipeContentPage } from './RecipeContentPage'
-import { operatorWriteUser, readonlyUser, recipeContent, recipeImageUrl, recipeLabel } from '../test/fixtures'
+import { jsonResponse, operatorWriteUser, readonlyUser, recipeContent, recipeImageUrl, recipeLabel, recipePresentation } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -152,6 +152,82 @@ describe('RecipeContentPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Sênior Cordeiro' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Renomear|Excluir receita/ })).not.toBeInTheDocument()
+  })
+
+  describe('store presentation', () => {
+    const presentationSection = async () => (await screen.findByRole('heading', { name: 'Apresentação na loja' })).closest('section')!
+
+    it('shows the stored presentation and saves it whole', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser, { recipeContent: { ...recipeContent, presentation: recipePresentation } })
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      const section = await presentationSection()
+      expect(within(section).getByText('Cadastrada')).toBeInTheDocument()
+      expect(within(section).getByLabelText('Título')).toHaveValue('Receita de Frango')
+      expect(within(section).getByLabelText('Destaque 2')).toHaveValue('Arroz integral')
+      expect(within(section).getByLabelText('Fundo da etiqueta')).toHaveValue('#F6E3DF')
+
+      await user.clear(within(section).getByLabelText('Chamada'))
+      await user.type(within(section).getByLabelText('Chamada'), 'Nova chamada')
+      await user.click(within(section).getByRole('button', { name: 'Adicionar destaque' }))
+      await user.click(within(section).getByRole('button', { name: 'Salvar apresentação' }))
+
+      expect(await within(section).findByRole('status')).toHaveTextContent('Apresentação salva.')
+      const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/catalog/recipe-content/turkey/presentation')
+      expect(put?.search).toBe('?market=BR')
+      // The blank highlight added last is dropped before sending.
+      expect(put?.body).toEqual({ presentation: { ...recipePresentation, tagline: 'Nova chamada' } })
+    })
+
+    it('marks the fields the API refuses and keeps what was typed', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        recipeContent: { ...recipeContent, presentation: recipePresentation },
+        routes: (call) => (
+          call.method === 'PUT' && call.path.endsWith('/presentation')
+            ? jsonResponse({ message: 'Invalid presentation fields: colors.pillBg.', details: { code: 'recipe_presentation_invalid', fields: ['colors.pillBg', 'highlights[1]'] } }, 422)
+            : undefined
+        ),
+      })
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      const section = await presentationSection()
+      await user.clear(within(section).getByLabelText('Fundo da etiqueta'))
+      await user.type(within(section).getByLabelText('Fundo da etiqueta'), 'red')
+      await user.click(within(section).getByRole('button', { name: 'Salvar apresentação' }))
+
+      expect(await within(section).findByRole('alert')).toHaveTextContent('Apresentação inválida. Confira: fundo da etiqueta, destaque 2.')
+      expect(within(section).getByLabelText('Fundo da etiqueta')).toHaveValue('red')
+      expect(within(section).getByLabelText('Fundo da etiqueta')).toHaveAttribute('aria-invalid', 'true')
+      expect(within(section).getByLabelText('Destaque 2')).toHaveAttribute('aria-invalid', 'true')
+      expect(within(section).getByLabelText('Título')).not.toHaveAttribute('aria-invalid')
+    })
+
+    it('says activation waits for a recipe without presentation', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      const section = await presentationSection()
+      expect(within(section).getByText('Sem apresentação')).toBeInTheDocument()
+      expect(within(section).getByText(/as variações desta receita não podem ser ativadas/)).toBeInTheDocument()
+      expect(within(section).getByLabelText('Título')).toHaveValue('')
+      expect(within(section).getByLabelText('Destaque 1')).toHaveValue('')
+    })
+
+    it('shows readonly the presentation without saving', async () => {
+      seedAuth()
+      installAdminFetchMock(readonlyUser, { recipeContent: { ...recipeContent, presentation: recipePresentation } })
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      const section = await presentationSection()
+      expect(within(section).getByLabelText('Título')).toBeDisabled()
+      expect(within(section).getByLabelText('Cor principal')).toBeDisabled()
+      expect(within(section).queryByRole('button')).not.toBeInTheDocument()
+    })
   })
 
   describe('plan thumbnail', () => {

@@ -345,6 +345,7 @@ export const productDetail = {
       recipeKey: 'turkey' as string | null,
       recipeImageUrl: null as string | null,
       recipeLabelStatus: 'missing' as 'missing' | 'incomplete' | 'complete',
+      recipePresentationReady: true as boolean,
     },
   ],
   canDelete: true,
@@ -382,6 +383,22 @@ export const recipeLabel: RecipeLabelFixture = {
   manufacturerLocation: 'Boca Raton, FL 33487',
 }
 
+export type RecipePresentationFixture = {
+  title: string
+  tagline: string
+  resume: string
+  highlights: string[]
+  colors: Record<'color' | 'accentColor' | 'pillBg' | 'pillText' | 'pillBorder', string>
+}
+
+export const recipePresentation: RecipePresentationFixture = {
+  title: 'Receita de Frango',
+  tagline: 'Leve e equilibrada',
+  resume: 'Frango com arroz integral e legumes.',
+  highlights: ['Frango', 'Arroz integral'],
+  colors: { color: '#C97B6C', accentColor: '#8A4B3F', pillBg: '#F6E3DF', pillText: '#6B3328', pillBorder: '#E8C4BC' },
+}
+
 export const recipeContent = {
   market: 'BR',
   flavorSlug: 'turkey',
@@ -395,6 +412,8 @@ export const recipeContent = {
   labelUpdatedAt: null as string | null,
   labelStatus: 'missing' as 'missing' | 'incomplete' | 'complete',
   labelMissing: [] as string[],
+  presentation: null as RecipePresentationFixture | null,
+  presentationUpdatedAt: null as string | null,
   variations: [
     { id: 'var-1', name: 'Frango 1kg', sku: 'BOWL-1', active: true, productId: 'prod-1', productName: 'Bowl Adulto' },
     { id: 'var-2', name: 'Frango 500g', sku: 'BOWL-2', active: false, productId: 'prod-1', productName: 'Bowl Adulto' },

@@ -210,6 +210,86 @@ describe('ProductDetailPage', () => {
     expect(await screen.findByText('Ativação recusada. Falta: preço no Stripe, foto definitiva na loja, dados de rótulo na página da receita.')).toBeInTheDocument()
   })
 
+  it('names the missing store presentation when activation is refused', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      product: { ...productDetail, variants: [{ ...productDetail.variants[0], active: false, recipePresentationReady: false }] },
+      routes: (call) => (
+        call.method === 'POST' && call.path.endsWith('/activation')
+          ? jsonResponse({ message: 'Variation cannot be activated: missing presentation.', details: { code: 'recipe_publish_refused', missing: ['presentation'] } }, 422)
+          : undefined
+      ),
+    })
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    expect(await screen.findByText(/Pendente: .*apresentação/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Ativar variação Frango 1kg' }))
+
+    expect(await screen.findByText('Ativação recusada. Falta: apresentação na loja na página da receita.')).toBeInTheDocument()
+  })
+
+  describe('large-pack limit', () => {
+    const published = {
+      ...productDetail,
+      active: true,
+      largePackLimit: 8,
+      variants: [
+        { ...productDetail.variants[0], weight: '300g' },
+        { ...productDetail.variants[0], id: 'var-2', sku: 'BOWL-2', name: 'Frango 500g', weight: '500g' },
+        { ...productDetail.variants[0], id: 'var-3', sku: 'BOWL-3', name: 'Teste 1kg', weight: '1kg', active: false },
+      ],
+    }
+
+    it('saves only the limit of a published product and lists the active pack weights', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser, { product: published })
+      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+      const limit = await screen.findByLabelText(/^Limite do pacote pequeno/)
+      expect(limit).toHaveValue(8)
+      expect(screen.getByLabelText('Duração (dias)')).toBeDisabled()
+      expect(screen.getByText(/Pacotes na recomendação: 300g, 500g \(variações ativas\)/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled()
+
+      await user.clear(limit)
+      await user.type(limit, '6')
+      expect(screen.getByText('Limite do pacote pequeno alterado. Salve antes de sair.')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+      expect(await screen.findByText('Produto atualizado.')).toBeInTheDocument()
+      const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
+      expect(patch?.body).toEqual({ largePackLimit: 6 })
+      expect(screen.getByLabelText(/^Limite do pacote pequeno/)).toHaveValue(6)
+    })
+
+    it('refuses a limit out of range without sending it', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser, { product: published })
+      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+      const limit = await screen.findByLabelText(/^Limite do pacote pequeno/)
+      await user.clear(limit)
+      await user.type(limit, '0')
+      await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+      // The field's 1 to 60 range stops the submit before the page code runs.
+      expect(limit).toBeInvalid()
+      expect(calls.some((call) => call.method === 'PATCH')).toBe(false)
+    })
+
+    it('shows 8 when the API sends no limit', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+      expect(await screen.findByLabelText(/^Limite do pacote pequeno/)).toHaveValue(8)
+      expect(screen.getByText('Sem variação ativa com peso: a recomendação usa 300 g e 500 g.')).toBeInTheDocument()
+    })
+  })
+
   it('names the active subscriptions when deactivation is refused', async () => {
     const user = userEvent.setup()
     seedAuth()

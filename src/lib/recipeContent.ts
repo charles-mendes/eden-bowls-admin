@@ -25,6 +25,43 @@ export type RecipeLabel = {
   manufacturerLocation: string
 }
 
+export type PresentationColor = 'color' | 'accentColor' | 'pillBg' | 'pillText' | 'pillBorder'
+
+// Store page of the recipe in the market language, saved whole (recipe-content).
+export type RecipePresentation = {
+  title: string
+  tagline: string
+  resume: string
+  highlights: string[]
+  colors: Record<PresentationColor, string>
+}
+
+// Same limits as the API, in characters after trimming.
+export const PRESENTATION_LIMITS = { title: 120, tagline: 80, resume: 300, highlight: 60, highlights: 8 }
+
+export const PRESENTATION_COLOR_FIELDS: Array<{ field: PresentationColor; label: string }> = [
+  { field: 'color', label: 'Cor principal' },
+  { field: 'accentColor', label: 'Cor de destaque' },
+  { field: 'pillBg', label: 'Fundo da etiqueta' },
+  { field: 'pillText', label: 'Texto da etiqueta' },
+  { field: 'pillBorder', label: 'Borda da etiqueta' },
+]
+
+export const PRESENTATION_FIELD_TEXT: Record<string, string> = {
+  title: 'título',
+  tagline: 'chamada',
+  resume: 'resumo',
+  highlights: 'destaques',
+  ...Object.fromEntries(PRESENTATION_COLOR_FIELDS.map(({ field, label }) => [`colors.${field}`, label.toLowerCase()])),
+}
+
+// "highlights[2]" reads as "destaque 3".
+export function presentationFieldText(field: string) {
+  const highlight = /^highlights\[(\d+)\]$/.exec(field)
+  if (highlight) return `destaque ${Number(highlight[1]) + 1}`
+  return PRESENTATION_FIELD_TEXT[field] ?? field
+}
+
 export type RecipeContent = {
   market: string
   flavorSlug: string
@@ -38,6 +75,8 @@ export type RecipeContent = {
   labelUpdatedAt: string | null
   labelStatus: RecipeLabelStatus
   labelMissing: string[]
+  presentation?: RecipePresentation | null
+  presentationUpdatedAt?: string | null
   variations: Array<{ id: string; name: string; sku: string; active: boolean; productId?: string | null; productName?: string }>
 }
 
@@ -139,6 +178,10 @@ export function recipeContentFailure(error: unknown, fallback: string) {
     }
     if (error.code === 'recipe_label_invalid') {
       return `Rótulo inválido no campo ${String(details.field ?? '')}: ${error.message}`
+    }
+    if (error.code === 'recipe_presentation_invalid') {
+      const fields = Array.isArray(details.fields) ? details.fields as string[] : []
+      return `Apresentação inválida. Confira: ${fields.map(presentationFieldText).join(', ') || 'os campos'}.`
     }
     if (error.code === 'recipe_not_found') {
       return 'Receita não cadastrada neste mercado.'

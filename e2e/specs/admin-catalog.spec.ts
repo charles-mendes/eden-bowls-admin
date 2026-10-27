@@ -220,7 +220,7 @@ test.describe('Admin catalog', () => {
     await expect(page.getByText(/Nenhuma variação usa esta receita/)).toBeVisible()
     expect(captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/catalog/recipe-content')).toEqual(expect.objectContaining({
       search: '?market=BR',
-      body: { key: 'senior-cordeiro', name: 'Sênior Cordeiro' },
+      body: { key: 'senior-cordeiro', name: 'Sênior Cordeiro', lifeStage: 'adult' },
     }))
   })
 })

@@ -4062,3 +4062,36 @@ label.ghost-button {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+
+.presentation-colors {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.presentation-color {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.presentation-color-input {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.presentation-color-input input[type='color'] {
+  width: 36px;
+  height: 36px;
+  padding: 2px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.label-form [aria-invalid='true'] {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}

@@ -49,6 +49,8 @@ export type ShippingSettings = {
     ship_from: UsShipFrom
     package: { weight_lb: number; length_in: number; width_in: number; height_in: number }
     allowed_service_codes: string[]
+    // Business days of UPS transit the insulated box accepts; a longer quote makes the address unavailable.
+    max_transit_days: number
   }
 }
 
@@ -117,6 +119,7 @@ export const emptySettings = (): ShippingSettings => ({
     ship_from: { name: '', street: '', street2: '', city: '', state: '', zipcode: '', country: 'US' },
     package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12 },
     allowed_service_codes: ['03'],
+    max_transit_days: 1,
   },
 })
 

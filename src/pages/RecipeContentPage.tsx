@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
 import { RecipePlanImageSection } from '../components/RecipePlanImageSection'
+import { RecipePresentationSection } from '../components/RecipePresentationSection'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
@@ -402,7 +403,7 @@ export function RecipeContentPage() {
     <PageFrame
       eyebrow="Catálogo · Receitas"
       title={content?.name || recipeKey}
-      description={`Receita ${recipeKey} · mercado ${market}. Imagem e rótulo valem para todas as variações do mercado vinculadas a esta receita.`}
+      description={`Receita ${recipeKey} · mercado ${market}. Apresentação, imagem e rótulo valem para todas as variações do mercado vinculadas a esta receita.`}
       actions={(
         <div className="inline-actions">
           {canWrite && content ? (
@@ -484,6 +485,15 @@ export function RecipeContentPage() {
               ))}
             </ul>
           </Section>
+
+          <RecipePresentationSection
+            token={token}
+            market={market}
+            recipeKey={recipeKey}
+            content={content}
+            canWrite={canWrite}
+            onSaved={setContent}
+          />
 
           <Section
             title="Imagem da tela inicial"

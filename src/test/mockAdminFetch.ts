@@ -386,6 +386,11 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(recipeContent)
     }
 
+    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/presentation$/.test(path) && method === 'PUT') {
+      recipeContent = { ...recipeContent, presentation: body?.presentation ?? null, presentationUpdatedAt: '2026-10-27T12:00:00.000Z' }
+      return jsonResponse(recipeContent)
+    }
+
     if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/label$/.test(path) && method === 'PUT') {
       const label = body?.label ?? {}
       const missing = [
