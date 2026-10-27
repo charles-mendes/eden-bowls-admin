@@ -320,8 +320,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       if (recipes.some((item) => item.key === key)) {
         return jsonResponse({ message: 'A recipe with this key already exists in the market.', details: { code: 'recipe_key_taken' } }, 409)
       }
-      recipes = [...recipes, { key, name, imageUrl: null, labelStatus: 'missing', variations: [] }]
-      return jsonResponse({ ...recipeContentFixture, flavorSlug: key, name, imageUrl: null, label: null, labelStatus: 'missing', labelMissing: [], variations: [] })
+      const lifeStage = body?.lifeStage ?? 'adult'
+      recipes = [...recipes, { key, name, lifeStage, imageUrl: null, labelStatus: 'missing', variations: [] }]
+      return jsonResponse({ ...recipeContentFixture, flavorSlug: key, name, lifeStage, imageUrl: null, label: null, labelStatus: 'missing', labelMissing: [], variations: [] })
     }
 
     if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+$/.test(path) && ['GET', 'PATCH', 'DELETE'].includes(method)) {
@@ -330,16 +331,17 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       const current = key === recipeContent.flavorSlug
         ? recipeContent
         : listed
-          ? { ...recipeContentFixture, flavorSlug: key, name: listed.name, imageUrl: listed.imageUrl, label: null, labelStatus: listed.labelStatus, labelMissing: [], variations: listed.variations }
+          ? { ...recipeContentFixture, flavorSlug: key, name: listed.name, lifeStage: listed.lifeStage, imageUrl: listed.imageUrl, label: null, labelStatus: listed.labelStatus, labelMissing: [], variations: listed.variations }
           : null
       if (!current) {
         return jsonResponse({ message: 'Recipe not found.', details: { code: 'recipe_not_found' } }, 404)
       }
       if (method === 'PATCH') {
-        const name = String(body?.name ?? '').trim()
-        recipes = recipes.map((item) => (item.key === key ? { ...item, name } : item))
-        if (key === recipeContent.flavorSlug) recipeContent = { ...recipeContent, name }
-        return jsonResponse({ ...current, name })
+        const name = body?.name === undefined ? current.name : String(body.name).trim()
+        const lifeStage = body?.lifeStage ?? current.lifeStage
+        recipes = recipes.map((item) => (item.key === key ? { ...item, name, lifeStage } : item))
+        if (key === recipeContent.flavorSlug) recipeContent = { ...recipeContent, name, lifeStage }
+        return jsonResponse({ ...current, name, lifeStage })
       }
       if (method === 'DELETE') {
         if (current.variations.length) {

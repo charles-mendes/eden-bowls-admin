@@ -7,15 +7,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { formatCurrency } from '../lib/format'
 import { sessionMarkets } from '../lib/markets'
-import { LABEL_STATUS_TEXT, recipePagePath, type RecipeLabelStatus } from '../lib/recipeContent'
-
-type LifeStage = 'adult' | 'puppy' | 'senior'
-
-const LIFE_STAGE_LABELS: Record<LifeStage, string> = {
-  adult: 'Adulto',
-  puppy: 'Filhote',
-  senior: 'Sênior',
-}
+import { LABEL_STATUS_TEXT, LIFE_STAGE_LABELS, recipePagePath, type LifeStage, type RecipeLabelStatus } from '../lib/recipeContent'
 
 type ProductVariant = {
   id: string
@@ -85,7 +77,7 @@ type VariationDialogState = {
   recipeKeyTouched: boolean
 }
 
-type MarketRecipe = { key: string; name: string; variations: Array<{ id: string }> }
+type MarketRecipe = { key: string; name: string; lifeStage?: LifeStage; variations: Array<{ id: string }> }
 
 let newVariantSeq = 0
 
@@ -427,6 +419,9 @@ export function ProductDetailPage() {
         const suggested = sibling?.recipeKey || next.flavorSlug.trim()
         next.recipeKey = marketRecipes.some((recipe) => recipe.key === suggested) ? suggested : null
       }
+      // A variation linked to a recipe follows the recipe's life stage.
+      const linked = marketRecipes.find((recipe) => recipe.key === next.recipeKey)
+      if (linked?.lifeStage) next.lifeStage = linked.lifeStage
       return { ...current, draft: next, recipeKeyTouched }
     })
   }
@@ -546,6 +541,7 @@ export function ProductDetailPage() {
   const activeCount = variants.filter((item) => item.active).length
   const pendingSyncCount = variants.filter((item) => item.requiresSync).length
   const draft = variationDialog?.draft ?? null
+  const linkedRecipe = draft?.recipeKey ? marketRecipes.find((recipe) => recipe.key === draft.recipeKey) ?? null : null
 
   return (
     <PageFrame
@@ -876,13 +872,18 @@ export function ProductDetailPage() {
                   Linha
                   <select
                     aria-label="Linha"
-                    value={draft.lifeStage}
+                    aria-describedby={linkedRecipe?.lifeStage ? 'life-stage-hint' : undefined}
+                    value={linkedRecipe?.lifeStage ?? draft.lifeStage}
+                    disabled={Boolean(linkedRecipe?.lifeStage)}
                     onChange={(event) => updateDialogDraft({ lifeStage: event.target.value as LifeStage })}
                   >
                     {(Object.keys(LIFE_STAGE_LABELS) as LifeStage[]).map((stage) => (
                       <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
                     ))}
                   </select>
+                  {linkedRecipe?.lifeStage ? (
+                    <span id="life-stage-hint" className="access-hint">Vem da receita {linkedRecipe.name}. Para mudar, edite a fase na página da receita.</span>
+                  ) : null}
                 </label>
                 <label>
                   Slug do sabor

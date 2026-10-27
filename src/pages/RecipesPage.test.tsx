@@ -79,11 +79,13 @@ describe('RecipesPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Nova receita' }))
     await user.type(screen.getByLabelText('Nome'), 'Sênior Pato')
     expect(screen.getByLabelText('Chave')).toHaveValue('senior-pato')
+    expect(screen.getByLabelText('Fase da vida')).toHaveValue('adult')
+    await user.selectOptions(screen.getByLabelText('Fase da vida'), 'senior')
     await user.click(screen.getByRole('button', { name: 'Cadastrar receita' }))
 
     expect(await screen.findByTestId('location')).toHaveTextContent('/catalog/recipes/BR/senior-pato')
     const post = calls.find((call) => call.method === 'POST')
-    expect(post).toMatchObject({ path: '/api/v1/admin/catalog/recipe-content', search: '?market=BR', body: { key: 'senior-pato', name: 'Sênior Pato' } })
+    expect(post).toMatchObject({ path: '/api/v1/admin/catalog/recipe-content', search: '?market=BR', body: { key: 'senior-pato', name: 'Sênior Pato', lifeStage: 'senior' } })
   })
 
   it('keeps what was typed when the key is taken', async () => {

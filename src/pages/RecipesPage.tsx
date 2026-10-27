@@ -12,7 +12,9 @@ import {
   LABEL_STATUS_TEXT,
   recipeContentFailure,
   recipeKeyFromName,
+  LIFE_STAGE_LABELS,
   recipePagePath,
+  type LifeStage,
   type RecipeContent,
   type RecipeSummary,
 } from '../lib/recipeContent'
@@ -25,9 +27,9 @@ const QUICK_FILTERS: Array<{ value: QuickFilter; label: string }> = [
   { value: 'label-incomplete', label: 'Rótulo incompleto' },
 ]
 
-type NewRecipeForm = { name: string; key: string; keyTouched: boolean }
+type NewRecipeForm = { name: string; key: string; keyTouched: boolean; lifeStage: LifeStage }
 
-const emptyForm: NewRecipeForm = { name: '', key: '', keyTouched: false }
+const emptyForm: NewRecipeForm = { name: '', key: '', keyTouched: false, lifeStage: 'adult' }
 
 function labelBadge(status: RecipeSummary['labelStatus']) {
   if (status === 'complete') return 'badge-success'
@@ -92,7 +94,7 @@ export function RecipesPage() {
       const created = await apiRequest<RecipeContent>(`/admin/catalog/recipe-content?market=${encodeURIComponent(market)}`, {
         token,
         method: 'POST',
-        body: { key: form.key.trim(), name: form.name.trim() },
+        body: { key: form.key.trim(), name: form.name.trim(), lifeStage: form.lifeStage },
       })
       setDialogOpen(false)
       navigate(recipePagePath(market, created.flavorSlug))
@@ -148,6 +150,7 @@ export function RecipesPage() {
             <thead>
               <tr>
                 <th>Receita</th>
+                <th>Fase</th>
                 <th>Variações (ativas/total)</th>
                 <th>Imagem</th>
                 <th>Rótulo</th>
@@ -156,7 +159,7 @@ export function RecipesPage() {
             <tbody>
               {items && visible.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="muted">
+                  <td colSpan={5} className="muted">
                     {items.length === 0 ? 'Nenhuma receita cadastrada neste mercado.' : 'Nenhuma receita neste filtro.'}
                   </td>
                 </tr>
@@ -170,6 +173,7 @@ export function RecipesPage() {
                         <span className="cell-meta mono">{item.key}</span>
                       </div>
                     </td>
+                    <td>{LIFE_STAGE_LABELS[item.lifeStage] ?? LIFE_STAGE_LABELS.adult}</td>
                     <td className="numeric">{active}/{item.variations.length}</td>
                     <td>
                       <span className={item.imageUrl ? 'badge-success' : 'badge-neutral'}>
@@ -229,6 +233,18 @@ export function RecipesPage() {
               <span id="recipe-key-help" className="access-hint">
                 Letras minúsculas, números e hífens. A chave não muda depois de cadastrada.
               </span>
+            </label>
+            <label className="access-field-wide">
+              Fase da vida
+              <select
+                aria-label="Fase da vida"
+                value={form.lifeStage}
+                onChange={(event) => setForm((current) => ({ ...current, lifeStage: event.target.value as LifeStage }))}
+              >
+                {(Object.keys(LIFE_STAGE_LABELS) as LifeStage[]).map((stage) => (
+                  <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
+                ))}
+              </select>
             </label>
           </div>
         </form>

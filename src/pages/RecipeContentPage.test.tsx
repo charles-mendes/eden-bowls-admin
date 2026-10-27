@@ -98,6 +98,27 @@ describe('RecipeContentPage', () => {
     })
   })
 
+  it('changes the life stage of the recipe', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+    const select = await screen.findByLabelText('Fase da vida')
+    expect(select).toHaveValue('adult')
+    expect(screen.getByRole('button', { name: 'Salvar fase' })).toBeDisabled()
+    await user.selectOptions(select, 'senior')
+    await user.click(screen.getByRole('button', { name: 'Salvar fase' }))
+
+    expect(await screen.findByText('Fase salva: Sênior.')).toBeInTheDocument()
+    expect(screen.getByText(/A receita é sênior/)).toBeInTheDocument()
+    expect(calls.find((call) => call.method === 'PATCH')).toMatchObject({
+      path: '/api/v1/admin/catalog/recipe-content/turkey',
+      search: '?market=BR',
+      body: { lifeStage: 'senior' },
+    })
+  })
+
   it('offers no delete for a recipe in use', async () => {
     seedAuth()
     installAdminFetchMock(operatorWriteUser)

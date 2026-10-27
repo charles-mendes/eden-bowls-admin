@@ -14,10 +14,12 @@ import {
 } from '../lib/imageUpload'
 import {
   LABEL_STATUS_TEXT,
+  LIFE_STAGE_LABELS,
   labelMissingText,
   recipeContentFailure,
   recipeContentPath,
   type RecipeContent,
+  type LifeStage,
   type RecipeLabel,
 } from '../lib/recipeContent'
 
@@ -129,6 +131,8 @@ export function RecipeContentPage() {
   const [savingLabel, setSavingLabel] = useState(false)
   const [renameOpen, setRenameOpen] = useState(false)
   const [renameValue, setRenameValue] = useState('')
+  const [lifeStage, setLifeStage] = useState<LifeStage>('adult')
+  const [lifeStageNotice, setLifeStageNotice] = useState<Notice>(null)
   const [headerNotice, setHeaderNotice] = useState<Notice>(null)
   const [busy, setBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
@@ -145,6 +149,7 @@ export function RecipeContentPage() {
         if (!cancelled) {
           setContent(loadedContent)
           setLabel(labelForm(loadedContent.label))
+          setLifeStage(loadedContent.lifeStage ?? 'adult')
         }
       } catch (requestError) {
         if (!cancelled) setLoadError(recipeContentFailure(requestError, 'Falha ao carregar o conteúdo da receita.'))
@@ -182,6 +187,24 @@ export function RecipeContentPage() {
     } catch (requestError) {
       setHeaderNotice({ tone: 'error', text: recipeContentFailure(requestError, 'Falha ao renomear a receita.') })
       setRenameOpen(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const saveLifeStage = async () => {
+    if (!token || !canWrite || busy || !content) return
+    try {
+      setBusy(true)
+      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market), {
+        token,
+        method: 'PATCH',
+        body: { lifeStage },
+      })
+      setContent(saved)
+      setLifeStageNotice({ tone: 'success', text: `Fase salva: ${LIFE_STAGE_LABELS[saved.lifeStage]}.` })
+    } catch (requestError) {
+      setLifeStageNotice({ tone: 'error', text: recipeContentFailure(requestError, 'Falha ao salvar a fase da receita.') })
     } finally {
       setBusy(false)
     }
@@ -319,6 +342,34 @@ export function RecipeContentPage() {
 
       {content ? (
         <div className="stack product-detail">
+          <Section
+            title="Fase da vida"
+            description={`A receita é ${LIFE_STAGE_LABELS[content.lifeStage ?? 'adult'].toLowerCase()}. Todas as variações vinculadas seguem esta fase na loja, no plano e no cálculo nutricional.`}
+          >
+            {lifeStageNotice ? (
+              <div className={lifeStageNotice.tone === 'error' ? 'alert' : 'success'} role={lifeStageNotice.tone === 'error' ? 'alert' : 'status'}>
+                {lifeStageNotice.text}
+              </div>
+            ) : null}
+            <div className="inline-actions">
+              <select
+                aria-label="Fase da vida"
+                value={lifeStage}
+                disabled={!canWrite || busy}
+                onChange={(event) => { setLifeStage(event.target.value as LifeStage); setLifeStageNotice(null) }}
+              >
+                {(Object.keys(LIFE_STAGE_LABELS) as LifeStage[]).map((stage) => (
+                  <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
+                ))}
+              </select>
+              {canWrite ? (
+                <button className="primary-button" type="button" onClick={() => void saveLifeStage()} disabled={busy || lifeStage === content.lifeStage}>
+                  Salvar fase
+                </button>
+              ) : null}
+            </div>
+          </Section>
+
           <Section
             title="Variações que usam este conteúdo"
             description={`${sharedCount === 1 ? '1 variação' : `${sharedCount} variações`} com Receita (conteúdo) ${recipeKey}. Para vincular ou desvincular, edite a variação no produto.`}

@@ -386,6 +386,7 @@ export const recipeContent = {
   market: 'BR',
   flavorSlug: 'turkey',
   name: 'Frango',
+  lifeStage: 'adult' as 'adult' | 'puppy' | 'senior',
   imageUrl: null as string | null,
   imageUpdatedAt: null as string | null,
   label: null as RecipeLabelFixture | null,
@@ -401,6 +402,7 @@ export const recipeContent = {
 export type RecipeListItem = {
   key: string
   name: string
+  lifeStage: 'adult' | 'puppy' | 'senior'
   imageUrl: string | null
   labelStatus: 'missing' | 'incomplete' | 'complete'
   variations: Array<{ id: string; name: string; sku: string; active: boolean; productId: string; productName: string }>
@@ -412,6 +414,7 @@ export const recipeList: { market: string; items: RecipeListItem[] } = {
     {
       key: 'beef',
       name: 'Carne',
+      lifeStage: 'adult',
       imageUrl: recipeImageUrl,
       labelStatus: 'complete',
       variations: [
@@ -420,8 +423,8 @@ export const recipeList: { market: string; items: RecipeListItem[] } = {
         { id: '3000', name: 'Bovino', sku: '3000', active: true, productId: 'prod-9', productName: 'Plano antigo' },
       ],
     },
-    { key: 'senior-lamb', name: 'Sênior Cordeiro', imageUrl: null, labelStatus: 'missing', variations: [] },
-    { key: 'turkey', name: 'Frango', imageUrl: null, labelStatus: 'incomplete', variations: recipeContent.variations },
+    { key: 'senior-lamb', name: 'Sênior Cordeiro', lifeStage: 'senior', imageUrl: null, labelStatus: 'missing', variations: [] },
+    { key: 'turkey', name: 'Frango', lifeStage: 'adult', imageUrl: null, labelStatus: 'incomplete', variations: recipeContent.variations },
   ],
 }
 

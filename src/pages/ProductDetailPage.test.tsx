@@ -101,10 +101,25 @@ describe('ProductDetailPage', () => {
     })
   })
 
-  it('saves the life stage line of a variation and shows it in the table', async () => {
+  it('locks the line of a variation linked to a recipe on the recipe life stage', async () => {
     const user = userEvent.setup()
     seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+    await screen.findByRole('option', { name: 'Frango · turkey' })
+    expect(screen.getByLabelText('Linha')).toBeDisabled()
+    expect(screen.getByLabelText('Linha')).toHaveValue('adult')
+    expect(screen.getByText(/Vem da receita Frango/)).toBeInTheDocument()
+  })
+
+  it('saves the life stage line of a variation without a recipe and shows it in the table', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeKey: null }] },
+    })
     renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
 
     await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
@@ -752,7 +767,7 @@ describe('ProductDetailPage', () => {
       const user = userEvent.setup()
       seedAuth()
       installAdminFetchMock(operatorWriteUser, {
-        recipes: [{ key: 'beef', name: 'Carne', imageUrl: null, labelStatus: 'missing', variations: [] }],
+        recipes: [{ key: 'beef', name: 'Carne', lifeStage: 'adult', imageUrl: null, labelStatus: 'missing', variations: [] }],
       })
       renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
 
@@ -783,7 +798,7 @@ describe('ProductDetailPage', () => {
 
       await screen.findByText('Variação adicionada.')
       const patch = calls.find((call) => call.method === 'PATCH')
-      expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0].recipeKey).toBe('senior-lamb')
+      expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0]).toMatchObject({ recipeKey: 'senior-lamb', lifeStage: 'senior' })
     })
 
     it('shows a variation without a recipe without a content link', async () => {

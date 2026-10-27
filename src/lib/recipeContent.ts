@@ -2,6 +2,14 @@ import { ApiRequestError } from './api'
 
 export type RecipeLabelStatus = 'missing' | 'incomplete' | 'complete'
 
+export type LifeStage = 'adult' | 'puppy' | 'senior'
+
+export const LIFE_STAGE_LABELS: Record<LifeStage, string> = {
+  adult: 'Adulto',
+  puppy: 'Filhote',
+  senior: 'Sênior',
+}
+
 export type RecipeLabel = {
   productName: string
   netWeight: string
@@ -21,6 +29,7 @@ export type RecipeContent = {
   market: string
   flavorSlug: string
   name: string
+  lifeStage: LifeStage
   imageUrl: string | null
   imageUpdatedAt: string | null
   label: Partial<RecipeLabel> | null
@@ -33,6 +42,7 @@ export type RecipeContent = {
 export type RecipeSummary = {
   key: string
   name: string
+  lifeStage: LifeStage
   imageUrl: string | null
   labelStatus: RecipeLabelStatus
   variations: RecipeContent['variations']
