@@ -24,6 +24,7 @@ type PromoHealth = {
   slots?: Record<string, PromoSlot>
   missing_in_stripe?: number[]
   inactive?: number[]
+  terms?: Array<{ subscription_term_months: number; discount_percent: number }>
 }
 
 type PromoCode = {
@@ -42,7 +43,6 @@ type Term = 1 | 3 | 6
 type SlotStatus = 'empty' | 'missing' | 'inactive' | 'active' | 'linked'
 
 const TERMS: Term[] = [1, 3, 6]
-const TERM_PERCENT: Record<Term, number> = { 1: 10, 3: 25, 6: 40 }
 
 const emptyMapping = { 1: '', 3: '', 6: '' }
 
@@ -72,6 +72,24 @@ const durationCopy: Record<string, string> = {
   once: 'Só a 1ª fatura',
   repeating: 'Alguns meses',
   forever: 'Todas as faturas',
+}
+
+// The API owns the percent of each term; without it the page shows '-' rather than a number of its own.
+function percentFor(health: PromoHealth | null, term: Term): number | null {
+  const entry = health?.terms?.find((item) => Number(item.subscription_term_months) === term)
+  const percent = Number(entry?.discount_percent)
+  return entry && Number.isFinite(percent) ? percent : null
+}
+
+function percentLabel(health: PromoHealth | null, term: Term) {
+  const percent = percentFor(health, term)
+  return percent == null ? '-' : `${percent}%`
+}
+
+function commitmentNote(health: PromoHealth | null) {
+  const percents = ([3, 6] as Term[]).map((item) => percentFor(health, item)).filter((item): item is number => item != null)
+  const cited = percents.length ? ` (${percents.map((item) => `${item}%`).join('/')})` : ''
+  return `O desconto vale só na primeira fatura mensal. Nos planos de 3 e 6 meses, os meses seguintes cobram o preço cheio. O percentual maior${cited} é benefício de compromisso, não desconto sobre o total do contrato.`
 }
 
 function formatPromoDuration(duration: string | null | undefined) {
@@ -220,7 +238,7 @@ export function CouponsPage() {
     }
   }
 
-  const percent = TERM_PERCENT[term]
+  const percent = percentFor(health, term)
   const currentForTerm = mapping[term]
   const currentCode = codes.find((item) => item.id === currentForTerm)?.code
 
@@ -271,7 +289,7 @@ export function CouponsPage() {
                 <header className="coupon-slot-head">
                   <div>
                     <h4>{formatTermMonths(slotTerm)}</h4>
-                    <p className="muted">{TERM_PERCENT[slotTerm]}% na 1ª fatura</p>
+                    <p className="muted">{percentLabel(health, slotTerm)} na 1ª fatura</p>
                   </div>
                   <span className={badge.className}>{badge.label}</span>
                 </header>
@@ -305,7 +323,7 @@ export function CouponsPage() {
         </div>
 
         <div className="muted-panel coupon-note">
-          O desconto vale só na primeira fatura mensal. Nos planos de 3 e 6 meses, os meses seguintes cobram o preço cheio. O percentual maior (25%/40%) é benefício de compromisso, não desconto sobre o total do contrato.
+          {commitmentNote(health)}
         </div>
 
         {canWrite ? (
@@ -316,7 +334,7 @@ export function CouponsPage() {
               <div className="form-grid">
                 {TERMS.map((slotTerm) => (
                   <label key={slotTerm}>
-                    {`${formatTermMonths(slotTerm)} — ${TERM_PERCENT[slotTerm]}%`}
+                    {`${formatTermMonths(slotTerm)} — ${percentLabel(health, slotTerm)}`}
                     <input
                       value={mapping[slotTerm]}
                       onChange={(event) => setMapping((current) => ({ ...current, [slotTerm]: event.target.value }))}
@@ -381,17 +399,17 @@ export function CouponsPage() {
               Prazo
               <select value={term} onChange={(event) => setTerm(Number(event.target.value) as Term)}>
                 {TERMS.map((slotTerm) => (
-                  <option key={slotTerm} value={slotTerm}>{`${formatTermMonths(slotTerm)} — ${TERM_PERCENT[slotTerm]}%`}</option>
+                  <option key={slotTerm} value={slotTerm}>{`${formatTermMonths(slotTerm)} — ${percentLabel(health, slotTerm)}`}</option>
                 ))}
               </select>
             </label>
             <label>
               Código
-              <input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder={`BEMVINDO${percent}`} required />
+              <input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder={`BEMVINDO${percent ?? ''}`} required />
             </label>
             <label>
               Nome (opcional)
-              <input value={name} onChange={(event) => setName(event.target.value)} placeholder={`First purchase ${term}m (${percent}%)`} />
+              <input value={name} onChange={(event) => setName(event.target.value)} placeholder={`First purchase ${term}m${percent == null ? '' : ` (${percent}%)`}`} />
             </label>
             <label>
               Máximo de usos

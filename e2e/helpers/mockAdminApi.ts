@@ -910,6 +910,11 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         complete: true,
         missing_terms: [],
         mapping: { 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m' },
+        terms: [
+          { subscription_term_months: 1, discount_percent: 10 },
+          { subscription_term_months: 3, discount_percent: 25 },
+          { subscription_term_months: 6, discount_percent: 40 },
+        ],
         misconfig_count: 0,
       })
       return
