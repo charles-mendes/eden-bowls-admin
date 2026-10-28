@@ -1,4 +1,3 @@
-import { demoInsightsEnabled } from './demoInsights'
 import { type AdminRole } from './roles'
 
 export type { AdminRole }
@@ -49,6 +48,7 @@ const INSIGHTS_ITEM: MenuItem = {
   href: '/insights',
   roles: ['admin', 'operator', 'readonly'],
   group: 'Visão geral',
+  permission: 'reports.read',
 }
 
 const REPORTS_ITEM: MenuItem = {
@@ -64,8 +64,8 @@ export function visibleMenuItems(roles: AdminRole[], permissions: string[] = [])
   const permissionSet = new Set(permissions)
   const allowed = (item: MenuItem) => item.roles.some((role) => roleSet.has(role)) && (!item.permission || permissionSet.has(item.permission))
   const items = adminMenu.filter(allowed)
-  // Hoje, then the demo overview when the build shows it, then Relatórios.
-  const afterToday = [...(demoInsightsEnabled() ? [INSIGHTS_ITEM] : []), REPORTS_ITEM].filter(allowed)
+  // Hoje, then Visão do negócio and Relatórios.
+  const afterToday = [INSIGHTS_ITEM, REPORTS_ITEM].filter(allowed)
   if (!afterToday.length) return items
   const today = items.findIndex((item) => item.href === '/dashboard')
   if (today === -1) return [...items, ...afterToday]

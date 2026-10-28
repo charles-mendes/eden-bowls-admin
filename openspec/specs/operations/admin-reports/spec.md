@@ -7,7 +7,7 @@ Shows operations and the client real revenue, subscription, acquisition, mix, op
 
 ### Requirement: Reports menu item follows role and permission
 
-The sidebar MUST list **Relatórios** in Visão geral, right after **Hoje** (and after **Visão do negócio** when the demo build shows it), only for sessions with role `admin`, `operator` or `readonly` and with permission `reports.read`. The item MUST NOT depend on `VITE_DEMO_INSIGHTS`.
+The sidebar MUST list **Relatórios** in Visão geral, right after **Hoje** and **Visão do negócio**, only for sessions with role `admin`, `operator` or `readonly` and with permission `reports.read`.
 
 #### Scenario: Operator sees Relatórios after Hoje
 

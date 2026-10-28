@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { activeMenuHref, groupedMenuItems, visibleMenuItems } from './menu'
 
 describe('admin menu', () => {
@@ -90,18 +90,6 @@ describe('admin menu', () => {
     expect(activeMenuHref('/billingx', items)).toBe('')
   })
 
-  it('lists Visão do negócio after Hoje only when the demo flag is on', () => {
-    expect(visibleMenuItems(['admin']).map((item) => item.href)).not.toContain('/insights')
-
-    vi.stubEnv('VITE_DEMO_INSIGHTS', 'true')
-    for (const role of ['admin', 'operator', 'readonly'] as const) {
-      const overview = groupedMenuItems([role]).find((group) => group.group === 'Visão geral')
-      expect(overview?.items.map((item) => item.href)).toEqual(['/dashboard', '/insights'])
-    }
-    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/insights')
-    vi.unstubAllEnvs()
-  })
-
   it('shows Receitas next to Produtos in Loja for admin, operator and readonly', () => {
     for (const role of ['admin', 'operator', 'readonly'] as const) {
       const loja = groupedMenuItems([role]).find((group) => group.group === 'Loja')
@@ -112,20 +100,17 @@ describe('admin menu', () => {
     expect(activeMenuHref('/catalog/recipes/BR/beef', visibleMenuItems(['operator']))).toBe('/catalog/recipes')
   })
 
-  it('lists Relatórios after Hoje (and after Visão do negócio in the demo build) only with reports.read', () => {
+  it('lists Visão do negócio and Relatórios after Hoje only with reports.read', () => {
     const overview = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) =>
       groupedMenuItems(roles, permissions).find((group) => group.group === 'Visão geral')?.items.map((item) => item.href)
 
-    vi.stubEnv('VITE_DEMO_INSIGHTS', 'false')
     for (const role of ['admin', 'operator', 'readonly'] as const) {
-      expect(overview([role], ['reports.read'])).toEqual(['/dashboard', '/reports'])
+      expect(overview([role], ['reports.read'])).toEqual(['/dashboard', '/insights', '/reports'])
       expect(overview([role], [])).toEqual(['/dashboard'])
     }
 
-    vi.stubEnv('VITE_DEMO_INSIGHTS', 'true')
-    expect(overview(['operator'], ['reports.read'])).toEqual(['/dashboard', '/insights', '/reports'])
-    vi.unstubAllEnvs()
-
-    expect(visibleMenuItems(['veterinarian'], ['reports.read']).map((item) => item.href)).not.toContain('/reports')
+    const vet = visibleMenuItems(['veterinarian'], ['reports.read']).map((item) => item.href)
+    expect(vet).not.toContain('/insights')
+    expect(vet).not.toContain('/reports')
   })
 })
