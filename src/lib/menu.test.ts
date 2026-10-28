@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { activeMenuHref, groupedMenuItems, visibleMenuItems } from './menu'
 
 describe('admin menu', () => {
@@ -88,6 +88,18 @@ describe('admin menu', () => {
     expect(activeMenuHref('/users/roles', items)).toBe('/users/roles')
     expect(activeMenuHref('/users/u-1', items)).toBe('/users')
     expect(activeMenuHref('/billingx', items)).toBe('')
+  })
+
+  it('lists Visão do negócio after Hoje only when the demo flag is on', () => {
+    expect(visibleMenuItems(['admin']).map((item) => item.href)).not.toContain('/insights')
+
+    vi.stubEnv('VITE_DEMO_INSIGHTS', 'true')
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      const overview = groupedMenuItems([role]).find((group) => group.group === 'Visão geral')
+      expect(overview?.items.map((item) => item.href)).toEqual(['/dashboard', '/insights'])
+    }
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/insights')
+    vi.unstubAllEnvs()
   })
 
   it('shows Receitas next to Produtos in Loja for admin, operator and readonly', () => {

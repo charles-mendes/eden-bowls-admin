@@ -5,6 +5,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { RequireAuth } from './routes/RequireAuth'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { InsightsRoute } from './pages/BusinessOverviewPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
 import { RecipeContentPage } from './pages/RecipeContentPage'
@@ -56,6 +57,7 @@ function App() {
         <Route element={<ProtectedShell />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/insights" element={<InsightsRoute />} />
           <Route path="/nutrition/simulate" element={<NutritionSimulatePage />} />
           <Route path="/nutrition/settings" element={<NutritionSettingsPage />} />
           <Route path="/catalog/products" element={<ProductsPage />} />

@@ -36,6 +36,14 @@ function renderGuard(route: string) {
               </RequireAuth>
             )}
           />
+          <Route
+            path="/insights"
+            element={(
+              <RequireAuth>
+                <div>insights-page</div>
+              </RequireAuth>
+            )}
+          />
         </Routes>
       </AuthProvider>
     </MemoryRouter>,
@@ -66,6 +74,19 @@ describe('RequireAuth', () => {
     await waitFor(() => {
       expect(screen.getByText('dashboard-page')).toBeInTheDocument()
     })
+  })
+
+  it('sends a veterinarian who opens Visão do negócio back to the simulator', async () => {
+    localStorage.setItem(TOKEN_KEY, 'nutri-token')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(veterinarianUser)))
+
+    renderGuard('/insights')
+
+    await waitFor(() => {
+      expect(screen.getByText('simulate-page')).toBeInTheDocument()
+    })
+    expect(screen.queryByText('insights-page')).not.toBeInTheDocument()
+    expect(screen.queryByText('Dados de demonstração')).not.toBeInTheDocument()
   })
 
   it('keeps veterinarian-only accounts on the simulator', async () => {

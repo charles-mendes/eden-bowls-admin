@@ -1,3 +1,4 @@
+import { demoInsightsEnabled } from './demoInsights'
 import { type AdminRole } from './roles'
 
 export type { AdminRole }
@@ -41,9 +42,20 @@ export function activeMenuHref(pathname: string, items: MenuItem[]) {
   return best
 }
 
+const INSIGHTS_ITEM: MenuItem = {
+  label: 'Visão do negócio',
+  href: '/insights',
+  roles: ['admin', 'operator', 'readonly'],
+  group: 'Visão geral',
+}
+
 export function visibleMenuItems(roles: AdminRole[]) {
   const roleSet = new Set(roles)
-  return adminMenu.filter((item) => item.roles.some((role) => roleSet.has(role)))
+  const items = adminMenu.filter((item) => item.roles.some((role) => roleSet.has(role)))
+  if (!demoInsightsEnabled() || !INSIGHTS_ITEM.roles.some((role) => roleSet.has(role))) return items
+  const today = items.findIndex((item) => item.href === '/dashboard')
+  if (today === -1) return [...items, INSIGHTS_ITEM]
+  return [...items.slice(0, today + 1), INSIGHTS_ITEM, ...items.slice(today + 1)]
 }
 
 export function groupedMenuItems(roles: AdminRole[]) {
