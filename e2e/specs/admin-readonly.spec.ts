@@ -20,6 +20,16 @@ test.describe('Admin readonly', () => {
     await expect(page.getByRole('button', { name: 'Sincronizar agora' })).toHaveCount(0)
   })
 
+  test('opens stock without write actions', async ({ page }) => {
+    await openAuthed(page, '/operations/stock', e2eProfiles.readonly)
+
+    await expect(page.getByRole('heading', { name: 'Estoque' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'frango', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Lançar produção' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Ajustar' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Definir mínimo' })).toHaveCount(0)
+  })
+
   test('opens production queue without status-advance controls', async ({ page }) => {
     await openAuthed(page, '/operations/production', e2eProfiles.readonly)
 
@@ -65,6 +75,18 @@ test.describe('Admin readonly', () => {
     await expect(page.getByRole('button', { name: 'Publicar' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Excluir produto' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /Excluir variação/ })).toHaveCount(0)
+
+    await page.getByRole('link', { name: 'Conteúdo da receita de Frango 1kg' }).click()
+    await expect(page.getByRole('heading', { name: 'Imagem' })).toBeVisible()
+    await expect(page.getByText('Escolher imagem')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Salvar imagem|Remover imagem/ })).toHaveCount(0)
+    await expect(page.getByRole('heading', { name: 'Rótulo' })).toBeVisible()
+    await expect(page.getByRole('button', { name: /Salvar rótulo|Adicionar/ })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Renomear|Excluir receita/ })).toHaveCount(0)
+
+    await openAuthed(page, '/catalog/recipes', e2eProfiles.readonly)
+    await expect(page.getByRole('link', { name: 'Carne' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Nova receita' })).toHaveCount(0)
   })
 
   test('opens the shipping simulator and reads the rules without save controls', async ({ page }) => {

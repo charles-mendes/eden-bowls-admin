@@ -52,7 +52,7 @@ Não use `npx playwright test --ui` no fluxo do agente. Mantenha 4 workers. Não
 ## Visual do painel
 
 - O painel é uma ferramenta interna (Linear / Stripe Dashboard / Vercel), não a loja. Não copie paleta, fontes, texturas nem copy da `eden-bowls`.
-- Siga `.agents/skills/frontend-design/SKILL.md`: um grotesk só, cinzas neutros, um accent para ação/estado ativo, cores semânticas só para status, shell sidebar + topbar, densidade e consistência.
+- Siga `.agents/skills/admin-panel-design/SKILL.md`: um grotesk só, cinzas neutros, um accent para ação/estado ativo, cores semânticas só para status, shell sidebar + topbar, densidade e consistência.
 - Não use Tenor Sans, Figtree, Quicksand, parchment/moss/clay, grain, gradient mesh nem layout assimétrico de marketing.
 
 ## Coding Guardrails

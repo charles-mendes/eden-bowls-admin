@@ -31,6 +31,8 @@ export const WRITE_PERMISSIONS = [
   'privacy.requests.write',
   'production.read',
   'production.write',
+  'reports.read',
+  'reports.export',
 ] as const
 
 export const operatorUser: AdminUser = {
@@ -38,7 +40,7 @@ export const operatorUser: AdminUser = {
   email: 'ops@edenbowls.com',
   roles: ['operator'],
   markets: ['BR'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'market.br'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'reports.read', 'reports.export', 'market.br'],
 }
 
 export const operatorWriteUser: AdminUser = {
@@ -57,7 +59,7 @@ export const operatorUsUser: AdminUser = {
   email: 'ops.us@edenbowls.com',
   roles: ['operator'],
   markets: ['US'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'market.us'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'reports.read', 'reports.export', 'market.us'],
 }
 
 export const adminUser: AdminUser = {
@@ -97,7 +99,7 @@ export const readonlyUser: AdminUser = {
   email: 'read@edenbowls.com',
   roles: ['readonly'],
   markets: ['BR'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'market.br'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'reports.read', 'market.br'],
 }
 
 export const productionQueueItem = {
@@ -111,7 +113,7 @@ export const productionQueueItem = {
   displayName: 'WordPress Name',
   customerName: 'Ana Ledger',
   email: 'ana@edenbowls.com',
-  flavorMix: 'beef × 2, turkey × 1',
+  flavorMix: 'Bovino × 2, Frango × 1',
   packCount: 3,
   packSizeLabel: '500 g',
   planLabel: 'Plano adulto',
@@ -127,8 +129,8 @@ export const productionQueueItem = {
   dense: false,
   customerProfileInScope: true,
   lineItems: [
-    { flavor: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
-    { flavor: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
+    { flavor: 'Bovino', flavorKey: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
+    { flavor: 'Frango', flavorKey: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
   ],
 }
 
@@ -139,6 +141,60 @@ export const productionQueueList = {
   totalPages: 1,
   metrics: { today: 1, tomorrow: 0, upcoming: 0, overdue: 0 },
   items: [productionQueueItem],
+}
+
+export const stockItemFrango = {
+  flavorKey: 'frango',
+  packSizeGrams: 300,
+  onHand: 40,
+  minLevel: 20,
+  committed: 55,
+  committedAwaitingPayment: 10,
+  available: -15,
+  toProduce: 15,
+  belowMinimum: true,
+}
+
+export const stockItemCarne = {
+  flavorKey: 'carne',
+  packSizeGrams: 500,
+  onHand: 10,
+  minLevel: null,
+  committed: 0,
+  committedAwaitingPayment: 0,
+  available: 10,
+  toProduce: 0,
+  belowMinimum: false,
+}
+
+export const stockOverview = {
+  market: 'BR',
+  windowDays: 7,
+  items: [stockItemFrango, stockItemCarne],
+  unsizedLines: [] as Array<{ subscriptionId: number; flavorKey: string | null; label: string; quantity: number }>,
+}
+
+export const stockMovementSeparation = {
+  id: 1,
+  market: 'BR',
+  flavorKey: 'frango',
+  packSizeGrams: 300,
+  type: 'separation' as const,
+  quantity: -3,
+  reason: null,
+  note: null,
+  productionCycleId: 9,
+  subscriptionId: 123,
+  actorName: null,
+  createdAt: '2026-09-20T08:00:00.000Z',
+}
+
+export const stockMovementsList = {
+  total: 1,
+  page: 1,
+  perPage: 20,
+  totalPages: 1,
+  items: [stockMovementSeparation],
 }
 
 export const checkoutItem = {
@@ -335,15 +391,120 @@ export const productDetail = {
       sku: 'BOWL-1',
       name: 'Frango 1kg',
       flavor: 'Frango',
+      active: true,
       regularPrice: 89.9,
       stripeProductId: 'prod_stripe',
       stripePriceId: 'price_stripe',
       syncStatus: 'synced',
       requiresSync: false,
       canDelete: true,
+      recipeKey: 'turkey' as string | null,
+      recipeImageUrl: null as string | null,
+      recipeLabelStatus: 'missing' as 'missing' | 'incomplete' | 'complete',
+      recipePresentationReady: true as boolean,
     },
   ],
   canDelete: true,
+}
+
+export const recipeImageUrl = 'https://api.test/recipe-images/recipe-br-turkey-0123456789abcdef0123456789abcdef.webp'
+
+export type RecipeLabelFixture = {
+  productName: string
+  netWeight: string
+  freshnessNote: string
+  ingredients: string[]
+  analysis: Array<{ nutrient: string; value: string }>
+  energyKg: string
+  energyPackage: string
+  notices: string[]
+  storage: string[]
+  feeding: string[]
+  manufacturer: string
+  manufacturerLocation: string
+}
+
+export const recipeLabel: RecipeLabelFixture = {
+  productName: 'Alimento fresco congelado para cães – Receita de Frango',
+  netWeight: 'Peso líquido 300 g',
+  freshnessNote: 'Congelado rapidamente para preservar o frescor',
+  ingredients: ['Frango', 'Mandioca'],
+  analysis: [{ nutrient: 'Proteína bruta (mín.)', value: '9,0%' }],
+  energyKg: '1.200 kcal/kg',
+  energyPackage: '360 kcal por embalagem',
+  notices: [],
+  storage: ['Mantenha congelado.'],
+  feeding: [],
+  manufacturer: 'Pawl & Bowl LLC',
+  manufacturerLocation: 'Boca Raton, FL 33487',
+}
+
+export type RecipePresentationFixture = {
+  tag: string
+  title: string
+  tagline: string
+  resume: string
+  highlights: string[]
+  colors: Record<'color' | 'accentColor' | 'pillBg' | 'pillText' | 'pillBorder', string>
+}
+
+export const recipePresentation: RecipePresentationFixture = {
+  tag: 'Frango',
+  title: 'Receita de Frango',
+  tagline: 'Leve e equilibrada',
+  resume: 'Frango com arroz integral e legumes.',
+  highlights: ['Frango', 'Arroz integral'],
+  colors: { color: '#C97B6C', accentColor: '#8A4B3F', pillBg: '#F6E3DF', pillText: '#6B3328', pillBorder: '#E8C4BC' },
+}
+
+export const recipeContent = {
+  market: 'BR',
+  flavorSlug: 'turkey',
+  name: 'Frango',
+  lifeStage: 'adult' as 'adult' | 'puppy' | 'senior',
+  imageUrl: null as string | null,
+  imageUpdatedAt: null as string | null,
+  planImageUrl: null as string | null,
+  planImageUpdatedAt: null as string | null,
+  label: null as RecipeLabelFixture | null,
+  labelUpdatedAt: null as string | null,
+  labelStatus: 'missing' as 'missing' | 'incomplete' | 'complete',
+  labelMissing: [] as string[],
+  presentation: null as RecipePresentationFixture | null,
+  presentationUpdatedAt: null as string | null,
+  variations: [
+    { id: 'var-1', name: 'Frango 1kg', sku: 'BOWL-1', active: true, productId: 'prod-1', productName: 'Bowl Adulto' },
+    { id: 'var-2', name: 'Frango 500g', sku: 'BOWL-2', active: false, productId: 'prod-1', productName: 'Bowl Adulto' },
+  ],
+}
+
+export type RecipeListItem = {
+  key: string
+  name: string
+  lifeStage: 'adult' | 'puppy' | 'senior'
+  imageUrl: string | null
+  labelStatus: 'missing' | 'incomplete' | 'complete'
+  variations: Array<{ id: string; name: string; sku: string; active: boolean; productId: string; productName: string }>
+}
+
+export const recipeList: { market: string; items: RecipeListItem[] } = {
+  market: 'BR',
+  items: [
+    {
+      key: 'beef',
+      name: 'Carne',
+      lifeStage: 'adult',
+      imageUrl: recipeImageUrl,
+      labelStatus: 'complete',
+      variations: [
+        { id: '1001', name: 'Beef 300g', sku: '1001', active: false, productId: 'prod-1', productName: 'Bowl Adulto' },
+        { id: '1005', name: 'Beef 500g', sku: '1005', active: true, productId: 'prod-1', productName: 'Bowl Adulto' },
+        { id: '3000', name: 'Bovino', sku: '3000', active: true, productId: 'prod-9', productName: 'Plano antigo' },
+      ],
+    },
+    { key: 'senior-lamb', name: 'Sênior Cordeiro', lifeStage: 'senior', imageUrl: null, labelStatus: 'missing', variations: [] },
+    { key: 'turkey', name: 'Frango', lifeStage: 'adult', imageUrl: null, labelStatus: 'incomplete', variations: recipeContent.variations },
+  ],
 }
 
 export const subscriptionItem = {
@@ -515,6 +676,11 @@ export const firstPurchasePromoHealth = {
   complete: true,
   missing_terms: [],
   mapping: { 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m' },
+  terms: [
+    { subscription_term_months: 1, discount_percent: 10 },
+    { subscription_term_months: 3, discount_percent: 25 },
+    { subscription_term_months: 6, discount_percent: 40 },
+  ],
   misconfig_count: 0,
 }
 

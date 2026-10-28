@@ -5,7 +5,19 @@ describe('admin menu', () => {
   it('hides operational sections from veterinarian-only accounts', () => {
     const hrefs = visibleMenuItems(['veterinarian']).map((item) => item.href)
 
-    expect(hrefs).toEqual(['/nutrition/simulate'])
+    expect(hrefs).toEqual(['/nutrition/simulate', '/nutrition/settings'])
+  })
+
+  it('Veterinarian has no settings: Configurações is for admin, operator and readonly', () => {
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/config')
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role]).map((item) => item.href)).toContain('/config')
+    }
+  })
+
+  it('keeps Frete active, not Configurações, on the shipping page', () => {
+    expect(activeMenuHref('/config/shipping', visibleMenuItems(['admin']))).toBe('/config/shipping')
+    expect(activeMenuHref('/config', visibleMenuItems(['admin']))).toBe('/config')
   })
 
   it('shows Produção to operator and readonly, not veterinarian', () => {
@@ -13,6 +25,16 @@ describe('admin menu', () => {
     expect(visibleMenuItems(['operator']).map((item) => item.href)).toContain('/operations/production')
     expect(visibleMenuItems(['readonly']).map((item) => item.href)).toContain('/operations/production')
     expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/operations/production')
+  })
+
+  it('Operator sees Estoque', () => {
+    expect(visibleMenuItems(['operator']).map((item) => item.href)).toContain('/operations/stock')
+    expect(visibleMenuItems(['admin']).map((item) => item.href)).toContain('/operations/stock')
+    expect(visibleMenuItems(['readonly']).map((item) => item.href)).toContain('/operations/stock')
+  })
+
+  it('Veterinarian does not see Estoque', () => {
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/operations/stock')
   })
 
   it('keeps role assignment exclusive to admin', () => {
@@ -66,5 +88,29 @@ describe('admin menu', () => {
     expect(activeMenuHref('/users/roles', items)).toBe('/users/roles')
     expect(activeMenuHref('/users/u-1', items)).toBe('/users')
     expect(activeMenuHref('/billingx', items)).toBe('')
+  })
+
+  it('shows Receitas next to Produtos in Loja for admin, operator and readonly', () => {
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      const loja = groupedMenuItems([role]).find((group) => group.group === 'Loja')
+      const hrefs = loja?.items.map((item) => item.href) ?? []
+      expect(hrefs.indexOf('/catalog/recipes')).toBe(hrefs.indexOf('/catalog/products') + 1)
+    }
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/catalog/recipes')
+    expect(activeMenuHref('/catalog/recipes/BR/beef', visibleMenuItems(['operator']))).toBe('/catalog/recipes')
+  })
+
+  it('lists Visão do negócio and Relatórios after Hoje only with reports.read', () => {
+    const overview = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) =>
+      groupedMenuItems(roles, permissions).find((group) => group.group === 'Visão geral')?.items.map((item) => item.href)
+
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      expect(overview([role], ['reports.read'])).toEqual(['/dashboard', '/insights', '/reports'])
+      expect(overview([role], [])).toEqual(['/dashboard'])
+    }
+
+    const vet = visibleMenuItems(['veterinarian'], ['reports.read']).map((item) => item.href)
+    expect(vet).not.toContain('/insights')
+    expect(vet).not.toContain('/reports')
   })
 })

@@ -11,7 +11,7 @@ Estas regras se aplicam a qualquer alteração neste projeto.
 - Testes de integração ficam em `src/test/integration/` quando existirem.
 - Testes E2E ficam em `e2e/specs/`; helpers compartilhados ficam em `e2e/helpers/` quando existirem.
 - O backend (`eden-bowls-backend`) e a loja (`eden-bowls`) estão em workspaces separados e não devem ser alterados sem necessidade direta da tarefa.
-- Visual: painel interno (sidebar + topbar, cinzas, um accent, IBM Plex Sans). Não copie a identidade visual da loja. Detalhes em `.agents/skills/frontend-design/SKILL.md`.
+- Visual: painel interno (sidebar + topbar, cinzas, um accent, IBM Plex Sans). Não copie a identidade visual da loja. Detalhes em `.agents/skills/admin-panel-design/SKILL.md`.
 - Documentação do painel: `docs-new/` (fonte atual) e `docs/` (espelho). Não trate `docs-antigas/` como contrato vigente.
 
 ## Ferramentas de busca (já instaladas)

@@ -32,7 +32,7 @@ describe('ProductionQueuePage', () => {
     expect(screen.getByRole('button', { name: /^Hoje/ })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByText('Ana Ledger')).toBeInTheDocument()
     expect(screen.queryByText('WordPress Name')).not.toBeInTheDocument()
-    expect(screen.getByText('beef × 2, turkey × 1')).toBeInTheDocument()
+    expect(screen.getByText('Bovino × 2, Frango × 1')).toBeInTheDocument()
     expect(screen.getByText('3 pacotes · 500 g')).toBeInTheDocument()
     expect(screen.getByText('Pago')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Iniciar preparo' })).toBeInTheDocument()
@@ -51,6 +51,24 @@ describe('ProductionQueuePage', () => {
     expect(within(menu).getByRole('menuitem', { name: 'Assinatura' })).toHaveAttribute('href', '/billing/subscriptions/42')
     expect(within(menu).getByRole('menuitem', { name: 'Checkout' })).toHaveAttribute('href', '/users/7?aba=checkout')
     expect(within(menu).getByRole('menuitem', { name: 'Bloquear' })).toBeInTheDocument()
+  })
+
+  it('shows the short recipe name the API sends for a senior plan', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{
+        ...productionQueueItem,
+        flavorMix: 'Bovino · Sênior × 4, Frango · Sênior × 2',
+        lineItems: [
+          { flavor: 'Bovino · Sênior', flavorKey: 'senior-beef', quantity: 4, packSize: '300 g', petName: 'Thor' },
+          { flavor: 'Frango · Sênior', flavorKey: 'senior-chicken', quantity: 2, packSize: '300 g', petName: 'Thor' },
+        ],
+      }],
+    })
+    renderQueue()
+
+    expect(await screen.findByText('Bovino · Sênior × 4, Frango · Sênior × 2')).toBeInTheDocument()
+    expect(screen.queryByText(/senior-beef/)).not.toBeInTheDocument()
   })
 
   it('opens filtered from the URL and sends the filters to the API', async () => {
@@ -193,5 +211,42 @@ describe('ProductionQueuePage', () => {
     expect(WRITE_PERMISSIONS).toContain('production.write')
     expect(readonlyUser.permissions).toContain('production.read')
     expect(readonlyUser.permissions).not.toContain('production.write')
+  })
+
+  it('Later delivery is short', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{ ...productionQueueItem, stockCoverage: 'short' }],
+    })
+    renderQueue()
+
+    expect(await screen.findByText('Falta estoque')).toBeInTheDocument()
+    expect(screen.getByText('Falta estoque')).toHaveClass('badge-warning')
+  })
+
+  it('Ready cycle has no badge', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{ ...productionQueueItem, productionStatus: 'ready', stockCoverage: null }],
+    })
+    renderQueue()
+
+    expect(await screen.findByText('Pronto')).toBeInTheDocument()
+    expect(screen.queryByText('Coberto')).not.toBeInTheDocument()
+    expect(screen.queryByText('Falta estoque')).not.toBeInTheDocument()
+    expect(screen.queryByText('Sem tamanho')).not.toBeInTheDocument()
+  })
+
+  it('Marked ready with too little stock', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{ ...productionQueueItem, productionStatus: 'in_production' }],
+      productionStock: { shortages: [{ flavorKey: 'frango', packSizeGrams: 300, onHand: -2 }], unsized: 0 },
+    })
+    renderQueue()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Marcar como pronto' }))
+    expect(await screen.findByText('Separado com estoque negativo: frango 300 g (-2).')).toBeInTheDocument()
+    expect(await screen.findByText('Pronto', { selector: '.badge-success' })).toBeInTheDocument()
   })
 })

@@ -9,6 +9,7 @@ test.describe('Admin production queue', () => {
     await expect(page.getByText('Ana Ledger')).toBeVisible()
     await expect(page.getByText('WordPress Name')).toHaveCount(0)
     await expect(page.getByText('beef × 2, turkey × 1')).toBeVisible()
+    await expect(page.getByText('Falta estoque')).toBeVisible()
     await expect(page.getByRole('group', { name: 'Mercado' })).toHaveCount(0)
     await page.getByRole('button', { name: 'Mais opções para Ana Ledger' }).click()
     const menu = page.getByRole('menu')

@@ -10,6 +10,9 @@ type Breed = { id?: number; name: string; slug?: string }
 type Country = 'BR' | 'US'
 type AgeUnit = 'years' | 'months'
 type WeightUnit = 'kg' | 'lb'
+type LifeStage = 'puppy' | 'adult' | 'senior'
+type NemSource = 'recipe' | 'life_stage_average' | 'default'
+type SimulatorRecipe = { key: string; name: string; life_stage: LifeStage; energy_kcal_kg: number | null }
 
 type SimulateResult = {
   success: boolean
@@ -22,6 +25,9 @@ type SimulateResult = {
     porte: string
     especie: string
     nem_kcal_kg: number
+    nem_source?: NemSource
+    recipe_key?: string | null
+    parameter_set?: { id: number | null; status: 'published' | 'draft' }
     display: { daily: string; weight: string }
   }
 }
@@ -64,7 +70,15 @@ const labels = {
     no: 'Não',
     activity: 'Nível de atividade',
     score: 'Score corporal',
+    recipe: 'Receita',
+    recipeAverage: 'Média das receitas da fase',
+    recipeNoEnergy: 'sem energia no rótulo',
     submit: 'Calcular',
+    useDraft: 'Simular com o rascunho',
+    parameterSet: (set: { id: number | null; status: string }) => (set.status === 'draft' ? `Calculado com o rascunho #${set.id}.` : `Calculado com o conjunto publicado${set.id ? ` #${set.id}` : ''}.`),
+    nemRecipe: (name: string, kcal: number) => `Densidade da receita ${name}: ${kcal} kcal/kg (energia do rótulo).`,
+    nemAverage: (kcal: number) => `Média das receitas publicadas da fase: ${kcal} kcal/kg.`,
+    nemDefault: (kcal: number) => `Nenhuma receita da fase tem energia no rótulo: padrão do motor ${kcal} kcal/kg.`,
   },
   US: {
     title: 'Nutrition simulator',
@@ -89,7 +103,15 @@ const labels = {
     no: 'No',
     activity: 'Activity level',
     score: 'Body score',
+    recipe: 'Recipe',
+    recipeAverage: 'Average of the life stage recipes',
+    recipeNoEnergy: 'no label energy',
     submit: 'Calculate',
+    useDraft: 'Simulate with the draft',
+    parameterSet: (set: { id: number | null; status: string }) => (set.status === 'draft' ? `Calculated with draft #${set.id}.` : `Calculated with the published set${set.id ? ` #${set.id}` : ''}.`),
+    nemRecipe: (name: string, kcal: number) => `Recipe ${name} density: ${kcal} kcal/kg (label energy).`,
+    nemAverage: (kcal: number) => `Average of the published life stage recipes: ${kcal} kcal/kg.`,
+    nemDefault: (kcal: number) => `No recipe of this life stage has label energy: engine default ${kcal} kcal/kg.`,
   },
 }
 
@@ -117,12 +139,15 @@ function toAgePayload(age: number, unit: AgeUnit) {
 }
 
 export function NutritionSimulatePage() {
-  const { token, user } = useAuth()
+  const { token, user, hasPermission } = useAuth()
+  const canUseDraft = hasPermission('nutrition.settings.write')
   const bothMarkets = hasBothMarkets(user)
   const [pickedCountry, setPickedCountry] = useState<Country>('BR')
   const [name, setName] = useState('')
   const [type, setType] = useState<'dog' | 'cat'>('dog')
-  const [lifeStage, setLifeStage] = useState<'puppy' | 'adult' | 'senior'>('adult')
+  const [lifeStage, setLifeStage] = useState<LifeStage>('adult')
+  const [recipes, setRecipes] = useState<SimulatorRecipe[]>([])
+  const [recipeKey, setRecipeKey] = useState('')
   const [age, setAge] = useState(4)
   const [ageUnit, setAgeUnit] = useState<AgeUnit>('years')
   const [weight, setWeight] = useState(20)
@@ -134,9 +159,12 @@ export function NutritionSimulatePage() {
   const [result, setResult] = useState<SimulateResult['data'] | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [useDraft, setUseDraft] = useState(false)
   const country: Country = bothMarkets ? pickedCountry : (defaultMarket(user) ?? pickedCountry)
   const copy = labels[country]
   const weightUnit = weightUnitFor(country)
+  const stageRecipes = recipes.filter((recipe) => recipe.life_stage === lifeStage)
+  const usesRecipes = type === 'dog'
 
   useEffect(() => {
     const loadBreeds = async () => {
@@ -155,9 +183,43 @@ export function NutritionSimulatePage() {
     void loadBreeds()
   }, [country])
 
+  useEffect(() => {
+    if (!token) return
+    const loadRecipes = async () => {
+      try {
+        const response = await apiRequest<{ success?: boolean; data?: { items?: SimulatorRecipe[] } }>(
+          `/admin/nutrition/recipes${buildQueryString({ market: country })}`,
+          { token },
+        )
+        setRecipes(response.data?.items || [])
+      } catch {
+        setRecipes([])
+      }
+    }
+
+    void loadRecipes()
+  }, [country, token])
+
+  function handleLifeStageChange(next: LifeStage) {
+    setLifeStage(next)
+    setRecipeKey('')
+  }
+
+  function energyDescription(data: SimulateResult['data']) {
+    if (data.nem_source === 'recipe') {
+      const recipe = recipes.find((item) => item.key === data.recipe_key)
+      return copy.nemRecipe(recipe?.name || data.recipe_key || '', data.nem_kcal_kg)
+    }
+    if (data.nem_source === 'life_stage_average') {
+      return copy.nemAverage(data.nem_kcal_kg)
+    }
+    return copy.nemDefault(data.nem_kcal_kg)
+  }
+
   function handleCountryChange(next: Country) {
     if (next === country || !bothMarkets) return
     setWeight((current) => convertWeight(current, weightUnitFor(country), weightUnitFor(next)))
+    setRecipeKey('')
     setPickedCountry(next)
   }
 
@@ -174,6 +236,8 @@ export function NutritionSimulatePage() {
         method: 'POST',
         body: {
           country,
+          ...(usesRecipes && recipeKey ? { recipe_key: recipeKey } : {}),
+          ...(canUseDraft && useDraft ? { parameter_set: 'draft' } : {}),
           pet: {
             name,
             type,
@@ -227,12 +291,27 @@ export function NutritionSimulatePage() {
           </label>
           <label>
             {copy.stage}
-            <select value={lifeStage} onChange={(event) => setLifeStage(event.target.value as typeof lifeStage)}>
+            <select value={lifeStage} onChange={(event) => handleLifeStageChange(event.target.value as LifeStage)}>
               <option value="puppy">{copy.puppy}</option>
               <option value="adult">{copy.adult}</option>
               <option value="senior">{copy.senior}</option>
             </select>
           </label>
+          {usesRecipes ? (
+            <label>
+              {copy.recipe}
+              <select value={recipeKey} onChange={(event) => setRecipeKey(event.target.value)}>
+                <option value="">{copy.recipeAverage}</option>
+                {stageRecipes.map((recipe) => (
+                  <option key={recipe.key} value={recipe.key} disabled={!recipe.energy_kcal_kg}>
+                    {recipe.energy_kcal_kg
+                      ? `${recipe.name} · ${recipe.energy_kcal_kg} kcal/kg`
+                      : `${recipe.name} · ${copy.recipeNoEnergy}`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <div className="field">
             <label htmlFor="nutrition-age">{copy.age}</label>
             <div className="split-input">
@@ -291,18 +370,28 @@ export function NutritionSimulatePage() {
               ))}
             </select>
           </label>
+          {canUseDraft ? (
+            <label className="boolean-field">
+              {copy.useDraft}
+              <span className="boolean-control">
+                <input type="checkbox" checked={useDraft} onChange={(event) => setUseDraft(event.target.checked)} />
+                <span className="boolean-value">{useDraft ? copy.yes : copy.no}</span>
+              </span>
+            </label>
+          ) : null}
         </div>
         <button className="primary-button" type="submit" disabled={loading}>{loading ? '...' : copy.submit}</button>
       </form>
 
       {result ? (
-        <Section title="Resultado" description="NEM vem do padrão do motor (3600 cão / 3800 gato).">
+        <Section title="Resultado" description={energyDescription(result)}>
           <div className="grid cards-4">
             <MetricCard label="Energia" value={`${result.energia_kcal_dia} kcal`} />
             <MetricCard label="Gramas / dia" value={result.display.daily} />
             <MetricCard label="Por refeição" value={`${result.quantidade_por_refeicao} × ${result.refeicoes}`} />
             <MetricCard label="Fator" value={result.fator_aplicado} hint={`NEM ${result.nem_kcal_kg} · ${result.porte} · ${result.especie}`} />
           </div>
+          {result.parameter_set ? <p className="muted">{copy.parameterSet(result.parameter_set)}</p> : null}
         </Section>
       ) : null}
     </PageFrame>

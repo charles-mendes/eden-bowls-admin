@@ -9,7 +9,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const forcePassword = Boolean(user?.mustChangePassword)
-  const menuGroups = groupedMenuItems(forcePassword ? [] : user?.roles ?? [])
+  const menuGroups = groupedMenuItems(forcePassword ? [] : user?.roles ?? [], user?.permissions ?? [])
   // Only the most specific item is active: /billing/coupons lights Cupons, not Assinantes too.
   const activeHref = activeMenuHref(location.pathname, menuGroups.flatMap((group) => group.items))
 

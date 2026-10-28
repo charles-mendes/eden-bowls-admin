@@ -138,6 +138,7 @@ function rulesOf(settings: ShippingSettings, market: 'BR' | 'US') {
     fallback_enabled: us.fallback_enabled,
     package: us.package,
     allowed_service_codes: us.allowed_service_codes,
+    max_transit_days: us.max_transit_days,
   }
 }
 
@@ -406,6 +407,23 @@ export function ShippingPage() {
                       <NumberField label="Largura" suffix="in" step="0.1" disabled={!canWrite} value={us.package.width_in} onChange={(value) => updatePackage({ width_in: value ?? 0 })} />
                       <NumberField label="Altura" suffix="in" step="0.1" disabled={!canWrite} value={us.package.height_in} onChange={(value) => updatePackage({ height_in: value ?? 0 })} />
                     </div>
+                  </fieldset>
+                  <fieldset className="ship-fieldset">
+                    <legend>Prazo de entrega</legend>
+                    <div className="ship-fields">
+                      <NumberField
+                        label="Prazo máximo de trânsito"
+                        suffix="dias úteis"
+                        step="1"
+                        disabled={!canWrite}
+                        value={us.max_transit_days}
+                        onChange={(value) => updateUs({ max_transit_days: value ?? 1 })}
+                        hint="Endereço com trânsito UPS maior que isso não consegue assinar. De 1 a 10."
+                      />
+                    </div>
+                    {us.max_transit_days > 1 ? (
+                      <small className="ship-hint warning-text">A caixa térmica foi pensada para cerca de 48 horas. Confirme que ela aguenta {us.max_transit_days} dias úteis de trânsito.</small>
+                    ) : null}
                   </fieldset>
                   <Toggle checked={us.fallback_enabled} disabled={!canWrite} onChange={(fallback_enabled) => updateUs({ fallback_enabled })} label="Se a UPS falhar, cobrar valor fixo" description="Sem isso, o cliente não consegue fechar o pedido enquanto a UPS estiver fora." />
                 </Section>

@@ -331,6 +331,147 @@ async function handleDeliveryCalendar(route: Route, method: string, path: string
   return false
 }
 
+type StockItem = {
+  flavorKey: string
+  packSizeGrams: number
+  onHand: number
+  minLevel: number | null
+  committed: number
+  committedAwaitingPayment: number
+  available: number
+  toProduce: number
+  belowMinimum: boolean
+}
+
+type StockState = {
+  items: StockItem[]
+  movements: Array<Record<string, unknown>>
+  nextId: number
+}
+
+function stockState(): StockState {
+  return {
+    items: [
+      {
+        flavorKey: 'frango', packSizeGrams: 300, onHand: 40, minLevel: 20, committed: 55,
+        committedAwaitingPayment: 10, available: -15, toProduce: 15, belowMinimum: true,
+      },
+      {
+        flavorKey: 'carne', packSizeGrams: 500, onHand: 10, minLevel: null, committed: 0,
+        committedAwaitingPayment: 0, available: 10, toProduce: 0, belowMinimum: false,
+      },
+    ],
+    movements: [{
+      id: 1, market: 'BR', flavorKey: 'frango', packSizeGrams: 300, type: 'separation', quantity: -3,
+      reason: null, note: null, productionCycleId: 9, subscriptionId: 123, actorName: null,
+      createdAt: '2026-09-20T08:00:00.000Z',
+    }],
+    nextId: 2,
+  }
+}
+
+function refreshStockItem(item: StockItem) {
+  item.available = item.onHand - item.committed
+  item.toProduce = Math.max(0, item.committed - item.onHand)
+  item.belowMinimum = item.minLevel != null && item.onHand < item.minLevel
+  return item
+}
+
+async function handlePackStock(route: Route, method: string, path: string, url: URL, body: unknown, state: StockState) {
+  if (!path.startsWith('/api/v1/admin/stock')) return false
+  const input = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>
+  const known = new Set(['frango|300', 'carne|500'])
+
+  if (path === '/api/v1/admin/stock' && method === 'GET') {
+    await fulfillJson(route, {
+      market: url.searchParams.get('market') || 'BR',
+      windowDays: Number(url.searchParams.get('windowDays') || 7),
+      items: state.items,
+      unsizedLines: [],
+    })
+    return true
+  }
+
+  if (path === '/api/v1/admin/stock/movements' && method === 'GET') {
+    const flavorKey = url.searchParams.get('flavorKey')
+    const packSizeGrams = url.searchParams.get('packSizeGrams')
+    const type = url.searchParams.get('type')
+    const page = Number(url.searchParams.get('page') || 1)
+    const perPage = Number(url.searchParams.get('perPage') || 20)
+    const filtered = state.movements.filter((item) => (
+      (!flavorKey || item.flavorKey === flavorKey)
+      && (!packSizeGrams || Number(item.packSizeGrams) === Number(packSizeGrams))
+      && (!type || item.type === type)
+    ))
+    await fulfillJson(route, {
+      total: filtered.length,
+      page,
+      perPage,
+      totalPages: Math.max(1, Math.ceil(filtered.length / perPage)),
+      items: filtered.slice((page - 1) * perPage, page * perPage),
+    })
+    return true
+  }
+
+  if (path === '/api/v1/admin/stock/production' && method === 'POST') {
+    const key = `${input.flavorKey}|${input.packSizeGrams}`
+    if (!known.has(key)) {
+      await fulfillJson(route, { message: 'Unknown stock item.', details: { code: 'stock_item_unknown' } }, 422)
+      return true
+    }
+    let item = state.items.find((entry) => `${entry.flavorKey}|${entry.packSizeGrams}` === key)
+    if (!item) {
+      item = refreshStockItem({
+        flavorKey: String(input.flavorKey), packSizeGrams: Number(input.packSizeGrams), onHand: 0, minLevel: null,
+        committed: 0, committedAwaitingPayment: 0, available: 0, toProduce: 0, belowMinimum: false,
+      })
+      state.items.push(item)
+    }
+    item.onHand += Number(input.quantity)
+    refreshStockItem(item)
+    state.movements.unshift({
+      id: state.nextId, market: input.market, flavorKey: input.flavorKey, packSizeGrams: input.packSizeGrams,
+      type: 'production', quantity: Number(input.quantity), reason: null, note: input.note || null,
+      productionCycleId: null, subscriptionId: null, actorName: 'ops.write@edenbowls.com', createdAt: '2026-09-21T08:00:00.000Z',
+    })
+    state.nextId += 1
+    await fulfillJson(route, item)
+    return true
+  }
+
+  if (path === '/api/v1/admin/stock/adjustments' && method === 'POST') {
+    const item = state.items.find((entry) => entry.flavorKey === input.flavorKey && entry.packSizeGrams === Number(input.packSizeGrams))
+    if (!item) {
+      await fulfillJson(route, { message: 'Unknown stock item.', details: { code: 'stock_item_unknown' } }, 422)
+      return true
+    }
+    item.onHand += Number(input.quantity)
+    refreshStockItem(item)
+    state.movements.unshift({
+      id: state.nextId, market: input.market, flavorKey: input.flavorKey, packSizeGrams: input.packSizeGrams,
+      type: 'adjustment', quantity: Number(input.quantity), reason: input.reason, note: input.note || null,
+      productionCycleId: null, subscriptionId: null, actorName: 'ops.write@edenbowls.com', createdAt: '2026-09-21T08:00:00.000Z',
+    })
+    state.nextId += 1
+    await fulfillJson(route, item)
+    return true
+  }
+
+  if (path === '/api/v1/admin/stock/minimum' && method === 'PUT') {
+    const item = state.items.find((entry) => entry.flavorKey === input.flavorKey && entry.packSizeGrams === Number(input.packSizeGrams))
+    if (!item) {
+      await fulfillJson(route, { message: 'Unknown stock item.', details: { code: 'stock_item_unknown' } }, 422)
+      return true
+    }
+    item.minLevel = input.minLevel == null ? null : Number(input.minLevel)
+    refreshStockItem(item)
+    await fulfillJson(route, item)
+    return true
+  }
+
+  return false
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -344,6 +485,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
   const tokenStatus = options.tokenStatus ?? 200
   const captured: CapturedAdminRequest[] = []
   const calendar = calendarState()
+  const stock = stockState()
   const catalog = {
     items: [{
       id: 'prod-1',
@@ -366,8 +508,23 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       planCountry: 'BR',
       planDays: 28,
       canDelete: true,
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'synced', requiresSync: false, canDelete: true }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'synced', requiresSync: false, canDelete: true, recipeKey: 'turkey', recipeImageUrl: null, recipeLabelStatus: 'missing' }],
     },
+  }
+  let recipes: Array<{ key: string; name: string; imageUrl: string | null; labelStatus: string; variations: unknown[] }> = [
+    { key: 'beef', name: 'Carne', imageUrl: null, labelStatus: 'missing', variations: [] },
+  ]
+  let recipeContent: Record<string, unknown> = {
+    market: 'BR',
+    flavorSlug: 'turkey',
+    name: 'Frango',
+    imageUrl: null,
+    imageUpdatedAt: null,
+    label: null,
+    labelUpdatedAt: null,
+    labelStatus: 'missing',
+    labelMissing: [],
+    variations: [{ id: 'var-1', name: 'Frango 1kg', sku: 'BOWL-1', active: false, productId: 'prod-1', productName: 'Bowl Adulto' }],
   }
 
   await page.route('**/api/v1/**', async (route) => {
@@ -386,6 +543,10 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     captured.push({ method, path, search: url.search, authorization, body })
 
     if (await handleDeliveryCalendar(route, method, path, url, body, calendar, profile)) {
+      return
+    }
+
+    if (await handlePackStock(route, method, path, url, body, stock)) {
       return
     }
 
@@ -545,6 +706,73 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
+    if (path === '/api/v1/admin/catalog/recipe-content' && method === 'GET') {
+      await fulfillJson(route, {
+        market: 'BR',
+        items: [
+          ...recipes,
+          { key: 'turkey', name: recipeContent.name, imageUrl: recipeContent.imageUrl, labelStatus: recipeContent.labelStatus, variations: recipeContent.variations },
+        ].sort((left, right) => left.key.localeCompare(String(right.key))),
+      })
+      return
+    }
+
+    if (path === '/api/v1/admin/catalog/recipe-content' && method === 'POST') {
+      const input = (body as { key?: string; name?: string } | null) ?? {}
+      const key = String(input.key ?? '')
+      if (key === 'turkey' || recipes.some((item) => item.key === key)) {
+        await fulfillJson(route, { message: 'A recipe with this key already exists in the market.', details: { code: 'recipe_key_taken' } }, 409)
+        return
+      }
+      const created = { key, name: String(input.name ?? ''), imageUrl: null, labelStatus: 'missing', variations: [] }
+      recipes = [...recipes, created]
+      await fulfillJson(route, { ...recipeContent, flavorSlug: key, name: created.name, imageUrl: null, label: null, labelStatus: 'missing', labelMissing: [], variations: [] })
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+$/.test(path) && ['GET', 'PATCH', 'DELETE'].includes(method)) {
+      const key = decodeURIComponent(path.split('/').pop() || '')
+      if (key === 'turkey') {
+        if (method === 'PATCH') recipeContent = { ...recipeContent, name: (body as { name?: string } | null)?.name ?? recipeContent.name }
+        await fulfillJson(route, recipeContent)
+        return
+      }
+      const listed = recipes.find((item) => item.key === key)
+      if (!listed) {
+        await fulfillJson(route, { message: 'Recipe not found.', details: { code: 'recipe_not_found' } }, 404)
+        return
+      }
+      if (method === 'DELETE') {
+        recipes = recipes.filter((item) => item.key !== key)
+        await fulfillJson(route, { deleted: true, market: 'BR', flavorSlug: key })
+        return
+      }
+      if (method === 'PATCH') listed.name = (body as { name?: string } | null)?.name ?? listed.name
+      await fulfillJson(route, { ...recipeContent, flavorSlug: key, name: listed.name, imageUrl: listed.imageUrl, label: null, labelStatus: listed.labelStatus, labelMissing: [], variations: listed.variations })
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'PUT') {
+      recipeContent = { ...recipeContent, imageUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', imageUpdatedAt: '2026-10-23T12:00:00.000Z' }
+      await fulfillJson(route, recipeContent)
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'DELETE') {
+      recipeContent = { ...recipeContent, imageUrl: null }
+      await fulfillJson(route, recipeContent)
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/label$/.test(path) && method === 'PUT') {
+      const label = (body as { label?: Record<string, unknown> } | null)?.label ?? {}
+      const filled = (value: unknown) => (Array.isArray(value) ? value.length > 0 : Boolean(value))
+      const missing = ['ingredients', 'analysis', 'energyKg', 'energyPackage'].filter((field) => !filled(label[field]))
+      recipeContent = { ...recipeContent, label, labelStatus: missing.length ? 'incomplete' : 'complete', labelMissing: missing }
+      await fulfillJson(route, recipeContent)
+      return
+    }
+
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'GET') {
       const id = path.split('/').pop() || 'prod-1'
       if (id === 'prod-1') {
@@ -669,6 +897,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
           city: 'São Paulo',
           stripeStatus: 'active',
           productionStatus: 'to_prepare',
+          stockCoverage: 'short',
           note: null,
           subtotal: 189.9,
           currency: 'BRL',
@@ -828,6 +1057,11 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         complete: true,
         missing_terms: [],
         mapping: { 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m' },
+        terms: [
+          { subscription_term_months: 1, discount_percent: 10 },
+          { subscription_term_months: 3, discount_percent: 25 },
+          { subscription_term_months: 6, discount_percent: 40 },
+        ],
         misconfig_count: 0,
       })
       return

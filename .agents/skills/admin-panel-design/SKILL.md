@@ -1,5 +1,5 @@
 ---
-name: frontend-design
+name: admin-panel-design
 description: Build and style internal admin-panel / back-office interfaces (dashboards, CRUD screens, data tables, forms, settings pages) with a consistent, professional design system. Use this skill any time the user asks to build, edit, or restyle a screen, component, or page inside the admin panel — examples include dashboards, list/table views, detail views, forms, filters, modals, sidebars, or any internal tool UI. Also use whenever the user mentions "painel administrativo", "admin panel", "back office", "dashboard interno", or references this project's UI conventions. Produces clean, data-dense, functional interfaces — NOT bold/experimental marketing-site design.
 license: Complete terms in LICENSE.txt
 ---
@@ -59,9 +59,17 @@ Reuse these patterns rather than reinventing them per screen:
 - **Forms**: labeled fields with inline validation messages, clear required/optional indicators, grouped sections for long forms, sticky save/cancel actions.
 - **Filters & search**: a consistent filter bar/drawer pattern (chips for active filters, a clear "reset" action) rather than one-off filter UIs per page.
 - **Status & metadata**: small pill/badge components using the semantic colors above (e.g. Active/Inactive, Pending/Paid/Failed).
-- **Dashboard widgets**: stat cards (label, value, delta/trend) and charts using the same neutral palette + accent/semantic colors — no decorative chart styling.
+- **Dashboard widgets**: stat cards (label, value, delta/trend) and charts that follow the Charts section below.
 - **Modals & drawers**: for create/edit flows that don't need a full page; consistent header/body/footer structure with primary+secondary actions.
 - **Feedback states**: consistent empty states, error states, and toast/notification style used everywhere, not designed fresh per screen.
+
+## Charts
+
+- The primary series uses the accent color. A comparison series uses neutral gray (new subscriptions against cancellations, for example).
+- Status colors — success, warning, danger, info — stay on badges and status dots. They are never a chart series.
+- Use bars. No pie charts and no 3D.
+- Numbers use `tabular-nums` and pt-BR formatting.
+- The chart has an `aria-label` that summarizes it. Add a tooltip with the exact value only when that number is not already printed beside the mark.
 
 ## What to avoid
 

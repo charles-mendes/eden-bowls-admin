@@ -14,6 +14,8 @@ type PromoSlot = {
   coupon_id?: string | null
   active?: boolean
   source?: 'stored' | 'stripe'
+  percent_off?: number | null
+  percent_mismatch?: boolean
 }
 
 type PromoHealth = {
@@ -24,6 +26,7 @@ type PromoHealth = {
   slots?: Record<string, PromoSlot>
   missing_in_stripe?: number[]
   inactive?: number[]
+  terms?: Array<{ subscription_term_months: number; discount_percent: number }>
 }
 
 type PromoCode = {
@@ -42,7 +45,10 @@ type Term = 1 | 3 | 6
 type SlotStatus = 'empty' | 'missing' | 'inactive' | 'active' | 'linked'
 
 const TERMS: Term[] = [1, 3, 6]
-const TERM_PERCENT: Record<Term, number> = { 1: 10, 3: 25, 6: 40 }
+
+// Same range as the API (first-purchase-discount).
+const MIN_PERCENT_OFF = 1
+const MAX_PERCENT_OFF = 90
 
 const emptyMapping = { 1: '', 3: '', 6: '' }
 
@@ -74,6 +80,36 @@ const durationCopy: Record<string, string> = {
   forever: 'Todas as faturas',
 }
 
+// The API owns the percent of each term; without it the page shows '-' rather than a number of its own.
+function percentFor(health: PromoHealth | null, term: Term): number | null {
+  const entry = health?.terms?.find((item) => Number(item.subscription_term_months) === term)
+  const percent = Number(entry?.discount_percent)
+  return entry && Number.isFinite(percent) ? percent : null
+}
+
+function percentLabel(health: PromoHealth | null, term: Term) {
+  const percent = percentFor(health, term)
+  return percent == null ? '-' : `${percent}%`
+}
+
+function commitmentNote(health: PromoHealth | null) {
+  const percents = ([3, 6] as Term[]).map((item) => percentFor(health, item)).filter((item): item is number => item != null)
+  const cited = percents.length ? ` (${percents.map((item) => `${item}%`).join('/')})` : ''
+  return `O desconto vale só na primeira fatura mensal. Nos planos de 3 e 6 meses, os meses seguintes cobram o preço cheio. O percentual maior${cited} é benefício de compromisso, não desconto sobre o total do contrato.`
+}
+
+// Percent the mapped coupon gives when it differs from the stored one: from the synced slot, or else from the
+// listed promotion code.
+function mismatchedPercent(health: PromoHealth | null, term: Term, listed: PromoCode | undefined): number | null {
+  const slot = health?.slots?.[term]
+  if (slot && typeof slot.percent_mismatch === 'boolean') {
+    return slot.percent_mismatch && slot.percent_off != null ? Number(slot.percent_off) : null
+  }
+  const expected = percentFor(health, term)
+  const actual = listed?.percent_off
+  return expected != null && actual != null && Number(actual) !== expected ? Number(actual) : null
+}
+
 function formatPromoDuration(duration: string | null | undefined) {
   const raw = String(duration || '').trim()
   if (!raw) return 'Não expira'
@@ -103,6 +139,7 @@ export function CouponsPage() {
   const [code, setCode] = useState('')
   const [name, setName] = useState('')
   const [maxRedemptions, setMaxRedemptions] = useState(0)
+  const [percentOff, setPercentOff] = useState('')
   const [assignSlot, setAssignSlot] = useState(true)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -181,8 +218,14 @@ export function CouponsPage() {
     }
   }
 
-  const openCreate = (nextTerm: Term) => {
+  const chooseTerm = (nextTerm: Term) => {
     setTerm(nextTerm)
+    const stored = percentFor(health, nextTerm)
+    setPercentOff(stored == null ? '' : String(stored))
+  }
+
+  const openCreate = (nextTerm: Term) => {
+    chooseTerm(nextTerm)
     setCode('')
     setName('')
     setMaxRedemptions(0)
@@ -205,6 +248,7 @@ export function CouponsPage() {
           code,
           name,
           max_redemptions: maxRedemptions,
+          ...(percentOff.trim() === '' ? {} : { percent_off: Number(percentOff) }),
           assign_first_purchase_slot: assignSlot,
           account,
         },
@@ -220,7 +264,10 @@ export function CouponsPage() {
     }
   }
 
-  const percent = TERM_PERCENT[term]
+  const storedPercent = percentFor(health, term)
+  const typedPercent = percentOff.trim() === '' ? null : Number(percentOff)
+  const percent = typedPercent ?? storedPercent
+  const percentChanged = typedPercent != null && storedPercent != null && typedPercent !== storedPercent
   const currentForTerm = mapping[term]
   const currentCode = codes.find((item) => item.id === currentForTerm)?.code
 
@@ -266,12 +313,13 @@ export function CouponsPage() {
             const badge = statusBadge[status]
             const couponId = listed?.coupon_id || health?.slots?.[slotTerm]?.coupon_id || ''
             const needsCoupon = status === 'empty' || status === 'missing' || status === 'inactive'
+            const otherPercent = promoId ? mismatchedPercent(health, slotTerm, listed) : null
             return (
               <article key={slotTerm} className="coupon-slot" aria-label={`Prazo ${formatTermMonths(slotTerm)}`}>
                 <header className="coupon-slot-head">
                   <div>
                     <h4>{formatTermMonths(slotTerm)}</h4>
-                    <p className="muted">{TERM_PERCENT[slotTerm]}% na 1ª fatura</p>
+                    <p className="muted">{percentLabel(health, slotTerm)} na 1ª fatura</p>
                   </div>
                   <span className={badge.className}>{badge.label}</span>
                 </header>
@@ -284,6 +332,9 @@ export function CouponsPage() {
                 ) : (
                   <p className="muted coupon-slot-empty">Nenhum cupom vinculado a este prazo.</p>
                 )}
+                {otherPercent != null ? (
+                  <p className="warning-text">Cupom dá {otherPercent}%, não {percentLabel(health, slotTerm)}. Crie um cupom novo com o percentual do prazo.</p>
+                ) : null}
                 <div className="coupon-slot-actions">
                   {canWrite ? (
                     <button
@@ -305,7 +356,7 @@ export function CouponsPage() {
         </div>
 
         <div className="muted-panel coupon-note">
-          O desconto vale só na primeira fatura mensal. Nos planos de 3 e 6 meses, os meses seguintes cobram o preço cheio. O percentual maior (25%/40%) é benefício de compromisso, não desconto sobre o total do contrato.
+          {commitmentNote(health)}
         </div>
 
         {canWrite ? (
@@ -316,7 +367,7 @@ export function CouponsPage() {
               <div className="form-grid">
                 {TERMS.map((slotTerm) => (
                   <label key={slotTerm}>
-                    {`${formatTermMonths(slotTerm)} — ${TERM_PERCENT[slotTerm]}%`}
+                    {`${formatTermMonths(slotTerm)} — ${percentLabel(health, slotTerm)}`}
                     <input
                       value={mapping[slotTerm]}
                       onChange={(event) => setMapping((current) => ({ ...current, [slotTerm]: event.target.value }))}
@@ -373,25 +424,37 @@ export function CouponsPage() {
         open={createOpen}
         onClose={() => setCreateOpen(false)}
         title="Criar cupom na Stripe"
-        description={`Cria o cupom e o código na conta ${String(account || '').toUpperCase()}, válidos só na primeira compra. O percentual é fixo por prazo.`}
+        description={`Cria o cupom e o código na conta ${String(account || '').toUpperCase()}, válidos só na primeira compra. O percentual não muda depois de criado: para mudar, crie um cupom novo.`}
       >
         <form className="form-toolbar" onSubmit={createCoupon}>
           <div className="form-grid">
             <label>
               Prazo
-              <select value={term} onChange={(event) => setTerm(Number(event.target.value) as Term)}>
+              <select value={term} onChange={(event) => chooseTerm(Number(event.target.value) as Term)}>
                 {TERMS.map((slotTerm) => (
-                  <option key={slotTerm} value={slotTerm}>{`${formatTermMonths(slotTerm)} — ${TERM_PERCENT[slotTerm]}%`}</option>
+                  <option key={slotTerm} value={slotTerm}>{`${formatTermMonths(slotTerm)} — ${percentLabel(health, slotTerm)}`}</option>
                 ))}
               </select>
             </label>
             <label>
+              Desconto na 1ª fatura (%)
+              <input
+                type="number"
+                min={MIN_PERCENT_OFF}
+                max={MAX_PERCENT_OFF}
+                step={1}
+                value={percentOff}
+                onChange={(event) => setPercentOff(event.target.value)}
+                required={storedPercent == null}
+              />
+            </label>
+            <label>
               Código
-              <input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder={`BEMVINDO${percent}`} required />
+              <input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder={`BEMVINDO${percent ?? ''}`} required />
             </label>
             <label>
               Nome (opcional)
-              <input value={name} onChange={(event) => setName(event.target.value)} placeholder={`First purchase ${term}m (${percent}%)`} />
+              <input value={name} onChange={(event) => setName(event.target.value)} placeholder={`First purchase ${term}m${percent == null ? '' : ` (${percent}%)`}`} />
             </label>
             <label>
               Máximo de usos
@@ -405,6 +468,12 @@ export function CouponsPage() {
           </div>
           {createError ? (
             <div className="alert" role="alert">Não foi possível criar o cupom: {createError}</div>
+          ) : null}
+          {percentChanged && assignSlot ? (
+            <div className="warning">Os novos checkouts de {formatTermMonths(term)} passam de {storedPercent}% para {typedPercent}%. Os assinantes atuais seguem com o cupom antigo. Os termos de uso citam o percentual: revise o texto.</div>
+          ) : null}
+          {percentChanged && !assignSlot ? (
+            <div className="warning">Sem usar no checkout, o percentual de {formatTermMonths(term)} continua {storedPercent}%.</div>
           ) : null}
           {assignSlot && currentForTerm ? (
             <div className="warning">Substitui o código atual de {formatTermMonths(term)} ({currentCode || currentForTerm}). O antigo continua na Stripe.</div>
