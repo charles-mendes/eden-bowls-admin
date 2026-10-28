@@ -17,6 +17,8 @@ import { SubscriptionDetailPage } from './pages/SubscriptionDetailPage'
 import { CouponsPage } from './pages/CouponsPage'
 import { ShippingPage } from './pages/ShippingPage'
 import { NutritionSimulatePage } from './pages/NutritionSimulatePage'
+import { NutritionSettingsPage } from './pages/NutritionSettingsPage'
+import { SettingsPage } from './pages/SettingsPage'
 import { UsersPage } from './pages/UsersPage'
 import { RolesPage } from './pages/RolesPage'
 import { UserDetailPage } from './pages/UserDetailPage'
@@ -54,6 +56,7 @@ function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/nutrition/simulate" element={<NutritionSimulatePage />} />
+          <Route path="/nutrition/settings" element={<NutritionSettingsPage />} />
           <Route path="/catalog/products" element={<ProductsPage />} />
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
           <Route path="/catalog/recipes" element={<RecipesPage />} />
@@ -65,6 +68,7 @@ function App() {
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/billing/subscriptions/:id" element={<SubscriptionDetailPage />} />
           <Route path="/billing/coupons" element={<CouponsPage />} />
+          <Route path="/config" element={<SettingsPage />} />
           <Route path="/config/shipping" element={<ShippingPage />} />
           <Route path="/config/business-rules" element={<Navigate to="/config/shipping" replace />} />
           <Route path="/feedbacks/new" element={<FeedbackFormPage />} />
