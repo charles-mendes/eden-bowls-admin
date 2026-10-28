@@ -78,24 +78,22 @@ export function SettingsPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
-  const query = buildQueryString({ market })
-
   useEffect(() => {
     if (!token) return
     setInvalid([])
     if (tab === 'empresa') {
       setCompany(null)
-      apiRequest<CompanyProfile>(`/admin/settings/company${query}`, { token })
+      apiRequest<CompanyProfile>(`/admin/settings/company${buildQueryString({ market })}`, { token })
         .then((profile) => { setCompany(profile); setCompanyForm(companyFormOf(profile)) })
         .catch((requestError) => setError(settingsErrorMessage(requestError, 'Falha ao carregar a empresa', market)))
     } else if (tab === 'legal') {
       setLegal(null)
-      apiRequest<LegalOverview>(`/admin/legal/${kind}${query}`, { token })
+      apiRequest<LegalOverview>(`/admin/legal/${kind}?market=${market}`, { token })
         .then((overview) => { setLegal(overview); setBody(overview.current?.body_markdown ?? ''); setVersion(todayVersion()) })
         .catch((requestError) => setError(settingsErrorMessage(requestError, 'Falha ao carregar o documento', market)))
     } else {
       setEmails(null)
-      apiRequest<AutomatedEmailSettings>(`/admin/settings/automated-emails${query}`, { token })
+      apiRequest<AutomatedEmailSettings>(`/admin/settings/automated-emails${buildQueryString({ market })}`, { token })
         .then((settings) => { setEmails(settings); setEmailsForm(emailsFormOf(settings)) })
         .catch((requestError) => setError(settingsErrorMessage(requestError, 'Falha ao carregar os e-mails', market)))
     }
@@ -153,7 +151,7 @@ export function SettingsPage() {
   }, 'Falha ao publicar o documento')
 
   const readVersion = (id: string) => run(async () => {
-    setReading(await apiRequest<LegalVersion>(`/admin/legal/${kind}/versions/${encodeURIComponent(id)}${query}`, { token }))
+    setReading(await apiRequest<LegalVersion>(`/admin/legal/${kind}/versions/${encodeURIComponent(id)}?market=${market}`, { token }))
   }, 'Falha ao abrir a versão')
 
   const submitEmails = (event: FormEvent) => {
