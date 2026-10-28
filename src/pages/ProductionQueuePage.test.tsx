@@ -247,6 +247,6 @@ describe('ProductionQueuePage', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Marcar como pronto' }))
     expect(await screen.findByText('Separado com estoque negativo: frango 300 g (-2).')).toBeInTheDocument()
-    expect(screen.getByText('Pronto')).toBeInTheDocument()
+    expect(await screen.findByText('Pronto', { selector: '.badge-success' })).toBeInTheDocument()
   })
 })
