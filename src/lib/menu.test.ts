@@ -111,4 +111,21 @@ describe('admin menu', () => {
     expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/catalog/recipes')
     expect(activeMenuHref('/catalog/recipes/BR/beef', visibleMenuItems(['operator']))).toBe('/catalog/recipes')
   })
+
+  it('lists Relatórios after Hoje (and after Visão do negócio in the demo build) only with reports.read', () => {
+    const overview = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) =>
+      groupedMenuItems(roles, permissions).find((group) => group.group === 'Visão geral')?.items.map((item) => item.href)
+
+    vi.stubEnv('VITE_DEMO_INSIGHTS', 'false')
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      expect(overview([role], ['reports.read'])).toEqual(['/dashboard', '/reports'])
+      expect(overview([role], [])).toEqual(['/dashboard'])
+    }
+
+    vi.stubEnv('VITE_DEMO_INSIGHTS', 'true')
+    expect(overview(['operator'], ['reports.read'])).toEqual(['/dashboard', '/insights', '/reports'])
+    vi.unstubAllEnvs()
+
+    expect(visibleMenuItems(['veterinarian'], ['reports.read']).map((item) => item.href)).not.toContain('/reports')
+  })
 })

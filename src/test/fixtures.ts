@@ -31,6 +31,8 @@ export const WRITE_PERMISSIONS = [
   'privacy.requests.write',
   'production.read',
   'production.write',
+  'reports.read',
+  'reports.export',
 ] as const
 
 export const operatorUser: AdminUser = {
@@ -38,7 +40,7 @@ export const operatorUser: AdminUser = {
   email: 'ops@edenbowls.com',
   roles: ['operator'],
   markets: ['BR'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'market.br'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'reports.read', 'reports.export', 'market.br'],
 }
 
 export const operatorWriteUser: AdminUser = {
@@ -57,7 +59,7 @@ export const operatorUsUser: AdminUser = {
   email: 'ops.us@edenbowls.com',
   roles: ['operator'],
   markets: ['US'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'market.us'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'reports.read', 'reports.export', 'market.us'],
 }
 
 export const adminUser: AdminUser = {
@@ -97,7 +99,7 @@ export const readonlyUser: AdminUser = {
   email: 'read@edenbowls.com',
   roles: ['readonly'],
   markets: ['BR'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'market.br'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'reports.read', 'market.br'],
 }
 
 export const productionQueueItem = {

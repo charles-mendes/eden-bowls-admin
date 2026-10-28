@@ -5,6 +5,7 @@ import { render } from '@testing-library/react'
 import { AuthProvider, TOKEN_KEY } from '../contexts/AuthContext'
 import { RequireAuth } from './RequireAuth'
 import { jsonResponse, veterinarianUser, operatorUser } from '../test/fixtures'
+import { ReportsPage } from '../pages/ReportsPage'
 
 function renderGuard(route: string) {
   return render(
@@ -41,6 +42,14 @@ function renderGuard(route: string) {
             element={(
               <RequireAuth>
                 <div>insights-page</div>
+              </RequireAuth>
+            )}
+          />
+          <Route
+            path="/reports"
+            element={(
+              <RequireAuth>
+                <ReportsPage />
               </RequireAuth>
             )}
           />
@@ -87,6 +96,19 @@ describe('RequireAuth', () => {
     })
     expect(screen.queryByText('insights-page')).not.toBeInTheDocument()
     expect(screen.queryByText('Dados de demonstração')).not.toBeInTheDocument()
+  })
+
+  it('sends a veterinarian who opens Relatórios to the simulator without calling a report route', async () => {
+    localStorage.setItem(TOKEN_KEY, 'nutri-token')
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(veterinarianUser))
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderGuard('/reports?aba=receita')
+
+    await waitFor(() => {
+      expect(screen.getByText('simulate-page')).toBeInTheDocument()
+    })
+    expect(fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/admin/reports/'))).toEqual([])
   })
 
   it('keeps veterinarian-only accounts on the simulator', async () => {

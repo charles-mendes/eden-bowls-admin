@@ -10,6 +10,8 @@ export type MenuItem = {
   href: string
   roles: AdminRole[]
   group: MenuGroup
+  // Also required when set: the item hides while the API does not grant it yet.
+  permission?: string
 }
 
 // Grouped by the job: ship orders, look after customers, run the store, run the team.
@@ -49,19 +51,31 @@ const INSIGHTS_ITEM: MenuItem = {
   group: 'Visão geral',
 }
 
-export function visibleMenuItems(roles: AdminRole[]) {
-  const roleSet = new Set(roles)
-  const items = adminMenu.filter((item) => item.roles.some((role) => roleSet.has(role)))
-  if (!demoInsightsEnabled() || !INSIGHTS_ITEM.roles.some((role) => roleSet.has(role))) return items
-  const today = items.findIndex((item) => item.href === '/dashboard')
-  if (today === -1) return [...items, INSIGHTS_ITEM]
-  return [...items.slice(0, today + 1), INSIGHTS_ITEM, ...items.slice(today + 1)]
+const REPORTS_ITEM: MenuItem = {
+  label: 'Relatórios',
+  href: '/reports',
+  roles: ['admin', 'operator', 'readonly'],
+  group: 'Visão geral',
+  permission: 'reports.read',
 }
 
-export function groupedMenuItems(roles: AdminRole[]) {
+export function visibleMenuItems(roles: AdminRole[], permissions: string[] = []) {
+  const roleSet = new Set(roles)
+  const permissionSet = new Set(permissions)
+  const allowed = (item: MenuItem) => item.roles.some((role) => roleSet.has(role)) && (!item.permission || permissionSet.has(item.permission))
+  const items = adminMenu.filter(allowed)
+  // Hoje, then the demo overview when the build shows it, then Relatórios.
+  const afterToday = [...(demoInsightsEnabled() ? [INSIGHTS_ITEM] : []), REPORTS_ITEM].filter(allowed)
+  if (!afterToday.length) return items
+  const today = items.findIndex((item) => item.href === '/dashboard')
+  if (today === -1) return [...items, ...afterToday]
+  return [...items.slice(0, today + 1), ...afterToday, ...items.slice(today + 1)]
+}
+
+export function groupedMenuItems(roles: AdminRole[], permissions: string[] = []) {
   const groups: { group: MenuGroup; items: MenuItem[] }[] = []
 
-  for (const item of visibleMenuItems(roles)) {
+  for (const item of visibleMenuItems(roles, permissions)) {
     const last = groups[groups.length - 1]
     if (last && last.group === item.group) {
       last.items.push(item)
