@@ -817,6 +817,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
           nem_kcal_kg: body?.recipe_key === 'puppy-beef' ? 1500 : 1200,
           nem_source: body?.recipe_key ? 'recipe' : 'life_stage_average',
           recipe_key: body?.recipe_key ?? null,
+          parameter_set: body?.parameter_set === 'draft' ? { id: 2, status: 'draft' } : { id: 1, status: 'published' },
           display: { daily: '250 g', weight: '20 kg' },
         },
       })

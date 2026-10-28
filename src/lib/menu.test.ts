@@ -5,7 +5,19 @@ describe('admin menu', () => {
   it('hides operational sections from veterinarian-only accounts', () => {
     const hrefs = visibleMenuItems(['veterinarian']).map((item) => item.href)
 
-    expect(hrefs).toEqual(['/nutrition/simulate'])
+    expect(hrefs).toEqual(['/nutrition/simulate', '/nutrition/settings'])
+  })
+
+  it('Veterinarian has no settings: Configurações is for admin, operator and readonly', () => {
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/config')
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role]).map((item) => item.href)).toContain('/config')
+    }
+  })
+
+  it('keeps Frete active, not Configurações, on the shipping page', () => {
+    expect(activeMenuHref('/config/shipping', visibleMenuItems(['admin']))).toBe('/config/shipping')
+    expect(activeMenuHref('/config', visibleMenuItems(['admin']))).toBe('/config')
   })
 
   it('shows Produção to operator and readonly, not veterinarian', () => {

@@ -124,4 +124,27 @@ describe('NutritionSimulatePage', () => {
     const chosen = calls.filter((call) => call.method === 'POST' && call.path === '/api/v1/admin/nutrition/simulate').at(-1)
     expect(chosen?.body).toMatchObject({ recipe_key: 'puppy-beef', pet: { life_stage: 'puppy' } })
   })
+
+  it('Simulate the draft: sends parameter_set draft and names the draft in the result', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock({ ...veterinarianUser, permissions: ['nutrition.simulate', 'nutrition.settings.write'] })
+    renderAuthedPage(<NutritionSimulatePage />, '/nutrition/simulate')
+
+    await user.click(await screen.findByRole('checkbox', { name: /^Simular com o rascunho/ }))
+    await user.click(screen.getByRole('button', { name: 'Calcular' }))
+
+    expect(await screen.findByText('Calculado com o rascunho #2.')).toBeInTheDocument()
+    const simulate = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/nutrition/simulate')
+    expect(simulate?.body).toMatchObject({ parameter_set: 'draft' })
+  })
+
+  it('hides the draft option without nutrition.settings.write', async () => {
+    seedAuth()
+    installAdminFetchMock(veterinarianUser)
+    renderAuthedPage(<NutritionSimulatePage />, '/nutrition/simulate')
+
+    expect(await screen.findByRole('button', { name: 'Calcular' })).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /^Simular com o rascunho/ })).not.toBeInTheDocument()
+  })
 })

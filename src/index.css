@@ -844,6 +844,12 @@ pre {
   font-size: var(--text-xs);
 }
 
+pre.legal-text {
+  max-height: 480px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .table-actions {
   display: flex;
   flex-wrap: wrap;
