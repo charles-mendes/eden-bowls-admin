@@ -43,7 +43,10 @@ type Loaded = { key: string; data: Overview | null; error: string | null }
 
 // Every number on the page comes from the admin reports API, for one market and one period.
 function fetchOverview(market: MarketCode, from: string, to: string, today: string, token: string | null): Promise<Overview> {
-  const get = <T,>(report: string, query: Record<string, string>) => apiRequest<T>(`/admin/reports/${report}${buildQueryString({ market, ...query })}`, { token })
+  const get = <T,>(report: string, query: Record<string, string>) => {
+    const path = `/admin/reports/${report}${buildQueryString({ market, ...query })}`
+    return apiRequest<T>(path, { token })
+  }
   return Promise.all([
     get<RevenueReport>('revenue', { from, to }),
     get<SubscriptionsReport>('subscriptions', { from, to, granularity: 'week' }),

@@ -61,7 +61,8 @@ function normalizeTemplate(raw: string) {
   return path
     .split('/')
     .map((segment) => {
-      if (segment === EXPRESSION) return DYNAMIC_SEGMENT
+      // `${kind}${query}`: the whole segment is dynamic, the rest is the query string.
+      if (segment && [...segment].every((char) => char === EXPRESSION)) return DYNAMIC_SEGMENT
       return segment.replace(new RegExp(`${EXPRESSION}+$`), '')
     })
     .join('/')
