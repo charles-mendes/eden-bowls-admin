@@ -331,6 +331,147 @@ async function handleDeliveryCalendar(route: Route, method: string, path: string
   return false
 }
 
+type StockItem = {
+  flavorKey: string
+  packSizeGrams: number
+  onHand: number
+  minLevel: number | null
+  committed: number
+  committedAwaitingPayment: number
+  available: number
+  toProduce: number
+  belowMinimum: boolean
+}
+
+type StockState = {
+  items: StockItem[]
+  movements: Array<Record<string, unknown>>
+  nextId: number
+}
+
+function stockState(): StockState {
+  return {
+    items: [
+      {
+        flavorKey: 'frango', packSizeGrams: 300, onHand: 40, minLevel: 20, committed: 55,
+        committedAwaitingPayment: 10, available: -15, toProduce: 15, belowMinimum: true,
+      },
+      {
+        flavorKey: 'carne', packSizeGrams: 500, onHand: 10, minLevel: null, committed: 0,
+        committedAwaitingPayment: 0, available: 10, toProduce: 0, belowMinimum: false,
+      },
+    ],
+    movements: [{
+      id: 1, market: 'BR', flavorKey: 'frango', packSizeGrams: 300, type: 'separation', quantity: -3,
+      reason: null, note: null, productionCycleId: 9, subscriptionId: 123, actorName: null,
+      createdAt: '2026-09-20T08:00:00.000Z',
+    }],
+    nextId: 2,
+  }
+}
+
+function refreshStockItem(item: StockItem) {
+  item.available = item.onHand - item.committed
+  item.toProduce = Math.max(0, item.committed - item.onHand)
+  item.belowMinimum = item.minLevel != null && item.onHand < item.minLevel
+  return item
+}
+
+async function handlePackStock(route: Route, method: string, path: string, url: URL, body: unknown, state: StockState) {
+  if (!path.startsWith('/api/v1/admin/stock')) return false
+  const input = (body && typeof body === 'object' ? body : {}) as Record<string, unknown>
+  const known = new Set(['frango|300', 'carne|500'])
+
+  if (path === '/api/v1/admin/stock' && method === 'GET') {
+    await fulfillJson(route, {
+      market: url.searchParams.get('market') || 'BR',
+      windowDays: Number(url.searchParams.get('windowDays') || 7),
+      items: state.items,
+      unsizedLines: [],
+    })
+    return true
+  }
+
+  if (path === '/api/v1/admin/stock/movements' && method === 'GET') {
+    const flavorKey = url.searchParams.get('flavorKey')
+    const packSizeGrams = url.searchParams.get('packSizeGrams')
+    const type = url.searchParams.get('type')
+    const page = Number(url.searchParams.get('page') || 1)
+    const perPage = Number(url.searchParams.get('perPage') || 20)
+    const filtered = state.movements.filter((item) => (
+      (!flavorKey || item.flavorKey === flavorKey)
+      && (!packSizeGrams || Number(item.packSizeGrams) === Number(packSizeGrams))
+      && (!type || item.type === type)
+    ))
+    await fulfillJson(route, {
+      total: filtered.length,
+      page,
+      perPage,
+      totalPages: Math.max(1, Math.ceil(filtered.length / perPage)),
+      items: filtered.slice((page - 1) * perPage, page * perPage),
+    })
+    return true
+  }
+
+  if (path === '/api/v1/admin/stock/production' && method === 'POST') {
+    const key = `${input.flavorKey}|${input.packSizeGrams}`
+    if (!known.has(key)) {
+      await fulfillJson(route, { message: 'Unknown stock item.', details: { code: 'stock_item_unknown' } }, 422)
+      return true
+    }
+    let item = state.items.find((entry) => `${entry.flavorKey}|${entry.packSizeGrams}` === key)
+    if (!item) {
+      item = refreshStockItem({
+        flavorKey: String(input.flavorKey), packSizeGrams: Number(input.packSizeGrams), onHand: 0, minLevel: null,
+        committed: 0, committedAwaitingPayment: 0, available: 0, toProduce: 0, belowMinimum: false,
+      })
+      state.items.push(item)
+    }
+    item.onHand += Number(input.quantity)
+    refreshStockItem(item)
+    state.movements.unshift({
+      id: state.nextId, market: input.market, flavorKey: input.flavorKey, packSizeGrams: input.packSizeGrams,
+      type: 'production', quantity: Number(input.quantity), reason: null, note: input.note || null,
+      productionCycleId: null, subscriptionId: null, actorName: 'ops.write@edenbowls.com', createdAt: '2026-09-21T08:00:00.000Z',
+    })
+    state.nextId += 1
+    await fulfillJson(route, item)
+    return true
+  }
+
+  if (path === '/api/v1/admin/stock/adjustments' && method === 'POST') {
+    const item = state.items.find((entry) => entry.flavorKey === input.flavorKey && entry.packSizeGrams === Number(input.packSizeGrams))
+    if (!item) {
+      await fulfillJson(route, { message: 'Unknown stock item.', details: { code: 'stock_item_unknown' } }, 422)
+      return true
+    }
+    item.onHand += Number(input.quantity)
+    refreshStockItem(item)
+    state.movements.unshift({
+      id: state.nextId, market: input.market, flavorKey: input.flavorKey, packSizeGrams: input.packSizeGrams,
+      type: 'adjustment', quantity: Number(input.quantity), reason: input.reason, note: input.note || null,
+      productionCycleId: null, subscriptionId: null, actorName: 'ops.write@edenbowls.com', createdAt: '2026-09-21T08:00:00.000Z',
+    })
+    state.nextId += 1
+    await fulfillJson(route, item)
+    return true
+  }
+
+  if (path === '/api/v1/admin/stock/minimum' && method === 'PUT') {
+    const item = state.items.find((entry) => entry.flavorKey === input.flavorKey && entry.packSizeGrams === Number(input.packSizeGrams))
+    if (!item) {
+      await fulfillJson(route, { message: 'Unknown stock item.', details: { code: 'stock_item_unknown' } }, 422)
+      return true
+    }
+    item.minLevel = input.minLevel == null ? null : Number(input.minLevel)
+    refreshStockItem(item)
+    await fulfillJson(route, item)
+    return true
+  }
+
+  return false
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -344,6 +485,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
   const tokenStatus = options.tokenStatus ?? 200
   const captured: CapturedAdminRequest[] = []
   const calendar = calendarState()
+  const stock = stockState()
   const catalog = {
     items: [{
       id: 'prod-1',
@@ -401,6 +543,10 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     captured.push({ method, path, search: url.search, authorization, body })
 
     if (await handleDeliveryCalendar(route, method, path, url, body, calendar, profile)) {
+      return
+    }
+
+    if (await handlePackStock(route, method, path, url, body, stock)) {
       return
     }
 
@@ -751,6 +897,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
           city: 'São Paulo',
           stripeStatus: 'active',
           productionStatus: 'to_prepare',
+          stockCoverage: 'short',
           note: null,
           subtotal: 189.9,
           currency: 'BRL',

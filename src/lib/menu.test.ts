@@ -27,6 +27,16 @@ describe('admin menu', () => {
     expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/operations/production')
   })
 
+  it('Operator sees Estoque', () => {
+    expect(visibleMenuItems(['operator']).map((item) => item.href)).toContain('/operations/stock')
+    expect(visibleMenuItems(['admin']).map((item) => item.href)).toContain('/operations/stock')
+    expect(visibleMenuItems(['readonly']).map((item) => item.href)).toContain('/operations/stock')
+  })
+
+  it('Veterinarian does not see Estoque', () => {
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/operations/stock')
+  })
+
   it('keeps role assignment exclusive to admin', () => {
     const operatorHrefs = visibleMenuItems(['operator']).map((item) => item.href)
     const adminHrefs = visibleMenuItems(['admin']).map((item) => item.href)

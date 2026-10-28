@@ -13,12 +13,16 @@ import {
   DUE_TO_API,
   PRODUCTION_STATUS_LABELS,
   PRODUCTION_STATUSES,
+  STOCK_COVERAGE_LABELS,
+  formatSeparationShortage,
   isProductionStatus,
   isQueueDue,
   plural,
   type DueBucket,
   type ProductionStatus,
+  type ProductionStockResult,
   type QueueDue,
+  type StockCoverage,
 } from '../lib/productionQueue'
 
 type LineItem = {
@@ -59,6 +63,8 @@ type QueueItem = {
   dense: boolean
   customerProfileInScope?: boolean
   lineItems: LineItem[]
+  stockCoverage?: StockCoverage | null
+  stock?: ProductionStockResult
 }
 
 type QueueResponse = {
@@ -155,6 +161,7 @@ export function ProductionQueuePage() {
   const [blockNote, setBlockNote] = useState('')
   const [denseItem, setDenseItem] = useState<QueueItem | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [stockWarning, setStockWarning] = useState('')
 
   const rawDue = params.get('prazo')
   const due: QueueDue | '' = isQueueDue(rawDue) ? rawDue : ''
@@ -224,8 +231,9 @@ export function ProductionQueuePage() {
     if (!token || !canWrite || !item.currentPeriodEnd) return
     setBusyId(`${item.id}-${item.currentPeriodEnd}`)
     setError('')
+    setStockWarning('')
     try {
-      await apiRequest(`/admin/production/queue/${item.id}`, {
+      const updated = await apiRequest<QueueItem>(`/admin/production/queue/${item.id}`, {
         token,
         method: 'PATCH',
         body: {
@@ -234,6 +242,9 @@ export function ProductionQueuePage() {
           note: note || undefined,
         },
       })
+      if (status === 'ready' && updated.stock && (updated.stock.shortages.length > 0 || updated.stock.unsized > 0)) {
+        setStockWarning(formatSeparationShortage(updated.stock))
+      }
       setBlockItem(null)
       setBlockNote('')
       setReloadKey((key) => key + 1)
@@ -371,6 +382,12 @@ export function ProductionQueuePage() {
       </div>
 
       {error ? <div className="alert" role="alert">{error}</div> : null}
+      {stockWarning ? (
+        <div className="alert" role="status">
+          {stockWarning}
+          <button className="link-button" type="button" onClick={() => setStockWarning('')}>Fechar</button>
+        </div>
+      ) : null}
 
       {loading && !data ? <TableSkeleton /> : (
         <div className="queue-table-shell" aria-busy={loading}>
@@ -439,6 +456,11 @@ export function ProductionQueuePage() {
                       <td data-label="Preparo">
                         <div className="queue-cell-stack">
                           <span className={STATUS_BADGE[item.productionStatus]}>{PRODUCTION_STATUS_LABELS[item.productionStatus]}</span>
+                          {item.stockCoverage ? (
+                            <span className={item.stockCoverage === 'short' ? 'badge-warning' : 'muted'}>
+                              {STOCK_COVERAGE_LABELS[item.stockCoverage]}
+                            </span>
+                          ) : null}
                           {item.note ? <span className="muted queue-note">{item.note}</span> : null}
                         </div>
                       </td>

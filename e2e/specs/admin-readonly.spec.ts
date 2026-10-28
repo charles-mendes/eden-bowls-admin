@@ -20,6 +20,16 @@ test.describe('Admin readonly', () => {
     await expect(page.getByRole('button', { name: 'Sincronizar agora' })).toHaveCount(0)
   })
 
+  test('opens stock without write actions', async ({ page }) => {
+    await openAuthed(page, '/operations/stock', e2eProfiles.readonly)
+
+    await expect(page.getByRole('heading', { name: 'Estoque' })).toBeVisible()
+    await expect(page.getByRole('cell', { name: 'frango', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Lançar produção' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Ajustar' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Definir mínimo' })).toHaveCount(0)
+  })
+
   test('opens production queue without status-advance controls', async ({ page }) => {
     await openAuthed(page, '/operations/production', e2eProfiles.readonly)
 

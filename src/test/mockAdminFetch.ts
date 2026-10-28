@@ -32,6 +32,9 @@ import {
   privacyRequestsList,
   productionQueueItem,
   productionQueueList,
+  stockItemCarne,
+  stockMovementSeparation,
+  stockOverview,
   userPrivacySnapshot,
   marketConflicts,
   webhookHealth,
@@ -82,6 +85,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   customerInvoices?: Array<Record<string, unknown>>
   productionInScope?: boolean
   productionQueue?: Array<Record<string, unknown>>
+  productionStock?: { shortages: Array<{ flavorKey: string; packSizeGrams: number; onHand: number }>; unsized: number }
+  stockItems?: Array<Record<string, unknown>>
+  stockUnsized?: Array<Record<string, unknown>>
+  stockMovements?: Array<Record<string, unknown>>
   subscriptionSnapshot?: {
     petsSnapshot?: unknown
     planSelection?: unknown
@@ -113,6 +120,26 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   let recipeContent = {
     ...(options.recipeContent ?? recipeContentFixture),
     variations: (options.recipeContent ?? recipeContentFixture).variations.map((item) => ({ ...item })),
+  }
+
+  const queueItems = (options.productionQueue ?? [{
+    ...productionQueueItem,
+    customerProfileInScope: options.productionInScope ?? productionQueueItem.customerProfileInScope,
+  }]).map((item) => ({ ...item }))
+
+  const knownStock = new Set(['frango|300', 'carne|500'])
+  let stockItems = (options.stockItems ?? stockOverview.items).map((item) => ({ ...item }))
+  const stockUnsized = options.stockUnsized ?? stockOverview.unsizedLines
+  let stockMovements = (options.stockMovements ?? [stockMovementSeparation]).map((item) => ({ ...item }))
+  let nextMovementId = stockMovements.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0) + 1
+
+  const refreshStock = (item: Record<string, unknown>) => {
+    const onHand = Number(item.onHand)
+    const committed = Number(item.committed)
+    item.available = onHand - committed
+    item.toProduce = Math.max(0, committed - onHand)
+    item.belowMinimum = item.minLevel != null && onHand < Number(item.minLevel)
+    return item
   }
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -515,14 +542,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (path === '/api/v1/admin/production/queue' && method === 'GET') {
       const productionStatus = url.searchParams.get('productionStatus')
-      const items = options.productionQueue
-        ? options.productionQueue
-        : productionStatus && productionStatus !== productionQueueItem.productionStatus
-          ? []
-          : [{
-            ...productionQueueItem,
-            customerProfileInScope: options.productionInScope ?? productionQueueItem.customerProfileInScope,
-          }]
+      const items = productionStatus
+        ? queueItems.filter((item) => item.productionStatus === productionStatus)
+        : queueItems
       return jsonResponse({
         ...productionQueueList,
         total: items.length,
@@ -532,11 +554,109 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (/^\/api\/v1\/admin\/production\/queue\/\d+$/.test(path) && method === 'PATCH') {
+      const id = Number(path.split('/').pop())
+      const item = queueItems.find((entry) => Number(entry.id) === id) ?? { ...productionQueueItem, id }
+      item.productionStatus = body?.status || 'in_production'
+      item.note = body?.note || null
       return jsonResponse({
-        ...productionQueueItem,
-        productionStatus: body?.status || 'in_production',
-        note: body?.note || null,
+        ...item,
+        stock: body?.status === 'ready' ? (options.productionStock ?? { shortages: [], unsized: 0 }) : undefined,
       })
+    }
+
+    if (path === '/api/v1/admin/stock' && method === 'GET') {
+      return jsonResponse({
+        market: url.searchParams.get('market') || 'BR',
+        windowDays: Number(url.searchParams.get('windowDays') || 7),
+        items: stockItems,
+        unsizedLines: stockUnsized,
+      })
+    }
+
+    if (path === '/api/v1/admin/stock/movements' && method === 'GET') {
+      const flavorKey = url.searchParams.get('flavorKey')
+      const packSizeGrams = url.searchParams.get('packSizeGrams')
+      const type = url.searchParams.get('type')
+      const page = Number(url.searchParams.get('page') || 1)
+      const perPage = Number(url.searchParams.get('perPage') || 20)
+      const filtered = stockMovements.filter((item) => (
+        (!flavorKey || item.flavorKey === flavorKey)
+        && (!packSizeGrams || Number(item.packSizeGrams) === Number(packSizeGrams))
+        && (!type || item.type === type)
+      ))
+      const start = (page - 1) * perPage
+      return jsonResponse({
+        total: filtered.length,
+        page,
+        perPage,
+        totalPages: Math.max(1, Math.ceil(filtered.length / perPage)),
+        items: filtered.slice(start, start + perPage),
+      })
+    }
+
+    if (path === '/api/v1/admin/stock/production' && method === 'POST') {
+      const key = `${body?.flavorKey}|${body?.packSizeGrams}`
+      if (!knownStock.has(key)) {
+        return jsonResponse({ message: 'Unknown stock item.', details: { code: 'stock_item_unknown' } }, 422)
+      }
+      const item = stockItems.find((entry) => `${entry.flavorKey}|${entry.packSizeGrams}` === key)
+        ?? refreshStock({ ...stockItemCarne, flavorKey: body.flavorKey, packSizeGrams: body.packSizeGrams, onHand: 0 })
+      if (!stockItems.includes(item)) stockItems = [...stockItems, item]
+      item.onHand = Number(item.onHand) + Number(body.quantity)
+      refreshStock(item)
+      stockMovements = [{
+        id: nextMovementId,
+        market: body.market,
+        flavorKey: body.flavorKey,
+        packSizeGrams: body.packSizeGrams,
+        type: 'production',
+        quantity: Number(body.quantity),
+        reason: null,
+        note: body.note || null,
+        productionCycleId: null,
+        subscriptionId: null,
+        actorName: profile.email,
+        createdAt: '2026-09-21T08:00:00.000Z',
+      }, ...stockMovements]
+      nextMovementId += 1
+      return jsonResponse(item)
+    }
+
+    if (path === '/api/v1/admin/stock/adjustments' && method === 'POST') {
+      const key = `${body?.flavorKey}|${body?.packSizeGrams}`
+      const item = stockItems.find((entry) => `${entry.flavorKey}|${entry.packSizeGrams}` === key)
+      if (!item) {
+        return jsonResponse({ message: 'Unknown stock item.', details: { code: 'stock_item_unknown' } }, 422)
+      }
+      item.onHand = Number(item.onHand) + Number(body.quantity)
+      refreshStock(item)
+      stockMovements = [{
+        id: nextMovementId,
+        market: body.market,
+        flavorKey: body.flavorKey,
+        packSizeGrams: body.packSizeGrams,
+        type: 'adjustment',
+        quantity: Number(body.quantity),
+        reason: body.reason,
+        note: body.note || null,
+        productionCycleId: null,
+        subscriptionId: null,
+        actorName: profile.email,
+        createdAt: '2026-09-21T08:00:00.000Z',
+      }, ...stockMovements]
+      nextMovementId += 1
+      return jsonResponse(item)
+    }
+
+    if (path === '/api/v1/admin/stock/minimum' && method === 'PUT') {
+      const key = `${body?.flavorKey}|${body?.packSizeGrams}`
+      const item = stockItems.find((entry) => `${entry.flavorKey}|${entry.packSizeGrams}` === key)
+      if (!item) {
+        return jsonResponse({ message: 'Unknown stock item.', details: { code: 'stock_item_unknown' } }, 422)
+      }
+      item.minLevel = body.minLevel
+      refreshStock(item)
+      return jsonResponse(item)
     }
 
     if (path === '/api/v1/admin/billing/metrics') {

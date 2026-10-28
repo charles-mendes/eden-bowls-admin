@@ -141,6 +141,60 @@ export const productionQueueList = {
   items: [productionQueueItem],
 }
 
+export const stockItemFrango = {
+  flavorKey: 'frango',
+  packSizeGrams: 300,
+  onHand: 40,
+  minLevel: 20,
+  committed: 55,
+  committedAwaitingPayment: 10,
+  available: -15,
+  toProduce: 15,
+  belowMinimum: true,
+}
+
+export const stockItemCarne = {
+  flavorKey: 'carne',
+  packSizeGrams: 500,
+  onHand: 10,
+  minLevel: null,
+  committed: 0,
+  committedAwaitingPayment: 0,
+  available: 10,
+  toProduce: 0,
+  belowMinimum: false,
+}
+
+export const stockOverview = {
+  market: 'BR',
+  windowDays: 7,
+  items: [stockItemFrango, stockItemCarne],
+  unsizedLines: [] as Array<{ subscriptionId: number; flavorKey: string | null; label: string; quantity: number }>,
+}
+
+export const stockMovementSeparation = {
+  id: 1,
+  market: 'BR',
+  flavorKey: 'frango',
+  packSizeGrams: 300,
+  type: 'separation' as const,
+  quantity: -3,
+  reason: null,
+  note: null,
+  productionCycleId: 9,
+  subscriptionId: 123,
+  actorName: null,
+  createdAt: '2026-09-20T08:00:00.000Z',
+}
+
+export const stockMovementsList = {
+  total: 1,
+  page: 1,
+  perPage: 20,
+  totalPages: 1,
+  items: [stockMovementSeparation],
+}
+
 export const checkoutItem = {
   userId: 'u-ana',
   email: 'ana@edenbowls.com',

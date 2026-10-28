@@ -11,6 +11,7 @@ import { RecipeContentPage } from './pages/RecipeContentPage'
 import { RecipesPage } from './pages/RecipesPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { ProductionQueuePage } from './pages/ProductionQueuePage'
+import { StockPage } from './pages/StockPage'
 import { DeliveryCalendarPage } from './pages/DeliveryCalendarPage'
 import { BillingPage } from './pages/BillingPage'
 import { SubscriptionDetailPage } from './pages/SubscriptionDetailPage'
@@ -64,6 +65,7 @@ function App() {
           <Route path="/onboarding/sessions" element={<OnboardingPage />} />
           <Route path="/onboarding/sessions/:id" element={<LegacyCheckoutRedirect />} />
           <Route path="/operations/production" element={<ProductionQueuePage />} />
+          <Route path="/operations/stock" element={<StockPage />} />
           <Route path="/operations/delivery-calendar" element={<DeliveryCalendarPage />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/billing/subscriptions/:id" element={<SubscriptionDetailPage />} />

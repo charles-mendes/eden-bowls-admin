@@ -1,4 +1,10 @@
 export type ProductionStatus = 'to_prepare' | 'in_production' | 'ready' | 'blocked'
+export type StockCoverage = 'covered' | 'short' | 'unknown'
+
+export type ProductionStockResult = {
+  shortages: Array<{ flavorKey: string; packSizeGrams: number; onHand: number }>
+  unsized: number
+}
 export type DueBucket = 'overdue' | 'today' | 'tomorrow' | 'upcoming'
 
 // The queue keeps its filters in the URL, so Hoje can open it already filtered.
@@ -28,6 +34,21 @@ export const DUE_LABELS: Record<QueueDue, string> = {
 }
 
 export const PRODUCTION_STATUSES: ProductionStatus[] = ['to_prepare', 'in_production', 'ready', 'blocked']
+
+export const STOCK_COVERAGE_LABELS: Record<StockCoverage, string> = {
+  covered: 'Coberto',
+  short: 'Falta estoque',
+  unknown: 'Sem tamanho',
+}
+
+export function formatSeparationShortage(stock: ProductionStockResult) {
+  const shortages = stock.shortages.map((item) => `${item.flavorKey} ${item.packSizeGrams} g (${item.onHand})`)
+  const parts = [
+    shortages.length ? `Separado com estoque negativo: ${shortages.join(', ')}.` : '',
+    stock.unsized > 0 ? `${stock.unsized} linhas sem tamanho.` : '',
+  ].filter(Boolean)
+  return parts.join(' ')
+}
 
 export const PRODUCTION_STATUS_LABELS: Record<ProductionStatus, string> = {
   to_prepare: 'A preparar',

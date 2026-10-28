@@ -212,4 +212,41 @@ describe('ProductionQueuePage', () => {
     expect(readonlyUser.permissions).toContain('production.read')
     expect(readonlyUser.permissions).not.toContain('production.write')
   })
+
+  it('Later delivery is short', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{ ...productionQueueItem, stockCoverage: 'short' }],
+    })
+    renderQueue()
+
+    expect(await screen.findByText('Falta estoque')).toBeInTheDocument()
+    expect(screen.getByText('Falta estoque')).toHaveClass('badge-warning')
+  })
+
+  it('Ready cycle has no badge', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{ ...productionQueueItem, productionStatus: 'ready', stockCoverage: null }],
+    })
+    renderQueue()
+
+    expect(await screen.findByText('Pronto')).toBeInTheDocument()
+    expect(screen.queryByText('Coberto')).not.toBeInTheDocument()
+    expect(screen.queryByText('Falta estoque')).not.toBeInTheDocument()
+    expect(screen.queryByText('Sem tamanho')).not.toBeInTheDocument()
+  })
+
+  it('Marked ready with too little stock', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{ ...productionQueueItem, productionStatus: 'in_production' }],
+      productionStock: { shortages: [{ flavorKey: 'frango', packSizeGrams: 300, onHand: -2 }], unsized: 0 },
+    })
+    renderQueue()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Marcar como pronto' }))
+    expect(await screen.findByText('Separado com estoque negativo: frango 300 g (-2).')).toBeInTheDocument()
+    expect(screen.getByText('Pronto')).toBeInTheDocument()
+  })
 })

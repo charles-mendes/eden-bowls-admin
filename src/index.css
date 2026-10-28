@@ -1205,6 +1205,10 @@ pre {
   background: var(--info-bg);
 }
 
+.stock-row-warning td {
+  background: var(--warning-bg);
+}
+
 .table-shell {
   border-radius: var(--radius-md);
   overflow-x: auto;
