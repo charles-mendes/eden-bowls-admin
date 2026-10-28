@@ -6,6 +6,7 @@ services:
       args:
         VITE_ADMIN_API_BASE_URL: ${VITE_ADMIN_API_BASE_URL}
         VITE_APP_BASE_PATH: ${VITE_APP_BASE_PATH:-/}
+        VITE_DEMO_INSIGHTS: ${VITE_DEMO_INSIGHTS:-false}
     container_name: eden-bowls-admin-qa
     restart: unless-stopped
     ports:
