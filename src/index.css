@@ -3962,8 +3962,62 @@ button.table-link {
   text-align: center;
 }
 
-label.ghost-button {
+label.ghost-button,
+label.primary-button {
   cursor: pointer;
+}
+
+.media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.media-card {
+  display: grid;
+  align-content: start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.media-card .media-thumb {
+  width: 100%;
+  height: auto;
+}
+
+.media-thumb {
+  display: block;
+  width: 72px;
+  height: 72px;
+  aspect-ratio: 1;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.media-name {
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.media-batch-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.media-batch-table td {
+  vertical-align: top;
+}
+
+.media-batch-table select {
+  max-width: 100%;
 }
 
 .sr-only:focus-visible + label.ghost-button {

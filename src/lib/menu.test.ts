@@ -100,6 +100,14 @@ describe('admin menu', () => {
     expect(activeMenuHref('/catalog/recipes/BR/beef', visibleMenuItems(['operator']))).toBe('/catalog/recipes')
   })
 
+  it('shows Biblioteca de imagens right after Receitas in Loja', () => {
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      const hrefs = groupedMenuItems([role]).find((group) => group.group === 'Loja')?.items.map((item) => item.href) ?? []
+      expect(hrefs.indexOf('/catalog/media')).toBe(hrefs.indexOf('/catalog/recipes') + 1)
+    }
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/catalog/media')
+  })
+
   it('lists Visão do negócio and Relatórios after Hoje only with reports.read', () => {
     const overview = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) =>
       groupedMenuItems(roles, permissions).find((group) => group.group === 'Visão geral')?.items.map((item) => item.href)

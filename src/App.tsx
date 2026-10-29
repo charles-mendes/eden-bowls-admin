@@ -11,6 +11,7 @@ import { ProductsPage } from './pages/ProductsPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
 import { RecipeContentPage } from './pages/RecipeContentPage'
 import { RecipesPage } from './pages/RecipesPage'
+import { MediaLibraryPage } from './pages/MediaLibraryPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { ProductionQueuePage } from './pages/ProductionQueuePage'
 import { StockPage } from './pages/StockPage'
@@ -66,6 +67,7 @@ function App() {
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
           <Route path="/catalog/recipes" element={<RecipesPage />} />
           <Route path="/catalog/recipes/:market/:recipeKey" element={<RecipeContentPage />} />
+          <Route path="/catalog/media" element={<MediaLibraryPage />} />
           <Route path="/onboarding/sessions" element={<OnboardingPage />} />
           <Route path="/onboarding/sessions/:id" element={<LegacyCheckoutRedirect />} />
           <Route path="/operations/production" element={<ProductionQueuePage />} />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { checkRecipeImage, fileToImagePayload } from './imageUpload'
+import { checkRecipeImage, checkRecipePlanImage, fileToImagePayload } from './imageUpload'
 
 function file(type: string, size = 1000) {
   return new File([new Uint8Array(size)], 'receita', { type })
@@ -34,6 +34,16 @@ describe('checkRecipeImage', () => {
   it('reports an image that cannot be opened', async () => {
     const result = await checkRecipeImage(file('image/png'), async () => { throw new Error('broken') })
     expect(result).toEqual({ ok: false, message: 'Não foi possível abrir a imagem. Escolha outro arquivo.' })
+  })
+})
+
+describe('checkRecipePlanImage', () => {
+  it('accepts a 400 × 400 square only', async () => {
+    expect(await checkRecipePlanImage(file('image/png'), sized(400, 400))).toEqual({ ok: true, width: 400, height: 400 })
+    expect(await checkRecipePlanImage(file('image/png'), sized(200, 200))).toEqual({
+      ok: false,
+      message: 'A imagem tem 200 × 200 px e precisa ter 400 × 400 px.',
+    })
   })
 })
 
