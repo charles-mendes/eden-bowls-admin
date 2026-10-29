@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { RecipeContentPage } from './RecipeContentPage'
-import { jsonResponse, operatorWriteUser, readonlyUser, recipeContent, recipeImageUrl, recipeLabel, recipePresentation } from '../test/fixtures'
+import { jsonResponse, operatorWriteUser, readonlyUser, recipeContent, recipeLabel, recipePresentation } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -289,6 +289,7 @@ describe('RecipeContentPage', () => {
       expect(await screen.findByText('Miniatura adulto-frango_400.png vinculada. A tela Plano passa a usar esta imagem.')).toBeInTheDocument()
       expect(screen.getByRole('img', { name: 'Miniatura cadastrada do plano' })).toHaveAttribute('src', '/recipe-images/plan-br-21.webp')
       expect(calls.find((call) => call.method === 'PUT' && call.path.endsWith('/plan-image'))?.body).toEqual({ assetId: 21 })
+      expect(screen.getByRole('link', { name: 'Biblioteca de imagens' })).toHaveAttribute('href', '/catalog/media?market=BR&kind=plan')
       expect(calls.some((call) => call.path === '/api/v1/admin/media' && call.search === '?market=BR&kind=plan')).toBe(true)
     })
 
@@ -303,91 +304,119 @@ describe('RecipeContentPage', () => {
     })
   })
 
-  it('stops an image of the wrong size in the panel without sending it', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<RecipeContentPage />, route, pattern)
+  describe('home banner', () => {
+    const linked = { ...recipeContent, imageUrl: '/recipe-images/banner-br-41.webp', imageAssetId: 41 }
 
-    await screen.findByText('Escolher imagem')
-    await user.upload(screen.getByLabelText('Escolher imagem'), png('grande.png', 2048, 1272))
+    it('stops an image of the wrong size in the panel without sending it', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
 
-    expect(await screen.findByText('A imagem tem 2048 × 1272 px e precisa ter 1024 × 636 px.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Salvar imagem' })).not.toBeInTheDocument()
-    expect(calls.some((call) => call.method === 'PUT')).toBe(false)
-  })
+      await screen.findByText('Enviar nova imagem')
+      await user.upload(screen.getByLabelText('Enviar nova imagem'), png('grande.png', 2048, 1272))
 
-  it('previews a valid image and uploads it as base64', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<RecipeContentPage />, route, pattern)
-
-    await screen.findByText('Escolher imagem')
-    await user.upload(screen.getByLabelText('Escolher imagem'), png('banner.png', 1024, 636))
-
-    expect(await screen.findByRole('img', { name: 'Prévia da nova imagem' })).toHaveAttribute('src', 'blob:preview')
-    await user.click(screen.getByRole('button', { name: 'Salvar imagem' }))
-
-    expect(await screen.findByText('Imagem salva. A loja passa a usar esta imagem.')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Imagem cadastrada da receita' })).toHaveAttribute('src', recipeImageUrl)
-    const put = calls.find((call) => call.method === 'PUT')
-    expect(put?.path).toBe('/api/v1/admin/catalog/recipe-content/turkey/image')
-    expect(put?.search).toBe('?market=BR')
-    expect(put?.body).toEqual({ mimeType: 'image/png', imageBase64: btoa('png-bytes') })
-  })
-
-  it('shows the API size refusal in the image card', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser, { recipeImage: 'invalid' })
-    renderAuthedPage(<RecipeContentPage />, route, pattern)
-
-    await screen.findByText('Escolher imagem')
-    await user.upload(screen.getByLabelText('Escolher imagem'), png('banner.png', 1024, 636))
-    await user.click(await screen.findByRole('button', { name: 'Salvar imagem' }))
-
-    const alert = await screen.findByText('A imagem tem 1200 × 800 px e precisa ter 1024 × 636 px.')
-    expect(alert.closest('section')).toContainElement(screen.getByRole('heading', { name: 'Imagem da tela inicial' }))
-  })
-
-  it('keeps the image when the API refuses removal for an active variation', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    installAdminFetchMock(operatorWriteUser, { recipeContent: { ...recipeContent, imageUrl: recipeImageUrl } })
-    renderAuthedPage(<RecipeContentPage />, route, pattern)
-
-    await user.click(await screen.findByRole('button', { name: 'Remover imagem' }))
-
-    expect(await screen.findByText(/não pode ser removida enquanto houver variação ativa/)).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Imagem cadastrada da receita' })).toHaveAttribute('src', recipeImageUrl)
-  })
-
-  it('removes the image when every variation is inactive', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    installAdminFetchMock(operatorWriteUser, {
-      recipeContent: { ...recipeContent, imageUrl: recipeImageUrl, variations: recipeContent.variations.map((item) => ({ ...item, active: false })) },
+      expect(await screen.findByText('A imagem tem 2048 × 1272 px e precisa ter 1024 × 636 px.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Salvar imagem' })).not.toBeInTheDocument()
+      expect(calls.some((call) => call.method === 'PUT')).toBe(false)
     })
-    renderAuthedPage(<RecipeContentPage />, route, pattern)
 
-    await user.click(await screen.findByRole('button', { name: 'Remover imagem' }))
+    it('uploads a valid image into the library and links it as the banner', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
 
-    expect(await screen.findByText('Imagem removida. A loja volta a usar a imagem do código.')).toBeInTheDocument()
-    expect(screen.getByText('Sem imagem cadastrada. A loja usa a imagem que está no código.')).toBeInTheDocument()
-  })
+      await screen.findByText('Enviar nova imagem')
+      await user.upload(screen.getByLabelText('Enviar nova imagem'), png('receita-frango-pt.png', 1024, 636))
 
-  it('shows readonly the image without upload or remove controls', async () => {
-    seedAuth()
-    installAdminFetchMock(readonlyUser, { recipeContent: { ...recipeContent, imageUrl: recipeImageUrl } })
-    renderAuthedPage(<RecipeContentPage />, route, pattern)
+      expect(await screen.findByRole('img', { name: 'Prévia da nova imagem' })).toHaveAttribute('src', 'blob:preview')
+      expect(screen.getByText('Nova imagem: receita-frango-pt.png · 1024 × 636 px. Ainda não foi salva.')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Salvar imagem' }))
 
-    expect(await screen.findByRole('img', { name: 'Imagem cadastrada da receita' })).toBeInTheDocument()
-    expect(screen.queryByText('Escolher imagem')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Remover imagem' })).not.toBeInTheDocument()
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'Salvar imagem' })).not.toBeInTheDocument())
+      expect(await screen.findByText('Imagem salva e guardada na Biblioteca de imagens. A loja passa a usar esta imagem.')).toBeInTheDocument()
+      expect(screen.getByRole('img', { name: 'Imagem cadastrada da receita' })).toHaveAttribute('src', expect.stringMatching(/^\/recipe-images\/banner-br-\d+\.webp$/))
+      const put = calls.find((call) => call.method === 'PUT')
+      expect(put?.path).toBe('/api/v1/admin/catalog/recipe-content/turkey/image')
+      expect(put?.search).toBe('?market=BR')
+      expect(put?.body).toEqual({ mimeType: 'image/png', imageBase64: btoa('png-bytes'), originalFilename: 'receita-frango-pt.png' })
+    })
+
+    it('links a banner chosen from the banner library of the market', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      await user.click(await screen.findByRole('button', { name: 'Escolher imagem da biblioteca' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Escolher imagem da biblioteca' })
+      expect(within(dialog).queryByRole('img', { name: 'adulto-frango_400.png' })).not.toBeInTheDocument()
+      expect(within(dialog).queryByRole('img', { name: 'receita-frango-antiga.png' })).not.toBeInTheDocument()
+      expect(within(dialog).queryByRole('img', { name: 'recipe-chicken.png' })).not.toBeInTheDocument()
+      await user.click(await within(dialog).findByRole('button', { name: 'Usar receita-frango-pt.png' }))
+
+      expect(await screen.findByText('Destaque receita-frango-pt.png vinculado. A loja passa a usar esta imagem.')).toBeInTheDocument()
+      expect(screen.getByRole('img', { name: 'Imagem cadastrada da receita' })).toHaveAttribute('src', '/recipe-images/banner-br-41.webp')
+      expect(calls.find((call) => call.method === 'PUT' && call.path.endsWith('/turkey/image'))?.body).toEqual({ assetId: 41 })
+      expect(calls.some((call) => call.path === '/api/v1/admin/media' && call.search === '?market=BR&kind=banner')).toBe(true)
+    })
+
+    it('shows the API size refusal in the image card', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { recipeImage: 'invalid' })
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      await screen.findByText('Enviar nova imagem')
+      await user.upload(screen.getByLabelText('Enviar nova imagem'), png('banner.png', 1024, 636))
+      await user.click(await screen.findByRole('button', { name: 'Salvar imagem' }))
+
+      const alert = await screen.findByText('A imagem tem 1200 × 800 px e precisa ter 1024 × 636 px.')
+      expect(alert.closest('section')).toContainElement(screen.getByRole('heading', { name: 'Imagem da tela inicial' }))
+    })
+
+    it('keeps the banner when the API refuses to unlink it for an active variation', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      installAdminFetchMock(operatorWriteUser, { recipeContent: linked })
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      await user.click(await screen.findByRole('button', { name: 'Desvincular imagem' }))
+
+      expect(window.confirm).toHaveBeenCalledWith('Desvincular a imagem? Ela sai do destaque da tela inicial e continua na Biblioteca de imagens.')
+      expect(await screen.findByText(/não pode ser removida enquanto houver variação ativa/)).toBeInTheDocument()
+      expect(screen.getByRole('img', { name: 'Imagem cadastrada da receita' })).toHaveAttribute('src', '/recipe-images/banner-br-41.webp')
+    })
+
+    it('unlinks the banner when every variation is inactive, and the image stays in the library', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const { calls } = installAdminFetchMock(operatorWriteUser, {
+        recipeContent: { ...linked, variations: recipeContent.variations.map((item) => ({ ...item, active: false })) },
+      })
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      expect(await screen.findByRole('link', { name: 'Biblioteca de imagens' })).toHaveAttribute('href', '/catalog/media?market=BR')
+      await user.click(screen.getByRole('button', { name: 'Desvincular imagem' }))
+
+      expect(await screen.findByText('Imagem desvinculada. A loja volta a usar a imagem do código, e a imagem continua na Biblioteca de imagens.')).toBeInTheDocument()
+      expect(screen.getByText('Sem imagem cadastrada. A loja usa a imagem que está no código.')).toBeInTheDocument()
+      expect(calls.find((call) => call.method === 'DELETE')?.path).toBe('/api/v1/admin/catalog/recipe-content/turkey/image')
+    })
+
+    it('shows readonly the banner without the library actions', async () => {
+      seedAuth()
+      installAdminFetchMock(readonlyUser, { recipeContent: linked })
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      expect(await screen.findByRole('img', { name: 'Imagem cadastrada da receita' })).toBeInTheDocument()
+      expect(screen.queryByText('Enviar nova imagem')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Escolher imagem da biblioteca' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Desvincular imagem' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Arquivar' })).not.toBeInTheDocument()
+    })
   })
 
   describe('label', () => {

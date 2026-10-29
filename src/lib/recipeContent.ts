@@ -72,6 +72,7 @@ export type RecipeContent = {
   lifeStage: LifeStage
   imageUrl: string | null
   imageUpdatedAt: string | null
+  imageAssetId?: number | null
   planImageUrl?: string | null
   planImageAssetId?: number | null
   planImageUpdatedAt?: string | null

@@ -833,6 +833,11 @@ textarea:disabled {
   overflow-wrap: anywhere;
 }
 
+.field-hint.field-hint-warning {
+  color: var(--warning-text);
+  font-weight: 600;
+}
+
 pre {
   overflow: auto;
   max-height: 280px;
@@ -4001,6 +4006,18 @@ label.primary-button {
   background: var(--surface-muted);
 }
 
+/* Home banner of the library: 1024 x 636. */
+.media-thumb.media-thumb-banner {
+  width: 116px;
+  height: 72px;
+  aspect-ratio: 1024 / 636;
+}
+
+.media-card .media-thumb.media-thumb-banner {
+  width: 100%;
+  height: auto;
+}
+
 .media-name {
   overflow-wrap: anywhere;
   font-weight: 600;
@@ -4015,6 +4032,140 @@ label.primary-button {
 .media-batch-table td {
   vertical-align: top;
 }
+
+/* Library list: the upload is the action of the list heading; the toolbar over the grid has the count and the
+   status filter. */
+.media-upload {
+  flex: 0 0 auto;
+}
+
+.media-upload .primary-button.disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.media-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.media-toolbar p {
+  margin: 0;
+}
+
+.page-heading > .segmented {
+  flex: 0 0 auto;
+}
+
+.page-frame .segmented button {
+  white-space: nowrap;
+}
+
+.media-empty {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-5) var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  text-align: center;
+}
+
+.media-empty p {
+  margin: 0;
+}
+
+.media-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+/* Link dialog of a library image. */
+.media-link {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.media-link-preview {
+  display: block;
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.media-link-preview.media-link-preview-banner {
+  width: 100%;
+  max-width: 360px;
+  height: auto;
+  aspect-ratio: 1024 / 636;
+}
+
+.media-link-block {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.media-link-block h4 {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.media-link-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.media-link-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.media-link-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.media-link-form .field {
+  display: grid;
+  flex: 1 1 220px;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.media-link-form .field select {
+  width: 100%;
+  min-height: 38px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-strong);
+  padding: 8px 10px;
+  font-weight: 400;
+}
+
 
 .media-batch-table select {
   max-width: 100%;

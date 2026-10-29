@@ -15,7 +15,6 @@ import {
   recipeContent as recipeContentFixture,
   recipeList,
   type RecipeListItem,
-  recipeImageUrl,
   promotionCodesList,
   shippingSettings,
   todayOverview,
@@ -132,13 +131,17 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     return asset as Omit<MediaAssetFixture, 'usedBy'>
   })
   const mediaBytes = new Map<number, string>()
-  const planLinks = new Map<string, number>()
+  // market:key → linked image id, per kind: the plan thumbnail and the banner of each recipe.
+  const links = { plan: new Map<string, number>(), banner: new Map<string, number>() }
   if (recipeContent.planImageAssetId != null) {
-    planLinks.set(`${recipeContent.market}:${recipeContent.flavorSlug}`, recipeContent.planImageAssetId)
+    links.plan.set(`${recipeContent.market}:${recipeContent.flavorSlug}`, recipeContent.planImageAssetId)
+  }
+  if (recipeContent.imageAssetId != null) {
+    links.banner.set(`${recipeContent.market}:${recipeContent.flavorSlug}`, recipeContent.imageAssetId)
   }
   const mediaView = (asset: (typeof mediaAssets)[number]) => ({
     ...asset,
-    usedBy: [...planLinks.entries()]
+    usedBy: [...links[asset.kind].entries()]
       .filter(([, id]) => id === asset.id)
       .map(([link]) => {
         const [market, key] = link.split(':')
@@ -146,17 +149,18 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         return { key, name: key === recipeContent.flavorSlug ? recipeContent.name : recipe?.name ?? key, market }
       }),
   })
-  const addMediaAsset = (market: string, originalFilename: string, imageBase64: string) => {
-    const known = mediaAssets.find((asset) => asset.market === market && mediaBytes.get(asset.id) === imageBase64)
+  const addMediaAsset = (kind: MediaAssetFixture['kind'], market: string, originalFilename: string, imageBase64: string) => {
+    const known = mediaAssets.find((asset) => asset.kind === kind && asset.market === market && mediaBytes.get(asset.id) === imageBase64)
     if (known) {
       known.archived = false
       known.archivedAt = null
       return { asset: known, duplicate: true }
     }
     const id = Math.max(100, ...mediaAssets.map((asset) => asset.id)) + 1
+    const [width, height] = kind === 'banner' ? [1024, 636] : [400, 400]
     const asset = {
-      id, kind: 'plan' as const, market, url: `/recipe-images/plan-${market.toLowerCase()}-${id}.webp`, originalFilename, mimeType: 'image/webp',
-      width: 400, height: 400, bytes: 40000, createdAt: '2026-10-28T12:00:00.000Z', archivedAt: null, archived: false,
+      id, kind, market, url: `/recipe-images/${kind}-${market.toLowerCase()}-${id}.webp`, originalFilename, mimeType: 'image/webp',
+      width, height, bytes: 40000, createdAt: '2026-10-28T12:00:00.000Z', archivedAt: null, archived: false,
     }
     mediaAssets = [asset, ...mediaAssets]
     mediaBytes.set(id, imageBase64)
@@ -424,40 +428,19 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(current)
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'PUT') {
-      if (options.recipeImage === 'invalid') {
-        return jsonResponse({
-          message: 'Image must be 1024 x 636 pixels.',
-          details: { code: 'recipe_image_invalid', reason: 'dimensions', width: 1200, height: 800, expectedWidth: 1024, expectedHeight: 636 },
-        }, 422)
-      }
-      recipeContent = { ...recipeContent, imageUrl: recipeImageUrl, imageUpdatedAt: '2026-10-23T12:00:00.000Z' }
-      return jsonResponse(recipeContent)
-    }
-
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'DELETE') {
-      const active = recipeContent.variations.filter((item) => item.active)
-      if (active.length) {
-        return jsonResponse({
-          message: 'The image of a recipe with an active variation cannot be removed.',
-          details: { code: 'recipe_content_in_use', activeVariations: active.map((item) => item.id) },
-        }, 409)
-      }
-      recipeContent = { ...recipeContent, imageUrl: null }
-      return jsonResponse(recipeContent)
-    }
-
     if (path === '/api/v1/admin/media' && method === 'GET') {
       const market = url.searchParams.get('market') || 'BR'
       const archived = url.searchParams.get('archived') === 'true'
+      const kind = url.searchParams.get('kind') || 'plan'
       return jsonResponse({
         market,
-        items: mediaAssets.filter((asset) => asset.market === market && asset.archived === archived).map(mediaView),
+        items: mediaAssets.filter((asset) => asset.kind === kind && asset.market === market && asset.archived === archived).map(mediaView),
       })
     }
 
     if (path === '/api/v1/admin/media' && method === 'POST') {
-      const { asset, duplicate } = addMediaAsset(String(body?.market ?? 'BR'), String(body?.originalFilename ?? ''), String(body?.imageBase64 ?? ''))
+      const kind = body?.kind === 'banner' ? 'banner' : 'plan'
+      const { asset, duplicate } = addMediaAsset(kind, String(body?.market ?? 'BR'), String(body?.originalFilename ?? ''), String(body?.imageBase64 ?? ''))
       return jsonResponse({ ...mediaView(asset), duplicate }, duplicate ? 200 : 201)
     }
 
@@ -474,32 +457,48 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(mediaView(asset))
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/plan-image$/.test(path) && ['PUT', 'DELETE'].includes(method)) {
-      const key = decodeURIComponent(path.split('/')[6])
+    // Banner (`/image`) and plan thumbnail (`/plan-image`): link a library image by id, or upload one into the
+    // library first; DELETE only unlinks. The banner keeps the 409 of a recipe with an active variation.
+    const linkMatch = /^\/api\/v1\/admin\/catalog\/recipe-content\/([^/]+)\/(image|plan-image)$/.exec(path)
+    if (linkMatch && ['PUT', 'DELETE'].includes(method)) {
+      const key = decodeURIComponent(linkMatch[1])
+      const kind = linkMatch[2] === 'image' ? 'banner' : 'plan'
       const market = url.searchParams.get('market') || recipeContent.market
       let asset: (typeof mediaAssets)[number] | null = null
       if (method === 'PUT') {
+        if (kind === 'banner' && options.recipeImage === 'invalid' && body?.assetId == null) {
+          return jsonResponse({
+            message: 'Image must be 1024 x 636 pixels.',
+            details: { code: 'recipe_image_invalid', reason: 'dimensions', width: 1200, height: 800, expectedWidth: 1024, expectedHeight: 636 },
+          }, 422)
+        }
         if (body?.assetId != null) {
           asset = mediaAssets.find((item) => item.id === Number(body.assetId)) ?? null
           if (!asset) return jsonResponse({ message: 'Library image not found.' }, 404)
-          if (asset.market !== market) {
-            return jsonResponse({ message: 'Wrong market.', details: { code: 'media_asset_invalid', reason: 'market' } }, 422)
+          if (asset.kind !== kind || asset.market !== market) {
+            const reason = asset.kind !== kind ? 'kind' : 'market'
+            return jsonResponse({ message: 'Wrong library image.', details: { code: 'media_asset_invalid', reason, assetKind: asset.kind, assetMarket: asset.market } }, 422)
           }
           if (asset.archived) {
             return jsonResponse({ message: 'Archived.', details: { code: 'media_asset_archived' } }, 409)
           }
         } else {
-          asset = addMediaAsset(market, String(body?.originalFilename ?? `${key}-plan`), String(body?.imageBase64 ?? '')).asset
+          asset = addMediaAsset(kind, market, String(body?.originalFilename ?? `${key}-${kind}`), String(body?.imageBase64 ?? '')).asset
         }
-        planLinks.set(`${market}:${key}`, asset.id)
+        links[kind].set(`${market}:${key}`, asset.id)
       } else {
-        planLinks.delete(`${market}:${key}`)
+        const active = recipeContent.variations.filter((item) => item.active)
+        if (kind === 'banner' && key === recipeContent.flavorSlug && active.length) {
+          return jsonResponse({
+            message: 'The image of a recipe with an active variation cannot be removed.',
+            details: { code: 'recipe_content_in_use', activeVariations: active.map((item) => item.id) },
+          }, 409)
+        }
+        links[kind].delete(`${market}:${key}`)
       }
-      const linked = {
-        planImageUrl: asset ? asset.url : null,
-        planImageAssetId: asset ? asset.id : null,
-        planImageUpdatedAt: '2026-10-28T12:00:00.000Z',
-      }
+      const linked = kind === 'banner'
+        ? { imageUrl: asset ? asset.url : null, imageAssetId: asset ? asset.id : null, imageUpdatedAt: '2026-10-28T12:00:00.000Z' }
+        : { planImageUrl: asset ? asset.url : null, planImageAssetId: asset ? asset.id : null, planImageUpdatedAt: '2026-10-28T12:00:00.000Z' }
       if (key === recipeContent.flavorSlug) {
         recipeContent = { ...recipeContent, ...linked }
         return jsonResponse(recipeContent)

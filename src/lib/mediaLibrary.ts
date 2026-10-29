@@ -1,7 +1,8 @@
 import { ApiRequestError } from './api'
-import { recipeContentFailure } from './recipeContent'
+import { recipeContentFailure, type LifeStage } from './recipeContent'
 
-export type MediaKind = 'plan'
+// `plan`: 400 × 400 thumbnail of the plan flavor picker. `banner`: 1024 × 636 home banner of the recipe.
+export type MediaKind = 'plan' | 'banner'
 
 export type MediaUser = { key: string; name: string; market: string }
 
@@ -41,9 +42,12 @@ export function usedByText(usedBy: MediaUser[]) {
   return usedBy.map((user) => `${user.name} (${user.market})`).join(', ')
 }
 
-// Words of the designer's file names, by language. `senior` is both, so the flavors decide the market.
-const LINES: Record<string, { line: 'adult' | 'puppy' | 'senior'; market: 'BR' | 'US' | null }> = {
+// Words of the designer's file names, by language. `senior` is both, so the flavors decide the market. The adult
+// banners are named `receita-carne-pt.png` / `recipe-beef.png`, so `receita` and `recipe` also mean the adult line.
+const LINES: Record<string, { line: LifeStage; market: 'BR' | 'US' | null }> = {
   adulto: { line: 'adult', market: 'BR' },
+  receita: { line: 'adult', market: 'BR' },
+  recipe: { line: 'adult', market: 'US' },
   filhote: { line: 'puppy', market: 'BR' },
   filhotes: { line: 'puppy', market: 'BR' },
   adult: { line: 'adult', market: 'US' },
@@ -66,35 +70,44 @@ const FLAVORS: Record<string, { flavor: string; market: 'BR' | 'US' }> = {
 // Adult recipe keys that are not the flavor word: the adult chicken recipe is `turkey`.
 const ADULT_KEY_BY_FLAVOR: Record<string, string> = { chicken: 'turkey' }
 
-export type PlanLinkSuggestion = { market: string | null; recipeKey: string | null }
+// Language suffix of a file name ("receita-carne-pt.png"), which also votes for the market.
+const LANGUAGE_SUFFIX: Record<string, 'BR' | 'US'> = { pt: 'BR', en: 'US' }
+
+// `line` is the life stage the name points to, so the confirmation can flag a recipe of another line.
+export type RecipeLinkSuggestion = { market: string | null; recipeKey: string | null; line: LifeStage | null }
 
 /**
- * Market and recipe suggested by a file name ("adulto-carne_400.png" → BR `beef`). The market comes from the
- * language of the words; the recipe only when its key is registered in that market. Never saved without the
- * operator confirming the list.
+ * Market and recipe suggested by a file name ("adulto-carne_400.png" or "receita-carne-pt.png" → BR `beef`). The
+ * market comes from the language of the words; the recipe only when its key is registered in that market. Never
+ * saved without the operator confirming the list.
  */
-export function suggestPlanLink(fileName: string, recipeKeysByMarket: Record<string, string[]>): PlanLinkSuggestion {
+export function suggestRecipeLink(fileName: string, recipeKeysByMarket: Record<string, string[]>): RecipeLinkSuggestion {
   const stem = fileName
     .toLowerCase()
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .replace(/\.[a-z0-9]+$/, '')
     .replace(/[_-](200|400)$/, '')
-  const words = stem.split(/[^a-z0-9]+/).filter(Boolean)
+  const language = /[_-](pt|en)$/.exec(stem)?.[1]
+  const words = (language ? stem.slice(0, -language.length - 1) : stem).split(/[^a-z0-9]+/).filter(Boolean)
   const lines = words.map((word) => LINES[word]).filter(Boolean)
   const flavors = words.map((word) => FLAVORS[word]).filter(Boolean)
-  const markets = new Set([...lines.map((item) => item.market), ...flavors.map((item) => item.market)].filter(Boolean))
+  const markets = new Set([
+    ...lines.map((item) => item.market),
+    ...flavors.map((item) => item.market),
+    language ? LANGUAGE_SUFFIX[language] : null,
+  ].filter(Boolean))
   const market = markets.size === 1 ? [...markets][0] as string : null
-  if (!market || lines.length !== 1 || flavors.length === 0 || words.length !== lines.length + flavors.length) {
-    return { market, recipeKey: null }
+  const line = lines.length === 1 ? lines[0].line : null
+  if (!market || !line || flavors.length === 0 || words.length !== lines.length + flavors.length) {
+    return { market, recipeKey: null, line }
   }
 
-  const { line } = lines[0]
   const flavorWords = flavors.map((item) => item.flavor)
   const recipeKey = line === 'adult'
     ? (flavorWords.length === 1 ? ADULT_KEY_BY_FLAVOR[flavorWords[0]] ?? flavorWords[0] : null)
     : `${line}-${flavorWords.join('-')}`
-  return { market, recipeKey: recipeKey && (recipeKeysByMarket[market] ?? []).includes(recipeKey) ? recipeKey : null }
+  return { market, recipeKey: recipeKey && (recipeKeysByMarket[market] ?? []).includes(recipeKey) ? recipeKey : null, line }
 }
 
 // Portuguese text for the library refusals; image checks and anything else follow the recipe content texts.
@@ -109,7 +122,12 @@ export function mediaFailure(error: unknown, fallback: string) {
       return 'Esta imagem está arquivada. Restaure na Biblioteca de imagens antes de usar.'
     }
     if (error.code === 'media_asset_invalid') {
-      if (details.reason === 'market') return 'A imagem precisa ser uma miniatura do mesmo mercado da receita.'
+      if (details.reason === 'market') return 'A imagem precisa ser do mesmo mercado da receita.'
+      if (details.reason === 'kind') {
+        return details.assetKind === 'plan'
+          ? 'Esta imagem é uma miniatura do plano. Escolha um destaque (1024 × 636 px).'
+          : 'Esta imagem é um destaque da tela inicial. Escolha uma miniatura (400 × 400 px).'
+      }
       return 'Envie uma imagem nova ou escolha uma da biblioteca.'
     }
     if (error.status === 404 && !error.code) {
