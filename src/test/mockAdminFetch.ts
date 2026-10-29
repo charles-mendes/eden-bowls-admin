@@ -10,6 +10,8 @@ import {
   operatorWriteUser,
   productDetail,
   productsList,
+  mediaAssets as mediaAssetsFixture,
+  type MediaAssetFixture,
   recipeContent as recipeContentFixture,
   recipeList,
   type RecipeListItem,
@@ -103,6 +105,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   recipeContent?: typeof recipeContentFixture
   recipes?: RecipeListItem[]
   recipeImage?: 'invalid'
+  mediaAssets?: MediaAssetFixture[]
   // Answered before the fixed routes; return undefined to fall through.
   routes?: (call: FetchCall) => Response | undefined
 } = {}) {
@@ -120,6 +123,44 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   let recipeContent = {
     ...(options.recipeContent ?? recipeContentFixture),
     variations: (options.recipeContent ?? recipeContentFixture).variations.map((item) => ({ ...item })),
+  }
+
+  // Image library: assets without their usedBy, and the recipe each market:key links to.
+  let mediaAssets = (options.mediaAssets ?? mediaAssetsFixture).map((item) => {
+    const asset: Omit<MediaAssetFixture, 'usedBy'> & { usedBy?: unknown } = { ...item }
+    delete asset.usedBy
+    return asset as Omit<MediaAssetFixture, 'usedBy'>
+  })
+  const mediaBytes = new Map<number, string>()
+  const planLinks = new Map<string, number>()
+  if (recipeContent.planImageAssetId != null) {
+    planLinks.set(`${recipeContent.market}:${recipeContent.flavorSlug}`, recipeContent.planImageAssetId)
+  }
+  const mediaView = (asset: (typeof mediaAssets)[number]) => ({
+    ...asset,
+    usedBy: [...planLinks.entries()]
+      .filter(([, id]) => id === asset.id)
+      .map(([link]) => {
+        const [market, key] = link.split(':')
+        const recipe = recipes.find((item) => item.key === key)
+        return { key, name: key === recipeContent.flavorSlug ? recipeContent.name : recipe?.name ?? key, market }
+      }),
+  })
+  const addMediaAsset = (market: string, originalFilename: string, imageBase64: string) => {
+    const known = mediaAssets.find((asset) => asset.market === market && mediaBytes.get(asset.id) === imageBase64)
+    if (known) {
+      known.archived = false
+      known.archivedAt = null
+      return { asset: known, duplicate: true }
+    }
+    const id = Math.max(100, ...mediaAssets.map((asset) => asset.id)) + 1
+    const asset = {
+      id, kind: 'plan' as const, market, url: `/recipe-images/plan-${market.toLowerCase()}-${id}.webp`, originalFilename, mimeType: 'image/webp',
+      width: 400, height: 400, bytes: 40000, createdAt: '2026-10-28T12:00:00.000Z', archivedAt: null, archived: false,
+    }
+    mediaAssets = [asset, ...mediaAssets]
+    mediaBytes.set(id, imageBase64)
+    return { asset, duplicate: false }
   }
 
   const queueItems = (options.productionQueue ?? [{
@@ -406,11 +447,64 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(recipeContent)
     }
 
+    if (path === '/api/v1/admin/media' && method === 'GET') {
+      const market = url.searchParams.get('market') || 'BR'
+      const archived = url.searchParams.get('archived') === 'true'
+      return jsonResponse({
+        market,
+        items: mediaAssets.filter((asset) => asset.market === market && asset.archived === archived).map(mediaView),
+      })
+    }
+
+    if (path === '/api/v1/admin/media' && method === 'POST') {
+      const { asset, duplicate } = addMediaAsset(String(body?.market ?? 'BR'), String(body?.originalFilename ?? ''), String(body?.imageBase64 ?? ''))
+      return jsonResponse({ ...mediaView(asset), duplicate }, duplicate ? 200 : 201)
+    }
+
+    if (/^\/api\/v1\/admin\/media\/[^/]+\/(archive|restore)$/.test(path) && method === 'POST') {
+      const [, , , , , id, action] = path.split('/')
+      const asset = mediaAssets.find((item) => item.id === Number(id))
+      if (!asset) return jsonResponse({ message: 'Library image not found.' }, 404)
+      const usedBy = mediaView(asset).usedBy
+      if (action === 'archive' && usedBy.length > 0) {
+        return jsonResponse({ message: 'A library image in use cannot be archived.', details: { code: 'media_asset_in_use', usedBy } }, 409)
+      }
+      asset.archived = action === 'archive'
+      asset.archivedAt = asset.archived ? '2026-10-28T12:00:00.000Z' : null
+      return jsonResponse(mediaView(asset))
+    }
+
     if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/plan-image$/.test(path) && ['PUT', 'DELETE'].includes(method)) {
-      recipeContent = method === 'PUT'
-        ? { ...recipeContent, planImageUrl: '/recipe-images/recipe-br-turkey-plan-1.webp', planImageUpdatedAt: '2026-10-27T12:00:00.000Z' }
-        : { ...recipeContent, planImageUrl: null }
-      return jsonResponse(recipeContent)
+      const key = decodeURIComponent(path.split('/')[6])
+      const market = url.searchParams.get('market') || recipeContent.market
+      let asset: (typeof mediaAssets)[number] | null = null
+      if (method === 'PUT') {
+        if (body?.assetId != null) {
+          asset = mediaAssets.find((item) => item.id === Number(body.assetId)) ?? null
+          if (!asset) return jsonResponse({ message: 'Library image not found.' }, 404)
+          if (asset.market !== market) {
+            return jsonResponse({ message: 'Wrong market.', details: { code: 'media_asset_invalid', reason: 'market' } }, 422)
+          }
+          if (asset.archived) {
+            return jsonResponse({ message: 'Archived.', details: { code: 'media_asset_archived' } }, 409)
+          }
+        } else {
+          asset = addMediaAsset(market, String(body?.originalFilename ?? `${key}-plan`), String(body?.imageBase64 ?? '')).asset
+        }
+        planLinks.set(`${market}:${key}`, asset.id)
+      } else {
+        planLinks.delete(`${market}:${key}`)
+      }
+      const linked = {
+        planImageUrl: asset ? asset.url : null,
+        planImageAssetId: asset ? asset.id : null,
+        planImageUpdatedAt: '2026-10-28T12:00:00.000Z',
+      }
+      if (key === recipeContent.flavorSlug) {
+        recipeContent = { ...recipeContent, ...linked }
+        return jsonResponse(recipeContent)
+      }
+      return jsonResponse({ ...recipeContent, flavorSlug: key, market, ...linked })
     }
 
     if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/presentation$/.test(path) && method === 'PUT') {

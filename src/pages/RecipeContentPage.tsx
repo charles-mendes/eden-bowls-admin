@@ -295,7 +295,7 @@ export function RecipeContentPage() {
 
   const deleteRecipe = async () => {
     if (!token || !canWrite || busy || !content) return
-    const confirmed = window.confirm(`Excluir a receita "${content.name}"? A imagem e o rótulo cadastrados também saem. Não pode ser desfeito.`)
+    const confirmed = window.confirm(`Excluir a receita "${content.name}"? A imagem da tela inicial e o rótulo cadastrados também saem; a miniatura do plano continua na Biblioteca de imagens. Não pode ser desfeito.`)
     if (!confirmed) return
     try {
       setBusy(true)

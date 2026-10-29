@@ -465,6 +465,7 @@ export const recipeContent = {
   imageUrl: null as string | null,
   imageUpdatedAt: null as string | null,
   planImageUrl: null as string | null,
+  planImageAssetId: null as number | null,
   planImageUpdatedAt: null as string | null,
   label: null as RecipeLabelFixture | null,
   labelUpdatedAt: null as string | null,
@@ -477,6 +478,38 @@ export const recipeContent = {
     { id: 'var-2', name: 'Frango 500g', sku: 'BOWL-2', active: false, productId: 'prod-1', productName: 'Bowl Adulto' },
   ],
 }
+
+export type MediaAssetFixture = {
+  id: number
+  kind: 'plan'
+  market: string
+  url: string
+  originalFilename: string
+  mimeType: string
+  width: number | null
+  height: number | null
+  bytes: number | null
+  createdAt: string | null
+  archivedAt: string | null
+  archived: boolean
+  usedBy: Array<{ key: string; name: string; market: string }>
+}
+
+// Plan thumbnails of the image library: one active and one archived in BR, one in US.
+export const mediaAssets: MediaAssetFixture[] = [
+  {
+    id: 21, kind: 'plan', market: 'BR', url: '/recipe-images/plan-br-21.webp', originalFilename: 'adulto-frango_400.png', mimeType: 'image/webp',
+    width: 400, height: 400, bytes: 41000, createdAt: '2026-10-28T10:00:00.000Z', archivedAt: null, archived: false, usedBy: [],
+  },
+  {
+    id: 22, kind: 'plan', market: 'BR', url: '/recipe-images/plan-br-22.webp', originalFilename: 'adulto-frango-antiga_400.png', mimeType: 'image/webp',
+    width: 400, height: 400, bytes: 39000, createdAt: '2026-10-20T10:00:00.000Z', archivedAt: '2026-10-21T10:00:00.000Z', archived: true, usedBy: [],
+  },
+  {
+    id: 31, kind: 'plan', market: 'US', url: '/recipe-images/plan-us-31.webp', originalFilename: 'adult-chicken_400.png', mimeType: 'image/webp',
+    width: 400, height: 400, bytes: 40000, createdAt: '2026-10-28T10:00:00.000Z', archivedAt: null, archived: false, usedBy: [],
+  },
+]
 
 export type RecipeListItem = {
   key: string

@@ -73,6 +73,7 @@ export type RecipeContent = {
   imageUrl: string | null
   imageUpdatedAt: string | null
   planImageUrl?: string | null
+  planImageAssetId?: number | null
   planImageUpdatedAt?: string | null
   label: Partial<RecipeLabel> | null
   labelUpdatedAt: string | null

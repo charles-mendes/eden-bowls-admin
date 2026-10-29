@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Dialog } from './Dialog'
 import { Section } from './Section'
 import { apiRequest } from '../lib/api'
 import { RECIPE_PLAN_IMAGE_SIZES, checkRecipePlanImage, fileToImagePayload, type ImagePayload } from '../lib/imageUpload'
-import { recipeContentFailure, recipeContentPath, type RecipeContent } from '../lib/recipeContent'
+import { mediaFailure, mediaListPath, usedByText, type MediaAsset } from '../lib/mediaLibrary'
+import { recipeContentPath, type RecipeContent } from '../lib/recipeContent'
 
 type Notice = { tone: 'success' | 'error'; text: string } | null
 
-type PendingImage = { payload: ImagePayload; previewUrl: string; fileName: string }
+type PendingImage = { payload: ImagePayload; previewUrl: string; fileName: string; sizeText: string }
 
 const SIZES_TEXT = RECIPE_PLAN_IMAGE_SIZES.map((side) => `${side} × ${side} px`).join(' ou ')
 
-// Package thumbnail of the plan flavor picker, apart from the home banner. Optional: without it the plan
-// shows the banner image.
+// Package thumbnail of the plan flavor picker, apart from the home banner: a library image the recipe links to
+// (plan-image-library). Optional: without it the plan shows the banner image. Unlinking keeps the image in the
+// library; archiving only happens there.
 export function RecipePlanImageSection({ token, market, recipeKey, content, canWrite, onSaved }: {
   token: string | null
   market: string
@@ -23,6 +27,8 @@ export function RecipePlanImageSection({ token, market, recipeKey, content, canW
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
   const [saving, setSaving] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [library, setLibrary] = useState<{ items: MediaAsset[] | null; error: string }>({ items: null, error: '' })
   const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => () => {
@@ -45,42 +51,66 @@ export function RecipePlanImageSection({ token, market, recipeKey, content, canW
     }
     try {
       const payload = await fileToImagePayload(file)
-      setPendingImage({ payload, previewUrl: URL.createObjectURL(file), fileName: `${file.name} · ${check.width} × ${check.height} px` })
+      setPendingImage({ payload, previewUrl: URL.createObjectURL(file), fileName: file.name, sizeText: `${check.width} × ${check.height} px` })
     } catch (readError) {
       clearPending()
       setNotice({ tone: 'error', text: readError instanceof Error ? readError.message : 'Falha ao ler a imagem.' })
     }
   }
 
-  const saveImage = async () => {
-    if (!token || !pendingImage || saving) return
+  const link = async (body: Record<string, unknown>, success: string) => {
+    if (!token || saving) return false
     try {
       setSaving(true)
-      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/plan-image'), {
-        token,
-        method: 'PUT',
-        body: pendingImage.payload,
-      })
+      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/plan-image'), { token, method: 'PUT', body })
       onSaved(saved)
-      clearPending()
-      setNotice({ tone: 'success', text: 'Miniatura salva. A tela Plano passa a usar esta imagem.' })
+      setNotice({ tone: 'success', text: success })
+      return true
     } catch (requestError) {
-      setNotice({ tone: 'error', text: recipeContentFailure(requestError, 'Falha ao salvar a miniatura.') })
+      setNotice({ tone: 'error', text: mediaFailure(requestError, 'Falha ao salvar a miniatura.') })
+      return false
     } finally {
       setSaving(false)
     }
   }
 
-  const removeImage = async () => {
+  const saveImage = async () => {
+    if (!pendingImage) return
+    const saved = await link(
+      { ...pendingImage.payload, originalFilename: pendingImage.fileName },
+      'Miniatura salva e guardada na Biblioteca de imagens. A tela Plano passa a usar esta imagem.',
+    )
+    if (saved) clearPending()
+  }
+
+  const openPicker = async () => {
+    if (!token) return
+    setNotice(null)
+    setPickerOpen(true)
+    setLibrary({ items: null, error: '' })
+    try {
+      const response = await apiRequest<{ items: MediaAsset[] }>(mediaListPath(market), { token })
+      setLibrary({ items: response.items, error: '' })
+    } catch (requestError) {
+      setLibrary({ items: null, error: mediaFailure(requestError, 'Falha ao carregar a biblioteca.') })
+    }
+  }
+
+  const pickAsset = async (asset: MediaAsset) => {
+    const saved = await link({ assetId: asset.id }, `Miniatura ${asset.originalFilename} vinculada. A tela Plano passa a usar esta imagem.`)
+    if (saved) setPickerOpen(false)
+  }
+
+  const unlinkImage = async () => {
     if (!token || saving) return
-    if (!window.confirm('Remover a miniatura do plano? A tela Plano volta a usar a imagem da tela inicial.')) return
+    if (!window.confirm('Desvincular a miniatura? A imagem sai do card do plano e continua na Biblioteca de imagens.')) return
     try {
       setSaving(true)
       const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/plan-image'), { token, method: 'DELETE' })
       onSaved(saved)
-      setNotice({ tone: 'success', text: 'Miniatura removida. A tela Plano volta a usar a imagem da tela inicial.' })
+      setNotice({ tone: 'success', text: 'Miniatura desvinculada. A tela Plano volta a usar a imagem da tela inicial, e a imagem continua na Biblioteca de imagens.' })
     } catch (requestError) {
-      setNotice({ tone: 'error', text: recipeContentFailure(requestError, 'Falha ao remover a miniatura.') })
+      setNotice({ tone: 'error', text: mediaFailure(requestError, 'Falha ao desvincular a miniatura.') })
     } finally {
       setSaving(false)
     }
@@ -92,7 +122,7 @@ export function RecipePlanImageSection({ token, market, recipeKey, content, canW
   return (
     <Section
       title="Miniatura do plano"
-      description={`Embalagem no seletor de sabores da tela Plano. PNG, JPEG ou WebP quadrado com ${SIZES_TEXT} e até 5 MB. Opcional: sem ela, o plano usa a imagem da tela inicial.`}
+      description={`Embalagem no seletor de sabores da tela Plano. PNG, JPEG ou WebP quadrado com ${SIZES_TEXT} e até 5 MB. Toda miniatura fica guardada na Biblioteca de imagens. Opcional: sem ela, o plano usa a imagem da tela inicial.`}
     >
       {notice ? (
         <div className={notice.tone === 'error' ? 'alert' : 'success'} role={notice.tone === 'error' ? 'alert' : 'status'}>
@@ -114,11 +144,14 @@ export function RecipePlanImageSection({ token, market, recipeKey, content, canW
         <div className="recipe-image-side">
           <p className="field-hint">
             {pendingImage
-              ? `Nova miniatura: ${pendingImage.fileName}. Ainda não foi salva.`
-              : stored ? 'Miniatura cadastrada no painel.' : 'Nenhuma miniatura cadastrada no painel.'}
+              ? `Nova miniatura: ${pendingImage.fileName} · ${pendingImage.sizeText}. Ainda não foi salva.`
+              : stored ? 'Miniatura vinculada da Biblioteca de imagens.' : 'Nenhuma miniatura vinculada.'}
           </p>
           {canWrite ? (
             <div className="inline-actions">
+              <button className="ghost-button" type="button" disabled={saving} onClick={() => void openPicker()}>
+                Escolher da biblioteca
+              </button>
               <input
                 ref={fileInput}
                 id="recipe-plan-image-file"
@@ -127,7 +160,7 @@ export function RecipePlanImageSection({ token, market, recipeKey, content, canW
                 accept="image/png,image/jpeg,image/webp"
                 onChange={(event) => void chooseImage(event.target.files?.[0])}
               />
-              <label className="ghost-button" htmlFor="recipe-plan-image-file">Escolher miniatura</label>
+              <label className="ghost-button" htmlFor="recipe-plan-image-file">Enviar nova</label>
               {pendingImage ? (
                 <>
                   <button className="primary-button" type="button" disabled={saving} onClick={() => void saveImage()}>
@@ -139,14 +172,57 @@ export function RecipePlanImageSection({ token, market, recipeKey, content, canW
                 </>
               ) : null}
               {!pendingImage && stored ? (
-                <button className="danger-button" type="button" disabled={saving} onClick={() => void removeImage()}>
-                  Remover miniatura
+                <button className="ghost-button" type="button" disabled={saving} onClick={() => void unlinkImage()}>
+                  Desvincular miniatura
                 </button>
               ) : null}
             </div>
           ) : null}
+          {!pendingImage && stored && canWrite ? (
+            <p className="field-hint">
+              Desvincular só tira a imagem do card. Ela continua na{' '}
+              <Link to={`/catalog/media?market=${encodeURIComponent(market)}`}>Biblioteca de imagens</Link>.
+            </p>
+          ) : null}
         </div>
       </div>
+
+      <Dialog
+        open={pickerOpen}
+        title="Escolher da biblioteca"
+        description={`Miniaturas do mercado ${market} que não estão arquivadas.`}
+        onClose={() => { if (!saving) setPickerOpen(false) }}
+        footer={<button className="ghost-button" type="button" disabled={saving} onClick={() => setPickerOpen(false)}>Fechar</button>}
+      >
+        {library.error ? <div className="alert" role="alert">{library.error}</div> : null}
+        {library.items === null && !library.error ? <p className="muted">Carregando a biblioteca.</p> : null}
+        {library.items && library.items.length === 0 ? (
+          <p className="muted">Nenhuma miniatura na biblioteca deste mercado. Use Enviar nova.</p>
+        ) : null}
+        <ul className="media-grid">
+          {(library.items ?? []).map((asset) => {
+            const current = asset.id === content.planImageAssetId
+            return (
+              <li key={asset.id} className="media-card">
+                <img className="media-thumb" src={asset.url} alt={asset.originalFilename} />
+                <div className="cell-stack">
+                  <span className="media-name">{asset.originalFilename}</span>
+                  {asset.usedBy.length > 0 ? <span className="cell-meta">Em uso por {usedByText(asset.usedBy)}</span> : null}
+                </div>
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={saving || current}
+                  aria-label={current ? `${asset.originalFilename} já é a miniatura` : `Usar ${asset.originalFilename}`}
+                  onClick={() => void pickAsset(asset)}
+                >
+                  {current ? 'Miniatura atual' : 'Usar esta'}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      </Dialog>
     </Section>
   )
 }

@@ -241,41 +241,65 @@ describe('RecipeContentPage', () => {
       expect(screen.getByText('Sem miniatura. O plano usa a imagem da tela inicial.')).toBeInTheDocument()
     })
 
-    it('stops the banner size and saves a 400 px square, then removes it', async () => {
+    it('stops the banner and the 200 px sizes, saves a 400 px square into the library, then unlinks it', async () => {
       const user = userEvent.setup()
       seedAuth()
-      vi.spyOn(window, 'confirm').mockReturnValue(true)
-      const { calls } = installAdminFetchMock(operatorWriteUser)
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const { calls } = installAdminFetchMock(operatorWriteUser, { mediaAssets: [] })
       renderAuthedPage(<RecipeContentPage />, route, pattern)
 
-      const input = await screen.findByLabelText('Escolher miniatura')
+      const input = await screen.findByLabelText('Enviar nova')
       await user.upload(input, png('banner.png', 1024, 636))
-      expect(await screen.findByText('A imagem tem 1024 × 636 px e precisa ter 400 × 400 px ou 200 × 200 px.')).toBeInTheDocument()
+      expect(await screen.findByText('A imagem tem 1024 × 636 px e precisa ter 400 × 400 px.')).toBeInTheDocument()
+      await user.upload(input, png('pequena.png', 200, 200))
+      expect(await screen.findByText('A imagem tem 200 × 200 px e precisa ter 400 × 400 px.')).toBeInTheDocument()
       expect(calls.some((call) => call.path.endsWith('/plan-image'))).toBe(false)
 
       await user.upload(input, png('pacote.png', 400, 400))
-      await user.click(await screen.findByRole('button', { name: 'Salvar miniatura' }))
-      expect(await screen.findByText('Miniatura salva. A tela Plano passa a usar esta imagem.')).toBeInTheDocument()
-      expect(screen.getByRole('img', { name: 'Miniatura cadastrada do plano' })).toHaveAttribute('src', '/recipe-images/recipe-br-turkey-plan-1.webp')
+      expect(await screen.findByText('Nova miniatura: pacote.png · 400 × 400 px. Ainda não foi salva.')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Salvar miniatura' }))
+      expect(await screen.findByText('Miniatura salva e guardada na Biblioteca de imagens. A tela Plano passa a usar esta imagem.')).toBeInTheDocument()
+      expect(screen.getByRole('img', { name: 'Miniatura cadastrada do plano' })).toHaveAttribute('src', '/recipe-images/plan-br-101.webp')
       expect(calls.find((call) => call.method === 'PUT' && call.path.endsWith('/plan-image'))).toMatchObject({
         path: '/api/v1/admin/catalog/recipe-content/turkey/plan-image',
         search: '?market=BR',
-        body: { mimeType: 'image/png' },
+        body: { mimeType: 'image/png', originalFilename: 'pacote.png' },
       })
+      expect(screen.queryByRole('button', { name: 'Remover miniatura' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Arquivar' })).not.toBeInTheDocument()
 
-      await user.click(screen.getByRole('button', { name: 'Remover miniatura' }))
-      expect(await screen.findByText('Miniatura removida. A tela Plano volta a usar a imagem da tela inicial.')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Desvincular miniatura' }))
+      expect(confirm).toHaveBeenCalledWith('Desvincular a miniatura? A imagem sai do card do plano e continua na Biblioteca de imagens.')
+      expect(await screen.findByText('Miniatura desvinculada. A tela Plano volta a usar a imagem da tela inicial, e a imagem continua na Biblioteca de imagens.')).toBeInTheDocument()
       expect(calls.some((call) => call.method === 'DELETE' && call.path.endsWith('/plan-image'))).toBe(true)
     })
 
-    it('accepts a 200 px square', async () => {
+    it('links a thumbnail chosen from the library of the market', async () => {
       const user = userEvent.setup()
       seedAuth()
-      installAdminFetchMock(operatorWriteUser)
+      const { calls } = installAdminFetchMock(operatorWriteUser)
       renderAuthedPage(<RecipeContentPage />, route, pattern)
 
-      await user.upload(await screen.findByLabelText('Escolher miniatura'), png('pequena.png', 200, 200))
-      expect(await screen.findByText('Nova miniatura: pequena.png · 200 × 200 px. Ainda não foi salva.')).toBeInTheDocument()
+      await user.click(await screen.findByRole('button', { name: 'Escolher da biblioteca' }))
+      const dialog = await screen.findByRole('dialog', { name: 'Escolher da biblioteca' })
+      expect(within(dialog).queryByRole('img', { name: 'adulto-frango-antiga_400.png' })).not.toBeInTheDocument()
+      expect(within(dialog).queryByRole('img', { name: 'adult-chicken_400.png' })).not.toBeInTheDocument()
+      await user.click(await within(dialog).findByRole('button', { name: 'Usar adulto-frango_400.png' }))
+
+      expect(await screen.findByText('Miniatura adulto-frango_400.png vinculada. A tela Plano passa a usar esta imagem.')).toBeInTheDocument()
+      expect(screen.getByRole('img', { name: 'Miniatura cadastrada do plano' })).toHaveAttribute('src', '/recipe-images/plan-br-21.webp')
+      expect(calls.find((call) => call.method === 'PUT' && call.path.endsWith('/plan-image'))?.body).toEqual({ assetId: 21 })
+      expect(calls.some((call) => call.path === '/api/v1/admin/media' && call.search === '?market=BR&kind=plan')).toBe(true)
+    })
+
+    it('readonly sees the thumbnail without the library actions', async () => {
+      seedAuth()
+      installAdminFetchMock(readonlyUser, { recipeContent: { ...recipeContent, planImageAssetId: 21, planImageUrl: '/recipe-images/plan-br-21.webp' } })
+      renderAuthedPage(<RecipeContentPage />, route, pattern)
+
+      expect(await screen.findByRole('img', { name: 'Miniatura cadastrada do plano' })).toHaveAttribute('src', '/recipe-images/plan-br-21.webp')
+      expect(screen.queryByRole('button', { name: 'Escolher da biblioteca' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Desvincular miniatura' })).not.toBeInTheDocument()
     })
   })
 
