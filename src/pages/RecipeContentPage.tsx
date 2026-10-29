@@ -1,19 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
-import { RecipePlanImageSection } from '../components/RecipePlanImageSection'
+import { RecipeLibraryImageSection } from '../components/RecipeLibraryImageSection'
 import { RecipePresentationSection } from '../components/RecipePresentationSection'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest } from '../lib/api'
-import {
-  RECIPE_IMAGE_HEIGHT,
-  RECIPE_IMAGE_WIDTH,
-  checkRecipeImage,
-  fileToImagePayload,
-  type ImagePayload,
-} from '../lib/imageUpload'
 import {
   LABEL_STATUS_TEXT,
   LIFE_STAGE_LABELS,
@@ -29,8 +22,6 @@ import {
 } from '../lib/recipeContent'
 
 type Notice = { tone: 'success' | 'error'; text: string } | null
-
-type PendingImage = { payload: ImagePayload; previewUrl: string; fileName: string }
 
 type LabelTextField = 'productName' | 'netWeight' | 'freshnessNote' | 'energyKg' | 'energyPackage' | 'manufacturer'
 type LabelListField = 'ingredients' | 'notices' | 'storage' | 'feeding'
@@ -206,9 +197,6 @@ export function RecipeContentPage() {
   const canWrite = hasPermission('catalog.write')
   const [content, setContent] = useState<RecipeContent | null>(null)
   const [loadError, setLoadError] = useState('')
-  const [pendingImage, setPendingImage] = useState<PendingImage | null>(null)
-  const [imageNotice, setImageNotice] = useState<Notice>(null)
-  const [savingImage, setSavingImage] = useState(false)
   const [label, setLabel] = useState<RecipeLabel>(() => labelForm(null))
   const [labelNotice, setLabelNotice] = useState<Notice>(null)
   const [savingLabel, setSavingLabel] = useState(false)
@@ -218,7 +206,6 @@ export function RecipeContentPage() {
   const [lifeStageNotice, setLifeStageNotice] = useState<Notice>(null)
   const [headerNotice, setHeaderNotice] = useState<Notice>(null)
   const [busy, setBusy] = useState(false)
-  const fileInput = useRef<HTMLInputElement>(null)
 
   const market = marketParam.toUpperCase()
   const listPath = `/catalog/recipes?market=${encodeURIComponent(market)}`
@@ -243,10 +230,6 @@ export function RecipeContentPage() {
       cancelled = true
     }
   }, [token, market, recipeKey])
-
-  useEffect(() => () => {
-    if (pendingImage) URL.revokeObjectURL(pendingImage.previewUrl)
-  }, [pendingImage])
 
   const openRename = () => {
     setRenameValue(content?.name ?? '')
@@ -307,64 +290,6 @@ export function RecipeContentPage() {
     }
   }
 
-  const clearPending = () => {
-    setPendingImage(null)
-    if (fileInput.current) fileInput.current.value = ''
-  }
-
-  const chooseImage = async (file: File | undefined) => {
-    if (!file) return
-    setImageNotice(null)
-    const check = await checkRecipeImage(file)
-    if (!check.ok) {
-      clearPending()
-      setImageNotice({ tone: 'error', text: check.message })
-      return
-    }
-    try {
-      const payload = await fileToImagePayload(file)
-      setPendingImage({ payload, previewUrl: URL.createObjectURL(file), fileName: file.name })
-    } catch (readError) {
-      clearPending()
-      setImageNotice({ tone: 'error', text: readError instanceof Error ? readError.message : 'Falha ao ler a imagem.' })
-    }
-  }
-
-  const saveImage = async () => {
-    if (!token || !pendingImage || !market || savingImage) return
-    try {
-      setSavingImage(true)
-      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/image'), {
-        token,
-        method: 'PUT',
-        body: pendingImage.payload,
-      })
-      setContent(saved)
-      clearPending()
-      setImageNotice({ tone: 'success', text: 'Imagem salva. A loja passa a usar esta imagem.' })
-    } catch (requestError) {
-      setImageNotice({ tone: 'error', text: recipeContentFailure(requestError, 'Falha ao salvar a imagem.') })
-    } finally {
-      setSavingImage(false)
-    }
-  }
-
-  const removeImage = async () => {
-    if (!token || !market || savingImage) return
-    const confirmed = window.confirm('Remover a imagem cadastrada? A loja volta a usar a imagem que está no código.')
-    if (!confirmed) return
-    try {
-      setSavingImage(true)
-      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/image'), { token, method: 'DELETE' })
-      setContent(saved)
-      setImageNotice({ tone: 'success', text: 'Imagem removida. A loja volta a usar a imagem do código.' })
-    } catch (requestError) {
-      setImageNotice({ tone: 'error', text: recipeContentFailure(requestError, 'Falha ao remover a imagem.') })
-    } finally {
-      setSavingImage(false)
-    }
-  }
-
   const updateLabel = (patch: Partial<RecipeLabel>) => setLabel((current) => ({ ...current, ...patch }))
 
   const saveLabel = async (event: FormEvent) => {
@@ -396,7 +321,6 @@ export function RecipeContentPage() {
   const labelLanguage = market === 'US' ? 'Rótulo em inglês · US' : 'Rótulo em português · BR'
   const readOnlyLabel = !canWrite
 
-  const previewUrl = pendingImage?.previewUrl ?? content?.imageUrl ?? null
   const sharedCount = content?.variations.length ?? 0
 
   return (
@@ -495,66 +419,18 @@ export function RecipeContentPage() {
             onSaved={setContent}
           />
 
-          <Section
-            title="Imagem da tela inicial"
-            description={`Banner da receita no carrossel da tela inicial e na página da receita. PNG, JPEG ou WebP com exatamente ${RECIPE_IMAGE_WIDTH} × ${RECIPE_IMAGE_HEIGHT} px e até 5 MB.`}
-          >
-            {imageNotice ? (
-              <div className={imageNotice.tone === 'error' ? 'alert' : 'success'} role={imageNotice.tone === 'error' ? 'alert' : 'status'}>
-                {imageNotice.text}
-              </div>
-            ) : null}
-            <div className="recipe-image">
-              {previewUrl ? (
-                <img
-                  className="recipe-banner-preview"
-                  src={previewUrl}
-                  alt={pendingImage ? 'Prévia da nova imagem' : 'Imagem cadastrada da receita'}
-                />
-              ) : (
-                <div className="recipe-banner-preview recipe-banner-empty">
-                  Sem imagem cadastrada. A loja usa a imagem que está no código.
-                </div>
-              )}
-              <div className="recipe-image-side">
-                <p className="field-hint">
-                  {pendingImage
-                    ? `Nova imagem: ${pendingImage.fileName} · ${RECIPE_IMAGE_WIDTH} × ${RECIPE_IMAGE_HEIGHT} px. Ainda não foi salva.`
-                    : content.imageUrl ? 'Imagem cadastrada no painel.' : 'Nenhuma imagem cadastrada no painel.'}
-                </p>
-                {canWrite ? (
-                  <div className="inline-actions">
-                    <input
-                      ref={fileInput}
-                      id="recipe-image-file"
-                      className="sr-only"
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp"
-                      onChange={(event) => void chooseImage(event.target.files?.[0])}
-                    />
-                    <label className="ghost-button" htmlFor="recipe-image-file">Escolher imagem</label>
-                    {pendingImage ? (
-                      <>
-                        <button className="primary-button" type="button" disabled={savingImage} onClick={() => void saveImage()}>
-                          {savingImage ? 'Salvando…' : 'Salvar imagem'}
-                        </button>
-                        <button className="ghost-button" type="button" disabled={savingImage} onClick={clearPending}>
-                          Descartar
-                        </button>
-                      </>
-                    ) : null}
-                    {!pendingImage && content.imageUrl ? (
-                      <button className="danger-button" type="button" disabled={savingImage} onClick={() => void removeImage()}>
-                        Remover imagem
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </Section>
+          <RecipeLibraryImageSection
+            kind="banner"
+            token={token}
+            market={market}
+            recipeKey={recipeKey}
+            content={content}
+            canWrite={canWrite}
+            onSaved={setContent}
+          />
 
-          <RecipePlanImageSection
+          <RecipeLibraryImageSection
+            kind="plan"
             token={token}
             market={market}
             recipeKey={recipeKey}
