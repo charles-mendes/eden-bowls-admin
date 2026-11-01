@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, getApiBaseUrl } from '../lib/api'
 import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
 import { formatDate, formatStripeStatus } from '../lib/format'
+import { formatNfeAmount, formatNfeDate, formatNfeNumber, nfeStatusLabel, nfeStatusTone, type NfeSummary } from '../lib/nfe'
 import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
 
@@ -71,11 +72,13 @@ export function SubscriptionDetailPage() {
   const [invoices, setInvoices] = useState<InvoiceItem[]>([])
   const [shipments, setShipments] = useState<UpsShipment[]>([])
   const [customerInvoices, setCustomerInvoices] = useState<CustomerInvoice[]>([])
+  const [nfeItems, setNfeItems] = useState<NfeSummary[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const canReadShipping = hasPermission('shipping.read')
   const canWriteShipping = hasPermission('shipping.write')
   const canSyncBilling = hasPermission('billing.subscribers.sync')
+  const canReadNfe = hasPermission('nfe.read')
   const profileInScope = isProfileInScope(data?.customerProfileInScope)
 
   const loadShipments = async () => {
@@ -90,6 +93,24 @@ export function SubscriptionDetailPage() {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar etiquetas UPS')
     }
   }
+
+  const loadNfe = async () => {
+    if (!token || !id || !canReadNfe) return
+    try {
+      const response = await apiRequest<{ success: boolean; data: { items: NfeSummary[] } }>(
+        `/admin/billing/subscriptions/${id}/nfe`,
+        { token },
+      )
+      setNfeItems(response.data?.items || [])
+    } catch {
+      setNfeItems([])
+    }
+  }
+
+  // Apart from the page load: the permissions arrive with the session, after the first render.
+  useEffect(() => {
+    void loadNfe()
+  }, [token, id, canReadNfe])
 
   const loadCustomerInvoices = async () => {
     if (!token || !id) return
@@ -465,6 +486,39 @@ export function SubscriptionDetailPage() {
           </table>
         </div>
       </Section>
+
+      {canReadNfe ? (
+        <Section title="Notas fiscais (NF-e)" description="Emitidas pelo Bling. São outro documento, separado das invoices Eden Bowls acima.">
+          <div className="table-shell table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Número/série</th>
+                  <th>Valor</th>
+                  <th>Data</th>
+                  <th>Erro</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nfeItems.length === 0 ? (
+                  <tr><td colSpan={5}>Nenhuma NF-e para esta assinatura.</td></tr>
+                ) : (
+                  nfeItems.map((item) => (
+                    <tr key={item.id}>
+                      <td><span className={nfeStatusTone(item.status)}>{nfeStatusLabel(item.status)}</span></td>
+                      <td><Link className="table-link" to={`/operations/nfe/${item.id}`}>{formatNfeNumber(item) === '—' ? `Nota ${item.id}` : formatNfeNumber(item)}</Link></td>
+                      <td>{formatNfeAmount(item)}</td>
+                      <td>{formatNfeDate(item.created_at)}</td>
+                      <td>{item.last_error || '—'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      ) : null}
 
       <Section title="Faturas Stripe">
         {canSyncBilling ? (

@@ -51,6 +51,49 @@ export type FetchCall = {
   body: unknown
 }
 
+export const blingConnectionState = { connected: true }
+
+export const nfeSummary = {
+  id: 5,
+  status: 'error',
+  customer_name: 'Ana Souza',
+  customer_email: 'ana@example.com',
+  customer_document: '52998224725',
+  total_minor: 15000,
+  currency: 'brl',
+  nfe_number: '158',
+  nfe_series: '1',
+  access_key: '35251234',
+  last_error: 'Escopo ausente',
+  attempts: 1,
+  created_at: '2026-10-30T12:00:00.000Z',
+  authorized_at: null,
+  can_retry: true,
+}
+
+export const nfeDetail = {
+  ...nfeSummary,
+  user_id: 7,
+  stripe_account: 'br',
+  stripe_subscription_id: 'sub_nfe_1',
+  stripe_invoice_id: 'in_nfe_1',
+  bling_contact_id: 9001,
+  bling_order_id: 9002,
+  bling_nfe_id: 9003,
+  protocol: null,
+  bling_situacao: 4,
+  bling_situacao_label: 'Rejeitada',
+  customer_address: { street: 'Rua A', number: '1', city: 'São Paulo', state: 'SP', zipcode: '01001000' },
+  request_payload: { order: { numeroLoja: 'in_nfe_1' } },
+  response_payload: { order: { id: 9002 } },
+  danfe_url: 'https://bling.example/danfe',
+  pdf_url: null,
+  xml_url: null,
+  next_attempt_at: null,
+  submitted_at: null,
+  updated_at: '2026-10-30T12:00:00.000Z',
+}
+
 export const customerInvoice = {
   id: 12,
   invoice_number: 'EB-2026-000418',
@@ -974,6 +1017,26 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (/^\/api\/v1\/admin\/feedbacks\/\d+$/.test(path) && method === 'DELETE') {
       return jsonResponse({ deleted: true, id: Number(path.split('/').pop()) })
+    }
+
+    if (path === '/api/v1/admin/nfe' && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: [nfeSummary], total: 1, page: 1, perPage: 20, totalPages: 1 } })
+    }
+
+    if (/^\/api\/v1\/admin\/nfe\/\d+$/.test(path) && method === 'GET') {
+      return jsonResponse({ success: true, data: nfeDetail })
+    }
+
+    if (/^\/api\/v1\/admin\/nfe\/\d+\/retry$/.test(path) && method === 'POST') {
+      return jsonResponse({ success: true, data: { ...nfeDetail, status: 'pending', can_retry: false } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/nfe$/.test(path) && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: [nfeSummary] } })
+    }
+
+    if (path === '/api/v1/admin/bling/connection' && method === 'GET') {
+      return jsonResponse({ success: true, data: { configured: true, connected: blingConnectionState.connected } })
     }
 
     if (path === '/api/v1/admin/privacy/requests' && method === 'GET') {

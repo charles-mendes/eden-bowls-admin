@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SubscriptionDetailPage } from './SubscriptionDetailPage'
@@ -305,5 +305,15 @@ describe('SubscriptionDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByText(/flavor_weights/)).toBeInTheDocument()
     })
+  })
+
+  it('lists the NF-e of the subscription apart from the EB invoices', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const section = (await screen.findByRole('heading', { name: 'Notas fiscais (NF-e)' })).closest('section') as HTMLElement
+    await waitFor(() => expect(within(section).getByRole('link', { name: '158 / 1' })).toHaveAttribute('href', '/operations/nfe/5'))
+    expect(section).not.toHaveTextContent('EB-')
   })
 })

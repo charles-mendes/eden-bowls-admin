@@ -33,6 +33,13 @@ describe('admin menu', () => {
     expect(visibleMenuItems(['readonly']).map((item) => item.href)).toContain('/operations/stock')
   })
 
+  it('shows Notas fiscais to admin, operator and readonly, not to the veterinarian', () => {
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role]).map((item) => item.href)).toContain('/operations/nfe')
+    }
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/operations/nfe')
+  })
+
   it('Veterinarian does not see Estoque', () => {
     expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/operations/stock')
   })

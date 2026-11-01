@@ -8,6 +8,8 @@ export function jsonResponse(data: unknown, status = 200) {
 }
 
 export const WRITE_PERMISSIONS = [
+  'nfe.read',
+  'nfe.retry',
   'nutrition.simulate',
   'onboarding.read',
   'shipping.read',
@@ -67,7 +69,7 @@ export const adminUser: AdminUser = {
   email: 'admin@edenbowls.com',
   roles: ['admin'],
   markets: ['BR', 'US'],
-  permissions: [...WRITE_PERMISSIONS, 'market.br', 'market.us'],
+  permissions: ['bling.connect', ...WRITE_PERMISSIONS, 'market.br', 'market.us'],
 }
 
 export const veterinarianUser: AdminUser = {
@@ -99,7 +101,7 @@ export const readonlyUser: AdminUser = {
   email: 'read@edenbowls.com',
   roles: ['readonly'],
   markets: ['BR'],
-  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'reports.read', 'market.br'],
+  permissions: ['onboarding.read', 'shipping.read', 'catalog.read', 'users.read', 'billing.subscribers.read', 'feedbacks.read', 'privacy.requests.read', 'production.read', 'reports.read', 'nfe.read', 'market.br'],
 }
 
 export const productionQueueItem = {
