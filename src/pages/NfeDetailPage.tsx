@@ -11,6 +11,7 @@ import {
   blingNfeUrl,
   blingSituacaoTone,
   formatNfeAmount,
+  NFE_EMAIL_LABELS,
   formatNfeDate,
   formatNfeNumber,
   formatTaxDocument,
@@ -64,6 +65,7 @@ export function NfeDetailPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [retrying, setRetrying] = useState(false)
+  const [resending, setResending] = useState(false)
   const [refreshTick, setRefreshTick] = useState(0)
   const [editing, setEditing] = useState(false)
   const canRetry = hasPermission('nfe.retry')
@@ -93,6 +95,25 @@ export function NfeDetailPage() {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao pedir nova tentativa')
     } finally {
       setRetrying(false)
+    }
+  }
+
+  const resendEmail = async () => {
+    if (!token || !id || !item) return
+    const warning = item.email_status === 'sent'
+      ? `Este e-mail já foi enviado para ${item.email_to}. Enviar de novo?`
+      : `Enviar a nota para ${item.customer_email}? Se a falha anterior foi interrompida, o cliente pode já ter recebido.`
+    if (!window.confirm(warning)) return
+    try {
+      setResending(true)
+      setError('')
+      const response = await apiRequest<{ success: boolean; data: NfeDetail }>(`/admin/nfe/${id}/email`, { token, method: 'POST' })
+      setItem(response.data)
+      setMessage('E-mail na fila de envio.')
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao pedir o envio do e-mail')
+    } finally {
+      setResending(false)
     }
   }
 
@@ -187,6 +208,26 @@ export function NfeDetailPage() {
               { label: 'Endereço', value: addressLine },
             ])} />
           </Section>
+
+          {item.status === 'authorized' && !item.imported ? (
+            <Section
+              title="E-mail ao cliente"
+              description="DANFE e XML, enviados uma vez quando a SEFAZ autoriza a nota."
+              actions={item.can_resend_email && canRetry ? (
+                <button className="ghost-button" type="button" disabled={resending} onClick={() => void resendEmail()}>
+                  {item.email_status === 'sent' ? 'Reenviar e-mail' : 'Enviar e-mail'}
+                </button>
+              ) : undefined}
+            >
+              <MetaGrid items={filled([
+                { label: 'Situação', value: item.email_status ? NFE_EMAIL_LABELS[item.email_status] : 'Não enviado' },
+                { label: 'Destinatário', value: item.email_to || item.customer_email },
+                { label: 'Enviado em', value: item.email_sent_at ? formatNfeDate(item.email_sent_at) : null },
+                { label: 'Motivo', value: item.email_last_error },
+                { label: 'Próxima tentativa', value: item.email_next_attempt_at ? formatNfeDate(item.email_next_attempt_at) : null },
+              ])} />
+            </Section>
+          ) : null}
 
           <section className="nfe-alert nfe-limits" aria-label="Ações feitas no Bling">
             <p><strong>Estas ações não estão disponíveis neste painel</strong>, porque o Bling não as oferece para integrações:</p>

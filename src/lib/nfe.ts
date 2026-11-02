@@ -2,12 +2,23 @@ import { formatDate } from './format'
 
 export type NfeStatus = 'pending' | 'blocked_missing_document' | 'submitted' | 'authorized' | 'rejected' | 'canceled' | 'error'
 
+export type NfeEmailStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'skipped'
+
+export const NFE_EMAIL_LABELS: Record<NfeEmailStatus, string> = {
+  pending: 'Na fila',
+  sending: 'Enviando',
+  sent: 'Enviado',
+  failed: 'Falhou',
+  skipped: 'Não enviado',
+}
+
 // NF-e issued through Bling. Not the Eden Bowls invoice (EB-YYYY-NNNNNN) in customerInvoices.ts.
 export type NfeSummary = {
   id: number
   status: NfeStatus
   customer_name: string | null
   customer_email: string | null
+  can_resend_email?: boolean
   customer_document: string | null
   total_minor: number
   currency: string
@@ -40,6 +51,12 @@ export type NfeDetail = NfeSummary & {
   danfe_url: string | null
   pdf_url: string | null
   xml_url: string | null
+  email_status: NfeEmailStatus | null
+  email_to: string | null
+  email_sent_at: string | null
+  email_attempts: number
+  email_last_error: string | null
+  email_next_attempt_at: string | null
   next_attempt_at: string | null
   submitted_at: string | null
   updated_at: string | null

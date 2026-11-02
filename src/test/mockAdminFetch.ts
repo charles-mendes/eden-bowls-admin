@@ -1066,6 +1066,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse({ success: true, data: { ...nfeDetail, customer_name: 'Ana Correta' } })
     }
 
+    if (/^\/api\/v1\/admin\/nfe\/\d+\/email$/.test(path) && method === 'POST') {
+      return jsonResponse({ success: true, data: { ...nfeDetail, ...nfeDetailState.override, email_status: 'pending' } })
+    }
     if (/^\/api\/v1\/admin\/nfe\/\d+\/retry$/.test(path) && method === 'POST') {
       return jsonResponse({ success: true, data: { ...nfeDetail, status: 'pending', can_retry: false } })
     }

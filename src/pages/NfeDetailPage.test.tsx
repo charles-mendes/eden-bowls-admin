@@ -14,6 +14,41 @@ describe('NfeDetailPage', () => {
     vi.restoreAllMocks()
   })
 
+  it('shows why the email failed and sends it again after confirmation', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    nfeDetailState.override = { status: 'authorized', imported: false, can_resend_email: true, email_status: 'failed', email_last_error: 'smtp down', customer_email: 'ana@example.com' }
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    expect(await screen.findByText('Falhou')).toBeInTheDocument()
+    expect(screen.getByText('smtp down')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Enviar e-mail' }))
+
+    expect(await screen.findByText('E-mail na fila de envio.')).toBeInTheDocument()
+    expect(findCall(calls, 'POST', '/admin/nfe/5/email')).toBeTruthy()
+  })
+
+  it('asks before repeating an email already sent and hides the action from read-only accounts', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    nfeDetailState.override = { status: 'authorized', imported: false, can_resend_email: true, email_status: 'sent', email_to: 'ana@example.com' }
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    const { unmount } = renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    await user.click(await screen.findByRole('button', { name: 'Reenviar e-mail' }))
+    expect(confirm).toHaveBeenCalled()
+    expect(findCall(calls, 'POST', '/admin/nfe/5/email')).toBeUndefined()
+    unmount()
+
+    installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+    expect(await screen.findByText('Enviado')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Reenviar e-mail' })).not.toBeInTheDocument()
+  })
+
   it('shows the ids, the saved payload and the DANFE link', async () => {
     seedAuth()
     installAdminFetchMock(readonlyUser)
