@@ -58,7 +58,7 @@ const TYPE_LABELS: Record<string, string> = {
   deletion: 'Exclusão',
   correction: 'Correção',
   portability: 'Portabilidade',
-  opt_out_share: 'Opt-out de share',
+  opt_out_share: 'Não compartilhar dados',
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -73,6 +73,38 @@ const IDENTITY_LABELS: Record<string, string> = {
   verified_account_email: 'E-mail da conta',
   unverified: 'Não verificado',
 }
+
+const CONSENT_TYPE_LABELS: Record<string, string> = {
+  privacy_policy: 'Política de privacidade',
+  terms: 'Termos de uso',
+  marketing_email: 'E-mails de marketing',
+  analytics: 'Cookies analíticos',
+  ads: 'Cookies de anúncios',
+  share_opt_out: 'Não compartilhar dados',
+}
+
+const CONSENT_STATUS_LABELS: Record<string, string> = {
+  granted: 'Autorizado',
+  denied: 'Não autorizado',
+}
+
+const CONSENT_SOURCE_LABELS: Record<string, string> = {
+  otp_verify: 'Entrada na conta',
+  checkout: 'Compra',
+  banner: 'Aviso de cookies',
+  preferences: 'Preferências do cliente',
+  gpc: 'Sinal do navegador (GPC)',
+  do_not_sell: 'Pedido para não vender dados',
+}
+
+const labelOf = (labels: Record<string, string>, value: string | null | undefined) => {
+  const raw = String(value || '').trim()
+  return labels[raw] || raw || '—'
+}
+
+export const formatConsentType = (value: string | null | undefined) => labelOf(CONSENT_TYPE_LABELS, value)
+export const formatConsentStatus = (value: string | null | undefined) => labelOf(CONSENT_STATUS_LABELS, value)
+export const formatConsentSource = (value: string | null | undefined) => labelOf(CONSENT_SOURCE_LABELS, value)
 
 export function formatPrivacyType(value: string | null | undefined) {
   const raw = String(value || '').trim()

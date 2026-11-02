@@ -19,7 +19,7 @@ import {
 } from '../lib/accountStatus'
 import { MARKET_LABELS, type MarketCode } from '../lib/markets'
 import { BR_STATES, maskCpf } from '../lib/nfe'
-import { formatPrivacyIdentity, formatPrivacyStatus, formatPrivacyType, type UserPrivacySnapshot } from '../lib/privacy'
+import { formatConsentSource, formatConsentStatus, formatConsentType, formatPrivacyIdentity, formatPrivacyStatus, formatPrivacyType, type UserPrivacySnapshot } from '../lib/privacy'
 
 type UserDetail = {
   id: string
@@ -590,17 +590,17 @@ export function UserDetailPage() {
             <div className="page-stack">
               <MetaGrid
                 items={[
-                  { label: 'Marketing', value: privacy?.marketingOptIn ? 'Opt-in' : 'Opt-out' },
-                  { label: 'Cookies analytics', value: privacy?.cookiePreferences?.analytics || '—' },
-                  { label: 'Cookies ads', value: privacy?.cookiePreferences?.ads || '—' },
+                  { label: 'E-mails de marketing', value: formatConsentStatus(privacy?.marketingOptIn ? 'granted' : 'denied') },
+                  { label: 'Cookies analíticos', value: formatConsentStatus(privacy?.cookiePreferences?.analytics) },
+                  { label: 'Cookies de anúncios', value: formatConsentStatus(privacy?.cookiePreferences?.ads) },
                 ]}
               />
               {privacy?.consents?.length ? (
                 <ul className="customer-list">
                   {privacy.consents.slice(0, 8).map((consent) => (
                     <li key={consent.id}>
-                      <span>{consent.consentType}</span>
-                      <span className="muted">{consent.status} · {consent.source}</span>
+                      <span>{formatConsentType(consent.consentType)}</span>
+                      <span className="muted">{formatConsentStatus(consent.status)} · {formatConsentSource(consent.source)}</span>
                     </li>
                   ))}
                 </ul>

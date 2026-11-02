@@ -24,7 +24,9 @@ describe('UserDetailPage', () => {
     })
 
     expect(screen.getByDisplayValue('Rua Augusta 100')).toBeInTheDocument()
-    expect(screen.getByText('Opt-out')).toBeInTheDocument()
+    expect(screen.getAllByText('E-mails de marketing')[0].closest('div')).toHaveTextContent('Não autorizado')
+    expect(screen.getAllByText('Cookies analíticos')[0].closest('div')).toHaveTextContent('Autorizado')
+    expect(screen.queryByText(/Opt-|granted|denied|otp_verify|marketing_email/)).not.toBeInTheDocument()
     expect(calls.some((call) => call.method === 'GET' && call.path === '/api/v1/admin/users/u-ana' && call.authorization === 'Bearer access-token')).toBe(true)
 
     await user.clear(screen.getByLabelText('Instruções'))

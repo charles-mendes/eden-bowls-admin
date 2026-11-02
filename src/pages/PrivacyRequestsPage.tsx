@@ -139,7 +139,7 @@ export function PrivacyRequestsPage() {
                 <option value="deletion">Exclusão</option>
                 <option value="correction">Correção</option>
                 <option value="portability">Portabilidade</option>
-                <option value="opt_out_share">Opt-out de share</option>
+                <option value="opt_out_share">Não compartilhar dados</option>
               </select>
               {type ? (
                 <FilterClearButton label="Limpar tipo" onClear={() => { setType(''); setPage(1) }} />
@@ -220,7 +220,7 @@ export function PrivacyRequestsPage() {
                 <option value="deletion">Exclusão</option>
                 <option value="correction">Correção</option>
                 <option value="portability">Portabilidade</option>
-                <option value="opt_out_share">Opt-out de share</option>
+                <option value="opt_out_share">Não compartilhar dados</option>
               </select>
             </label>
             <MarketSelect
