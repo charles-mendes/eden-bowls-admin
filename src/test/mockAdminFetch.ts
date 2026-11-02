@@ -260,6 +260,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse({ ok: true })
     }
 
+    if (path.endsWith('/fiscal') && method === 'PATCH') {
+      return jsonResponse({ success: true })
+    }
     if (path.endsWith('/delivery') && method === 'PATCH') {
       return jsonResponse({ success: true, data: body })
     }

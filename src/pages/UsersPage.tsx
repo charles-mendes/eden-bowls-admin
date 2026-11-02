@@ -1,20 +1,16 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useState, type MouseEvent } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { AccessFields } from '../components/AccessFields'
+import { accessFormError, accessRoleBody, emptyAccessForm, type AccessForm } from '../lib/accessForm'
 import { PageFrame } from '../components/PageFrame'
 import { Pager } from '../components/Pager'
 import { Dialog } from '../components/Dialog'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate } from '../lib/format'
-import {
-  accountStatusBadgeClass,
-  accountStatusLabel,
-  canToggleCustomerStatus,
-  isDeactivatedStatus,
-  isStaffAccount,
-} from '../lib/accountStatus'
-import { MARKET_LABELS, staffMarketRequired, type MarketCode } from '../lib/markets'
-import { PANEL_ROLE_OPTIONS, primaryRole, roleLabel } from '../lib/roles'
+import { accountStatusBadgeClass, accountStatusLabel } from '../lib/accountStatus'
+import { MARKET_LABELS, type MarketCode } from '../lib/markets'
+import { primaryRole, roleLabel } from '../lib/roles'
 
 type UserItem = {
   id: string
@@ -30,6 +26,7 @@ type UserItem = {
   inviteExpired?: boolean
   deletedAt?: string | null
   markets?: MarketCode[]
+  country?: MarketCode | null
   profile: { fullName: string | null; phone: string | null } | null
 }
 
@@ -41,43 +38,11 @@ type UsersResponse = {
   items: UserItem[]
 }
 
-type AccessForm = {
-  name: string
-  email: string
-  phone: string
-  role: string
-  market: MarketCode | ''
-}
-
-const emptyForm: AccessForm = {
-  name: '',
-  email: '',
-  phone: '',
-  role: '',
-  market: '',
-}
-
-function inviteNeedsResend(item: UserItem) {
-  return item.inviteMailStatus === 'failed' || item.inviteExpired || (item.status === 'pending' && isStaffAccount(item.roles))
-}
-
 const PER_PAGE_OPTIONS = [10, 20, 50, 100]
-
-// What each panel role can do, shown under the role picker.
-const ROLE_HINTS: Record<string, string> = {
-  veterinarian: 'Acessa só o simulador nutricional.',
-  readonly: 'Vê as telas do painel sem alterar nada.',
-  operator: 'Opera pedidos, produção, catálogo e clientes do mercado escolhido.',
-  admin: 'Acesso total, inclusive equipe e papéis, nos dois mercados.',
-}
-
-function panelRoleOf(item: UserItem) {
-  const role = primaryRole(item.storedRoles?.length ? item.storedRoles : item.roles)
-  return role === 'customer' ? '' : role
-}
 
 export function UsersPage() {
   const { token, user, hasPermission } = useAuth()
+  const navigate = useNavigate()
   const [data, setData] = useState<UsersResponse | null>(null)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
@@ -85,14 +50,11 @@ export function UsersPage() {
   const [includeDeleted, setIncludeDeleted] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [form, setForm] = useState<AccessForm>(emptyForm)
-  const [editing, setEditing] = useState<UserItem | null>(null)
+  const [form, setForm] = useState<AccessForm>(emptyAccessForm)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
-  const canWriteStatus = hasPermission('users.status.write')
   const canManageAccess = hasPermission('users.access.write')
-  const showActions = canWriteStatus || canManageAccess
 
   const load = async () => {
     if (!token) return
@@ -117,82 +79,44 @@ export function UsersPage() {
 
   const closeDialog = () => {
     setDialogOpen(false)
-    setEditing(null)
-    setForm(emptyForm)
+    setForm(emptyAccessForm)
     setFormError('')
   }
 
   const openCreate = () => {
-    setEditing(null)
-    setForm(emptyForm)
+    setForm(emptyAccessForm)
     setDialogOpen(true)
     setMessage('')
     setFormError('')
   }
 
-  const openEdit = (item: UserItem) => {
-    setEditing(item)
-    setForm({
-      name: item.profile?.fullName ?? '',
-      email: item.email,
-      phone: item.profile?.phone ?? '',
-      role: panelRoleOf(item),
-      market: item.markets?.includes('US') && !item.markets.includes('BR') ? 'US' : item.markets?.includes('BR') ? 'BR' : '',
-    })
-    setDialogOpen(true)
-    setMessage('')
-    setFormError('')
-  }
-
-  const saveAccess = async () => {
+  const createAccess = async () => {
     if (!token || !canManageAccess) return
-    const email = form.email.trim().toLowerCase()
-    if (!editing && !email) {
-      setFormError('Informe um e-mail válido.')
+    const invalid = accessFormError(form, true)
+    if (invalid) {
+      setFormError(invalid)
       return
     }
-    if (!form.name.trim()) {
-      setFormError('Informe o nome.')
-      return
-    }
-    if (!editing && !form.role) {
-      setFormError('Selecione um papel.')
-      return
-    }
-    if (form.role && staffMarketRequired(form.role) && form.market !== 'BR' && form.market !== 'US') {
-      setFormError('Informe o mercado.')
-      return
-    }
-
-    // A customer edited without picking a role keeps store-only access: the PATCH omits `role`.
-    const roleBody = !form.role
-      ? {}
-      : staffMarketRequired(form.role) ? { role: form.role, market: form.market } : { role: form.role }
-    const accessBody = { name: form.name.trim(), phone: form.phone.trim() || undefined, ...roleBody }
 
     setSaving(true)
     try {
       setError('')
       setFormError('')
-      if (editing) {
-        await apiRequest(`/admin/users/${editing.id}`, {
-          token,
-          method: 'PATCH',
-          body: { ...accessBody, phone: form.phone.trim() || null },
-        })
-        setMessage(`Acesso de ${editing.email} atualizado.`)
-      } else {
-        const created = await apiRequest<UserItem>('/admin/users', {
-          token,
-          method: 'POST',
-          body: { ...accessBody, email, phone: form.phone.trim() || undefined },
-        })
-        setMessage(
-          created.inviteMailStatus === 'failed' || created.inviteMailStatus === 'skipped'
-            ? `Conta de ${created.email} criada, mas o convite não foi enviado — reenviar.`
-            : `Acesso criado para ${created.email}. O convite foi enviado.`,
-        )
-      }
+      const created = await apiRequest<UserItem>('/admin/users', {
+        token,
+        method: 'POST',
+        body: {
+          name: form.name.trim(),
+          email: form.email.trim().toLowerCase(),
+          phone: form.phone.trim() || undefined,
+          ...accessRoleBody(form),
+        },
+      })
+      setMessage(
+        created.inviteMailStatus === 'failed' || created.inviteMailStatus === 'skipped'
+          ? `Conta de ${created.email} criada, mas o convite não foi enviado — reenviar.`
+          : `Acesso criado para ${created.email}. O convite foi enviado.`,
+      )
       closeDialog()
       await load()
     } catch (requestError) {
@@ -202,76 +126,17 @@ export function UsersPage() {
     }
   }
 
-  const toggleStatus = async (item: UserItem) => {
-    if (!token) return
-    const staff = isStaffAccount(item.roles)
-    if (staff && !canManageAccess) return
-    if (!staff && !canWriteStatus) return
-
-    const nextStatus = isDeactivatedStatus(item.status) ? 'active' : 'inactive'
-    const confirmed = window.confirm(
-      nextStatus === 'inactive'
-        ? `Desativar a conta de ${item.email}? As sessões ativas serão encerradas.`
-        : `Reativar a conta de ${item.email}?`,
-    )
-    if (!confirmed) return
-
-    try {
-      setError('')
-      await apiRequest(`/admin/users/${item.id}/status`, {
-        token,
-        method: 'PATCH',
-        body: { status: nextStatus },
-      })
-      setMessage(nextStatus === 'inactive' ? `Conta de ${item.email} desativada.` : `Conta de ${item.email} reativada.`)
-      await load()
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao alterar status da conta')
-    }
+  // The row is a shortcut for the mouse. The link inside it stays the way in for keyboard and screen readers.
+  const openCustomer = (event: MouseEvent<HTMLTableRowElement>, id: string) => {
+    if ((event.target as HTMLElement).closest('a, button')) return
+    if (window.getSelection()?.toString()) return
+    navigate(`/users/${id}`)
   }
-
-  const resendInvite = async (item: UserItem) => {
-    if (!token || !canManageAccess) return
-    const confirmed = window.confirm(`Reenviar convite para ${item.email}? A senha temporária anterior deixa de valer.`)
-    if (!confirmed) return
-
-    try {
-      setError('')
-      const result = await apiRequest<UserItem>(`/admin/users/${item.id}/invite`, { token, method: 'POST' })
-      setMessage(
-        result.inviteMailStatus === 'sent'
-          ? `Convite reenviado para ${item.email}.`
-          : `Não foi possível enviar o convite para ${item.email} — tente de novo.`,
-      )
-      await load()
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao reenviar convite')
-    }
-  }
-
-  const deleteAccess = async (item: UserItem) => {
-    if (!token || !canManageAccess) return
-    const confirmed = window.confirm(`Excluir o acesso de ${item.email}? A conta some da listagem e as sessões são encerradas.`)
-    if (!confirmed) return
-
-    try {
-      setError('')
-      await apiRequest(`/admin/users/${item.id}`, { token, method: 'DELETE' })
-      setMessage(`Acesso de ${item.email} excluído.`)
-      await load()
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao excluir acesso')
-    }
-  }
-
-  const allowlistLocked = Boolean(editing?.lockedByAllowlist)
-  const dialogRole = allowlistLocked ? 'admin' : form.role
-  const editingStaff = Boolean(editing && panelRoleOf(editing))
 
   return (
     <PageFrame
       title="Clientes"
-      description="Contas da loja e do painel. Busque por e-mail ou nome."
+      description="Contas da loja e do painel. Abra uma conta para ver e editar os dados."
       actions={canManageAccess ? (
         <button className="primary-button" type="button" onClick={openCreate}>
           Novo acesso
@@ -318,41 +183,26 @@ export function UsersPage() {
             <thead>
               <tr>
                 <th>Cliente</th>
+                <th>País</th>
                 <th>Status</th>
                 <th>Papel</th>
                 <th>Telefone</th>
                 <th>Criado em</th>
-                {showActions ? <th><span className="sr-only">Ações</span></th> : null}
               </tr>
             </thead>
             <tbody>
               {data.items.length === 0 ? (
                 <tr className="users-empty">
-                  <td colSpan={showActions ? 6 : 5}>Nenhuma conta encontrada{query ? ` para “${query}”` : ''}.</td>
+                  <td colSpan={6}>Nenhuma conta encontrada{query ? ` para “${query}”` : ''}.</td>
                 </tr>
               ) : null}
               {data.items.map((item) => {
-                const staff = isStaffAccount(item.roles)
                 const isSelf = user?.userId === item.id
                 const deleted = Boolean(item.deletedAt)
-                const showCustomerToggle = canWriteStatus
-                  && !staff
-                  && canToggleCustomerStatus(item.status)
-                  && !isSelf
-                  && !deleted
-                const showStaffToggle = canManageAccess
-                  && staff
-                  && canToggleCustomerStatus(item.status)
-                  && !isSelf
-                  && !item.lockedByAllowlist
-                  && !deleted
-                const showEdit = canManageAccess && !isSelf && !deleted
-                const showInvite = canManageAccess && staff && inviteNeedsResend(item) && !isSelf && !deleted
-                const showDelete = canManageAccess && !isSelf && !item.lockedByAllowlist && !deleted
                 const name = item.profile?.fullName
 
                 return (
-                  <tr key={item.id}>
+                  <tr key={item.id} className="users-row" onClick={(event) => openCustomer(event, item.id)}>
                     <td className="users-cell-client">
                       <div className="users-client">
                         {name ? <strong className="users-name">{name}</strong> : null}
@@ -363,6 +213,7 @@ export function UsersPage() {
                         ) : null}
                       </div>
                     </td>
+                    <td className="users-cell-meta" data-label="País">{item.country ? MARKET_LABELS[item.country] : '—'}</td>
                     <td className="users-cell-status">
                       <span className={accountStatusBadgeClass(deleted ? 'deleted' : item.status)}>
                         {accountStatusLabel(deleted ? 'deleted' : item.status)}
@@ -374,29 +225,6 @@ export function UsersPage() {
                     </td>
                     <td className="users-cell-meta" data-label="Telefone">{item.profile?.phone || '—'}</td>
                     <td className="users-cell-meta" data-label="Criado em">{formatDate(item.createdAt)}</td>
-                    {showActions ? (
-                      <td className="users-cell-actions">
-                        <div className="table-actions">
-                          {showEdit ? (
-                            <button className="ghost-button" type="button" onClick={() => openEdit(item)}>Editar</button>
-                          ) : null}
-                          {showInvite ? (
-                            <button className="ghost-button" type="button" onClick={() => void resendInvite(item)}>Reenviar convite</button>
-                          ) : null}
-                          {showCustomerToggle || showStaffToggle ? (
-                            <button className="ghost-button" type="button" onClick={() => void toggleStatus(item)}>
-                              {isDeactivatedStatus(item.status) ? 'Reativar' : 'Desativar'}
-                            </button>
-                          ) : null}
-                          {showDelete ? (
-                            <button className="danger-button" type="button" onClick={() => void deleteAccess(item)}>Excluir</button>
-                          ) : null}
-                          {item.lockedByAllowlist && canManageAccess && !isSelf ? (
-                            <span className="muted users-note">Papel fixado por ADMIN_EMAILS</span>
-                          ) : null}
-                        </div>
-                      </td>
-                    ) : null}
                   </tr>
                 )
               })}
@@ -415,97 +243,21 @@ export function UsersPage() {
 
       <Dialog
         open={dialogOpen}
-        title={editing ? 'Editar acesso' : 'Novo acesso'}
-        description={editing ? editing.email : 'A conta é criada como Pendente e recebe um convite com senha temporária.'}
+        title="Novo acesso"
+        description="A conta é criada como Pendente e recebe um convite com senha temporária."
         onClose={closeDialog}
         footer={(
           <>
             <button className="ghost-button" type="button" onClick={closeDialog}>Cancelar</button>
-            <button className="primary-button" type="button" onClick={() => void saveAccess()} disabled={saving}>
-              {saving ? 'Salvando...' : (editing ? 'Salvar' : 'Criar acesso')}
+            <button className="primary-button" type="button" onClick={() => void createAccess()} disabled={saving}>
+              {saving ? 'Salvando...' : 'Criar acesso'}
             </button>
           </>
         )}
       >
-        <form className="access-form" onSubmit={(event) => { event.preventDefault(); void saveAccess() }}>
-          <fieldset className="access-group">
-            <legend>Dados da conta</legend>
-            <div className="access-fields">
-              <label>
-                Nome
-                <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} required />
-              </label>
-              <label>
-                <span>Telefone <span className="access-optional">opcional</span></span>
-                <input type="tel" value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
-              </label>
-              <label className="access-field-wide">
-                E-mail
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
-                  disabled={Boolean(editing)}
-                  required={!editing}
-                />
-                {editing ? <small className="access-hint">O e-mail não muda depois da criação.</small> : null}
-              </label>
-            </div>
-          </fieldset>
-
-          <fieldset className="access-group">
-            <legend>Acesso ao painel</legend>
-            <div className="access-fields">
-              <label>
-                Papel
-                <select
-                  value={dialogRole}
-                  onChange={(event) => setForm((current) => ({
-                    ...current,
-                    role: event.target.value,
-                    market: event.target.value === 'admin' ? '' : current.market,
-                  }))}
-                  disabled={allowlistLocked}
-                  required={!editing}
-                >
-                  {!editingStaff ? <option value="">Selecione um papel</option> : null}
-                  {PANEL_ROLE_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </select>
-              </label>
-              {dialogRole && staffMarketRequired(dialogRole) ? (
-                <label>
-                  Mercado
-                  <select
-                    value={form.market}
-                    onChange={(event) => setForm((current) => ({ ...current, market: event.target.value === 'US' ? 'US' : event.target.value === 'BR' ? 'BR' : '' }))}
-                    disabled={allowlistLocked}
-                    required
-                  >
-                    <option value="">Selecione</option>
-                    <option value="BR">{MARKET_LABELS.BR}</option>
-                    <option value="US">{MARKET_LABELS.US}</option>
-                  </select>
-                </label>
-              ) : null}
-            </div>
-            <p className="access-hint">
-              {dialogRole
-                ? ROLE_HINTS[dialogRole]
-                : editing ? 'Sem papel, a conta continua só com acesso à loja.' : 'Escolha o que esta pessoa poderá fazer no painel.'}
-            </p>
-            {editing && !editingStaff && dialogRole ? (
-              <div className="warning">Ao salvar, {editing.email} passa a entrar no painel como {roleLabel(dialogRole)}.</div>
-            ) : null}
-          </fieldset>
-
+        <form className="access-form" onSubmit={(event) => { event.preventDefault(); void createAccess() }}>
+          <AccessFields form={form} setForm={setForm} account={null} />
           {formError ? <div className="alert">{formError}</div> : null}
-          {allowlistLocked ? (
-            <div className="warning">
-              Este e-mail está em ADMIN_EMAILS. O papel efetivo permanece Admin e não pode ser rebaixado pela UI.
-            </div>
-          ) : null}
         </form>
       </Dialog>
     </PageFrame>

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { AccessFields } from '../components/AccessFields'
+import { accessFormError, accessFormFrom, accessRoleBody, emptyAccessForm, inviteNeedsResend, type AccessForm } from '../lib/accessForm'
 import { CheckoutSnapshotPanels } from '../components/CheckoutSnapshotPanels'
 import { MetaGrid } from '../components/MetaGrid'
 import { PageFrame } from '../components/PageFrame'
@@ -15,6 +17,8 @@ import {
   isDeactivatedStatus,
   isStaffAccount,
 } from '../lib/accountStatus'
+import { MARKET_LABELS, type MarketCode } from '../lib/markets'
+import { BR_STATES, maskCpf } from '../lib/nfe'
 import { formatPrivacyIdentity, formatPrivacyStatus, formatPrivacyType, type UserPrivacySnapshot } from '../lib/privacy'
 
 type UserDetail = {
@@ -23,10 +27,20 @@ type UserDetail = {
   status: string
   createdAt?: string | null
   roles?: string[]
+  storedRoles?: string[]
+  markets?: MarketCode[]
   lockedByAllowlist?: boolean
+  inviteMailStatus?: string | null
+  inviteExpired?: boolean
+  deletedAt?: string | null
   profile: { fullName: string | null; phone: string | null } | null
+  // Sent only to who holds users.delivery.write.
+  fiscal?: { fullName: string | null; cpf: string | null }
   delivery: {
+    country?: MarketCode
     address: string
+    number?: string
+    neighborhood?: string
     complement: string
     city: string
     state: string
@@ -83,6 +97,8 @@ const TABS: Array<{ id: CustomerTab; label: string }> = [
 
 type DeliveryForm = {
   address: string
+  number: string
+  neighborhood: string
   complement: string
   city: string
   state: string
@@ -92,6 +108,8 @@ type DeliveryForm = {
 
 const emptyDelivery = (): DeliveryForm => ({
   address: '',
+  number: '',
+  neighborhood: '',
   complement: '',
   city: '',
   state: '',
@@ -102,6 +120,8 @@ const emptyDelivery = (): DeliveryForm => ({
 function deliveryFromUser(user: UserDetail | null): DeliveryForm {
   return {
     address: user?.delivery?.address || '',
+    number: user?.delivery?.number || '',
+    neighborhood: user?.delivery?.neighborhood || '',
     complement: user?.delivery?.complement || '',
     city: user?.delivery?.city || '',
     state: user?.delivery?.state || '',
@@ -110,9 +130,17 @@ function deliveryFromUser(user: UserDetail | null): DeliveryForm {
   }
 }
 
+function deliveryWithoutBrazilFields(delivery: DeliveryForm) {
+  const body: Partial<DeliveryForm> = { ...delivery }
+  delete body.number
+  delete body.neighborhood
+  return body
+}
+
 export function UserDetailPage() {
   const { token, user, hasPermission } = useAuth()
   const { userId } = useParams()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('aba')
   const tab: CustomerTab = TABS.some((option) => option.id === requestedTab) ? requestedTab as CustomerTab : 'cadastro'
@@ -123,18 +151,34 @@ export function UserDetailPage() {
   const onboarding: OnboardingState = onboardingResult && onboardingResult.userId === userId ? onboardingResult.state : { status: 'loading' }
   const [privacy, setPrivacy] = useState<UserPrivacySnapshot | null>(null)
   const [delivery, setDelivery] = useState<DeliveryForm>(emptyDelivery)
+  const [fiscal, setFiscal] = useState({ fullName: '', cpf: '' })
+  const [access, setAccess] = useState<AccessForm>(emptyAccessForm)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const canWriteDelivery = hasPermission('users.delivery.write')
+  const isBrazil = data?.delivery?.country === 'BR'
   const canWriteStatus = hasPermission('users.status.write')
-  const isCustomer = !isStaffAccount(data?.roles)
+  const canManageAccess = hasPermission('users.access.write')
+  const isStaff = isStaffAccount(data?.roles)
+  const isSelf = user?.userId === data?.id
+  const deleted = Boolean(data?.deletedAt)
+  const canEditAccess = Boolean(data && canManageAccess && !isSelf && !deleted)
+  const canDelete = canEditAccess && !data?.lockedByAllowlist
+  const canResendInvite = Boolean(data && canEditAccess && isStaff && inviteNeedsResend(data))
   const canToggleStatus = Boolean(
     data
-    && canWriteStatus
-    && isCustomer
+    && (isStaff ? canManageAccess && !data.lockedByAllowlist : canWriteStatus)
     && canToggleCustomerStatus(data.status)
-    && user?.userId !== data.id,
+    && !isSelf
+    && !deleted,
   )
+
+  const showUser = (response: UserDetail) => {
+    setData(response)
+    setDelivery(deliveryFromUser(response))
+    setFiscal({ fullName: response.fiscal?.fullName || '', cpf: maskCpf(response.fiscal?.cpf || '') })
+    setAccess(accessFormFrom(response))
+  }
 
   const load = async () => {
     if (!token || !userId) return
@@ -144,9 +188,8 @@ export function UserDetailPage() {
         apiRequest<UserDetail>(`/admin/users/${userId}`, { token }),
         apiRequest<UserPrivacySnapshot>(`/admin/users/${userId}/privacy`, { token }).catch(() => null),
       ])
-      setData(response)
+      showUser(response)
       setPrivacy(privacySnapshot)
-      setDelivery(deliveryFromUser(response))
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar cliente')
     }
@@ -199,12 +242,25 @@ export function UserDetailPage() {
       await apiRequest(`/admin/users/${userId}/delivery`, {
         token,
         method: 'PATCH',
-        body: delivery,
+        body: isBrazil ? delivery : deliveryWithoutBrazilFields(delivery),
       })
       setMessage('Endereço salvo.')
       await load()
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar endereço')
+    }
+  }
+
+  const saveFiscal = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!token || !userId || !canWriteDelivery) return
+    try {
+      setError('')
+      await apiRequest(`/admin/users/${userId}/fiscal`, { token, method: 'PATCH', body: fiscal })
+      setMessage('Dados fiscais salvos.')
+      await load()
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar dados fiscais')
     }
   }
 
@@ -225,13 +281,60 @@ export function UserDetailPage() {
     }
   }
 
+  const saveAccess = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!token || !userId || !canEditAccess) return
+    const invalid = accessFormError(access, false)
+    if (invalid) {
+      setError(invalid)
+      return
+    }
+    try {
+      setError('')
+      await apiRequest(`/admin/users/${userId}`, {
+        token,
+        method: 'PATCH',
+        body: { name: access.name.trim(), phone: access.phone.trim() || null, ...accessRoleBody(access) },
+      })
+      setMessage('Conta e acesso salvos.')
+      await load()
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar conta e acesso')
+    }
+  }
+
+  const resendInvite = async () => {
+    if (!token || !userId || !data || !canResendInvite) return
+    if (!window.confirm(`Reenviar convite para ${data.email}? A senha temporária anterior deixa de valer.`)) return
+    try {
+      setError('')
+      const result = await apiRequest<UserDetail>(`/admin/users/${userId}/invite`, { token, method: 'POST' })
+      setMessage(result.inviteMailStatus === 'sent' ? `Convite reenviado para ${data.email}.` : `Não foi possível enviar o convite para ${data.email}. Tente de novo.`)
+      await load()
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao reenviar convite')
+    }
+  }
+
+  const deleteAccess = async () => {
+    if (!token || !userId || !data || !canDelete) return
+    if (!window.confirm(`Excluir o acesso de ${data.email}? A conta some da listagem e as sessões são encerradas.`)) return
+    try {
+      setError('')
+      await apiRequest(`/admin/users/${userId}`, { token, method: 'DELETE' })
+      navigate('/users')
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao excluir acesso')
+    }
+  }
+
   const toggleStatus = async () => {
     if (!token || !userId || !data || !canToggleStatus) return
     const nextStatus = isDeactivatedStatus(data.status) ? 'active' : 'inactive'
     const confirmed = window.confirm(
       nextStatus === 'inactive'
-        ? 'Desativar esta conta? O cliente não conseguirá entrar na loja até ser reativado.'
-        : 'Reativar esta conta? O cliente voltará a poder entrar na loja.',
+        ? 'Desativar esta conta? A pessoa não conseguirá entrar até ser reativada e as sessões ativas serão encerradas.'
+        : 'Reativar esta conta? A pessoa voltará a poder entrar.',
     )
     if (!confirmed) return
 
@@ -242,8 +345,7 @@ export function UserDetailPage() {
         method: 'PATCH',
         body: { status: nextStatus },
       })
-      setData(response)
-      setDelivery(deliveryFromUser(response))
+      showUser(response)
       setMessage(nextStatus === 'inactive' ? 'Conta desativada.' : 'Conta reativada.')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao alterar status da conta')
@@ -261,16 +363,17 @@ export function UserDetailPage() {
       description={data ? [data.email, data.profile?.phone].filter(Boolean).join(' · ') : 'Carregando…'}
       actions={data ? (
         <div className="customer-actions">
-          {hasPermission('users.roles.write') ? <Link className="ghost-button" to="/users/roles">Alterar papéis</Link> : null}
+          {canResendInvite ? <button className="ghost-button" type="button" onClick={() => void resendInvite()}>Reenviar convite</button> : null}
           {canToggleStatus ? (
             <button
-              className={isDeactivatedStatus(data.status) ? 'primary-button' : 'danger-button'}
+              className={isDeactivatedStatus(data.status) ? 'primary-button' : 'ghost-button'}
               type="button"
               onClick={() => void toggleStatus()}
             >
               {isDeactivatedStatus(data.status) ? 'Reativar conta' : 'Desativar conta'}
             </button>
           ) : null}
+          {canDelete ? <button className="danger-button" type="button" onClick={() => void deleteAccess()}>Excluir acesso</button> : null}
         </div>
       ) : null}
     >
@@ -281,6 +384,10 @@ export function UserDetailPage() {
         <div>
           <dt>Status</dt>
           <dd><span className={accountStatusBadgeClass(data?.status)}>{accountStatusLabel(data?.status)}</span></dd>
+        </div>
+        <div>
+          <dt>País</dt>
+          <dd>{data?.delivery?.country ? MARKET_LABELS[data.delivery.country] : '—'}</dd>
         </div>
         <div>
           <dt>Papel</dt>
@@ -318,6 +425,50 @@ export function UserDetailPage() {
       {tab === 'cadastro' ? (
         <div id="customer-panel-cadastro" role="tabpanel" aria-labelledby="customer-tab-cadastro" className="customer-layout">
           <div className="page-stack">
+            {canEditAccess && data ? (
+              <Section title="Conta e acesso" description="Nome, telefone e papel no painel.">
+                <form className="access-form" onSubmit={saveAccess}>
+                  <AccessFields form={access} setForm={setAccess} account={data} />
+                  <div className="form-footer">
+                    <button className="primary-button" type="submit">Salvar conta e acesso</button>
+                  </div>
+                </form>
+              </Section>
+            ) : null}
+
+            {isBrazil && data?.fiscal ? (
+              <Section title="Dados fiscais" description="Usados na próxima NF-e e na nova tentativa de uma nota com erro. Uma nota autorizada não muda.">
+                <form onSubmit={saveFiscal}>
+                  <div className="address-fields">
+                    <label className="address-street">
+                      Nome completo
+                      <input
+                        value={fiscal.fullName}
+                        autoComplete="off"
+                        maxLength={60}
+                        required
+                        onChange={(event) => setFiscal((current) => ({ ...current, fullName: event.target.value }))}
+                      />
+                    </label>
+                    <label className="address-complement">
+                      CPF
+                      <input
+                        value={fiscal.cpf}
+                        autoComplete="off"
+                        inputMode="numeric"
+                        maxLength={14}
+                        required
+                        onChange={(event) => setFiscal((current) => ({ ...current, cpf: maskCpf(event.target.value) }))}
+                      />
+                    </label>
+                  </div>
+                  <div className="form-footer">
+                    <button className="primary-button" type="submit">Salvar dados fiscais</button>
+                  </div>
+                </form>
+              </Section>
+            ) : null}
+
             <Section title="Endereço de entrega" description="O mesmo endereço do app do cliente.">
               <form onSubmit={saveDelivery}>
                 <div className="address-fields">
@@ -330,6 +481,18 @@ export function UserDetailPage() {
                       disabled={!canWriteDelivery}
                     />
                   </label>
+                  {isBrazil ? (
+                    <label className="address-number">
+                      Número
+                      <input
+                        value={delivery.number}
+                        autoComplete="off"
+                        required
+                        onChange={(event) => setDelivery((current) => ({ ...current, number: event.target.value }))}
+                        disabled={!canWriteDelivery}
+                      />
+                    </label>
+                  ) : null}
                   <label className="address-complement">
                     Complemento
                     <input
@@ -339,6 +502,18 @@ export function UserDetailPage() {
                       disabled={!canWriteDelivery}
                     />
                   </label>
+                  {isBrazil ? (
+                    <label className="address-neighborhood">
+                      Bairro
+                      <input
+                        value={delivery.neighborhood}
+                        autoComplete="off"
+                        required
+                        onChange={(event) => setDelivery((current) => ({ ...current, neighborhood: event.target.value }))}
+                        disabled={!canWriteDelivery}
+                      />
+                    </label>
+                  ) : null}
                   <label className="address-city">
                     Cidade
                     <input
@@ -350,12 +525,24 @@ export function UserDetailPage() {
                   </label>
                   <label className="address-state">
                     Estado
-                    <input
-                      value={delivery.state}
-                      autoComplete="off"
-                      onChange={(event) => setDelivery((current) => ({ ...current, state: event.target.value }))}
-                      disabled={!canWriteDelivery}
-                    />
+                    {isBrazil ? (
+                      <select
+                        value={BR_STATES.includes(delivery.state) ? delivery.state : ''}
+                        required
+                        onChange={(event) => setDelivery((current) => ({ ...current, state: event.target.value }))}
+                        disabled={!canWriteDelivery}
+                      >
+                        <option value="">UF</option>
+                        {BR_STATES.map((state) => <option key={state} value={state}>{state}</option>)}
+                      </select>
+                    ) : (
+                      <input
+                        value={delivery.state}
+                        autoComplete="off"
+                        onChange={(event) => setDelivery((current) => ({ ...current, state: event.target.value }))}
+                        disabled={!canWriteDelivery}
+                      />
+                    )}
                   </label>
                   <label className="address-zip">
                     CEP

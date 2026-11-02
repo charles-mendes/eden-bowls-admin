@@ -88,7 +88,7 @@ export function NfeDetailPage() {
       setError('')
       const response = await apiRequest<{ success: boolean; data: NfeDetail }>(`/admin/nfe/${id}/retry`, { token, method: 'POST' })
       setItem(response.data)
-      setMessage(response.data.status === 'pending' ? 'Nova tentativa na fila.' : 'O cliente ainda não tem CPF ou CNPJ válido.')
+      setMessage(response.data.status === 'pending' ? 'Nova tentativa na fila.' : 'O cliente ainda não tem CPF válido.')
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao pedir nova tentativa')
     } finally {

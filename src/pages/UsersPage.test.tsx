@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import { fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -46,26 +46,20 @@ describe('UsersPage', () => {
     })
   })
 
-  it('deactivates a customer from the list', async () => {
+  it('shows the country and opens the customer from the row, with no edit action in the list', async () => {
     const user = userEvent.setup()
     seedAuth()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const { calls } = installAdminFetchMock(operatorWriteUser)
+    installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<UsersPage />, '/users')
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Desativar' })).toBeInTheDocument()
-    })
+    const link = await screen.findByRole('link', { name: 'ana@edenbowls.com' })
+    const row = link.closest('tr') as HTMLElement
+    expect(within(row).getByText('Brasil')).toBeInTheDocument()
+    expect(within(row).queryByRole('button')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Desativar' }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/Conta de ana@edenbowls.com desativada/)).toBeInTheDocument()
-    })
-
-    const patch = calls.find((call) => call.method === 'PATCH' && call.path.endsWith('/status'))
-    expect(patch?.body).toEqual({ status: 'inactive' })
-    expect(patch?.authorization).toBe('Bearer access-token')
+    await user.click(within(row).getByText('Brasil'))
+    // The test router has only this route, so leaving the list empties the screen.
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'ana@edenbowls.com' })).not.toBeInTheDocument())
   })
 
   it('shows market_required in an alert instead of an empty table', async () => {

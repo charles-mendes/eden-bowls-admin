@@ -6,6 +6,7 @@ import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { formatCurrency } from '../lib/format'
+import { GOODS_ORIGINS } from '../lib/nfe'
 import { sessionMarkets } from '../lib/markets'
 import { LABEL_STATUS_TEXT, LIFE_STAGE_LABELS, recipePagePath, type LifeStage, type RecipeLabelStatus } from '../lib/recipeContent'
 
@@ -18,6 +19,8 @@ type ProductVariant = {
   flavorAliases: string | null
   lifeStage?: LifeStage
   shortLabel?: string | null
+  ncm?: string | null
+  origin?: number | null
   active?: boolean
   finalImageReady?: boolean
   labelDataReady?: boolean
@@ -59,6 +62,8 @@ type VariantDraft = {
   flavorAliases: string
   lifeStage: LifeStage
   shortLabel: string
+  ncm: string
+  origin: string
   active: boolean
   finalImageReady: boolean
   labelDataReady: boolean
@@ -118,6 +123,8 @@ function toVariantDraft(item: ProductVariant): VariantDraft {
     flavorAliases: item.flavorAliases || '',
     lifeStage: item.lifeStage ?? 'adult',
     shortLabel: item.shortLabel || '',
+    ncm: item.ncm || '',
+    origin: String(item.origin ?? 0),
     active: item.active === true,
     finalImageReady: item.finalImageReady === true,
     labelDataReady: item.labelDataReady === true,
@@ -147,6 +154,8 @@ function emptyVariantDraft(): VariantDraft {
     flavorAliases: '',
     lifeStage: 'adult',
     shortLabel: '',
+    ncm: '',
+    origin: '0',
     active: false,
     finalImageReady: false,
     labelDataReady: false,
@@ -181,6 +190,7 @@ function pendingItems(item: VariantDraft, planCountry: string) {
   if (!item.finalImageReady && !item.recipeImageUrl) pending.push('foto')
   if (planCountry === 'US' && !item.labelDataReady && item.recipeLabelStatus !== 'complete') pending.push('rótulo')
   if (item.recipePresentationReady === false) pending.push('apresentação')
+  if (planCountry === 'BR' && !item.ncm.trim()) pending.push('NCM')
   return pending
 }
 
@@ -190,6 +200,7 @@ const MISSING_LABELS: Record<string, string> = {
   final_image: 'foto definitiva na loja',
   label_data: 'dados de rótulo na página da receita',
   presentation: 'apresentação na loja na página da receita',
+  ncm: 'NCM da variação',
 }
 
 function variationFailure(error: unknown, fallback: string) {
@@ -226,7 +237,7 @@ function largePackLimitField(value: number | undefined) {
   return String(value != null && value > 0 ? value : DEFAULT_LARGE_PACK_LIMIT)
 }
 
-function variantPayload(item: VariantDraft) {
+function variantPayload(item: VariantDraft, planCountry: string) {
   return {
     ...(item.id ? { id: item.id } : {}),
     sku: item.sku,
@@ -236,6 +247,7 @@ function variantPayload(item: VariantDraft) {
     ...(item.flavorAliases.trim() ? { flavorAliases: item.flavorAliases.trim() } : {}),
     lifeStage: item.lifeStage,
     shortLabel: item.shortLabel.trim(),
+    ...(planCountry === 'BR' ? { ncm: item.ncm.trim(), origin: Number(item.origin) } : {}),
     finalImageReady: item.finalImageReady,
     labelDataReady: item.labelDataReady,
     regularPrice: item.regularPrice === '' ? null : Number(item.regularPrice),
@@ -500,7 +512,7 @@ export function ProductDetailPage() {
       const response = await apiRequest<ProductDetail>(`/admin/catalog/products/${productId}`, {
         token,
         method: 'PATCH',
-        body: { variants: [variantPayload(draft)] },
+        body: { variants: [variantPayload(draft, planCountry)] },
       })
       applyProduct(response)
       setVariationDialog(null)
@@ -941,6 +953,24 @@ export function ProductDetailPage() {
                 </label>
               </div>
             </fieldset>
+
+            {planCountry === 'BR' ? (
+              <fieldset className="access-group">
+                <legend>Dados fiscais</legend>
+                <div className="access-fields">
+                  <label>
+                    NCM <span className="access-optional">8 dígitos, definido pelo contador</span>
+                    <input aria-label="NCM" value={draft.ncm} maxLength={10} inputMode="numeric" onChange={(event) => updateDialogDraft({ ncm: event.target.value })} placeholder="0000.00.00" />
+                  </label>
+                  <label>
+                    Origem da mercadoria
+                    <select aria-label="Origem da mercadoria" value={draft.origin} onChange={(event) => updateDialogDraft({ origin: event.target.value })}>
+                      {GOODS_ORIGINS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </fieldset>
+            ) : null}
 
             <fieldset className="access-group">
               <legend>Sabor e linha</legend>

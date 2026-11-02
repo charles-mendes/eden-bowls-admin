@@ -314,6 +314,7 @@ export const checkoutDetail = {
 
 export const userItem = {
   id: 'u-ana',
+  country: 'BR',
   email: 'ana@edenbowls.com',
   status: 'active',
   createdAt: '2026-08-01T12:00:00.000Z',
@@ -345,8 +346,12 @@ export const usersList = {
 export const userDetail = {
   ...userItem,
   lockedByAllowlist: false,
+  fiscal: { fullName: 'Ana Maria Costa', cpf: '52998224725' },
   delivery: {
+    country: 'BR',
     address: 'Rua Augusta 100',
+    number: '100',
+    neighborhood: 'Consolação',
     complement: 'ap 12',
     city: 'São Paulo',
     state: 'SP',

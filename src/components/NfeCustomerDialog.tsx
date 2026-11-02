@@ -20,7 +20,7 @@ type Form = {
 const FIELDS: { key: keyof Form; label: string; optional?: boolean; maxLength?: number }[] = [
   { key: 'name', label: 'Nome' },
   { key: 'email', label: 'E-mail' },
-  { key: 'document', label: 'CPF ou CNPJ' },
+  { key: 'document', label: 'CPF' },
   { key: 'street', label: 'Rua' },
   { key: 'number', label: 'Número' },
   { key: 'complement', label: 'Complemento', optional: true },

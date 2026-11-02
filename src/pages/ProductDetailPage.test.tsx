@@ -97,7 +97,7 @@ describe('ProductDetailPage', () => {
 
     const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patch?.body).toEqual({
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', lifeStage: 'adult', shortLabel: '', finalImageReady: false, labelDataReady: false, regularPrice: 89.9, recipeKey: 'turkey' }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', lifeStage: 'adult', shortLabel: '', ncm: '', origin: 0, finalImageReady: false, labelDataReady: false, regularPrice: 89.9, recipeKey: 'turkey' }],
     })
   })
 
@@ -330,6 +330,23 @@ describe('ProductDetailPage', () => {
     })
   })
 
+  it('saves the NCM and the origin of a Brazilian variation', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+    await user.type(screen.getByLabelText('NCM'), '2309.10.00')
+    await user.selectOptions(screen.getByLabelText('Origem da mercadoria'), '1')
+    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+
+    await waitFor(() => {
+      const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
+      expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0]).toMatchObject({ ncm: '2309.10.00', origin: 1 })
+    })
+  })
+
   it('shows the stored line of each variation', async () => {
     seedAuth()
     const { fetchMock } = installAdminFetchMock(operatorWriteUser)
@@ -359,7 +376,7 @@ describe('ProductDetailPage', () => {
 
     const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patch?.body).toEqual({
-      variants: [{ sku: 'NOVO-1', name: 'Cordeiro 300g', flavor: '', lifeStage: 'adult', shortLabel: '', finalImageReady: false, labelDataReady: false, regularPrice: null, recipeKey: null }],
+      variants: [{ sku: 'NOVO-1', name: 'Cordeiro 300g', flavor: '', lifeStage: 'adult', shortLabel: '', ncm: '', origin: 0, finalImageReady: false, labelDataReady: false, regularPrice: null, recipeKey: null }],
     })
   })
 
@@ -426,7 +443,7 @@ describe('ProductDetailPage', () => {
 
     const patches = calls.filter((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patches[0]?.body).toEqual({
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', lifeStage: 'adult', shortLabel: '', finalImageReady: false, labelDataReady: false, regularPrice: 30, recipeKey: 'turkey' }],
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', lifeStage: 'adult', shortLabel: '', ncm: '', origin: 0, finalImageReady: false, labelDataReady: false, regularPrice: 30, recipeKey: 'turkey' }],
     })
     expect(patches[1]?.body).toEqual({
       planCountry: 'BR',

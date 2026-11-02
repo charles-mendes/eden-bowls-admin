@@ -54,7 +54,7 @@ export type BlingConnection = { configured: boolean; connected: boolean }
 
 export const NFE_STATUS_OPTIONS: { value: NfeStatus; label: string }[] = [
   { value: 'pending', label: 'Pendente' },
-  { value: 'blocked_missing_document', label: 'Sem CPF/CNPJ' },
+  { value: 'blocked_missing_document', label: 'Sem CPF' },
   { value: 'submitted', label: 'Enviada' },
   { value: 'authorized', label: 'Autorizada' },
   { value: 'rejected', label: 'Rejeitada' },
@@ -100,6 +100,31 @@ export function formatNfeNumber(item: Pick<NfeSummary, 'nfe_number' | 'nfe_serie
 
 export function formatNfeAmount(item: Pick<NfeSummary, 'total_minor' | 'currency'>) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: item.currency.toUpperCase() }).format(item.total_minor / 100)
+}
+
+export const BR_STATES = [
+  'AC', 'AL', 'AM', 'AP', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MG', 'MS', 'MT', 'PA',
+  'PB', 'PE', 'PI', 'PR', 'RJ', 'RN', 'RO', 'RR', 'RS', 'SC', 'SE', 'SP', 'TO',
+]
+
+// Table of the NF-e tag `orig`.
+export const GOODS_ORIGINS = [
+  { value: '0', label: '0: Nacional' },
+  { value: '1', label: '1: Estrangeira, importação direta' },
+  { value: '2', label: '2: Estrangeira, adquirida no mercado interno' },
+  { value: '3', label: '3: Nacional, importação acima de 40%' },
+  { value: '4', label: '4: Nacional, processos produtivos básicos' },
+  { value: '5', label: '5: Nacional, importação até 40%' },
+  { value: '6', label: '6: Estrangeira, importação direta sem similar' },
+  { value: '7', label: '7: Estrangeira, mercado interno sem similar' },
+  { value: '8', label: '8: Nacional, importação acima de 70%' },
+]
+
+export function maskCpf(value: string) {
+  return value.replace(/\D/g, '').slice(0, 11)
+    .replace(/^(\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3}\.\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3}\.\d{3}\.\d{3})(\d)/, '$1-$2')
 }
 
 export function formatTaxDocument(value: string | null) {

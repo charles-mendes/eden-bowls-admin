@@ -2,7 +2,7 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UserDetailPage } from './UserDetailPage'
-import { checkoutDetail, jsonResponse, operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { adminUser, checkoutDetail, jsonResponse, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -180,5 +180,87 @@ describe('UserDetailPage', () => {
 
       expect(await screen.findByText('Rua Aristeu de Castro Fernandes, 941')).toBeInTheDocument()
     })
+  })
+
+  it('shows the fiscal data and the Brazilian address fields of a Brazilian customer and saves them', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+
+    const name = await screen.findByLabelText('Nome completo')
+    expect(name).toHaveValue('Ana Maria Costa')
+    expect(screen.getByLabelText('CPF')).toHaveValue('529.982.247-25')
+    expect(screen.getByLabelText('Número')).toHaveValue('100')
+    expect(screen.getByLabelText('Bairro')).toHaveValue('Consolação')
+    expect(screen.getByLabelText('Estado').tagName).toBe('SELECT')
+
+    await user.clear(name)
+    await user.type(name, 'Ana Maria da Costa')
+    await user.click(screen.getByRole('button', { name: 'Salvar dados fiscais' }))
+    await screen.findByText('Dados fiscais salvos.')
+    expect(calls.find((call) => call.path.endsWith('/fiscal'))?.body).toEqual({ fullName: 'Ana Maria da Costa', cpf: '529.982.247-25' })
+
+    await user.click(screen.getByRole('button', { name: 'Salvar endereço' }))
+    await screen.findByText('Endereço salvo.')
+    expect(calls.find((call) => call.path.endsWith('/delivery'))?.body).toMatchObject({ number: '100', neighborhood: 'Consolação', state: 'SP' })
+  })
+
+  it('edits the account and the panel role on the customer page', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(adminUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+
+    const name = await screen.findByLabelText('Nome')
+    await user.clear(name)
+    await user.type(name, 'Ana C. Costa')
+    await user.selectOptions(screen.getByLabelText('Papel'), 'operator')
+    expect(screen.getByText('Ao salvar, ana@edenbowls.com passa a entrar no painel como Operador.')).toBeInTheDocument()
+    await user.selectOptions(screen.getByLabelText('Mercado'), 'BR')
+    await user.click(screen.getByRole('button', { name: 'Salvar conta e acesso' }))
+    await screen.findByText('Conta e acesso salvos.')
+
+    const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/users/u-ana')
+    expect(patch?.body).toMatchObject({ name: 'Ana C. Costa', role: 'operator', market: 'BR' })
+  })
+
+  it('saves a customer without a role and keeps the role out of the request', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(adminUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+
+    await screen.findByLabelText('Nome')
+    await user.click(screen.getByRole('button', { name: 'Salvar conta e acesso' }))
+    await screen.findByText('Conta e acesso salvos.')
+
+    const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/users/u-ana')
+    expect(patch?.body).not.toHaveProperty('role')
+    expect(patch?.body).not.toHaveProperty('market')
+  })
+
+  it('offers no account editing to an operator', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+
+    await screen.findByLabelText('Endereço')
+    expect(screen.queryByRole('button', { name: 'Salvar conta e acesso' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Excluir acesso' })).not.toBeInTheDocument()
+  })
+
+  it('deletes the access after confirmation and returns to the list', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const { calls } = installAdminFetchMock(adminUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+
+    await user.click(await screen.findByRole('button', { name: 'Excluir acesso' }))
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'DELETE' && call.path === '/api/v1/admin/users/u-ana')).toBe(true))
+    // The test router has only this route, so leaving the page empties the screen.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Excluir acesso' })).not.toBeInTheDocument())
   })
 })
