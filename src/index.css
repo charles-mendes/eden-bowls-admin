@@ -1216,6 +1216,140 @@ pre.legal-text {
   background: var(--warning-bg);
 }
 
+.stock-notice {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  background: var(--info-bg);
+  color: var(--info-text);
+  font-size: var(--text-sm);
+}
+
+.stock-unsized {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+}
+
+.stock-page-stack {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.stock-page-stack > * {
+  min-width: 0;
+  margin: 0;
+}
+
+.stock-history-anchor {
+  scroll-margin-top: var(--space-4);
+}
+
+.stock-table th.stock-number,
+.stock-table td.stock-number {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.stock-table td.stock-number .queue-cell-stack {
+  justify-items: end;
+}
+
+.stock-table .stock-strong,
+.stock-table .stock-table-title {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.stock-table .stock-table-actions {
+  width: 44px;
+  text-align: right;
+}
+
+@media (max-width: 860px) {
+  /* Packs and movements read as one card per row on a phone or small tablet: no sideways scroll. */
+  .stock-table-shell {
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .stock-table {
+    min-width: 0;
+  }
+
+  .stock-table thead {
+    display: none;
+  }
+
+  .stock-table,
+  .stock-table tbody {
+    display: block;
+  }
+
+  .stock-table tbody {
+    display: grid;
+    gap: var(--space-2);
+  }
+
+  .stock-table tr {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+
+  .stock-table tr.stock-row-warning {
+    background: var(--warning-bg);
+  }
+
+  .stock-table td,
+  .stock-table tbody tr:hover td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    white-space: normal;
+  }
+
+  .stock-table td:not([data-label]) {
+    grid-column: 1 / -1;
+  }
+
+  .stock-table .stock-table-title {
+    padding-right: 36px;
+  }
+
+  .stock-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    color: var(--text-soft);
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+
+  .stock-table td.stock-number {
+    text-align: left;
+  }
+
+  .stock-table td.stock-number .queue-cell-stack {
+    justify-items: start;
+  }
+
+  .stock-table .stock-table-actions {
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    width: auto;
+  }
+}
+
 .table-shell {
   border-radius: var(--radius-md);
   overflow-x: auto;

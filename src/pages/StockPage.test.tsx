@@ -109,19 +109,107 @@ describe('StockPage', () => {
     renderStock(readonlyUser)
     await screen.findByText('frango')
     expect(screen.queryByRole('button', { name: 'Lançar produção' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Ajustar' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Definir mínimo' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Ações de frango 300 g' }))
+    expect(screen.getByRole('menuitem', { name: 'Ver histórico' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Ajustar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Definir mínimo' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Produzir' })).not.toBeInTheDocument()
   })
 
   it('requires a note when the reason is Outro', async () => {
     const { calls } = renderStock()
-    fireEvent.click(await screen.findAllByRole('button', { name: 'Ajustar' }).then((buttons) => buttons[0]))
+    fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Ajustar' }))
     const dialog = await screen.findByRole('dialog', { name: /Ajustar/ })
     fireEvent.change(within(dialog).getByLabelText('Quantidade'), { target: { value: '-1' } })
     fireEvent.change(within(dialog).getByLabelText('Motivo'), { target: { value: 'other' } })
     expect(within(dialog).getByLabelText('Nota')).toBeRequired()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
     expect(findCall(calls, 'POST', '/admin/stock/adjustments')).toBeUndefined()
+  })
+
+  it('tells that stock is internal and does not affect sales', async () => {
+    renderStock()
+    await screen.findByText('frango')
+    expect(screen.getByRole('note')).toHaveTextContent('O estoque não bloqueia vendas nem renovações')
+  })
+
+  it('summarises the window and shows each status', async () => {
+    renderStock()
+    const row = await frangoRow()
+    expect(within(row).getByText('Em falta')).toHaveClass('badge-error')
+    expect(within(screen.getByText('A produzir', { selector: '.eyebrow' }).closest('article') as HTMLElement).getByText('15')).toBeInTheDocument()
+  })
+
+  it('filters packs by search and status', async () => {
+    renderStock()
+    await screen.findByText('frango')
+    fireEvent.change(screen.getByLabelText('Buscar receita'), { target: { value: 'CARNE' } })
+    expect(screen.queryByText('frango')).not.toBeInTheDocument()
+    expect(screen.getByText('carne')).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Situação'), { target: { value: 'short' } })
+    expect(screen.getByText('Nenhum item com esses filtros.')).toBeInTheDocument()
+  })
+
+  it('picks recipe and size from the catalog and shows its names', async () => {
+    const { calls } = renderStock(operatorWriteUser, {
+      stockCatalog: [
+        { flavorKey: 'frango', packSizeGrams: 300, label: 'Frango e Arroz' },
+        { flavorKey: 'carne', packSizeGrams: 300, label: 'Carne' },
+        { flavorKey: 'carne', packSizeGrams: 500, label: 'Carne' },
+      ],
+    })
+    expect(await screen.findByText('Frango e Arroz')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Lançar produção' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Lançar produção' })
+    const size = within(dialog).getByLabelText('Tamanho (g)')
+    expect(size).toBeDisabled()
+    fireEvent.change(within(dialog).getByLabelText('Receita'), { target: { value: 'carne' } })
+    expect(within(size as HTMLElement).getByRole('option', { name: '500 g' })).toBeInTheDocument()
+    fireEvent.change(size, { target: { value: '500' } })
+    fireEvent.change(within(dialog).getByLabelText('Quantidade'), { target: { value: '5' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Lançar' }))
+    await waitFor(() => {
+      expect(findCall(calls, 'POST', '/admin/stock/production')?.body).toEqual({
+        market: 'BR',
+        flavorKey: 'carne',
+        packSizeGrams: 500,
+        quantity: 5,
+      })
+    })
+  })
+
+  it('prefills production from the row with what is missing', async () => {
+    renderStock()
+    fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Produzir' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Lançar produção' })
+    expect(within(dialog).getByLabelText('Receita')).toHaveValue('frango')
+    expect(within(dialog).getByLabelText('Tamanho (g)')).toHaveValue(300)
+    expect(within(dialog).getByLabelText('Quantidade')).toHaveValue(15)
+  })
+
+  it('previews the new balance and refuses a zero adjustment', async () => {
+    const { calls } = renderStock()
+    fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Ajustar' }))
+    const dialog = await screen.findByRole('dialog', { name: /Ajustar/ })
+    fireEvent.change(within(dialog).getByLabelText('Quantidade'), { target: { value: '-2' } })
+    expect(within(dialog).getByText('Em estoque: 40 → novo saldo: 38')).toBeInTheDocument()
+    fireEvent.change(within(dialog).getByLabelText('Quantidade'), { target: { value: '0' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+    expect(await within(dialog).findByText('Informe uma quantidade diferente de zero.')).toBeInTheDocument()
+    expect(findCall(calls, 'POST', '/admin/stock/adjustments')).toBeUndefined()
+  })
+
+  it('opens the history of one item from the row', async () => {
+    const { calls } = renderStock()
+    fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Ver histórico' }))
+    expect(screen.getByLabelText('Item do histórico')).toHaveValue('frango|300')
+    await waitFor(() => {
+      expect(calls.some((call) => call.path.endsWith('/admin/stock/movements') && call.search.includes('packSizeGrams=300'))).toBe(true)
+    })
   })
 
   it('Separation links to the subscription', async () => {

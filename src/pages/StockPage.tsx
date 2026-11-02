@@ -1,10 +1,12 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
 import { FiltersBar } from '../components/FiltersBar'
 import { MarketSelect } from '../components/MarketSelect'
+import { MetricCard } from '../components/MetricCard'
 import { PageFrame } from '../components/PageFrame'
 import { Pager } from '../components/Pager'
+import { RowMenu, type RowMenuItem } from '../components/RowMenu'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
@@ -13,17 +15,26 @@ import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import {
   ADJUSTMENT_REASON_LABELS,
   MOVEMENT_TYPE_LABELS,
+  STOCK_STATUS_BADGES,
+  STOCK_STATUS_LABELS,
   STOCK_WINDOWS,
+  filterStockItems,
+  formatSignedQuantity,
   isStockWindow,
   sortStockItems,
   stockErrorMessage,
+  stockItemKey,
   stockItemLabel,
+  stockRecipeNames,
+  stockRecipeOptions,
+  stockStatus,
   type StockAdjustmentReason,
   type StockItem,
   type StockMovement,
   type StockMovementType,
   type StockMovementsResponse,
   type StockOverview,
+  type StockStatus,
 } from '../lib/packStock'
 
 type ProductionForm = { flavorKey: string; packSizeGrams: string; quantity: string; note: string }
@@ -35,7 +46,7 @@ const EMPTY_ADJUSTMENT: AdjustmentForm = { quantity: '', reason: 'loss', note: '
 const PER_PAGE = 20
 
 function highlighted(item: StockItem) {
-  return item.available < 0 || item.belowMinimum
+  return stockStatus(item) !== 'ok'
 }
 
 export function StockPage() {
@@ -49,6 +60,8 @@ export function StockPage() {
   const [overview, setOverview] = useState<StockOverview | null>(null)
   const [movements, setMovements] = useState<StockMovementsResponse | null>(null)
   const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StockStatus | ''>('')
   const [filterItem, setFilterItem] = useState<StockItem | null>(null)
   const [filterType, setFilterType] = useState<StockMovementType | ''>('')
   const [error, setError] = useState('')
@@ -60,6 +73,7 @@ export function StockPage() {
   const [minimumItem, setMinimumItem] = useState<StockItem | null>(null)
   const [minimum, setMinimum] = useState<MinimumForm>({ minLevel: '' })
   const [reloadKey, setReloadKey] = useState(0)
+  const historyRef = useRef<HTMLDivElement>(null)
 
   const scopedMarket = bothMarkets ? market : lockedMarket
 
@@ -119,6 +133,29 @@ export function StockPage() {
     setDialogError('')
   }
 
+  const openProduction = (item?: StockItem) => {
+    setDialogError('')
+    setProduction(item ? {
+      ...EMPTY_PRODUCTION,
+      flavorKey: item.flavorKey,
+      packSizeGrams: String(item.packSizeGrams),
+      quantity: item.toProduce > 0 ? String(item.toProduce) : '',
+    } : EMPTY_PRODUCTION)
+    setProductionOpen(true)
+  }
+
+  const openHistory = (item: StockItem) => {
+    setFilterItem(item)
+    setPage(1)
+    historyRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }
+
+  const changeMarket = (value: string) => {
+    setMarket((value || lockedMarket) as typeof lockedMarket)
+    setFilterItem(null)
+    setPage(1)
+  }
+
   const submitProduction = async (event: FormEvent) => {
     event.preventDefault()
     if (!token) return
@@ -145,6 +182,10 @@ export function StockPage() {
   const submitAdjustment = async (event: FormEvent) => {
     event.preventDefault()
     if (!token || !adjustItem) return
+    if (Number(adjustment.quantity) === 0) {
+      setDialogError('Informe uma quantidade diferente de zero.')
+      return
+    }
     setDialogError('')
     try {
       await apiRequest('/admin/stock/adjustments', {
@@ -188,178 +229,266 @@ export function StockPage() {
     }
   }
 
-  const items = sortStockItems(overview?.items ?? [])
+  const allItems = sortStockItems(overview?.items ?? [])
+  const catalog = overview?.catalog ?? []
+  const names = stockRecipeNames(catalog)
+  const items = filterStockItems(allItems, { search, status: statusFilter, names })
+  const recipeOptions = stockRecipeOptions(catalog, allItems)
+  const selectedRecipe = recipeOptions.find((option) => option.flavorKey === production.flavorKey)
   const unsized = overview?.unsizedLines ?? []
   const unsizedTotal = unsized.reduce((sum, line) => sum + line.quantity, 0)
+  const columnCount = 9
+  const adjustmentDelta = Number(adjustment.quantity)
+
+  const recipeName = (flavorKey: string) => names.get(flavorKey) ?? flavorKey
+  const itemLabel = (item: { flavorKey: string; packSizeGrams: number }) => stockItemLabel(recipeName(item.flavorKey), item.packSizeGrams)
+
+  const emptyPacksMessage = () => {
+    if (!overview) return error ? 'Estoque indisponível.' : 'Carregando estoque...'
+    if (allItems.length === 0) return 'Nenhum item de estoque nem entrega nesta janela.'
+    return 'Nenhum item com esses filtros.'
+  }
+
+  const rowActions = (item: StockItem): RowMenuItem[] => [
+    ...(canWrite ? [
+      { label: 'Produzir', onSelect: () => openProduction(item) },
+      { label: 'Ajustar', onSelect: () => { setDialogError(''); setAdjustItem(item); setAdjustment(EMPTY_ADJUSTMENT) } },
+      { label: 'Definir mínimo', onSelect: () => { setDialogError(''); setMinimumItem(item); setMinimum({ minLevel: item.minLevel == null ? '' : String(item.minLevel) }) } },
+    ] : []),
+    { label: 'Ver histórico', onSelect: () => openHistory(item) },
+  ]
 
   return (
     <PageFrame
       title="Estoque"
       description="Packs prontos contra as entregas da janela. A cozinha lança produção e ajustes aqui."
       actions={canWrite ? (
-        <button className="primary-button" type="button" onClick={() => { setDialogError(''); setProductionOpen(true) }}>
+        <button className="primary-button" type="button" onClick={() => openProduction()}>
           Lançar produção
         </button>
       ) : null}
     >
-      {error ? <div className="alert" role="alert">{error}</div> : null}
-
-      {unsized.length > 0 ? (
-        <div className="alert" role="status">
-          {unsizedTotal} packs sem tamanho não entram no comprometido
+      <div className="stock-page-stack">
+        <div className="stock-notice" role="note">
+          <strong>Controle interno.</strong>
           {' '}
-          {unsized.map((line) => (
-            <Link
-              key={`${line.subscriptionId}-${line.label}`}
-              className="table-link"
-              to={`/billing/subscriptions/${line.subscriptionId}`}
-            >
-              {line.label || line.flavorKey || 'pack'} × {line.quantity}
-            </Link>
-          ))}
+          O estoque não bloqueia vendas nem renovações e não aparece na loja: um sabor com saldo zero continua à venda.
+          {' '}
+          Cada pack é uma receita e um tamanho neste mercado, então variações com a mesma receita e gramas dividem o mesmo saldo.
         </div>
-      ) : null}
 
-      <Section title="Filtros">
-        <FiltersBar>
-          <label>
-            Janela
-            <select
-              aria-label="Janela"
-              value={windowDays}
-              onChange={(event) => setWindowDays(isStockWindow(Number(event.target.value)) ? Number(event.target.value) : 7)}
-            >
-              {STOCK_WINDOWS.map((days) => <option key={days} value={days}>{days} dias</option>)}
-            </select>
-          </label>
-          <MarketSelect
-            user={user}
-            value={scopedMarket}
-            onChange={(value) => setMarket((value || lockedMarket) as typeof lockedMarket)}
-          />
-        </FiltersBar>
-      </Section>
+        {error ? <div className="alert" role="alert">{error}</div> : null}
 
-      <Section title="Packs" description={`Total: ${overview ? items.length : '—'}`}>
-        <div className="table-shell table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Receita</th>
-                <th>Tamanho</th>
-                <th>Em estoque</th>
-                <th>Comprometido</th>
-                <th>Disponível</th>
-                <th>A produzir</th>
-                <th>Mínimo</th>
-                {canWrite ? <th>Ações</th> : null}
-              </tr>
-            </thead>
-            <tbody>
-              {items.length === 0 ? (
-                <tr>
-                  <td colSpan={canWrite ? 8 : 7}>Nenhum item de estoque nem entrega nesta janela.</td>
-                </tr>
-              ) : items.map((item) => (
-                <tr
-                  key={`${item.flavorKey}|${item.packSizeGrams}`}
-                  className={highlighted(item) ? 'stock-row-warning' : undefined}
-                  onClick={() => { setFilterItem(item); setPage(1) }}
-                >
-                  <td>{item.flavorKey}</td>
-                  <td>{item.packSizeGrams} g</td>
-                  <td>{item.onHand}</td>
-                  <td>
-                    <div className="queue-cell-stack">
-                      <span>{item.committed}</span>
-                      {item.committedAwaitingPayment > 0 ? (
-                        <span className="muted">{item.committedAwaitingPayment} aguardando pagamento</span>
-                      ) : null}
-                    </div>
-                  </td>
-                  <td>{item.available}</td>
-                  <td>{item.toProduce}</td>
-                  <td>{item.minLevel ?? '—'}</td>
-                  {canWrite ? (
-                    <td>
-                      <button className="link-button" type="button" onClick={(event) => { event.stopPropagation(); setDialogError(''); setAdjustItem(item); setAdjustment(EMPTY_ADJUSTMENT) }}>
-                        Ajustar
-                      </button>
-                      {' '}
-                      <button className="link-button" type="button" onClick={(event) => { event.stopPropagation(); setDialogError(''); setMinimumItem(item); setMinimum({ minLevel: item.minLevel == null ? '' : String(item.minLevel) }) }}>
-                        Definir mínimo
-                      </button>
-                    </td>
-                  ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      <Section title="Histórico" description={filterItem ? stockItemLabel(filterItem.flavorKey, filterItem.packSizeGrams) : 'Todos os itens'}>
-        <FiltersBar>
-          <label>
-            Tipo
-            <select
-              aria-label="Tipo de movimento"
-              value={filterType}
-              onChange={(event) => { setFilterType(event.target.value as StockMovementType | ''); setPage(1) }}
-            >
-              <option value="">Todos</option>
-              {Object.entries(MOVEMENT_TYPE_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
-            </select>
-          </label>
-          {filterItem ? (
-            <button className="link-button" type="button" onClick={() => { setFilterItem(null); setPage(1) }}>
-              Limpar item
-            </button>
-          ) : null}
-        </FiltersBar>
-        <div className="table-shell table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Item</th>
-                <th>Tipo</th>
-                <th>Quantidade</th>
-                <th>Motivo</th>
-                <th>Autor</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(movements?.items ?? []).map((movement: StockMovement) => (
-                <tr key={movement.id}>
-                  <td>{formatDate(movement.createdAt)}</td>
-                  <td>{stockItemLabel(movement.flavorKey, movement.packSizeGrams)}</td>
-                  <td>{MOVEMENT_TYPE_LABELS[movement.type] || movement.type}</td>
-                  <td>{movement.quantity}</td>
-                  <td>{movement.reason ? (ADJUSTMENT_REASON_LABELS[movement.reason as StockAdjustmentReason] || movement.reason) : (movement.note || '—')}</td>
-                  <td>
-                    {movement.subscriptionId && (movement.type === 'separation' || movement.type === 'separation_reversal') ? (
-                      <Link className="table-link" to={`/billing/subscriptions/${movement.subscriptionId}`}>
-                        Assinatura {movement.subscriptionId}
-                      </Link>
-                    ) : (movement.actorName || '—')}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        {movements && movements.totalPages > 1 ? (
-          <Pager
-            page={movements.page}
-            totalPages={movements.totalPages}
-            onPrev={() => setPage((current) => Math.max(1, current - 1))}
-            onNext={() => setPage((current) => current + 1)}
-          />
+        {unsized.length > 0 ? (
+          <div className="warning stock-unsized" role="status">
+            <span>{unsizedTotal} packs sem tamanho não entram no comprometido</span>
+            {unsized.map((line) => (
+              <Link
+                key={`${line.subscriptionId}-${line.label}`}
+                className="table-link"
+                to={`/billing/subscriptions/${line.subscriptionId}`}
+              >
+                {line.label || line.flavorKey || 'pack'} × {line.quantity}
+              </Link>
+            ))}
+          </div>
         ) : null}
-      </Section>
+
+        <div className="grid cards-4">
+          <MetricCard
+            label="A produzir"
+            value={overview ? allItems.reduce((sum, item) => sum + item.toProduce, 0) : '—'}
+            hint={`packs em ${windowDays} dias`}
+          />
+          <MetricCard
+            label="Em falta"
+            value={overview ? allItems.filter((item) => stockStatus(item) === 'short').length : '—'}
+            hint="itens sem saldo para a janela"
+          />
+          <MetricCard
+            label="Abaixo do mínimo"
+            value={overview ? allItems.filter((item) => stockStatus(item) === 'below').length : '—'}
+            hint="itens para repor"
+          />
+          <MetricCard
+            label="Em estoque"
+            value={overview ? allItems.reduce((sum, item) => sum + item.onHand, 0) : '—'}
+            hint={`packs em ${allItems.length} itens`}
+          />
+        </div>
+
+        <Section
+          title="Packs"
+          description={`${items.length} de ${allItems.length} itens. Disponível = em estoque − comprometido nas entregas da janela.`}
+        >
+          <FiltersBar>
+            <label>
+              Buscar receita
+              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
+            </label>
+            <label>
+              Situação
+              <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as StockStatus | '')}>
+                <option value="">Todas</option>
+                {Object.entries(STOCK_STATUS_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Janela
+              <select
+                aria-label="Janela"
+                value={windowDays}
+                onChange={(event) => setWindowDays(isStockWindow(Number(event.target.value)) ? Number(event.target.value) : 7)}
+              >
+                {STOCK_WINDOWS.map((days) => <option key={days} value={days}>{days} dias</option>)}
+              </select>
+            </label>
+            <MarketSelect user={user} value={scopedMarket} onChange={changeMarket} />
+          </FiltersBar>
+          <div className="table-shell table-scroll stock-table-shell">
+            <table className="stock-table">
+              <thead>
+                <tr>
+                  <th>Receita</th>
+                  <th>Tamanho</th>
+                  <th className="stock-number">Em estoque</th>
+                  <th className="stock-number">Comprometido</th>
+                  <th className="stock-number">Disponível</th>
+                  <th className="stock-number">A produzir</th>
+                  <th className="stock-number">Mínimo</th>
+                  <th>Situação</th>
+                  <th aria-label="Ações" />
+                </tr>
+              </thead>
+              <tbody>
+                {items.length === 0 ? (
+                  <tr>
+                    <td colSpan={columnCount}>{emptyPacksMessage()}</td>
+                  </tr>
+                ) : items.map((item) => {
+                  const status = stockStatus(item)
+                  return (
+                    <tr key={stockItemKey(item)} className={highlighted(item) ? 'stock-row-warning' : undefined}>
+                      <td className="stock-table-title">{recipeName(item.flavorKey)}</td>
+                      <td data-label="Tamanho">{item.packSizeGrams} g</td>
+                      <td className="stock-number" data-label="Em estoque">{item.onHand}</td>
+                      <td className="stock-number" data-label="Comprometido">
+                        <div className="queue-cell-stack">
+                          <span>{item.committed}</span>
+                          {item.committedAwaitingPayment > 0 ? (
+                            <span className="muted">{item.committedAwaitingPayment} aguardando pagamento</span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="stock-number stock-strong" data-label="Disponível">{item.available}</td>
+                      <td className="stock-number" data-label="A produzir">{item.toProduce}</td>
+                      <td className="stock-number" data-label="Mínimo">{item.minLevel ?? '—'}</td>
+                      <td data-label="Situação">
+                        <span className={STOCK_STATUS_BADGES[status]}>{STOCK_STATUS_LABELS[status]}</span>
+                      </td>
+                      <td className="stock-table-actions">
+                        <RowMenu label={`Ações de ${itemLabel(item)}`} items={rowActions(item)} />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+
+        <div ref={historyRef} className="stock-history-anchor">
+          <Section title="Histórico" description={filterItem ? itemLabel(filterItem) : 'Todos os itens'}>
+            <FiltersBar>
+              <label>
+                Item
+                <select
+                  aria-label="Item do histórico"
+                  value={filterItem ? stockItemKey(filterItem) : ''}
+                  onChange={(event) => {
+                    setFilterItem(allItems.find((item) => stockItemKey(item) === event.target.value) ?? null)
+                    setPage(1)
+                  }}
+                >
+                  <option value="">Todos</option>
+                  {allItems.map((item) => (
+                    <option key={stockItemKey(item)} value={stockItemKey(item)}>{itemLabel(item)}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Tipo
+                <select
+                  aria-label="Tipo de movimento"
+                  value={filterType}
+                  onChange={(event) => { setFilterType(event.target.value as StockMovementType | ''); setPage(1) }}
+                >
+                  <option value="">Todos</option>
+                  {Object.entries(MOVEMENT_TYPE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </label>
+            </FiltersBar>
+            <div className="table-shell table-scroll stock-table-shell">
+              <table className="stock-table">
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Item</th>
+                    <th>Tipo</th>
+                    <th className="stock-number">Quantidade</th>
+                    <th>Motivo</th>
+                    <th>Autor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {movements && movements.items.length === 0 ? (
+                    <tr>
+                      <td colSpan={6}>Nenhum movimento encontrado.</td>
+                    </tr>
+                  ) : (movements?.items ?? []).map((movement: StockMovement) => {
+                    const reason = movement.reason
+                      ? (ADJUSTMENT_REASON_LABELS[movement.reason as StockAdjustmentReason] || movement.reason)
+                      : null
+                    return (
+                      <tr key={movement.id}>
+                        <td data-label="Data">{formatDate(movement.createdAt)}</td>
+                        <td className="stock-table-title">{itemLabel(movement)}</td>
+                        <td data-label="Tipo">{MOVEMENT_TYPE_LABELS[movement.type] || movement.type}</td>
+                        <td className="stock-number stock-strong" data-label="Quantidade">{formatSignedQuantity(movement.quantity)}</td>
+                        <td data-label="Motivo">
+                          <div className="queue-cell-stack">
+                            <span>{reason ?? (movement.note ? movement.note : '—')}</span>
+                            {reason && movement.note ? <span className="muted">{movement.note}</span> : null}
+                          </div>
+                        </td>
+                        <td data-label="Autor">
+                          {movement.subscriptionId && (movement.type === 'separation' || movement.type === 'separation_reversal') ? (
+                            <Link className="table-link" to={`/billing/subscriptions/${movement.subscriptionId}`}>
+                              Assinatura {movement.subscriptionId}
+                            </Link>
+                          ) : (movement.actorName || '—')}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {movements && movements.totalPages > 1 ? (
+              <Pager
+                page={movements.page}
+                totalPages={movements.totalPages}
+                onPrev={() => setPage((current) => Math.max(1, current - 1))}
+                onNext={() => setPage((current) => current + 1)}
+              />
+            ) : null}
+          </Section>
+        </div>
+      </div>
 
       <Dialog
         title="Lançar produção"
@@ -374,14 +503,55 @@ export function StockPage() {
       >
         <form id="stock-production-form" className="closure-form" onSubmit={submitProduction}>
           {dialogError ? <div className="alert" role="alert">{dialogError}</div> : null}
-          <label className="closure-field">
-            Receita
-            <input required value={production.flavorKey} onChange={(event) => setProduction((current) => ({ ...current, flavorKey: event.target.value }))} />
-          </label>
-          <label className="closure-field">
-            Tamanho (g)
-            <input required type="number" min={1} value={production.packSizeGrams} onChange={(event) => setProduction((current) => ({ ...current, packSizeGrams: event.target.value }))} />
-          </label>
+          {recipeOptions.length > 0 && catalog.length > 0 ? (
+            <>
+              <label className="closure-field">
+                Receita
+                <select
+                  required
+                  value={production.flavorKey}
+                  onChange={(event) => {
+                    const sizes = recipeOptions.find((option) => option.flavorKey === event.target.value)?.sizes ?? []
+                    setProduction((current) => ({
+                      ...current,
+                      flavorKey: event.target.value,
+                      packSizeGrams: sizes.length === 1 ? String(sizes[0]) : '',
+                    }))
+                  }}
+                >
+                  <option value="">Selecione</option>
+                  {recipeOptions.map((option) => (
+                    <option key={option.flavorKey} value={option.flavorKey}>{option.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="closure-field">
+                Tamanho (g)
+                <select
+                  required
+                  disabled={!selectedRecipe}
+                  value={production.packSizeGrams}
+                  onChange={(event) => setProduction((current) => ({ ...current, packSizeGrams: event.target.value }))}
+                >
+                  <option value="">Selecione</option>
+                  {(selectedRecipe?.sizes ?? []).map((grams) => (
+                    <option key={grams} value={grams}>{grams} g</option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : (
+            <>
+              <label className="closure-field">
+                Receita
+                <input required value={production.flavorKey} onChange={(event) => setProduction((current) => ({ ...current, flavorKey: event.target.value }))} />
+              </label>
+              <label className="closure-field">
+                Tamanho (g)
+                <input required type="number" min={1} value={production.packSizeGrams} onChange={(event) => setProduction((current) => ({ ...current, packSizeGrams: event.target.value }))} />
+              </label>
+            </>
+          )}
           <label className="closure-field">
             Quantidade
             <input required type="number" min={1} max={10000} value={production.quantity} onChange={(event) => setProduction((current) => ({ ...current, quantity: event.target.value }))} />
@@ -394,7 +564,8 @@ export function StockPage() {
       </Dialog>
 
       <Dialog
-        title={adjustItem ? `Ajustar ${stockItemLabel(adjustItem.flavorKey, adjustItem.packSizeGrams)}` : 'Ajustar'}
+        title={adjustItem ? `Ajustar ${itemLabel(adjustItem)}` : 'Ajustar'}
+        description="Use número negativo para baixar e positivo para somar ao saldo."
         open={Boolean(adjustItem)}
         onClose={closeDialogs}
         footer={(
@@ -410,6 +581,12 @@ export function StockPage() {
             Quantidade
             <input required type="number" min={-10000} max={10000} value={adjustment.quantity} onChange={(event) => setAdjustment((current) => ({ ...current, quantity: event.target.value }))} />
           </label>
+          {adjustItem ? (
+            <p className="muted">
+              Em estoque: {adjustItem.onHand}
+              {Number.isFinite(adjustmentDelta) && adjustmentDelta !== 0 ? ` → novo saldo: ${adjustItem.onHand + adjustmentDelta}` : ''}
+            </p>
+          ) : null}
           <label className="closure-field">
             Motivo
             <select aria-label="Motivo" value={adjustment.reason} onChange={(event) => setAdjustment((current) => ({ ...current, reason: event.target.value as StockAdjustmentReason }))}>
@@ -430,7 +607,8 @@ export function StockPage() {
       </Dialog>
 
       <Dialog
-        title={minimumItem ? `Mínimo de ${stockItemLabel(minimumItem.flavorKey, minimumItem.packSizeGrams)}` : 'Definir mínimo'}
+        title={minimumItem ? `Mínimo de ${itemLabel(minimumItem)}` : 'Definir mínimo'}
+        description="A situação fica abaixo do mínimo quando o disponível é menor que este valor. Deixe vazio para remover."
         open={Boolean(minimumItem)}
         onClose={closeDialogs}
         footer={(

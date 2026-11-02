@@ -134,6 +134,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   productionStock?: { shortages: Array<{ flavorKey: string; packSizeGrams: number; onHand: number }>; unsized: number }
   stockItems?: Array<Record<string, unknown>>
   stockUnsized?: Array<Record<string, unknown>>
+  stockCatalog?: Array<Record<string, unknown>>
   stockMovements?: Array<Record<string, unknown>>
   subscriptionSnapshot?: {
     petsSnapshot?: unknown
@@ -619,6 +620,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         windowDays: Number(url.searchParams.get('windowDays') || 7),
         items: stockItems,
         unsizedLines: stockUnsized,
+        catalog: options.stockCatalog ?? [],
       })
     }
 

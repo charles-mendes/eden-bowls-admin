@@ -43,7 +43,8 @@ test.describe('Admin stock', () => {
     const { captured } = await openAuthed(page, '/operations/stock', e2eProfiles.operatorWrite)
 
     const packs = page.locator('.section-card').filter({ has: page.getByRole('heading', { name: 'Packs' }) })
-    await packs.getByRole('row').filter({ hasText: 'frango' }).getByRole('button', { name: 'Ajustar' }).click()
+    await packs.getByRole('button', { name: 'Ações de frango 300 g' }).click()
+    await page.getByRole('menuitem', { name: 'Ajustar' }).click()
     const dialog = page.getByRole('dialog', { name: /Ajustar frango/ })
     await dialog.getByLabel('Quantidade').fill('-2')
     await dialog.getByLabel('Motivo').selectOption('loss')
