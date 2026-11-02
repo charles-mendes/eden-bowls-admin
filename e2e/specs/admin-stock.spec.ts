@@ -22,12 +22,12 @@ test.describe('Admin stock', () => {
   test('records production and reloads the row', async ({ page }) => {
     const { captured } = await openAuthed(page, '/operations/stock', e2eProfiles.operatorWrite)
 
-    await page.getByRole('button', { name: 'Lançar produção' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Lançar produção' })
+    await page.getByRole('button', { name: 'Adicionar estoque' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Adicionar estoque' })
     await dialog.getByLabel('Receita').fill('carne')
     await dialog.getByLabel('Tamanho (g)').fill('500')
     await dialog.getByLabel('Quantidade').fill('30')
-    await dialog.getByRole('button', { name: 'Lançar' }).click()
+    await dialog.getByRole('button', { name: 'Adicionar' }).click()
 
     await expect.poll(() => captured.some((item) => (
       item.method === 'POST'
@@ -37,6 +37,24 @@ test.describe('Admin stock', () => {
     ))).toBe(true)
     const packs = page.locator('.section-card').filter({ has: page.getByRole('heading', { name: 'Packs' }) })
     await expect(packs.getByRole('row').filter({ hasText: 'carne' })).toContainText('40')
+  })
+
+  test('counts the real total from the row', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/operations/stock', e2eProfiles.operatorWrite)
+
+    const packs = page.locator('.section-card').filter({ has: page.getByRole('heading', { name: 'Packs' }) })
+    await packs.getByRole('button', { name: 'Ações de frango 300 g' }).click()
+    await page.getByRole('menuitem', { name: 'Contagem' }).click()
+    const dialog = page.getByRole('dialog', { name: /Contagem de frango/ })
+    await dialog.getByLabel('Quantidade contada').fill('120')
+    await dialog.getByRole('button', { name: 'Salvar' }).click()
+
+    await expect.poll(() => captured.some((item) => (
+      item.method === 'POST'
+      && item.path === '/api/v1/admin/stock/counts'
+      && (item.body as { countedQuantity?: number })?.countedQuantity === 120
+    ))).toBe(true)
+    await expect(packs.getByRole('row').filter({ hasText: 'frango' })).toContainText('120')
   })
 
   test('adjusts on-hand from the row', async ({ page }) => {

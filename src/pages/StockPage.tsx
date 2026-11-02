@@ -14,6 +14,7 @@ import { formatDate } from '../lib/format'
 import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import {
   ADJUSTMENT_REASON_LABELS,
+  MANUAL_ADJUSTMENT_REASONS,
   MOVEMENT_TYPE_LABELS,
   STOCK_STATUS_BADGES,
   STOCK_STATUS_LABELS,
@@ -25,6 +26,7 @@ import {
   stockErrorMessage,
   stockItemKey,
   stockItemLabel,
+  stockPackSize,
   stockRecipeNames,
   stockRecipeOptions,
   stockStatus,
@@ -39,10 +41,12 @@ import {
 
 type ProductionForm = { flavorKey: string; packSizeGrams: string; quantity: string; note: string }
 type AdjustmentForm = { quantity: string; reason: StockAdjustmentReason; note: string }
+type CountForm = { countedQuantity: string; note: string }
 type MinimumForm = { minLevel: string }
 
 const EMPTY_PRODUCTION: ProductionForm = { flavorKey: '', packSizeGrams: '', quantity: '', note: '' }
 const EMPTY_ADJUSTMENT: AdjustmentForm = { quantity: '', reason: 'loss', note: '' }
+const EMPTY_COUNT: CountForm = { countedQuantity: '', note: '' }
 const PER_PAGE = 20
 
 function highlighted(item: StockItem) {
@@ -70,6 +74,8 @@ export function StockPage() {
   const [production, setProduction] = useState(EMPTY_PRODUCTION)
   const [adjustItem, setAdjustItem] = useState<StockItem | null>(null)
   const [adjustment, setAdjustment] = useState(EMPTY_ADJUSTMENT)
+  const [countItem, setCountItem] = useState<StockItem | null>(null)
+  const [count, setCount] = useState(EMPTY_COUNT)
   const [minimumItem, setMinimumItem] = useState<StockItem | null>(null)
   const [minimum, setMinimum] = useState<MinimumForm>({ minLevel: '' })
   const [reloadKey, setReloadKey] = useState(0)
@@ -128,6 +134,8 @@ export function StockPage() {
     setProduction(EMPTY_PRODUCTION)
     setAdjustItem(null)
     setAdjustment(EMPTY_ADJUSTMENT)
+    setCountItem(null)
+    setCount(EMPTY_COUNT)
     setMinimumItem(null)
     setMinimum({ minLevel: '' })
     setDialogError('')
@@ -207,6 +215,29 @@ export function StockPage() {
     }
   }
 
+  const submitCount = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!token || !countItem) return
+    setDialogError('')
+    try {
+      await apiRequest('/admin/stock/counts', {
+        token,
+        method: 'POST',
+        body: {
+          market: scopedMarket,
+          flavorKey: countItem.flavorKey,
+          packSizeGrams: countItem.packSizeGrams,
+          countedQuantity: Number(count.countedQuantity),
+          note: count.note.trim() || undefined,
+        },
+      })
+      closeDialogs()
+      setReloadKey((key) => key + 1)
+    } catch (requestError) {
+      setDialogError(stockErrorMessage(requestError))
+    }
+  }
+
   const submitMinimum = async (event: FormEvent) => {
     event.preventDefault()
     if (!token || !minimumItem) return
@@ -241,7 +272,7 @@ export function StockPage() {
   const adjustmentDelta = Number(adjustment.quantity)
 
   const recipeName = (flavorKey: string) => names.get(flavorKey) ?? flavorKey
-  const itemLabel = (item: { flavorKey: string; packSizeGrams: number }) => stockItemLabel(recipeName(item.flavorKey), item.packSizeGrams)
+  const itemLabel = (item: { flavorKey: string; packSizeGrams: number }) => stockItemLabel(recipeName(item.flavorKey), item.packSizeGrams, scopedMarket)
 
   const emptyPacksMessage = () => {
     if (!overview) return error ? 'Estoque indisponível.' : 'Carregando estoque...'
@@ -251,7 +282,8 @@ export function StockPage() {
 
   const rowActions = (item: StockItem): RowMenuItem[] => [
     ...(canWrite ? [
-      { label: 'Produzir', onSelect: () => openProduction(item) },
+      { label: 'Adicionar estoque', onSelect: () => openProduction(item) },
+      { label: 'Contagem', onSelect: () => { setDialogError(''); setCountItem(item); setCount(EMPTY_COUNT) } },
       { label: 'Ajustar', onSelect: () => { setDialogError(''); setAdjustItem(item); setAdjustment(EMPTY_ADJUSTMENT) } },
       { label: 'Definir mínimo', onSelect: () => { setDialogError(''); setMinimumItem(item); setMinimum({ minLevel: item.minLevel == null ? '' : String(item.minLevel) }) } },
     ] : []),
@@ -261,10 +293,10 @@ export function StockPage() {
   return (
     <PageFrame
       title="Estoque"
-      description="Packs prontos contra as entregas da janela. A cozinha lança produção e ajustes aqui."
+      description="Packs prontos contra as entregas da janela. A cozinha registra entradas, contagens e ajustes aqui."
       actions={canWrite ? (
         <button className="primary-button" type="button" onClick={() => openProduction()}>
-          Lançar produção
+          Adicionar estoque
         </button>
       ) : null}
     >
@@ -372,7 +404,7 @@ export function StockPage() {
                   return (
                     <tr key={stockItemKey(item)} className={highlighted(item) ? 'stock-row-warning' : undefined}>
                       <td className="stock-table-title">{recipeName(item.flavorKey)}</td>
-                      <td data-label="Tamanho">{item.packSizeGrams} g</td>
+                      <td data-label="Tamanho">{stockPackSize(item.packSizeGrams, scopedMarket)}</td>
                       <td className="stock-number" data-label="Em estoque">{item.onHand}</td>
                       <td className="stock-number" data-label="Comprometido">
                         <div className="queue-cell-stack">
@@ -491,13 +523,14 @@ export function StockPage() {
       </div>
 
       <Dialog
-        title="Lançar produção"
+        title="Adicionar estoque"
+        description="Soma os packs que entraram ao saldo atual."
         open={productionOpen}
         onClose={closeDialogs}
         footer={(
           <>
             <button className="ghost-button" type="button" onClick={closeDialogs}>Cancelar</button>
-            <button className="primary-button" type="submit" form="stock-production-form">Lançar</button>
+            <button className="primary-button" type="submit" form="stock-production-form">Adicionar</button>
           </>
         )}
       >
@@ -526,7 +559,7 @@ export function StockPage() {
                 </select>
               </label>
               <label className="closure-field">
-                Tamanho (g)
+                Tamanho
                 <select
                   required
                   disabled={!selectedRecipe}
@@ -535,7 +568,7 @@ export function StockPage() {
                 >
                   <option value="">Selecione</option>
                   {(selectedRecipe?.sizes ?? []).map((grams) => (
-                    <option key={grams} value={grams}>{grams} g</option>
+                    <option key={grams} value={grams}>{stockPackSize(grams, scopedMarket)}</option>
                   ))}
                 </select>
               </label>
@@ -590,8 +623,8 @@ export function StockPage() {
           <label className="closure-field">
             Motivo
             <select aria-label="Motivo" value={adjustment.reason} onChange={(event) => setAdjustment((current) => ({ ...current, reason: event.target.value as StockAdjustmentReason }))}>
-              {Object.entries(ADJUSTMENT_REASON_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
+              {MANUAL_ADJUSTMENT_REASONS.map((value) => (
+                <option key={value} value={value}>{ADJUSTMENT_REASON_LABELS[value]}</option>
               ))}
             </select>
           </label>
@@ -602,6 +635,37 @@ export function StockPage() {
               value={adjustment.note}
               onChange={(event) => setAdjustment((current) => ({ ...current, note: event.target.value }))}
             />
+          </label>
+        </form>
+      </Dialog>
+
+      <Dialog
+        title={countItem ? `Contagem de ${itemLabel(countItem)}` : 'Contagem'}
+        description="Informe o total real de packs. O sistema registra a diferença no histórico."
+        open={Boolean(countItem)}
+        onClose={closeDialogs}
+        footer={(
+          <>
+            <button className="ghost-button" type="button" onClick={closeDialogs}>Cancelar</button>
+            <button className="primary-button" type="submit" form="stock-count-form">Salvar</button>
+          </>
+        )}
+      >
+        <form id="stock-count-form" className="closure-form" onSubmit={submitCount}>
+          {dialogError ? <div className="alert" role="alert">{dialogError}</div> : null}
+          <label className="closure-field">
+            Quantidade contada
+            <input required type="number" min={0} max={10000} value={count.countedQuantity} onChange={(event) => setCount((current) => ({ ...current, countedQuantity: event.target.value }))} />
+          </label>
+          {countItem ? (
+            <p className="muted">
+              Em estoque: {countItem.onHand}
+              {count.countedQuantity.trim() !== '' ? ` → novo saldo: ${Number(count.countedQuantity)}` : ''}
+            </p>
+          ) : null}
+          <label className="closure-field">
+            Nota
+            <input value={count.note} onChange={(event) => setCount((current) => ({ ...current, note: event.target.value }))} />
           </label>
         </form>
       </Dialog>

@@ -29,6 +29,7 @@ export type StockCatalogEntry = {
   flavorKey: string
   packSizeGrams: number
   label: string
+  published: boolean
 }
 
 export type StockOverview = {
@@ -66,7 +67,7 @@ export type StockMovementsResponse = {
 }
 
 export const MOVEMENT_TYPE_LABELS: Record<StockMovementType, string> = {
-  production: 'Produção',
+  production: 'Entrada',
   separation: 'Separação',
   separation_reversal: 'Estorno',
   adjustment: 'Ajuste',
@@ -92,12 +93,23 @@ export const STOCK_STATUS_BADGES: Record<StockStatus, string> = {
   ok: 'badge-success',
 }
 
+// Contagem has its own action, which sends the counted total instead of a difference.
+export const MANUAL_ADJUSTMENT_REASONS: StockAdjustmentReason[] = ['loss', 'expired', 'sample', 'other']
+
 export function isStockWindow(value: number): value is StockWindow {
   return STOCK_WINDOWS.includes(value as StockWindow)
 }
 
-export function stockItemLabel(flavorKey: string, packSizeGrams: number) {
-  return `${flavorKey} ${packSizeGrams} g`
+const GRAMS_TO_OZ = 0.035274
+
+// Same reading as the reports: ounces with the grams beside them in the US, grams in Brazil.
+export function stockPackSize(packSizeGrams: number, market: string) {
+  if (market !== 'US') return `${packSizeGrams} g`
+  return `${(packSizeGrams * GRAMS_TO_OZ).toFixed(1)} oz (${packSizeGrams} g)`
+}
+
+export function stockItemLabel(flavorKey: string, packSizeGrams: number, market = 'BR') {
+  return `${flavorKey} ${stockPackSize(packSizeGrams, market)}`
 }
 
 export function stockErrorMessage(error: unknown) {
@@ -135,10 +147,10 @@ export function stockRecipeNames(catalog: StockCatalogEntry[]) {
   return new Map(catalog.map((entry) => [entry.flavorKey, entry.label]))
 }
 
-// Recipes and sizes the operator can pick: the catalog plus whatever is already in stock or demanded.
+// Recipes and sizes the operator can pick: the published catalog plus whatever is already in stock or demanded.
 export function stockRecipeOptions(catalog: StockCatalogEntry[], items: StockItem[]) {
   const sizes = new Map<string, Set<number>>()
-  for (const entry of [...catalog, ...items]) {
+  for (const entry of [...catalog.filter((item) => item.published), ...items]) {
     const current = sizes.get(entry.flavorKey) ?? new Set<number>()
     current.add(entry.packSizeGrams)
     sizes.set(entry.flavorKey, current)

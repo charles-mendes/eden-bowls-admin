@@ -673,6 +673,33 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(item)
     }
 
+    if (path === '/api/v1/admin/stock/counts' && method === 'POST') {
+      const key = `${body?.flavorKey}|${body?.packSizeGrams}`
+      const item = stockItems.find((entry) => `${entry.flavorKey}|${entry.packSizeGrams}` === key)
+      if (!item) {
+        return jsonResponse({ message: 'Unknown stock item.', details: { code: 'stock_item_unknown' } }, 422)
+      }
+      const quantity = Number(body.countedQuantity) - Number(item.onHand)
+      item.onHand = Number(body.countedQuantity)
+      refreshStock(item)
+      stockMovements = [{
+        id: nextMovementId,
+        market: body.market,
+        flavorKey: body.flavorKey,
+        packSizeGrams: body.packSizeGrams,
+        type: 'adjustment',
+        quantity,
+        reason: 'count',
+        note: body.note || null,
+        productionCycleId: null,
+        subscriptionId: null,
+        actorName: profile.email,
+        createdAt: '2026-09-21T08:00:00.000Z',
+      }, ...stockMovements]
+      nextMovementId += 1
+      return jsonResponse(item)
+    }
+
     if (path === '/api/v1/admin/stock/adjustments' && method === 'POST') {
       const key = `${body?.flavorKey}|${body?.packSizeGrams}`
       const item = stockItems.find((entry) => `${entry.flavorKey}|${entry.packSizeGrams}` === key)

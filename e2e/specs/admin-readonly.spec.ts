@@ -25,7 +25,7 @@ test.describe('Admin readonly', () => {
 
     await expect(page.getByRole('heading', { name: 'Estoque' })).toBeVisible()
     await expect(page.getByRole('cell', { name: 'frango', exact: true })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Lançar produção' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Adicionar estoque' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Ajustar' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Definir mínimo' })).toHaveCount(0)
   })

@@ -22,7 +22,7 @@ The admin app MUST expose **Estoque** at `/operations/stock` in the Operação m
 
 ### Requirement: Stock overview table
 
-The page MUST load `GET /api/v1/admin/stock` and show one row per recipe and pack size with Receita, Tamanho, Em estoque, Comprometido (with the part awaiting payment as a subline), Disponível, A produzir and Mínimo. Rows with negative available or `belowMinimum` true MUST be highlighted with the semantic warning colour. Rows MUST be sorted by A produzir descending, then recipe.
+The page MUST load `GET /api/v1/admin/stock` and show one row per recipe and pack size with Receita, Tamanho, Em estoque, Comprometido (with the part awaiting payment as a subline), Disponível, A produzir and Mínimo. Rows with negative available or `belowMinimum` true MUST be highlighted with the semantic warning colour. Rows MUST be sorted by A produzir descending, then recipe. The overview MUST list every published catalog recipe and size of the market, with zero stock when it has no stored item, and MUST NOT add unpublished ones unless they already have stock, a minimum or demand.
 
 #### Scenario: Kitchen sees what to produce
 
@@ -59,7 +59,7 @@ The page MUST offer a window of 7, 14 or 30 days (default 7) and a market filter
 
 ### Requirement: Record production and adjust
 
-Callers with `production.write` MUST see "Lançar produção" and, per row, "Ajustar" and "Definir mínimo". Lançar produção MUST ask recipe, size, quantity (1–10000) and optional note. Ajustar MUST ask a non-zero signed quantity and a reason (Perda, Vencimento, Contagem, Amostra, Outro), with note required for Outro. After success the table MUST reload. API errors MUST show in `div.alert` inside the dialog.
+Callers with `production.write` MUST see "Adicionar estoque" and, per row, "Adicionar estoque", "Contagem", "Ajustar" and "Definir mínimo". Adicionar estoque MUST ask recipe, size, quantity (1–10000) and optional note. Contagem MUST ask the counted total (0–10000) and optional note, and the API MUST compute the difference under the item lock and record it as an adjustment with reason Contagem. Ajustar MUST ask a non-zero signed quantity and a reason (Perda, Vencimento, Amostra, Outro), with note required for Outro. After success the table MUST reload. API errors MUST show in `div.alert` inside the dialog.
 
 #### Scenario: Record a batch
 
@@ -74,11 +74,11 @@ Callers with `production.write` MUST see "Lançar produção" and, per row, "Aju
 #### Scenario: Readonly sees no actions
 
 - **WHEN** a readonly user opens Estoque
-- **THEN** the table is visible and Lançar produção, Ajustar and Definir mínimo are hidden
+- **THEN** the table is visible and Adicionar estoque, Contagem, Ajustar and Definir mínimo are hidden
 
 ### Requirement: Movement history
 
-The page MUST show the market's movements from `GET /api/v1/admin/stock/movements`, newest first, paginated, filterable by item and type. Each row MUST show date, item, type (Produção, Separação, Estorno, Ajuste), signed quantity, reason and note, and the author or, for Separação and Estorno, a link to the subscription.
+The page MUST show the market's movements from `GET /api/v1/admin/stock/movements`, newest first, paginated, filterable by item and type. Each row MUST show date, item, type (Entrada, Separação, Estorno, Ajuste), signed quantity, reason and note, and the author or, for Separação and Estorno, a link to the subscription.
 
 #### Scenario: Separation links to the subscription
 

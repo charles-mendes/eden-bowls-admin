@@ -439,6 +439,25 @@ async function handlePackStock(route: Route, method: string, path: string, url: 
     return true
   }
 
+  if (path === '/api/v1/admin/stock/counts' && method === 'POST') {
+    const item = state.items.find((entry) => entry.flavorKey === input.flavorKey && entry.packSizeGrams === Number(input.packSizeGrams))
+    if (!item) {
+      await fulfillJson(route, { message: 'Unknown stock item.', details: { code: 'stock_item_unknown' } }, 422)
+      return true
+    }
+    const quantity = Number(input.countedQuantity) - item.onHand
+    item.onHand = Number(input.countedQuantity)
+    refreshStockItem(item)
+    state.movements.unshift({
+      id: state.nextId, market: input.market, flavorKey: input.flavorKey, packSizeGrams: input.packSizeGrams,
+      type: 'adjustment', quantity, reason: 'count', note: input.note || null,
+      productionCycleId: null, subscriptionId: null, actorName: 'ops.write@edenbowls.com', createdAt: '2026-09-21T08:00:00.000Z',
+    })
+    state.nextId += 1
+    await fulfillJson(route, item)
+    return true
+  }
+
   if (path === '/api/v1/admin/stock/adjustments' && method === 'POST') {
     const item = state.items.find((entry) => entry.flavorKey === input.flavorKey && entry.packSizeGrams === Number(input.packSizeGrams))
     if (!item) {
