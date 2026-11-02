@@ -52,6 +52,7 @@ export type FetchCall = {
 }
 
 export const blingConnectionState = { connected: true }
+export const nfeDetailState: { override: Record<string, unknown> } = { override: {} }
 
 export const nfeSummary = {
   id: 5,
@@ -68,7 +69,11 @@ export const nfeSummary = {
   attempts: 1,
   created_at: '2026-10-30T12:00:00.000Z',
   authorized_at: null,
+  bling_situacao: 4,
+  bling_situacao_label: 'Rejeitada',
+  imported: false,
   can_retry: true,
+  can_edit: true,
 }
 
 export const nfeDetail = {
@@ -81,8 +86,6 @@ export const nfeDetail = {
   bling_order_id: 9002,
   bling_nfe_id: 9003,
   protocol: null,
-  bling_situacao: 4,
-  bling_situacao_label: 'Rejeitada',
   customer_address: { street: 'Rua A', number: '1', city: 'São Paulo', state: 'SP', zipcode: '01001000' },
   request_payload: { order: { numeroLoja: 'in_nfe_1' } },
   response_payload: { order: { id: 9002 } },
@@ -1024,7 +1027,11 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (/^\/api\/v1\/admin\/nfe\/\d+$/.test(path) && method === 'GET') {
-      return jsonResponse({ success: true, data: nfeDetail })
+      return jsonResponse({ success: true, data: { ...nfeDetail, ...nfeDetailState.override } })
+    }
+
+    if (/^\/api\/v1\/admin\/nfe\/\d+\/customer$/.test(path) && method === 'PATCH') {
+      return jsonResponse({ success: true, data: { ...nfeDetail, customer_name: 'Ana Correta' } })
     }
 
     if (/^\/api\/v1\/admin\/nfe\/\d+\/retry$/.test(path) && method === 'POST') {

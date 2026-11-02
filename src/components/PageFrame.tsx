@@ -7,7 +7,7 @@ export function PageFrame({
   actions,
   children,
 }: {
-  eyebrow?: string
+  eyebrow?: ReactNode
   title: string
   description: string
   actions?: ReactNode

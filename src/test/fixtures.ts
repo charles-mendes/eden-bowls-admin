@@ -10,6 +10,7 @@ export function jsonResponse(data: unknown, status = 200) {
 export const WRITE_PERMISSIONS = [
   'nfe.read',
   'nfe.retry',
+  'nfe.edit',
   'nutrition.simulate',
   'onboarding.read',
   'shipping.read',

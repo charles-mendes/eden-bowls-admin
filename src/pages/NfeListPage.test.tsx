@@ -1,10 +1,16 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NfeListPage } from './NfeListPage'
 import { adminUser, readonlyUser } from '../test/fixtures'
 import { blingConnectionState, findCall, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
+
+const navigateMock = vi.hoisted(() => vi.fn())
+vi.mock('react-router-dom', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router-dom')>()),
+  useNavigate: () => navigateMock,
+}))
 
 describe('NfeListPage', () => {
   afterEach(() => {
@@ -14,7 +20,7 @@ describe('NfeListPage', () => {
     vi.restoreAllMocks()
   })
 
-  it('lists the notes with status, customer, document, value, number, key, date and error', async () => {
+  it('lists the notes with status, customer, document, value, number, date and error', async () => {
     seedAuth()
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeListPage />, '/operations/nfe')
@@ -25,8 +31,40 @@ describe('NfeListPage', () => {
     expect(row).toHaveTextContent('529.982.247-25')
     expect(row).toHaveTextContent('R$')
     expect(row).toHaveTextContent('158 / 1')
-    expect(row).toHaveTextContent('35251234')
     expect(row).toHaveTextContent('Escopo ausente')
+  })
+
+  it('shows the Bling status next to ours and marks a note created in Bling', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeListPage />, '/operations/nfe')
+
+    const row = (await screen.findByRole('link', { name: 'Ana Souza' })).closest('tr') as HTMLElement
+    expect(within(row).getByText('Rejeitada')).toHaveClass('badge-error')
+    expect(within(row).queryByText('Criada no Bling')).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Bling' })).toBeInTheDocument()
+  })
+
+  it('opens the note from a visible action and from anywhere on the row', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeListPage />, '/operations/nfe')
+
+    const action = await screen.findByRole('link', { name: 'Ver detalhes da nota de Ana Souza' })
+    expect(action).toHaveAttribute('href', '/operations/nfe/5')
+
+    await user.click(within(action.closest('tr') as HTMLElement).getByText(/150,00/))
+    expect(navigateMock).toHaveBeenCalledWith('/operations/nfe/5')
+  })
+
+  it('offers the canceled status in the filter', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeListPage />, '/operations/nfe')
+    await screen.findByRole('link', { name: 'Ana Souza' })
+
+    expect(screen.getByRole('option', { name: 'Cancelada' })).toBeInTheDocument()
   })
 
   it('sends the filters to the API', async () => {

@@ -1,6 +1,6 @@
 import { formatDate } from './format'
 
-export type NfeStatus = 'pending' | 'blocked_missing_document' | 'submitted' | 'authorized' | 'rejected' | 'error'
+export type NfeStatus = 'pending' | 'blocked_missing_document' | 'submitted' | 'authorized' | 'rejected' | 'canceled' | 'error'
 
 // NF-e issued through Bling. Not the Eden Bowls invoice (EB-YYYY-NNNNNN) in customerInvoices.ts.
 export type NfeSummary = {
@@ -18,7 +18,11 @@ export type NfeSummary = {
   attempts: number
   created_at: string | null
   authorized_at: string | null
+  bling_situacao: number | null
+  bling_situacao_label: string | null
+  imported: boolean
   can_retry: boolean
+  can_edit: boolean
 }
 
 export type NfeDetail = NfeSummary & {
@@ -30,8 +34,6 @@ export type NfeDetail = NfeSummary & {
   bling_order_id: number | null
   bling_nfe_id: number | null
   protocol: string | null
-  bling_situacao: number | null
-  bling_situacao_label: string | null
   customer_address: Record<string, string> | null
   request_payload: unknown
   response_payload: unknown
@@ -56,6 +58,7 @@ export const NFE_STATUS_OPTIONS: { value: NfeStatus; label: string }[] = [
   { value: 'submitted', label: 'Enviada' },
   { value: 'authorized', label: 'Autorizada' },
   { value: 'rejected', label: 'Rejeitada' },
+  { value: 'canceled', label: 'Cancelada' },
   { value: 'error', label: 'Erro' },
 ]
 
@@ -65,6 +68,7 @@ const STATUS_TONE: Record<NfeStatus, string> = {
   submitted: 'badge-info',
   authorized: 'badge-success',
   rejected: 'badge-error',
+  canceled: 'badge-neutral',
   error: 'badge-error',
 }
 
@@ -74,6 +78,19 @@ export function nfeStatusLabel(status: NfeStatus) {
 
 export function nfeStatusTone(status: NfeStatus) {
   return STATUS_TONE[status] ?? 'badge-info'
+}
+
+// GET /nfe `situacao` in the API: 5 Autorizada, 6 Emitida DANFE, 2 Cancelada, 4 Rejeitada, 9 Denegada, 11 Bloqueada.
+export function blingSituacaoTone(situacao: number | null) {
+  if (situacao === 5 || situacao === 6) return 'badge-success'
+  if (situacao === 4 || situacao === 9 || situacao === 11) return 'badge-error'
+  if (situacao === 2) return 'badge-neutral'
+  return 'badge-info'
+}
+
+// Bling does not document this address. It was checked by hand against a real note in November 2026.
+export function blingNfeUrl(id: number) {
+  return `https://www.bling.com.br/notas.fiscais.php#edit/${id}`
 }
 
 export function formatNfeNumber(item: Pick<NfeSummary, 'nfe_number' | 'nfe_series'>) {

@@ -4417,3 +4417,395 @@ label.ghost-button {
 .report-loading {
   min-height: 120px;
 }
+
+/* NF-e list: fixed columns while they fit, one card per note when the content area is narrow. The query reads the
+   content area and not the screen, because the sidebar takes 240px above 1100px. */
+.nfe-filters {
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 2fr);
+  align-items: end;
+}
+
+.nfe-filters input,
+.nfe-filters select {
+  height: 40px;
+  padding-block: 0;
+}
+
+.nfe-search {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--space-2);
+}
+
+.nfe-search .ghost-button {
+  height: 40px;
+}
+
+.nfe-table-shell {
+  container-type: inline-size;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.nfe-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.nfe-table th,
+.nfe-table td {
+  padding: var(--space-3);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.nfe-col-status {
+  width: 112px;
+}
+
+.nfe-col-value {
+  width: 112px;
+}
+
+.nfe-col-number {
+  width: 104px;
+}
+
+.nfe-col-date {
+  width: 104px;
+}
+
+.nfe-col-error {
+  width: 180px;
+}
+
+.nfe-origin {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+}
+
+.nfe-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nfe-error {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+@container (max-width: 860px) {
+  .nfe-table,
+  .nfe-table tbody,
+  .nfe-table tr,
+  .nfe-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .nfe-table thead {
+    display: none;
+  }
+
+  .nfe-table tr + tr {
+    border-top: 1px solid var(--border);
+  }
+
+  .nfe-table tr {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-2) 0;
+  }
+
+  .nfe-table td {
+    padding: 4px var(--space-3);
+    border: 0;
+  }
+
+  .nfe-table tr:hover td {
+    background: transparent;
+  }
+
+  .nfe-table .nfe-cell-customer {
+    order: -1;
+    padding-bottom: var(--space-2);
+  }
+
+  .nfe-table td[data-label] {
+    display: grid;
+    grid-template-columns: 104px minmax(0, 1fr);
+    gap: var(--space-3);
+    align-items: start;
+  }
+
+  .nfe-table td[data-label] > span {
+    justify-self: start;
+  }
+
+  .nfe-table td[data-label]::before {
+    content: attr(data-label);
+    color: var(--text-soft);
+    font-size: var(--text-xs);
+    font-weight: 600;
+  }
+
+  .nfe-table td[data-label="Bling"] .nfe-origin {
+    grid-column: 2;
+    margin-top: 0;
+  }
+
+  /* On a card the whole error fits, and it is what the operator came to read. */
+  .nfe-error {
+    display: block;
+    -webkit-line-clamp: none;
+    line-clamp: none;
+  }
+}
+
+@container (max-width: 860px) {
+  .nfe-table .nfe-cell-open {
+    padding-top: var(--space-2);
+  }
+
+  .nfe-open {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-1);
+    min-height: 44px;
+    align-items: center;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+  }
+}
+
+@media (max-width: 900px) {
+  .nfe-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nfe-filters > label:first-child,
+  .nfe-search {
+    grid-column: 1 / -1;
+  }
+}
+
+.nfe-col-open {
+  width: 96px;
+}
+
+.nfe-row {
+  cursor: pointer;
+}
+
+.nfe-row:hover td {
+  background: var(--accent-soft);
+}
+
+.nfe-open {
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.nfe-open:hover {
+  text-decoration: underline;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* NF-e detail: what the operator needs first, the technical data folded at the end. */
+.nfe-back {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.nfe-back:hover {
+  text-decoration: underline;
+}
+
+.nfe-detail {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.nfe-detail .section-card {
+  margin: 0;
+}
+
+.nfe-detail .meta-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+}
+
+.nfe-detail .meta-item {
+  align-content: start;
+}
+
+.nfe-status-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-6, 32px);
+  margin: 0 0 var(--space-3);
+}
+
+.nfe-status-list div {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.nfe-status-list dt {
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.nfe-status-list dd {
+  margin: 0;
+}
+
+.nfe-alert {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.nfe-alert-error {
+  background: var(--danger-bg, #fef2f2);
+}
+
+.nfe-hint {
+  margin: var(--space-3) 0 0;
+}
+
+.nfe-copy-list {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+}
+
+.nfe-copy-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.nfe-copy-field .meta-item {
+  flex: 1 1 auto;
+}
+
+.nfe-copy-field .ghost-button {
+  flex: 0 0 auto;
+}
+
+.nfe-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.nfe-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.nfe-technical summary {
+  cursor: pointer;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.nfe-technical[open] summary {
+  margin-bottom: var(--space-4);
+}
+
+.nfe-technical .json-details {
+  margin-top: var(--space-2);
+}
+
+@media (max-width: 560px) {
+  .nfe-files .ghost-button {
+    flex: 1 1 100%;
+    min-height: 44px;
+    text-align: center;
+  }
+}
+
+.nfe-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.nfe-limits {
+  margin: 0;
+}
+
+.nfe-limits p {
+  margin: 0;
+}
+
+.nfe-limits ul {
+  margin: var(--space-2) 0;
+  padding-left: var(--space-4);
+}
+
+.nfe-customer-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.nfe-customer-form label {
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.nfe-customer-form input {
+  width: 100%;
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-strong);
+}
+
+.nfe-customer-form .form-error,
+.nfe-field-wide {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 560px) {
+  .nfe-actions,
+  .nfe-actions > * {
+    width: 100%;
+    text-align: center;
+  }
+
+  .nfe-customer-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

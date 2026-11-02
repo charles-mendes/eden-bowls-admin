@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useEffect, useState, type FormEvent, type MouseEvent } from 'react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { Pager } from '../components/Pager'
@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import {
   NFE_STATUS_OPTIONS,
+  blingSituacaoTone,
   formatNfeAmount,
   formatNfeDate,
   formatNfeNumber,
@@ -24,9 +25,13 @@ const OAUTH_MESSAGES: Record<string, string> = {
   failed: 'O Bling recusou a autorização. Tente de novo em instantes.',
 }
 
+// The API reads Bling every 5 minutes. The page only has to pick that up without a reload.
+const LIST_REFRESH_MS = 60 * 1000
+
 export function NfeListPage() {
   const { token, hasPermission } = useAuth()
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [data, setData] = useState<NfeListResponse['data'] | null>(null)
   const [connection, setConnection] = useState<BlingConnection | null>(null)
   const [status, setStatus] = useState('')
@@ -37,6 +42,7 @@ export function NfeListPage() {
   const [page, setPage] = useState(1)
   const [error, setError] = useState('')
   const [authorizing, setAuthorizing] = useState(false)
+  const [refreshTick, setRefreshTick] = useState(0)
   const oauthMessage = OAUTH_MESSAGES[searchParams.get('bling') || '']
 
   useEffect(() => {
@@ -55,7 +61,12 @@ export function NfeListPage() {
         if (active) setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar notas fiscais')
       })
     return () => { active = false }
-  }, [token, status, from, to, search, page])
+  }, [token, status, from, to, search, page, refreshTick])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setRefreshTick((current) => current + 1), LIST_REFRESH_MS)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (!token) return
@@ -63,6 +74,13 @@ export function NfeListPage() {
       .then((response) => setConnection(response.data))
       .catch(() => setConnection(null))
   }, [token])
+
+  // The row is a shortcut for the mouse. The link inside it stays the way in for keyboard and screen readers.
+  const openNote = (event: MouseEvent<HTMLTableRowElement>, id: number) => {
+    if ((event.target as HTMLElement).closest('a, button')) return
+    if (window.getSelection()?.toString()) return
+    navigate(`/operations/nfe/${id}`)
+  }
 
   const submitSearch = (event: FormEvent) => {
     event.preventDefault()
@@ -106,7 +124,7 @@ export function NfeListPage() {
         </Section>
       ) : null}
 
-      <FiltersBar>
+      <FiltersBar className="nfe-filters">
         <label>
           Status
           <select value={status} onChange={(event) => { setPage(1); setStatus(event.target.value) }}>
@@ -122,7 +140,7 @@ export function NfeListPage() {
           Até
           <input type="date" value={to} onChange={(event) => { setPage(1); setTo(event.target.value) }} />
         </label>
-        <form onSubmit={submitSearch}>
+        <form className="nfe-search" onSubmit={submitSearch}>
           <label>
             Busca
             <input
@@ -135,38 +153,51 @@ export function NfeListPage() {
         </form>
       </FiltersBar>
 
-      <Section title="Notas" description={`Total: ${data?.total ?? '—'}`}>
-        <div className="table-shell table-scroll">
-          <table>
+      <Section title="Notas" description={`Total: ${data?.total ?? '—'}. O status do Bling é atualizado a cada 5 minutos.`}>
+        <div className="nfe-table-shell">
+          <table className="nfe-table">
             <thead>
               <tr>
-                <th>Status</th>
+                <th className="nfe-col-status">Status</th>
+                <th className="nfe-col-status">Bling</th>
                 <th>Cliente</th>
-                <th>Documento</th>
-                <th>Valor</th>
-                <th>Número/série</th>
-                <th>Chave</th>
-                <th>Data</th>
-                <th>Erro</th>
+                <th className="nfe-col-value">Valor</th>
+                <th className="nfe-col-number">Número/série</th>
+                <th className="nfe-col-date">Data</th>
+                <th className="nfe-col-error">Erro</th>
+                <th className="nfe-col-open"><span className="visually-hidden">Ações</span></th>
               </tr>
             </thead>
             <tbody>
+              {!data && !error ? (
+                <tr><td className="nfe-empty" colSpan={8}>Carregando notas...</td></tr>
+              ) : null}
               {data && data.items.length === 0 ? (
-                <tr><td colSpan={8}>Nenhuma nota encontrada.</td></tr>
+                <tr><td className="nfe-empty" colSpan={8}>Nenhuma nota encontrada.</td></tr>
               ) : null}
               {data?.items.map((item) => (
-                <tr key={item.id}>
-                  <td><span className={nfeStatusTone(item.status)}>{nfeStatusLabel(item.status)}</span></td>
-                  <td>
-                    <Link className="table-link" to={`/operations/nfe/${item.id}`}>{item.customer_name || `Nota ${item.id}`}</Link>
-                    <div className="muted">{item.customer_email || ''}</div>
+                <tr key={item.id} className="nfe-row" onClick={(event) => openNote(event, item.id)}>
+                  <td data-label="Status"><span className={nfeStatusTone(item.status)}>{nfeStatusLabel(item.status)}</span></td>
+                  <td data-label="Bling">
+                    {item.bling_situacao_label
+                      ? <span className={blingSituacaoTone(item.bling_situacao)}>{item.bling_situacao_label}</span>
+                      : '—'}
+                    {item.imported ? <div className="muted nfe-origin">Criada no Bling</div> : null}
                   </td>
-                  <td>{formatTaxDocument(item.customer_document)}</td>
-                  <td>{formatNfeAmount(item)}</td>
-                  <td>{formatNfeNumber(item)}</td>
-                  <td>{item.access_key || '—'}</td>
-                  <td>{formatNfeDate(item.created_at)}</td>
-                  <td>{item.last_error || '—'}</td>
+                  <td className="nfe-cell-customer">
+                    <Link className="table-link" to={`/operations/nfe/${item.id}`}>{item.customer_name || `Nota ${item.id}`}</Link>
+                    <div className="muted nfe-line" title={item.customer_email || undefined}>{item.customer_email || ''}</div>
+                    <div className="muted nfe-line">{formatTaxDocument(item.customer_document)}</div>
+                  </td>
+                  <td data-label="Valor">{formatNfeAmount(item)}</td>
+                  <td data-label="Número/série">{formatNfeNumber(item)}</td>
+                  <td data-label="Data">{formatNfeDate(item.created_at)}</td>
+                  <td data-label="Erro"><span className="nfe-error" title={item.last_error || undefined}>{item.last_error || '—'}</span></td>
+                  <td className="nfe-cell-open">
+                    <Link className="nfe-open" to={`/operations/nfe/${item.id}`} aria-label={`Ver detalhes da nota de ${item.customer_name || item.id}`}>
+                      <span>Detalhes</span> <span aria-hidden="true">›</span>
+                    </Link>
+                  </td>
                 </tr>
               ))}
             </tbody>
