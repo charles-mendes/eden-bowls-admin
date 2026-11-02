@@ -128,6 +128,8 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   webhookHealth?: WebhookHealthFixture | { status: number; message: string }
   syncStatus?: Record<string, unknown>
   subscriptionInScope?: boolean
+  labelIssues?: Array<{ code: string }>
+  subscriptionMarket?: string
   customerInvoices?: Array<Record<string, unknown>>
   productionInScope?: boolean
   productionQueue?: Array<Record<string, unknown>>
@@ -793,7 +795,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/shipments$/.test(path) && method === 'GET') {
-      return jsonResponse({ success: true, data: { items: [] } })
+      return jsonResponse({ success: true, data: { items: [], label_issues: options.labelIssues ?? [] } })
     }
 
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/shipments$/.test(path) && method === 'POST') {
@@ -807,6 +809,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
             stripe_invoice_id: body?.invoice_id || 'in_test_1',
             ups_shipment_id: '1Z999',
             tracking_number: '1Z999AA10123456784',
+            tracking_url: 'https://www.ups.com/track?tracknum=1Z999AA10123456784',
+            tracking_status: 'in_transit',
+            tracking_description: 'Departed from facility',
+            delivered_at: null,
             service_code: '03',
             label_format: 'GIF',
             has_label: true,
@@ -821,6 +827,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       })
     }
 
+    if (/^\/api\/v1\/admin\/shipments\/[^/]+\/label$/.test(path) && method === 'GET') {
+      return new Response('GIF89a', { status: 200, headers: { 'Content-Type': 'image/gif' } })
+    }
+
     if (/^\/api\/v1\/admin\/shipments\/[^/]+\/void$/.test(path) && method === 'POST') {
       return jsonResponse({ success: true, data: { shipment: { id: 'ship_1', status: 'voided' } } })
     }
@@ -832,6 +842,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+$/.test(path) && method === 'GET') {
       return jsonResponse({
         ...subscriptionItem,
+        term: { ...subscriptionItem.term, marketCountry: options.subscriptionMarket ?? subscriptionItem.term.marketCountry },
         stripeSubscriptionId: subscriptionItem.providerSubscriptionId,
         stripeCustomerId: 'cus_1',
         planLabel: 'Adult 1m',

@@ -6,6 +6,9 @@ import { checkoutDetail, operatorWriteUser, readonlyUser } from '../test/fixture
 import { customerInvoice, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
+const printLabel = vi.hoisted(() => vi.fn())
+vi.mock('../lib/printLabel', () => ({ printLabel }))
+
 describe('SubscriptionDetailPage', () => {
   afterEach(() => {
     localStorage.clear()
@@ -81,10 +84,70 @@ describe('SubscriptionDetailPage', () => {
     expect(screen.getAllByText('Cliente').length).toBeGreaterThan(0)
   })
 
+  it('warns about what blocks the label and disables the button before the click', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'US',
+      labelIssues: [{ code: 'address_incomplete' }, { code: 'ship_from_missing' }],
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const warning = await screen.findByRole('alert', { name: 'Etiqueta bloqueada' })
+    expect(warning).toHaveTextContent('Falta rua, cidade, estado ou ZIP')
+    expect(within(warning).getByRole('link', { name: 'Abrir configuração de frete' })).toHaveAttribute('href', '/config/shipping')
+
+    await user.click(screen.getByRole('button', { name: 'Sincronizar faturas' }))
+
+    expect(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' })).toBeDisabled()
+    expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/shipments'))).toBe(false)
+  })
+
+  it('prints the label and links the tracking with its status', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    printLabel.mockReset().mockResolvedValue(undefined)
+    installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US' })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await waitFor(() => {
+      expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: 'Sincronizar faturas' }))
+    await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
+
+    expect(await screen.findByRole('link', { name: '1Z999AA10123456784' })).toHaveAttribute(
+      'href',
+      'https://www.ups.com/track?tracknum=1Z999AA10123456784',
+    )
+    expect(screen.getByText('Em trânsito')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Imprimir' }))
+
+    await waitFor(() => expect(printLabel).toHaveBeenCalledTimes(1))
+    expect(printLabel.mock.calls[0][0].size).toBeGreaterThan(0)
+  })
+
+  it('shows no UPS option on a Brazilian delivery', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'BR' })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await waitFor(() => {
+      expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
+    })
+    await user.click(screen.getByRole('button', { name: 'Sincronizar faturas' }))
+    await screen.findByText('Faturas sincronizadas.')
+
+    expect(screen.queryByRole('heading', { name: 'Envio UPS' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Gerar etiqueta UPS' })).toBeNull()
+  })
+
   it('creates a UPS label from a synced invoice', async () => {
     const user = userEvent.setup()
     seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
+    const { calls } = installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US' })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
     await waitFor(() => {

@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, getApiBaseUrl } from '../lib/api'
 import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
 import { formatDate, formatStripeStatus } from '../lib/format'
+import { printLabel } from '../lib/printLabel'
 import { formatNfeAmount, formatNfeDate, formatNfeNumber, nfeStatusLabel, nfeStatusTone, type NfeSummary } from '../lib/nfe'
 import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
@@ -23,6 +24,7 @@ type SubscriptionDetail = {
   cancelAtPeriodEnd: boolean
   dashboardUrl: string
   stripeAccount?: string
+  term?: { marketCountry: string; months: number }
   customerProfileInScope?: boolean
   customerName?: string | null
   user: { id: string; email: string }
@@ -47,6 +49,10 @@ type UpsShipment = {
   stripe_invoice_id: string
   ups_shipment_id: string | null
   tracking_number: string | null
+  tracking_url: string | null
+  tracking_status: string | null
+  tracking_description: string | null
+  delivered_at: string | null
   service_code: string | null
   label_format: string | null
   has_label: boolean
@@ -58,11 +64,39 @@ type UpsShipment = {
   updated_at: string | null
 }
 
+const TRACKING_STATUS: Record<string, string> = {
+  label_created: 'Aguardando coleta',
+  in_transit: 'Em trânsito',
+  out_for_delivery: 'Saiu para entrega',
+  delivered: 'Entregue',
+  exception: 'Problema na entrega',
+}
+
+type LabelIssue = { code: string }
+
+function labelIssueText(issue: LabelIssue): string {
+  switch (issue.code) {
+    case 'po_box_not_allowed':
+      return 'O endereço de entrega é um PO Box, onde a UPS não entrega. O cliente corrige em Meu Plano, na loja.'
+    case 'address_incomplete':
+      return 'Falta rua, cidade, estado ou ZIP no endereço de entrega. O cliente corrige em Meu Plano, na loja.'
+    case 'ship_from_missing':
+      return 'O endereço de origem dos EUA não está preenchido.'
+    case 'recipient_name_missing':
+      return 'O cliente não tem nome válido para a etiqueta.'
+    case 'ups_not_configured':
+      return 'As credenciais da UPS não estão configuradas na API.'
+    default:
+      return `Etiqueta bloqueada: ${issue.code}.`
+  }
+}
+
 const SHIPMENT_STATUS: Record<string, { label: string; badge: string }> = {
   created: { label: 'Etiqueta criada', badge: 'badge-success' },
   pending: { label: 'Gerando', badge: 'badge-info' },
   unknown: { label: 'Verificar na UPS', badge: 'badge-warning' },
   voided: { label: 'Anulada', badge: 'badge-error' },
+  delivered: { label: 'Entregue', badge: 'badge-success' },
 }
 
 export function SubscriptionDetailPage() {
@@ -71,6 +105,7 @@ export function SubscriptionDetailPage() {
   const [data, setData] = useState<SubscriptionDetail | null>(null)
   const [invoices, setInvoices] = useState<InvoiceItem[]>([])
   const [shipments, setShipments] = useState<UpsShipment[]>([])
+  const [labelIssues, setLabelIssues] = useState<LabelIssue[]>([])
   const [customerInvoices, setCustomerInvoices] = useState<CustomerInvoice[]>([])
   const [nfeItems, setNfeItems] = useState<NfeSummary[]>([])
   const [message, setMessage] = useState('')
@@ -80,15 +115,18 @@ export function SubscriptionDetailPage() {
   const canSyncBilling = hasPermission('billing.subscribers.sync')
   const canReadNfe = hasPermission('nfe.read')
   const profileInScope = isProfileInScope(data?.customerProfileInScope)
+  // Brazil delivers by courier, with no UPS label. The delivery address decides, not the Stripe account.
+  const shipsWithUps = data?.term?.marketCountry === 'US'
 
   const loadShipments = async () => {
     if (!token || !id || !canReadShipping) return
     try {
-      const response = await apiRequest<{ success: boolean; data: { items: UpsShipment[] } }>(
+      const response = await apiRequest<{ success: boolean; data: { items: UpsShipment[]; label_issues?: LabelIssue[] } }>(
         `/admin/billing/subscriptions/${id}/shipments`,
         { token },
       )
       setShipments(response.data?.items || [])
+      setLabelIssues(response.data?.label_issues || [])
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar etiquetas UPS')
     }
@@ -112,6 +150,11 @@ export function SubscriptionDetailPage() {
     void loadNfe()
   }, [token, id, canReadNfe])
 
+  // The permissions load after the first render, so this waits for them, like the fiscal notes above.
+  useEffect(() => {
+    void loadShipments()
+  }, [token, id, canReadShipping])
+
   const loadCustomerInvoices = async () => {
     if (!token || !id) return
     try {
@@ -131,7 +174,7 @@ export function SubscriptionDetailPage() {
       setError('')
       const response = await apiRequest<SubscriptionDetail>(`/admin/billing/subscriptions/${id}`, { token })
       setData(response)
-      await Promise.all([loadShipments(), loadCustomerInvoices()])
+      await loadCustomerInvoices()
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar assinatura')
     }
@@ -251,18 +294,32 @@ export function SubscriptionDetailPage() {
     }
   }
 
+  const fetchLabel = async (shipmentId: string) => {
+    const response = await fetch(`${getApiBaseUrl()}/admin/shipments/${shipmentId}/label`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null) as { message?: string } | null
+      throw new Error(errorBody?.message || 'Falha ao baixar etiqueta')
+    }
+    return response.blob()
+  }
+
+  const printShipmentLabel = async (shipmentId: string) => {
+    if (!token) return
+    try {
+      setError('')
+      await printLabel(await fetchLabel(shipmentId))
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao imprimir etiqueta')
+    }
+  }
+
   const downloadLabel = async (shipmentId: string, filenameHint?: string | null) => {
     if (!token) return
     try {
       setError('')
-      const response = await fetch(`${getApiBaseUrl()}/admin/shipments/${shipmentId}/label`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null) as { message?: string } | null
-        throw new Error(errorBody?.message || 'Falha ao baixar etiqueta')
-      }
-      const blob = await response.blob()
+      const blob = await fetchLabel(shipmentId)
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
@@ -356,8 +413,22 @@ export function SubscriptionDetailPage() {
         </div>
       </Section>
 
-      {canReadShipping ? (
+      {canReadShipping && shipsWithUps ? (
         <Section title="Envio UPS" description="Uma etiqueta por fatura paga. Compare o frete cobrado no checkout com o custo da UPS.">
+          {labelIssues.length > 0 ? (
+            <div className="warning" role="alert" aria-label="Etiqueta bloqueada">
+              <strong>Não é possível gerar a etiqueta. Corrija antes:</strong>
+              <ul>
+                {labelIssues.map((issue) => (
+                  <li key={issue.code}>
+                    {labelIssueText(issue)}
+                    {issue.code === 'ship_from_missing' ? <> <Link to="/config/shipping">Abrir configuração de frete</Link></> : null}
+                    {issue.code === 'recipient_name_missing' && data?.user.id ? <> <Link to={`/users/${data.user.id}`}>Abrir cliente</Link></> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="table-shell table-scroll">
             <table>
               <thead>
@@ -380,7 +451,7 @@ export function SubscriptionDetailPage() {
                     <td colSpan={5} className="muted">Fatura paga em {formatDate(item.createdAt)}.</td>
                     <td>
                       {canWriteShipping ? (
-                        <button className="primary-button" type="button" onClick={() => void createShipment(item.id)}>
+                        <button className="primary-button" type="button" disabled={labelIssues.length > 0} onClick={() => void createShipment(item.id)}>
                           Gerar etiqueta UPS
                         </button>
                       ) : null}
@@ -396,7 +467,17 @@ export function SubscriptionDetailPage() {
                     <tr key={item.id}>
                       <td>{item.stripe_invoice_id}</td>
                       <td><span className={SHIPMENT_STATUS[item.status]?.badge ?? 'badge-info'}>{SHIPMENT_STATUS[item.status]?.label ?? item.status}</span></td>
-                      <td>{item.tracking_number || '—'}</td>
+                      <td>
+                        {item.tracking_url ? (
+                          <a href={item.tracking_url} target="_blank" rel="noreferrer">{item.tracking_number}</a>
+                        ) : (item.tracking_number || '—')}
+                        {item.tracking_status ? (
+                          <div className="muted">
+                            {TRACKING_STATUS[item.tracking_status] ?? item.tracking_description ?? item.tracking_status}
+                            {item.delivered_at ? ` em ${formatDate(item.delivered_at)}` : ''}
+                          </div>
+                        ) : null}
+                      </td>
                       <td>{item.service_code || '—'}</td>
                       <td>{item.quoted_shipping_cost != null ? item.quoted_shipping_cost : '—'}</td>
                       <td>{item.ups_monetary_value != null ? item.ups_monetary_value : '—'}</td>
@@ -404,16 +485,21 @@ export function SubscriptionDetailPage() {
                       <td>
                         <div className="inline-actions">
                           {item.has_label ? (
+                            <button className="ghost-button" type="button" onClick={() => void printShipmentLabel(item.id)}>
+                              Imprimir
+                            </button>
+                          ) : null}
+                          {item.has_label ? (
                             <button className="ghost-button" type="button" onClick={() => void downloadLabel(item.id)}>
                               Baixar
                             </button>
                           ) : null}
-                          {item.tracking_number ? (
+                          {item.tracking_number && item.status === 'created' ? (
                             <button className="ghost-button" type="button" onClick={() => void refreshTracking(item.id)}>
                               Atualizar rastreio
                             </button>
                           ) : null}
-                          {canWriteShipping && item.status !== 'voided' && item.ups_shipment_id ? (
+                          {canWriteShipping && item.status === 'created' && item.ups_shipment_id ? (
                             <button className="ghost-button" type="button" onClick={() => void voidShipment(item.id)}>
                               Anular
                             </button>
