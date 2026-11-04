@@ -62,6 +62,8 @@ describe('UserDetailPage', () => {
 
     const patch = calls.find((call) => call.method === 'PATCH' && call.path.endsWith('/delivery') && !call.path.endsWith('/delivery-instructions'))
     expect(patch?.body).toMatchObject({ address: 'Rua Oscar Freire 200', city: 'São Paulo', zipCode: '01310-100' })
+    // The fixture address has no recipient, so the field stays out and the API keeps it.
+    expect(patch?.body).not.toHaveProperty('recipientName')
   })
 
   it('deactivates a customer account after confirmation', async () => {

@@ -12,7 +12,7 @@ export function labelIssueText(issue: LabelIssue): string {
     case 'ship_from_missing':
       return 'O endereço de origem dos EUA não está preenchido.'
     case 'recipient_name_missing':
-      return 'O cliente não tem nome válido para a etiqueta.'
+      return 'A assinatura não tem nome de quem recebe e a conta não tem nome válido para a etiqueta. O cliente informa quem recebe em Meu Plano, na loja, ou você preenche o nome da conta.'
     case 'ups_not_configured':
       return 'As credenciais da UPS não estão configuradas na API.'
     default:

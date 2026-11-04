@@ -19,6 +19,7 @@ import {
 } from '../lib/accountStatus'
 import { MARKET_LABELS, type MarketCode } from '../lib/markets'
 import { BR_STATES, maskCpf } from '../lib/nfe'
+import { deliveryBody, type DeliveryForm } from '../lib/userDelivery'
 import { formatConsentSource, formatConsentStatus, formatConsentType, formatPrivacyIdentity, formatPrivacyStatus, formatPrivacyType, type UserPrivacySnapshot } from '../lib/privacy'
 
 type UserDetail = {
@@ -46,6 +47,7 @@ type UserDetail = {
     state: string
     zipCode: string
     deliveryInstructions: string
+    recipientName?: string
   } | null
   subscriptions?: Array<{ id: string; stripeSubscriptionId: string; status: string; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean; planLabel: string | null }>
 }
@@ -95,18 +97,8 @@ const TABS: Array<{ id: CustomerTab; label: string }> = [
   { id: 'checkout', label: 'Checkout' },
 ]
 
-type DeliveryForm = {
-  address: string
-  number: string
-  neighborhood: string
-  complement: string
-  city: string
-  state: string
-  zipCode: string
-  deliveryInstructions: string
-}
-
 const emptyDelivery = (): DeliveryForm => ({
+  recipientName: '',
   address: '',
   number: '',
   neighborhood: '',
@@ -119,6 +111,7 @@ const emptyDelivery = (): DeliveryForm => ({
 
 function deliveryFromUser(user: UserDetail | null): DeliveryForm {
   return {
+    recipientName: user?.delivery?.recipientName || '',
     address: user?.delivery?.address || '',
     number: user?.delivery?.number || '',
     neighborhood: user?.delivery?.neighborhood || '',
@@ -128,13 +121,6 @@ function deliveryFromUser(user: UserDetail | null): DeliveryForm {
     zipCode: user?.delivery?.zipCode || '',
     deliveryInstructions: user?.delivery?.deliveryInstructions || '',
   }
-}
-
-function deliveryWithoutBrazilFields(delivery: DeliveryForm) {
-  const body: Partial<DeliveryForm> = { ...delivery }
-  delete body.number
-  delete body.neighborhood
-  return body
 }
 
 export function UserDetailPage() {
@@ -242,7 +228,7 @@ export function UserDetailPage() {
       await apiRequest(`/admin/users/${userId}/delivery`, {
         token,
         method: 'PATCH',
-        body: isBrazil ? delivery : deliveryWithoutBrazilFields(delivery),
+        body: deliveryBody(delivery, isBrazil, data?.delivery?.recipientName || ''),
       })
       setMessage('Endereço salvo.')
       await load()
@@ -472,6 +458,17 @@ export function UserDetailPage() {
             <Section title="Endereço de entrega" description="O mesmo endereço do app do cliente.">
               <form onSubmit={saveDelivery}>
                 <div className="address-fields">
+                  <label className="address-street">
+                    Nome de quem recebe
+                    <input
+                      value={delivery.recipientName}
+                      autoComplete="off"
+                      maxLength={60}
+                      placeholder="Vazio usa o nome da conta"
+                      onChange={(event) => setDelivery((current) => ({ ...current, recipientName: event.target.value }))}
+                      disabled={!canWriteDelivery}
+                    />
+                  </label>
                   <label className="address-street">
                     Endereço
                     <input
