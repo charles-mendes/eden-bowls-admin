@@ -27,6 +27,13 @@ describe('admin menu', () => {
     expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/operations/production')
   })
 
+  it('shows Etiquetas UPS to admin, operator and readonly, not veterinarian', () => {
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role]).map((item) => item.href)).toContain('/operations/labels')
+    }
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/operations/labels')
+  })
+
   it('Operator sees Estoque', () => {
     expect(visibleMenuItems(['operator']).map((item) => item.href)).toContain('/operations/stock')
     expect(visibleMenuItems(['admin']).map((item) => item.href)).toContain('/operations/stock')

@@ -128,6 +128,55 @@ describe('SubscriptionDetailPage', () => {
     expect(printLabel.mock.calls[0][0].size).toBeGreaterThan(0)
   })
 
+  const shipmentRow = (extra: Record<string, unknown>) => ({
+    id: 'ship_1', subscription_id: 'sub-row-1', stripe_invoice_id: 'in_test_1', ups_shipment_id: null, tracking_number: null,
+    tracking_url: null, tracking_status: null, tracking_description: null, delivered_at: null, service_code: null, label_format: null,
+    has_label: false, quoted_shipping_cost: 12.9, ups_monetary_value: null, status: 'unknown', shipped_at: null,
+    created_at: '2026-08-02T12:00:00.000Z', updated_at: '2026-08-02T12:00:00.000Z', ...extra,
+  })
+  const withShipments = (items: unknown[]) => ({
+    subscriptionMarket: 'US',
+    routes: ({ path, method }: { path: string; method: string }) => (
+      /\/admin\/billing\/subscriptions\/[^/]+\/shipments$/.test(path) && method === 'GET'
+        ? new Response(JSON.stringify({ success: true, data: { items, label_issues: [] } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        : undefined
+    ),
+  })
+
+  it('asks before voiding a created label, and voids nothing when the operator cancels', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true)
+    vi.stubGlobal('confirm', confirm)
+    const { calls } = installAdminFetchMock(operatorWriteUser, withShipments([shipmentRow({ status: 'created', ups_shipment_id: '1Z9', tracking_number: '1Z9', has_label: true })]))
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await user.click(await screen.findByRole('button', { name: 'Anular' }))
+    expect(calls.some((call) => call.path.endsWith('/void'))).toBe(false)
+
+    await user.click(screen.getByRole('button', { name: 'Anular' }))
+    await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/api/v1/admin/shipments/ship_1/void')).toBe(true))
+    expect(confirm).toHaveBeenCalledTimes(2)
+    expect(calls.find((call) => call.path.endsWith('/void'))?.body).toBeFalsy()
+  })
+
+  it('Closing an unresolved row: shows it and closes only after the operator confirms UPS has no label', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const { calls } = installAdminFetchMock(operatorWriteUser, withShipments([shipmentRow({ status: 'unknown' })]))
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    expect(await screen.findByText('Verificar na UPS')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Anular' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Fechar após conferir na UPS' }))
+
+    await waitFor(() => {
+      const call = calls.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/shipments/ship_1/void')
+      expect(call?.body).toEqual({ confirm_not_created: true })
+    })
+  })
+
   it('shows no UPS option on a Brazilian delivery', async () => {
     const user = userEvent.setup()
     seedAuth()

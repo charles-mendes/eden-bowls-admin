@@ -9,6 +9,7 @@ import { apiRequest, getApiBaseUrl } from '../lib/api'
 import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
 import { formatDate, formatStripeStatus } from '../lib/format'
 import { printLabel } from '../lib/printLabel'
+import { labelIssueText, type LabelIssue } from '../lib/upsLabels'
 import { formatNfeAmount, formatNfeDate, formatNfeNumber, nfeStatusLabel, nfeStatusTone, type NfeSummary } from '../lib/nfe'
 import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
@@ -70,25 +71,7 @@ const TRACKING_STATUS: Record<string, string> = {
   out_for_delivery: 'Saiu para entrega',
   delivered: 'Entregue',
   exception: 'Problema na entrega',
-}
-
-type LabelIssue = { code: string }
-
-function labelIssueText(issue: LabelIssue): string {
-  switch (issue.code) {
-    case 'po_box_not_allowed':
-      return 'O endereço de entrega é um PO Box, onde a UPS não entrega. O cliente corrige em Meu Plano, na loja.'
-    case 'address_incomplete':
-      return 'Falta rua, cidade, estado ou ZIP no endereço de entrega. O cliente corrige em Meu Plano, na loja.'
-    case 'ship_from_missing':
-      return 'O endereço de origem dos EUA não está preenchido.'
-    case 'recipient_name_missing':
-      return 'O cliente não tem nome válido para a etiqueta.'
-    case 'ups_not_configured':
-      return 'As credenciais da UPS não estão configuradas na API.'
-    default:
-      return `Etiqueta bloqueada: ${issue.code}.`
-  }
+  returned: 'Devolvido ao remetente',
 }
 
 const SHIPMENT_STATUS: Record<string, { label: string; badge: string }> = {
@@ -333,10 +316,28 @@ export function SubscriptionDetailPage() {
 
   const voidShipment = async (shipmentId: string) => {
     if (!token) return
+    if (!window.confirm('Anular esta etiqueta na UPS? Ela deixa de valer e a fatura volta a precisar de etiqueta.')) return
     try {
       setError('')
       await apiRequest(`/admin/shipments/${shipmentId}/void`, { token, method: 'POST' })
       setMessage('Etiqueta anulada na UPS.')
+      await loadShipments()
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao anular')
+    }
+  }
+
+  // A row without a UPS id may still hold a label UPS bought. It closes here only after the operator checks UPS.
+  const closeUnresolvedShipment = async (shipmentId: string) => {
+    if (!token) return
+    const confirmed = window.confirm(
+      'Você conferiu no portal da UPS que não existe etiqueta para esta fatura? A linha é fechada só aqui, sem chamar a UPS, e a fatura volta a ficar pronta para etiqueta.',
+    )
+    if (!confirmed) return
+    try {
+      setError('')
+      await apiRequest(`/admin/shipments/${shipmentId}/void`, { token, method: 'POST', body: { confirm_not_created: true } })
+      setMessage('Linha fechada. A fatura pode receber uma nova etiqueta.')
       await loadShipments()
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao anular')
@@ -502,6 +503,11 @@ export function SubscriptionDetailPage() {
                           {canWriteShipping && item.status === 'created' && item.ups_shipment_id ? (
                             <button className="ghost-button" type="button" onClick={() => void voidShipment(item.id)}>
                               Anular
+                            </button>
+                          ) : null}
+                          {canWriteShipping && (item.status === 'pending' || item.status === 'unknown') && !item.ups_shipment_id ? (
+                            <button className="ghost-button" type="button" onClick={() => void closeUnresolvedShipment(item.id)}>
+                              Fechar após conferir na UPS
                             </button>
                           ) : null}
                         </div>
