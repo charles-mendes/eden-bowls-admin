@@ -13,6 +13,8 @@ import { labelIssueText, type LabelIssue } from '../lib/upsLabels'
 import { formatNfeAmount, formatNfeDate, formatNfeNumber, nfeStatusLabel, nfeStatusTone, type NfeSummary } from '../lib/nfe'
 import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
+import { CourierDispatchDialog, CourierRowActions, CourierStatusBadge, CourierSummary } from '../components/shipping/CourierDelivery'
+import type { CourierDelivery } from '../lib/courierDeliveries'
 
 type SubscriptionDetail = {
   id: string
@@ -91,6 +93,9 @@ export function SubscriptionDetailPage() {
   const [labelIssues, setLabelIssues] = useState<LabelIssue[]>([])
   const [customerInvoices, setCustomerInvoices] = useState<CustomerInvoice[]>([])
   const [nfeItems, setNfeItems] = useState<NfeSummary[]>([])
+  const [courierItems, setCourierItems] = useState<CourierDelivery[]>([])
+  const [courierRecipient, setCourierRecipient] = useState('')
+  const [dispatchInvoice, setDispatchInvoice] = useState<string | null>(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const canReadShipping = hasPermission('shipping.read')
@@ -100,6 +105,35 @@ export function SubscriptionDetailPage() {
   const profileInScope = isProfileInScope(data?.customerProfileInScope)
   // Brazil delivers by courier, with no UPS label. The delivery address decides, not the Stripe account.
   const shipsWithUps = data?.term?.marketCountry === 'US'
+  const shipsByCourier = data?.term?.marketCountry === 'BR'
+
+  const loadCourier = async () => {
+    if (!token || !id || !canReadShipping || !shipsByCourier) return
+    try {
+      const response = await apiRequest<{ success: boolean; data: { items: CourierDelivery[]; recipient_name?: string } }>(
+        `/admin/billing/subscriptions/${id}/courier-deliveries`,
+        { token },
+      )
+      setCourierItems(response.data?.items || [])
+      setCourierRecipient(response.data?.recipient_name || '')
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar entregas')
+    }
+  }
+
+  const courierDone = (text: string) => {
+    setDispatchInvoice(null)
+    if (text) {
+      setMessage(text)
+      setError('')
+    }
+    void loadCourier()
+  }
+
+  const courierFailed = (text: string) => {
+    setMessage('')
+    setError(text)
+  }
 
   const loadShipments = async () => {
     if (!token || !id || !canReadShipping) return
@@ -137,6 +171,10 @@ export function SubscriptionDetailPage() {
   useEffect(() => {
     void loadShipments()
   }, [token, id, canReadShipping])
+
+  useEffect(() => {
+    void loadCourier()
+  }, [token, id, canReadShipping, shipsByCourier])
 
   const loadCustomerInvoices = async () => {
     if (!token || !id) return
@@ -380,6 +418,12 @@ export function SubscriptionDetailPage() {
   // Paid invoices still waiting for a label: the shipping team starts here.
   const awaitingLabel = invoices.filter((item) => item.status === 'paid' && !activeByInvoice.has(item.id))
 
+  // Paid invoices with no courier delivery on the road or delivered (after "Sincronizar faturas").
+  const courierActiveInvoices = new Set(
+    courierItems.filter((item) => item.status === 'out_for_delivery' || item.status === 'delivered').map((item) => item.stripe_invoice_id),
+  )
+  const awaitingCourier = invoices.filter((item) => item.status === 'paid' && !courierActiveInvoices.has(item.id))
+
   return (
     <PageFrame
       title={data?.user.email || data?.stripeSubscriptionId || 'Assinatura'}
@@ -518,6 +562,63 @@ export function SubscriptionDetailPage() {
               </tbody>
             </table>
           </div>
+        </Section>
+      ) : null}
+
+      {canReadShipping && shipsByCourier ? (
+        <Section title="Entrega Brasil" description="Entrega por Uber, motoboy ou entregador próprio, registrada à mão. Cada tentativa fica no histórico.">
+          <p>Quem recebe: <strong>{courierRecipient || '—'}</strong></p>
+          <div className="table-shell table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fatura</th>
+                  <th>Status</th>
+                  <th>Meio, custo e link</th>
+                  <th>Saiu</th>
+                  <th>Entregue ou falhou</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {awaitingCourier.map((item) => (
+                  <tr key={`courier-awaiting-${item.id}`}>
+                    <td>{item.number ?? item.id}</td>
+                    <td><span className="badge-warning">A despachar</span></td>
+                    <td colSpan={3} className="muted">Fatura paga em {formatDate(item.createdAt)}.</td>
+                    <td>
+                      {canWriteShipping ? (
+                        <button className="primary-button" type="button" onClick={() => setDispatchInvoice(item.id)}>Despachar</button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+                {courierItems.length === 0 && awaitingCourier.length === 0 ? (
+                  <tr>
+                    <td colSpan={6}>Nenhuma entrega registrada. Sincronize as faturas para despachar uma fatura paga, ou use Entregas Brasil.</td>
+                  </tr>
+                ) : null}
+                {courierItems.map((item) => (
+                  <tr key={`courier-${item.id}`}>
+                    <td>{item.stripe_invoice_id}</td>
+                    <td><CourierStatusBadge status={item.status} /></td>
+                    <td><CourierSummary delivery={item} /></td>
+                    <td>{formatDate(item.out_for_delivery_at)}</td>
+                    <td>{formatDate(item.delivered_at || item.failed_at || item.canceled_at)}</td>
+                    <td>
+                      <CourierRowActions token={token} delivery={item} canWrite={canWriteShipping} onDone={courierDone} onError={courierFailed} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <CourierDispatchDialog
+            token={token}
+            target={dispatchInvoice && data ? { subscriptionId: data.id, invoiceId: dispatchInvoice, name: courierRecipient || data.user.email } : null}
+            onClose={() => setDispatchInvoice(null)}
+            onDone={courierDone}
+          />
         </Section>
       ) : null}
 

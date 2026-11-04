@@ -18,6 +18,7 @@ export const adminMenu: MenuItem[] = [
   { label: 'Hoje', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Visão geral' },
   { label: 'Fila de produção', href: '/operations/production', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Etiquetas UPS', href: '/operations/labels', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
+  { label: 'Entregas Brasil', href: '/operations/courier', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'shipping.read' },
   { label: 'Estoque', href: '/operations/stock', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Notas fiscais', href: '/operations/nfe', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Feriados e fechamentos', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },

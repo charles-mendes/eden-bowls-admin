@@ -429,3 +429,55 @@ describe('SubscriptionDetailPage', () => {
     expect(section).not.toHaveTextContent('EB-')
   })
 })
+
+describe('SubscriptionDetailPage courier section', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllGlobals()
+  })
+
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  const courier = (id: number, status: string, extra: Record<string, unknown> = {}) => ({
+    id, subscription_id: 'sub-row-1', stripe_invoice_id: 'in_br_1', method: 'motoboy', courier_name: 'Carlos', tracking_url: null,
+    cost_minor: 1200, currency: 'brl', note: null, status, out_for_delivery_at: '2026-11-03T12:00:00.000Z',
+    delivered_at: null, failed_at: null, failure_reason: null, canceled_at: null, ...extra,
+  })
+
+  it('Brazil subscription with a failed attempt: both deliveries, the reason, the recipient and no UPS', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'BR',
+      routes: ({ path, method }) => (path === '/api/v1/admin/billing/subscriptions/sub-row-1/courier-deliveries' && method === 'GET'
+        ? json({
+          success: true,
+          data: {
+            recipient_name: 'João Lima',
+            items: [
+              courier(2, 'delivered', { delivered_at: '2026-11-04T15:00:00.000Z' }),
+              courier(1, 'failed', { failed_at: '2026-11-03T16:00:00.000Z', failure_reason: 'Ninguém em casa' }),
+            ],
+          },
+        })
+        : undefined),
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const section = (await screen.findByRole('heading', { name: 'Entrega Brasil' })).closest('section') as HTMLElement
+    expect(await within(section).findByText('João Lima')).toBeInTheDocument()
+    expect(within(section).getByText('Entregue')).toBeInTheDocument()
+    expect(within(section).getByText('Falhou')).toBeInTheDocument()
+    expect(within(section).getByText('Motivo: Ninguém em casa')).toBeInTheDocument()
+    expect(within(section).queryByRole('button', { name: 'Entregue' })).toBeNull()
+    expect(screen.queryByRole('heading', { name: 'Envio UPS' })).toBeNull()
+  })
+
+  it('a US subscription shows no courier section', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US' })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await screen.findByText('ana@edenbowls.com')
+    expect(screen.queryByRole('heading', { name: 'Entrega Brasil' })).toBeNull()
+    expect(calls.some((call) => call.path.endsWith('/courier-deliveries'))).toBe(false)
+  })
+})
