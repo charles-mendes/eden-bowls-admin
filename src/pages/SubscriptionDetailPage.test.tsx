@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SubscriptionDetailPage } from './SubscriptionDetailPage'
-import { checkoutDetail, operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { adminUser, checkoutDetail, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { customerInvoice, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -479,5 +479,38 @@ describe('SubscriptionDetailPage courier section', () => {
     await screen.findByText('ana@edenbowls.com')
     expect(screen.queryByRole('heading', { name: 'Entrega Brasil' })).toBeNull()
     expect(calls.some((call) => call.path.endsWith('/courier-deliveries'))).toBe(false)
+  })
+
+  it('sends the customer to the store for a missing recipient, without the customer link', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US', subscriptionInScope: true, labelIssues: [{ code: 'recipient_name_missing' }] })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const warning = await screen.findByRole('alert', { name: 'Etiqueta bloqueada' })
+    expect(warning).toHaveTextContent('Falta o nome de quem recebe na assinatura')
+    expect(warning).toHaveTextContent('Meu Plano')
+    expect(warning).toHaveTextContent('WhatsApp')
+    expect(warning).not.toHaveTextContent('você preenche o nome da conta')
+    expect(within(warning).queryByRole('link', { name: 'Abrir cliente' })).not.toBeInTheDocument()
+  })
+
+  it('asks the Stripe PDF with the subscription account', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const open = vi.fn()
+    vi.stubGlobal('open', open)
+    const { calls } = installAdminFetchMock(adminUser, {
+      routes: ({ path, method }) => (/\/admin\/billing\/invoices\/[^/]+\/pdf$/.test(path) && method === 'GET'
+        ? new Response(JSON.stringify({ url: 'https://pay.stripe.com/invoice/pdf' }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        : undefined),
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await user.click(await screen.findByRole('button', { name: 'Sincronizar faturas' }))
+    await user.click(await screen.findByRole('button', { name: 'PDF Stripe' }))
+
+    await waitFor(() => expect(open).toHaveBeenCalledWith('https://pay.stripe.com/invoice/pdf', '_blank', 'noopener,noreferrer'))
+    const pdf = calls.find((call) => call.path === '/api/v1/admin/billing/invoices/in_test_1/pdf')
+    expect(pdf?.search).toMatch(/^\?account=(br|us)$/)
   })
 })

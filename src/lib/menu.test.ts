@@ -127,4 +127,15 @@ describe('admin menu', () => {
     expect(vet).not.toContain('/insights')
     expect(vet).not.toContain('/reports')
   })
+
+  it('shows UPS labels only to US sessions and the Brazil screens only to BR sessions', () => {
+    const hrefs = (markets: ('BR' | 'US')[]) => visibleMenuItems(['operator'], ['shipping.read'], markets).map((item) => item.href)
+    expect(hrefs(['BR'])).toEqual(expect.arrayContaining(['/operations/courier', '/operations/nfe']))
+    expect(hrefs(['BR'])).not.toContain('/operations/labels')
+    expect(hrefs(['US'])).toContain('/operations/labels')
+    expect(hrefs(['US'])).not.toContain('/operations/courier')
+    expect(hrefs(['US'])).not.toContain('/operations/nfe')
+    expect(hrefs([])).toEqual(expect.arrayContaining(['/operations/labels', '/operations/courier', '/operations/nfe']))
+    expect(groupedMenuItems(['operator'], ['shipping.read'], ['BR']).flatMap((group) => group.items).map((item) => item.href)).not.toContain('/operations/labels')
+  })
 })

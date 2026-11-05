@@ -79,6 +79,34 @@ export const NFE_STATUS_OPTIONS: { value: NfeStatus; label: string }[] = [
   { value: 'error', label: 'Erro' },
 ]
 
+// "Precisam de ação": the notes an operator can move (blocked, rejected, error). One URL value, three API statuses.
+export const NFE_NEEDS_ACTION = 'needs_action'
+export const NFE_NEEDS_ACTION_STATUSES: NfeStatus[] = ['blocked_missing_document', 'rejected', 'error']
+
+export const NFE_LIST_PATH = '/operations/nfe'
+
+export type NfeListFilters = { status?: string; de?: string; ate?: string; busca?: string; pagina?: number }
+
+export function isNfeListStatus(value: string | null) {
+  return value === NFE_NEEDS_ACTION || NFE_STATUS_OPTIONS.some((option) => option.value === value)
+}
+
+// What the API receives for the status the URL holds.
+export function nfeApiStatus(status: string) {
+  return status === NFE_NEEDS_ACTION ? NFE_NEEDS_ACTION_STATUSES.join(',') : status
+}
+
+export function nfeListHref(filters: NfeListFilters = {}) {
+  const params = new URLSearchParams()
+  if (filters.status) params.set('status', filters.status)
+  if (filters.de) params.set('de', filters.de)
+  if (filters.ate) params.set('ate', filters.ate)
+  if (filters.busca) params.set('busca', filters.busca)
+  if (filters.pagina && filters.pagina > 1) params.set('pagina', String(filters.pagina))
+  const query = params.toString()
+  return query ? `${NFE_LIST_PATH}?${query}` : NFE_LIST_PATH
+}
+
 const STATUS_TONE: Record<NfeStatus, string> = {
   pending: 'badge-info',
   blocked_missing_document: 'badge-warning',

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
 import { FiltersBar } from '../components/FiltersBar'
 import { MarketSelect } from '../components/MarketSelect'
@@ -21,8 +21,10 @@ import {
   STOCK_WINDOWS,
   filterStockItems,
   formatSignedQuantity,
+  isStockStatus,
   isStockWindow,
   sortStockItems,
+  stockHref,
   stockErrorMessage,
   stockItemKey,
   stockItemLabel,
@@ -31,6 +33,7 @@ import {
   stockRecipeOptions,
   stockStatus,
   type StockAdjustmentReason,
+  type StockFilters,
   type StockItem,
   type StockMovement,
   type StockMovementType,
@@ -59,13 +62,25 @@ export function StockPage() {
   const bothMarkets = hasBothMarkets(user)
   const lockedMarket = defaultMarket(user) ?? 'BR'
 
-  const [market, setMarket] = useState(lockedMarket)
-  const [windowDays, setWindowDays] = useState(7)
+  // Window, admin market, status and search live in the URL. A value out of range or out of scope falls back.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlMarket = searchParams.get('mercado')
+  const market = urlMarket === 'BR' || urlMarket === 'US' ? urlMarket : lockedMarket
+  const urlWindow = Number(searchParams.get('janela'))
+  const windowDays = isStockWindow(urlWindow) ? urlWindow : 7
+  const search = searchParams.get('busca') ?? ''
+  const statusFilter: StockStatus | '' = isStockStatus(searchParams.get('situacao')) ? searchParams.get('situacao') as StockStatus : ''
+  const setFilters = (next: StockFilters) => {
+    const merged: StockFilters = { mercado: bothMarkets && urlMarket ? market : undefined, janela: windowDays, situacao: statusFilter, busca: search, ...next }
+    setSearchParams(new URLSearchParams(stockHref(merged).split('?')[1] ?? ''), { replace: true })
+  }
+  const setSearch = (value: string) => setFilters({ busca: value })
+  const setStatusFilter = (value: StockStatus | '') => setFilters({ situacao: value })
+  const setWindowDays = (value: number) => setFilters({ janela: value })
+  const setMarket = (value: 'BR' | 'US') => setFilters({ mercado: value })
   const [overview, setOverview] = useState<StockOverview | null>(null)
   const [movements, setMovements] = useState<StockMovementsResponse | null>(null)
   const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StockStatus | ''>('')
   const [filterItem, setFilterItem] = useState<StockItem | null>(null)
   const [filterType, setFilterType] = useState<StockMovementType | ''>('')
   const [error, setError] = useState('')
@@ -282,7 +297,7 @@ export function StockPage() {
 
   const rowActions = (item: StockItem): RowMenuItem[] => [
     ...(canWrite ? [
-      { label: 'Adicionar estoque', onSelect: () => openProduction(item) },
+      { label: 'Lançar produção', onSelect: () => openProduction(item) },
       { label: 'Contagem', onSelect: () => { setDialogError(''); setCountItem(item); setCount(EMPTY_COUNT) } },
       { label: 'Ajustar', onSelect: () => { setDialogError(''); setAdjustItem(item); setAdjustment(EMPTY_ADJUSTMENT) } },
       { label: 'Definir mínimo', onSelect: () => { setDialogError(''); setMinimumItem(item); setMinimum({ minLevel: item.minLevel == null ? '' : String(item.minLevel) }) } },
@@ -296,7 +311,7 @@ export function StockPage() {
       description="Packs prontos contra as entregas da janela. A cozinha registra entradas, contagens e ajustes aqui."
       actions={canWrite ? (
         <button className="primary-button" type="button" onClick={() => openProduction()}>
-          Adicionar estoque
+          Lançar produção
         </button>
       ) : null}
     >
@@ -310,6 +325,15 @@ export function StockPage() {
         </div>
 
         {error ? <div className="alert" role="alert">{error}</div> : null}
+
+        {canWrite && !filterItem && !filterType && movements && movements.total === 0 ? (
+          // Without a first count the on-hand numbers start at zero and production alone cannot be trusted.
+          <div className="warning" role="status">
+            <strong>Falta a contagem inicial.</strong>
+            {' '}
+            Antes de lançar produção, conte os packs de cada item: no menu da linha, use Contagem com o total real.
+          </div>
+        ) : null}
 
         {unsized.length > 0 ? (
           <div className="warning stock-unsized" role="status">
@@ -523,7 +547,7 @@ export function StockPage() {
       </div>
 
       <Dialog
-        title="Adicionar estoque"
+        title="Lançar produção"
         description="Soma os packs que entraram ao saldo atual."
         open={productionOpen}
         onClose={closeDialogs}
@@ -641,7 +665,7 @@ export function StockPage() {
 
       <Dialog
         title={countItem ? `Contagem de ${itemLabel(countItem)}` : 'Contagem'}
-        description="Informe o total real de packs. O sistema registra a diferença no histórico."
+        description="Informe o total real de packs. O sistema lança só a diferença em relação ao saldo atual e a registra no histórico."
         open={Boolean(countItem)}
         onClose={closeDialogs}
         footer={(

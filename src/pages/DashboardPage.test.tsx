@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DashboardPage } from './DashboardPage'
 import { SystemHealth } from '../components/SystemHealth'
 import { nextStep } from '../lib/today'
-import { adminUser, operatorUsUser, operatorUser, syncStatus, webhookHealth } from '../test/fixtures'
+import { adminUser, jsonResponse, operatorUsUser, operatorUser, syncStatus, todayOverview, webhookHealth } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -180,7 +180,8 @@ describe('DashboardPage', () => {
     const ups = screen.getByRole('link', { name: /^Sem etiqueta UPS/ })
     // Only ready orders wait for a label, the same rule the blocker uses.
     expect(within(ups).getByText('1')).toBeInTheDocument()
-    expect(ups).toHaveAttribute('href', '/operations/production?status=ready&mercado=us')
+    expect(ups).toHaveAttribute('href', '/operations/labels')
+    expect(within(ups).getByText('Prontos hoje sem etiqueta')).toBeInTheDocument()
 
     expect(screen.getByText(/Amanhã \(Brasil\): Folga da cozinha/)).toBeInTheDocument()
 
@@ -250,6 +251,14 @@ describe('DashboardPage', () => {
     expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
   })
 
+  it('shows the UPS card from the effective markets when no market is stored', async () => {
+    seedAuth()
+    installAdminFetchMock({ ...adminUser, markets: [], effectiveMarkets: ['BR', 'US'] })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    expect(await screen.findByRole('link', { name: /^Sem etiqueta UPS/ })).toBeInTheDocument()
+  })
+
   it('orders the next step by what blocks the delivery first', () => {
     const base = {
       id: 7, market: 'US' as const, dueBucket: 'today' as const, dueLabel: '', displayName: '', email: '', city: '',
@@ -258,7 +267,30 @@ describe('DashboardPage', () => {
     expect(nextStep({ ...base, productionStatus: 'ready', paymentState: 'past_due', upsLabel: null }).text).toMatch(/Pagamento recusado/)
     expect(nextStep({ ...base, productionStatus: 'blocked', paymentState: 'paid', upsLabel: 'missing' }).text).toBe('Resolver o bloqueio')
     expect(nextStep({ ...base, productionStatus: 'ready', paymentState: 'paid', upsLabel: 'missing' }).text).toBe('Gerar etiqueta UPS')
-    expect(nextStep({ ...base, productionStatus: 'ready', paymentState: 'paid', upsLabel: 'created' }).text).toBe('Etiqueta criada: despachar')
+    expect(nextStep({ ...base, productionStatus: 'ready', paymentState: 'paid', upsLabel: 'created' }).text).toBe('Aguardando coleta UPS')
     expect(nextStep({ ...base, market: 'BR', productionStatus: 'ready', paymentState: 'paid', upsLabel: null }).text).toBe('Pronto para entregar')
+  })
+
+  it('opens the refused subscribers and the label queue when several orders wait', async () => {
+    seedAuth()
+    const base = todayOverview.items[0]
+    installAdminFetchMock(adminUser, {
+      routes: ({ path, method }) => (path === '/api/v1/admin/today' && method === 'GET' ? jsonResponse({ success: true, data: {
+        ...todayOverview,
+        items: [
+          { ...base, id: 41, market: 'US', productionStatus: 'ready', paymentState: 'paid', upsLabel: 'missing' },
+          { ...base, id: 42, market: 'US', productionStatus: 'ready', paymentState: 'paid', upsLabel: 'missing' },
+          { ...base, id: 43, market: 'BR', productionStatus: 'to_prepare', paymentState: 'past_due', upsLabel: null },
+          { ...base, id: 44, market: 'BR', productionStatus: 'to_prepare', paymentState: 'past_due', upsLabel: null },
+        ],
+      } }) : undefined),
+    })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const pending = within(await screen.findByRole('region', { name: 'Pendências' }))
+    const refused = (await pending.findByText('2 pagamentos recusados')).closest('li') as HTMLElement
+    expect(within(refused).getByRole('link', { name: 'Ver assinantes' })).toHaveAttribute('href', '/billing?status=past_due')
+    const labels = pending.getByText('2 pedidos prontos sem etiqueta UPS').closest('li') as HTMLElement
+    expect(within(labels).getByRole('link', { name: 'Ver etiquetas' })).toHaveAttribute('href', '/operations/labels')
   })
 })

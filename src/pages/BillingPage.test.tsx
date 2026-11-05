@@ -68,4 +68,41 @@ describe('BillingPage', () => {
     expect(screen.queryByRole('button', { name: 'Vincular ao usuário' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sincronizar agora' })).not.toBeInTheDocument()
   })
+
+  it('reads the filters from the URL', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<BillingPage />, '/billing?status=past_due', '/billing')
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === '/api/v1/admin/billing/subscriptions' && call.search.includes('status=past_due'))).toBe(true)
+    })
+    expect(screen.getByLabelText('Status')).toHaveValue('past_due')
+  })
+
+  it('opens a search link with all statuses', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<BillingPage />, '/billing?busca=sub_123&status=all', '/billing')
+
+    await waitFor(() => {
+      expect(calls.some((call) => (
+        call.path === '/api/v1/admin/billing/subscriptions'
+        && call.search.includes('q=sub_123')
+        && call.search.includes('status=all')
+      ))).toBe(true)
+    })
+    expect(screen.getByLabelText('Busca')).toHaveValue('sub_123')
+  })
+
+  it('falls back to active for an unknown status', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<BillingPage />, '/billing?status=xyz', '/billing')
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === '/api/v1/admin/billing/subscriptions' && call.search.includes('status=active'))).toBe(true)
+    })
+    expect(screen.getByLabelText('Status')).toHaveValue('active')
+  })
 })

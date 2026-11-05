@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AccessFields } from '../components/AccessFields'
 import { accessFormError, accessFormFrom, accessRoleBody, emptyAccessForm, inviteNeedsResend, type AccessForm } from '../lib/accessForm'
 import { CheckoutSnapshotPanels } from '../components/CheckoutSnapshotPanels'
+import { Dialog } from '../components/Dialog'
 import { MetaGrid } from '../components/MetaGrid'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
@@ -140,6 +141,9 @@ export function UserDetailPage() {
   const [fiscal, setFiscal] = useState({ fullName: '', cpf: '' })
   const [access, setAccess] = useState<AccessForm>(emptyAccessForm)
   const [message, setMessage] = useState('')
+  // Saving the account's copy of the address asks first: the box follows the subscription address, not this one.
+  const [confirmDelivery, setConfirmDelivery] = useState(false)
+  const [deliveryReason, setDeliveryReason] = useState('')
   const [error, setError] = useState('')
   const canWriteDelivery = hasPermission('users.delivery.write')
   const isBrazil = data?.delivery?.country === 'BR'
@@ -220,16 +224,26 @@ export function UserDetailPage() {
     document.getElementById(`customer-tab-${next}`)?.focus()
   }
 
+  const askDelivery = (event: FormEvent) => {
+    event.preventDefault()
+    if (!canWriteDelivery) return
+    setDeliveryReason('')
+    setConfirmDelivery(true)
+  }
+
+  const deliveryReasonValid = deliveryReason.trim().length >= 3 && deliveryReason.trim().length <= 255
+
   const saveDelivery = async (event: FormEvent) => {
     event.preventDefault()
-    if (!token || !userId || !canWriteDelivery) return
+    if (!token || !userId || !canWriteDelivery || !deliveryReasonValid) return
     try {
       setError('')
       await apiRequest(`/admin/users/${userId}/delivery`, {
         token,
         method: 'PATCH',
-        body: deliveryBody(delivery, isBrazil, data?.delivery?.recipientName || ''),
+        body: { ...deliveryBody(delivery, isBrazil, data?.delivery?.recipientName || ''), reason: deliveryReason.trim() },
       })
+      setConfirmDelivery(false)
       setMessage('Endereço salvo.')
       await load()
     } catch (requestError) {
@@ -455,11 +469,14 @@ export function UserDetailPage() {
               </Section>
             ) : null}
 
-            <Section title="Endereço de entrega" description="O mesmo endereço do app do cliente.">
-              <form onSubmit={saveDelivery}>
+            <Section
+              title="Endereço de entrega"
+              description="Cópia do endereço guardada na conta. Não muda para onde vai a caixa: a entrega usa o endereço da assinatura, que o cliente edita em Meu Plano, na loja."
+            >
+              <form onSubmit={askDelivery}>
                 <div className="address-fields">
                   <label className="address-street">
-                    Nome de quem recebe
+                    Nome de quem recebe (cópia da conta)
                     <input
                       value={delivery.recipientName}
                       autoComplete="off"
@@ -559,6 +576,32 @@ export function UserDetailPage() {
                 ) : null}
               </form>
             </Section>
+
+            <Dialog
+              title="Salvar a cópia do endereço?"
+              description="Esta cópia fica na conta. O endereço da assinatura, usado na etiqueta e na entrega, não muda: o cliente o edita em Meu Plano, na loja."
+              open={confirmDelivery}
+              onClose={() => setConfirmDelivery(false)}
+              footer={(
+                <>
+                  <button className="ghost-button" type="button" onClick={() => setConfirmDelivery(false)}>Cancelar</button>
+                  <button className="primary-button" type="submit" form="delivery-confirm-form" disabled={!deliveryReasonValid}>Salvar endereço</button>
+                </>
+              )}
+            >
+              <form id="delivery-confirm-form" className="stack" onSubmit={saveDelivery}>
+                <label>
+                  Motivo
+                  <textarea
+                    required
+                    minLength={3}
+                    maxLength={255}
+                    value={deliveryReason}
+                    onChange={(event) => setDeliveryReason(event.target.value)}
+                  />
+                </label>
+              </form>
+            </Dialog>
 
             <Section title="Instruções de entrega" description="Portão, local de entrega ou cuidados com o pet, para quem entrega.">
               <form className="stack" onSubmit={saveInstructions}>

@@ -4,12 +4,16 @@ import { PageFrame } from '../components/PageFrame'
 import { SystemHealth } from '../components/SystemHealth'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
+import { billingHref } from '../lib/billing'
 import { getBrowserTimeZone } from '../lib/format'
-import { hasBothMarkets, sessionMarkets } from '../lib/markets'
+import { effectiveSessionMarkets } from '../lib/markets'
 import { plural, productionQueueHref, QUEUE_PATH, type QueueFilters } from '../lib/productionQueue'
 import { nextStep, type Bucket, type ClosedDay, type Counts, type TodayItem, type TodayOverview, type Tone } from '../lib/today'
 
 const MARKET_NAME = { BR: 'Brasil', US: 'EUA' } as const
+
+// Buying UPS labels happens in bulk on Etiquetas UPS, not in the production queue.
+const LABELS_PATH = '/operations/labels'
 
 type Severity = 'high' | 'medium' | 'low'
 
@@ -40,7 +44,7 @@ function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado']): Pen
     list.push({
       key: 'refused', severity: 'high', title: plural(refused.length, 'pagamento recusado', 'pagamentos recusados'),
       detail: one ? `${customer(one)}: falar com o cliente antes de preparar.` : 'Falar com os clientes antes de preparar.',
-      action: one ? 'Abrir pedido' : 'Ver assinantes', to: one ? `/billing/subscriptions/${one.id}` : '/billing',
+      action: one ? 'Abrir pedido' : 'Ver assinantes', to: one ? `/billing/subscriptions/${one.id}` : billingHref({ status: 'past_due' }),
     })
   }
   if (blocked.length) {
@@ -63,8 +67,8 @@ function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado']): Pen
     list.push({
       key: 'ups', severity: 'low', title: plural(noLabel.length, 'pedido pronto sem etiqueta UPS', 'pedidos prontos sem etiqueta UPS'),
       detail: one ? `${customer(one)}: gerar a etiqueta para envio.` : 'Gerar as etiquetas para envio.',
-      action: one ? 'Abrir pedido' : 'Ver na fila',
-      to: one ? `/billing/subscriptions/${one.id}` : productionQueueHref({ status: 'ready', mercado: 'us' }),
+      action: one ? 'Abrir pedido' : 'Ver etiquetas',
+      to: one ? `/billing/subscriptions/${one.id}` : LABELS_PATH,
     })
   }
   return list
@@ -100,8 +104,9 @@ const STEP_TONE: Record<Tone, string> = {
 
 export function DashboardPage() {
   const { token, user, hasRole } = useAuth()
-  const bothMarkets = hasBothMarkets(user)
-  const markets = sessionMarkets(user)
+  // Effective markets: an admin with no stored market still works in both.
+  const markets = effectiveSessionMarkets(user)
+  const bothMarkets = markets.includes('BR') && markets.includes('US')
   const [market, setMarket] = useState<'' | 'BR' | 'US'>('')
   const [data, setData] = useState<TodayOverview | null>(null)
   const [loading, setLoading] = useState(false)
@@ -163,9 +168,9 @@ export function DashboardPage() {
   ]
   if (showUps) {
     cards.push({
-      key: 'ups', label: 'Sem etiqueta UPS', value: data ? readyWithoutLabel : undefined, hint: 'Prontos, aguardando etiqueta',
+      key: 'ups', label: 'Sem etiqueta UPS', value: data ? readyWithoutLabel : undefined, hint: 'Prontos hoje sem etiqueta',
       tone: readyWithoutLabel > 0 ? 'day-card-warning' : undefined,
-      to: productionQueueHref({ status: 'ready', mercado: 'us' }),
+      to: LABELS_PATH,
     })
   }
 

@@ -221,7 +221,9 @@ export function SubscriptionDetailPage() {
 
   const openPdf = async (invoiceId: string) => {
     if (!token) return
-    const response = await apiRequest<{ url: string }>(`/admin/billing/invoices/${invoiceId}/pdf`, { token })
+    // The account tells the API which Stripe holds the invoice; without it an admin of both markets gets 404.
+    const account = data?.stripeAccount ? `?account=${encodeURIComponent(data.stripeAccount)}` : ''
+    const response = await apiRequest<{ url: string }>(`/admin/billing/invoices/${invoiceId}/pdf${account}`, { token })
     if (response.url) {
       window.open(response.url, '_blank', 'noopener,noreferrer')
     }
@@ -468,7 +470,6 @@ export function SubscriptionDetailPage() {
                   <li key={issue.code}>
                     {labelIssueText(issue)}
                     {issue.code === 'ship_from_missing' ? <> <Link to="/config/shipping">Abrir configuração de frete</Link></> : null}
-                    {issue.code === 'recipient_name_missing' && data?.user.id ? <> <Link to={`/users/${data.user.id}`}>Abrir cliente</Link></> : null}
                   </li>
                 ))}
               </ul>

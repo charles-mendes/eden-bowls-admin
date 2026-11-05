@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LabelQueuePage } from './LabelQueuePage'
-import { operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { operatorUsWriteUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -32,7 +32,7 @@ type Order = ReturnType<typeof order>
 type Queue = { ready: Order[]; unresolved: Order[]; created: Order[]; truncated: boolean }
 type InstallOptions = { queue?: Queue; purchases?: Record<string, Purchase>; missingLabels?: string[] }
 
-function install(user = operatorWriteUser, {
+function install(user = operatorUsWriteUser, {
   queue = { ready: [order(1), order(2), order(3)], unresolved: [], created: [], truncated: false },
   purchases = {},
   missingLabels = [],
@@ -95,7 +95,7 @@ describe('LabelQueuePage', () => {
   it('One purchase fails in the middle: the others are bought and only they print', async () => {
     const user = userEvent.setup()
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
-    install(operatorWriteUser, { purchases: { in_2: { status: 422, body: { message: 'Address not valid.', code: 'ups_upstream_error' } } } })
+    install(operatorUsWriteUser, { purchases: { in_2: { status: 422, body: { message: 'Address not valid.', code: 'ups_upstream_error' } } } })
     render()
 
     for (const n of [1, 2, 3]) await select(user, `Cliente ${n}`)
@@ -112,7 +112,7 @@ describe('LabelQueuePage', () => {
   ])('%s shows in progress, is not printed and offers no retry', async (_name, status, code) => {
     const user = userEvent.setup()
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
-    install(operatorWriteUser, { purchases: { in_2: { status, body: { message: 'Check UPS.', code, details: { code, shipment_id: 77 } } } } })
+    install(operatorUsWriteUser, { purchases: { in_2: { status, body: { message: 'Check UPS.', code, details: { code, shipment_id: 77 } } } } })
     render()
 
     for (const n of [1, 2]) await select(user, `Cliente ${n}`)
@@ -126,7 +126,7 @@ describe('LabelQueuePage', () => {
   it('Label bought elsewhere meanwhile: shows it already had one and still prints it', async () => {
     const user = userEvent.setup()
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
-    install(operatorWriteUser, { purchases: { in_1: { status: 200, body: { success: true, data: { reused: true, shipment: { id: 'ship_old', has_label: true } } } } } })
+    install(operatorUsWriteUser, { purchases: { in_1: { status: 200, body: { success: true, data: { reused: true, shipment: { id: 'ship_old', has_label: true } } } } } })
     render()
 
     await select(user, 'Cliente 1')
@@ -154,7 +154,7 @@ describe('LabelQueuePage', () => {
     const user = userEvent.setup()
     const confirm = vi.fn().mockReturnValueOnce(true).mockReturnValueOnce(false)
     vi.stubGlobal('confirm', confirm)
-    const { calls } = install(operatorWriteUser, {
+    const { calls } = install(operatorUsWriteUser, {
       queue: { ready: [order(1, { production_status: 'to_prepare' }), order(2, { subscription_status: 'paused' })], unresolved: [], created: [], truncated: false },
     })
     render()
@@ -173,7 +173,7 @@ describe('LabelQueuePage', () => {
     const user = userEvent.setup()
     const confirm = vi.fn()
     vi.stubGlobal('confirm', confirm)
-    const { calls } = install(readonlyUser, {
+    const { calls } = install({ ...readonlyUser, markets: ['US'] }, {
       queue: { ready: [order(1)], unresolved: [], created: [created(4), created(5), created(6)], truncated: false },
       missingLabels: ['106'],
     })
@@ -192,7 +192,7 @@ describe('LabelQueuePage', () => {
   })
 
   it('blocked and unresolved orders cannot be selected and link to the subscription', async () => {
-    install(operatorWriteUser, {
+    install(operatorUsWriteUser, {
       queue: {
         ready: [order(1, { issues: [{ code: 'po_box_not_allowed' }] })],
         unresolved: [order(2, { issues: undefined, shipment: { id: 9, status: 'unknown', tracking_number: null, has_label: false } })],
@@ -204,6 +204,8 @@ describe('LabelQueuePage', () => {
 
     const blocked = (await screen.findByText('Cliente 1')).closest('tr') as HTMLElement
     expect(within(blocked).getByRole('note')).toHaveTextContent('PO Box')
+    expect(within(blocked).getByRole('note')).toHaveTextContent('Meu Plano')
+    expect(within(blocked).getByRole('note')).toHaveTextContent('WhatsApp')
     expect(within(blocked).queryByRole('checkbox')).toBeNull()
     const unresolved = screen.getByText('Cliente 2').closest('tr') as HTMLElement
     expect(within(unresolved).queryByRole('checkbox')).toBeNull()
@@ -225,5 +227,15 @@ describe('LabelQueuePage', () => {
     await waitFor(() => expect(printLabels).toHaveBeenCalled())
     expect(screen.getByRole('button', { name: /Comprar e imprimir|Imprimir/ })).toBeDisabled()
     release()
+  })
+
+  it('says the screen belongs to the Estados Unidos market and skips the list for a session outside it', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<LabelQueuePage />, '/operations/labels')
+
+    expect(await screen.findByText(/Esta tela é do mercado Estados Unidos e sua conta não trabalha nele/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Voltar para Hoje' })).toHaveAttribute('href', '/dashboard')
+    expect(calls.some((call) => call.path === '/api/v1/admin/shipments/queue')).toBe(false)
   })
 })

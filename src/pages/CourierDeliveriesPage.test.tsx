@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CourierDeliveriesPage } from './CourierDeliveriesPage'
-import { operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { operatorWriteUser, readonlyUser, operatorUsUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -149,5 +149,29 @@ describe('CourierDeliveriesPage', () => {
     expect(await screen.findByText('Cliente 9')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Entregue' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Acompanhar' })).toHaveAttribute('href', 'https://trip.uber.com/abc')
+  })
+
+  it('opens the tab named in the URL and falls back to A despachar', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<CourierDeliveriesPage />, '/operations/courier?aba=falhas', '/operations/courier')
+    expect(await screen.findByRole('tab', { name: /Falhas/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('selects A despachar for an unknown tab', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<CourierDeliveriesPage />, '/operations/courier?aba=xyz', '/operations/courier')
+    expect(await screen.findByRole('tab', { name: /A despachar/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('says the screen belongs to the Brasil market and skips the list for a session outside it', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorUsUser)
+    renderAuthedPage(<CourierDeliveriesPage />, '/operations/courier')
+
+    expect(await screen.findByText(/Esta tela é do mercado Brasil e sua conta não trabalha nele/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Voltar para Hoje' })).toHaveAttribute('href', '/dashboard')
+    expect(calls.some((call) => call.path === '/api/v1/admin/courier-deliveries/queue')).toBe(false)
   })
 })

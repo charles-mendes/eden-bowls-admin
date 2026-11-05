@@ -1,4 +1,5 @@
 import { type AdminRole } from './roles'
+import { type MarketCode } from './markets'
 
 export type { AdminRole }
 
@@ -11,16 +12,18 @@ export type MenuItem = {
   group: MenuGroup
   // Also required when set: the item hides while the API does not grant it yet.
   permission?: string
+  // Shown only to sessions that work in one of these markets; unset means every market.
+  markets?: MarketCode[]
 }
 
 // Grouped by the job: ship orders, look after customers, run the store, run the team.
 export const adminMenu: MenuItem[] = [
   { label: 'Hoje', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Visão geral' },
   { label: 'Fila de produção', href: '/operations/production', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
-  { label: 'Etiquetas UPS', href: '/operations/labels', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
-  { label: 'Entregas Brasil', href: '/operations/courier', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'shipping.read' },
+  { label: 'Etiquetas UPS', href: '/operations/labels', roles: ['admin', 'operator', 'readonly'], group: 'Operação', markets: ['US'] },
+  { label: 'Entregas Brasil', href: '/operations/courier', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'shipping.read', markets: ['BR'] },
   { label: 'Estoque', href: '/operations/stock', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
-  { label: 'Notas fiscais', href: '/operations/nfe', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
+  { label: 'Notas fiscais', href: '/operations/nfe', roles: ['admin', 'operator', 'readonly'], group: 'Operação', markets: ['BR'] },
   { label: 'Feriados e fechamentos', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Frete', href: '/config/shipping', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
@@ -62,10 +65,12 @@ const REPORTS_ITEM: MenuItem = {
   permission: 'reports.read',
 }
 
-export function visibleMenuItems(roles: AdminRole[], permissions: string[] = []) {
+// An empty market list means the session is not scoped (or not known yet), so every item shows.
+export function visibleMenuItems(roles: AdminRole[], permissions: string[] = [], markets: MarketCode[] = []) {
   const roleSet = new Set(roles)
   const permissionSet = new Set(permissions)
-  const allowed = (item: MenuItem) => item.roles.some((role) => roleSet.has(role)) && (!item.permission || permissionSet.has(item.permission))
+  const inMarket = (item: MenuItem) => !markets.length || !item.markets || item.markets.some((market) => markets.includes(market))
+  const allowed = (item: MenuItem) => item.roles.some((role) => roleSet.has(role)) && (!item.permission || permissionSet.has(item.permission)) && inMarket(item)
   const items = adminMenu.filter(allowed)
   // Hoje, then Visão do negócio and Relatórios.
   const afterToday = [INSIGHTS_ITEM, REPORTS_ITEM].filter(allowed)
@@ -75,10 +80,10 @@ export function visibleMenuItems(roles: AdminRole[], permissions: string[] = [])
   return [...items.slice(0, today + 1), ...afterToday, ...items.slice(today + 1)]
 }
 
-export function groupedMenuItems(roles: AdminRole[], permissions: string[] = []) {
+export function groupedMenuItems(roles: AdminRole[], permissions: string[] = [], markets: MarketCode[] = []) {
   const groups: { group: MenuGroup; items: MenuItem[] }[] = []
 
-  for (const item of visibleMenuItems(roles, permissions)) {
+  for (const item of visibleMenuItems(roles, permissions, markets)) {
     const last = groups[groups.length - 1]
     if (last && last.group === item.group) {
       last.items.push(item)

@@ -7,7 +7,7 @@ import { RowMenu, type RowMenuItem } from '../components/RowMenu'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { getBrowserTimeZone } from '../lib/format'
-import { defaultStripeAccount, hasBothMarkets, isProfileInScope } from '../lib/markets'
+import { defaultStripeAccount, effectiveSessionMarkets, hasBothMarkets, isProfileInScope } from '../lib/markets'
 import {
   DUE_LABELS,
   DUE_TO_API,
@@ -149,8 +149,21 @@ function TableSkeleton() {
   )
 }
 
+// Where a ready order ships from: the courier queue reads the address country, the label queue the `us` account.
+// Only when both agree is the order on the screen the link opens.
+function fulfillmentPath(item: Pick<QueueItem, 'stripeAccount' | 'country'>): string | null {
+  const account = String(item.stripeAccount || '').toLowerCase()
+  const country = String(item.country || '').toUpperCase()
+  if (account === 'br' && country === 'BR') return '/operations/courier'
+  if (account === 'us' && country === 'US') return '/operations/labels'
+  return null
+}
+
 export function ProductionQueuePage() {
   const { token, user, hasPermission } = useAuth()
+  const sessionMarketList = effectiveSessionMarkets(user)
+  // Unknown markets (empty list) keep both links, as the menu does.
+  const showsMarket = (market: 'BR' | 'US') => !sessionMarketList.length || sessionMarketList.includes(market)
   const canWrite = hasPermission('production.write')
   const bothMarkets = hasBothMarkets(user)
   const [params, setParams] = useSearchParams()
@@ -312,7 +325,13 @@ export function ProductionQueuePage() {
     <PageFrame
       title="Fila de produção"
       description="Pedidos pagos, na ordem de preparo. Marque o andamento de cada um aqui."
-      actions={<Link className="ghost-button" to="/dashboard">← Voltar para Hoje</Link>}
+      actions={(
+        <div className="inline-actions">
+          {showsMarket('BR') ? <Link className="ghost-button" to="/operations/courier">Entregas Brasil</Link> : null}
+          {showsMarket('US') ? <Link className="ghost-button" to="/operations/labels">Etiquetas UPS</Link> : null}
+          <Link className="ghost-button" to="/dashboard">← Voltar para Hoje</Link>
+        </div>
+      )}
     >
       <div className="queue-due" role="group" aria-label="Filtrar por prazo">
         {dueCards.map((card) => (
@@ -337,7 +356,7 @@ export function ProductionQueuePage() {
             aria-label="Buscar"
             value={search}
             onChange={(event) => setFilter('busca', event.target.value)}
-            placeholder="E-mail do cliente"
+            placeholder="Nome ou e-mail"
           />
         </label>
         <label className="queue-field">
@@ -485,7 +504,9 @@ export function ProductionQueuePage() {
                               {primary.label}
                             </button>
                           ) : item.productionStatus === 'ready' ? (
-                            <span className="muted">Concluído</span>
+                            fulfillmentPath(item)
+                              ? <Link className="ghost-button" to={fulfillmentPath(item) as string}>Expedir</Link>
+                              : <span className="badge-warning">Mercado divergente</span>
                           ) : null}
                           <RowMenu label={`Mais opções para ${name}`} items={menuItems(item)} />
                         </div>
@@ -532,6 +553,12 @@ export function ProductionQueuePage() {
         <form id="production-block-form" className="closure-form" onSubmit={submitBlock}>
           {blockItem ? (
             <p className="closure-context"><strong>{blockItem.customerName || blockItem.email}</strong> · {blockItem.flavorMix || '—'}</p>
+          ) : null}
+          {blockItem && (blockItem.paymentState === 'awaiting_payment' || blockItem.paymentState === 'past_due') ? (
+            // Blocking an unpaid cycle moves the Stripe charge; the operator sees it before confirming.
+            <p className="alert" role="note">
+              Este pedido ainda não foi cobrado. Bloquear adia a cobrança, e reabrir pode cobrar o cliente na hora.
+            </p>
           ) : null}
           <label className="closure-field">
             Nota

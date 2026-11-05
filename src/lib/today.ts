@@ -52,6 +52,7 @@ export function nextStep(item: TodayItem): { text: string; tone: Tone; to: strin
   if (item.productionStatus === 'to_prepare') return { text: 'Iniciar o preparo', tone: 'warning', to: production }
   if (item.productionStatus === 'in_production') return { text: 'Marcar como pronto', tone: 'warning', to: production }
   if (item.upsLabel === 'missing') return { text: 'Gerar etiqueta UPS', tone: 'warning', to: subscription }
-  if (item.upsLabel === 'created') return { text: 'Etiqueta criada: despachar', tone: 'success', to: subscription }
+  // The panel has no US dispatch step: once the label exists, the box waits for the UPS pickup.
+  if (item.upsLabel === 'created') return { text: 'Aguardando coleta UPS', tone: 'success', to: subscription }
   return { text: 'Pronto para entregar', tone: 'success', to: subscription }
 }

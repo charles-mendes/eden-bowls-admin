@@ -1,5 +1,7 @@
+import { OtherMarketNotice } from '../components/OtherMarketNotice'
+import { isOutsideMarket } from '../lib/markets'
 import { useCallback, useEffect, useState, type KeyboardEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import {
   CourierDispatchDialog,
@@ -19,11 +21,12 @@ import {
 
 type TabId = 'to_dispatch' | 'out_for_delivery' | 'failed' | 'delivered'
 
-const TABS: Array<{ id: TabId; label: string; empty: string }> = [
-  { id: 'to_dispatch', label: 'A despachar', empty: 'Nenhum pedido pago esperando saída.' },
-  { id: 'out_for_delivery', label: 'Em rota', empty: 'Nenhuma entrega em rota.' },
-  { id: 'failed', label: 'Falhas', empty: 'Nenhuma entrega com falha.' },
-  { id: 'delivered', label: 'Entregues 7 dias', empty: 'Nenhuma entrega nos últimos 7 dias.' },
+// `aba` is the tab's name in the URL, so Hoje can open the list on the right tab.
+const TABS: Array<{ id: TabId; aba: string; label: string; empty: string }> = [
+  { id: 'to_dispatch', aba: 'a_despachar', label: 'A despachar', empty: 'Nenhum pedido pago esperando saída.' },
+  { id: 'out_for_delivery', aba: 'em_rota', label: 'Em rota', empty: 'Nenhuma entrega em rota.' },
+  { id: 'failed', aba: 'falhas', label: 'Falhas', empty: 'Nenhuma entrega com falha.' },
+  { id: 'delivered', aba: 'entregues', label: 'Entregues 7 dias', empty: 'Nenhuma entrega nos últimos 7 dias.' },
 ]
 
 function formatDay(value: string | null): string {
@@ -46,23 +49,31 @@ function itemName(item: CourierQueueItem): string {
 }
 
 export function CourierDeliveriesPage() {
-  const { token, hasPermission } = useAuth()
+  const { token, hasPermission, user } = useAuth()
+  const otherMarket = isOutsideMarket(user, 'BR')
+  // Wait for the session: its markets decide whether this screen loads at all.
+  const sessionReady = Boolean(user)
   const canWrite = hasPermission('shipping.write')
   const [data, setData] = useState<CourierQueue | null>(null)
-  const [tab, setTab] = useState<TabId>('to_dispatch')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab: TabId = (TABS.find((option) => option.aba === searchParams.get('aba')) ?? TABS[0]).id
+  const setTab = (next: TabId) => {
+    const aba = (TABS.find((option) => option.id === next) ?? TABS[0]).aba
+    setSearchParams(aba === 'a_despachar' ? new URLSearchParams() : new URLSearchParams({ aba }), { replace: true })
+  }
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [dispatching, setDispatching] = useState<CourierQueueItem | null>(null)
 
   const load = useCallback(async () => {
-    if (!token) return
+    if (!token || !sessionReady || otherMarket) return
     try {
       const response = await apiRequest<{ data: CourierQueue }>('/admin/courier-deliveries/queue', { token })
       setData(response.data)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar as entregas')
     }
-  }, [token])
+  }, [token, sessionReady, otherMarket])
 
   useEffect(() => {
     void load()
@@ -92,6 +103,8 @@ export function CourierDeliveriesPage() {
 
   const items = data ? data[tab] : []
   const current = TABS.find((option) => option.id === tab) ?? TABS[0]
+
+  if (otherMarket) return <OtherMarketNotice title="Entregas Brasil" market="BR" />
 
   return (
     <PageFrame

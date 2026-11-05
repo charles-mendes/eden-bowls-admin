@@ -132,3 +132,10 @@ export function courierErrorText(error: unknown): string {
   }
   return error instanceof Error ? error.message : 'Falha ao salvar a entrega'
 }
+
+// Entregas Brasil keeps its tab in the URL (`aba`), so a link opens the right tab.
+export type CourierTab = 'a_despachar' | 'em_rota' | 'falhas' | 'entregues'
+
+export function courierHref(aba?: CourierTab) {
+  return aba && aba !== 'a_despachar' ? `/operations/courier?aba=${aba}` : '/operations/courier'
+}

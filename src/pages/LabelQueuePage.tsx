@@ -1,3 +1,5 @@
+import { OtherMarketNotice } from '../components/OtherMarketNotice'
+import { isOutsideMarket } from '../lib/markets'
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
 import { Link } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
@@ -78,7 +80,10 @@ function outcomeText(outcome: Outcome): string {
 }
 
 export function LabelQueuePage() {
-  const { token, hasPermission } = useAuth()
+  const { token, hasPermission, user } = useAuth()
+  const otherMarket = isOutsideMarket(user, 'US')
+  // Wait for the session: its markets decide whether this screen loads at all.
+  const sessionReady = Boolean(user)
   const canBuy = hasPermission('shipping.write')
   const [data, setData] = useState<QueueData | null>(null)
   const [error, setError] = useState('')
@@ -88,14 +93,14 @@ export function LabelQueuePage() {
   const [progress, setProgress] = useState('')
 
   const load = useCallback(async () => {
-    if (!token) return
+    if (!token || !sessionReady || otherMarket) return
     try {
       const response = await apiRequest<{ data: QueueData }>('/admin/shipments/queue', { token })
       setData(response.data)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar a fila')
     }
-  }, [token])
+  }, [token, sessionReady, otherMarket])
 
   useEffect(() => {
     void load()
@@ -251,6 +256,8 @@ export function LabelQueuePage() {
   const selectedReady = data?.ready.filter((item) => selected.has(item.invoice_id)).length ?? 0
   const selectedCreated = data?.created.filter((item) => selected.has(item.invoice_id)).length ?? 0
   const actionLabel = selectedReady ? 'Comprar e imprimir' : 'Imprimir'
+
+  if (otherMarket) return <OtherMarketNotice title="Etiquetas UPS" market="US" />
 
   return (
     <PageFrame

@@ -57,6 +57,15 @@ export const operatorWriteUser: AdminUser = {
   ],
 }
 
+// Same write access as operatorWriteUser, working in the United States.
+export const operatorUsWriteUser: AdminUser = {
+  ...operatorWriteUser,
+  userId: 'u-operator-us-write',
+  email: 'ops.us.write@edenbowls.com',
+  markets: ['US'],
+  permissions: operatorWriteUser.permissions.map((permission) => (permission === 'market.br' ? 'market.us' : permission)),
+}
+
 export const operatorUsUser: AdminUser = {
   userId: 'u-operator-us',
   email: 'ops.us@edenbowls.com',

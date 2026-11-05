@@ -3,6 +3,7 @@ import {
   currencyForMarket,
   defaultMarket,
   defaultStripeAccount,
+  effectiveSessionMarkets,
   hasBothMarkets,
   isProfileInScope,
   sessionMarkets,
@@ -39,5 +40,13 @@ describe('markets helpers', () => {
     expect(isProfileInScope(undefined)).toBe(false)
     expect(isProfileInScope(false)).toBe(false)
     expect(isProfileInScope(true)).toBe(true)
+  })
+
+  it('reads the effective markets, then the stored ones, then none', () => {
+    expect(effectiveSessionMarkets({ markets: [], effectiveMarkets: ['US', 'BR'] })).toEqual(['BR', 'US'])
+    expect(effectiveSessionMarkets({ markets: ['BR'], effectiveMarkets: ['BR'] })).toEqual(['BR'])
+    expect(effectiveSessionMarkets({ markets: ['US'] })).toEqual(['US'])
+    expect(effectiveSessionMarkets({ markets: [], effectiveMarkets: [] })).toEqual([])
+    expect(effectiveSessionMarkets(null)).toEqual([])
   })
 })
