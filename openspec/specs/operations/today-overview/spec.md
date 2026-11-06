@@ -56,6 +56,8 @@ A US item with `upsLabel: "unresolved"` MUST show the next step "Verificar na UP
 
 Today MUST list, for the market on screen, each `fulfillment` count above zero with a link to where it is solved: Brazil to dispatch (Entregas Brasil, "A despachar"), on the road for more than 24 hours (Entregas Brasil, "Em rota"), failed with no new dispatch (Entregas Brasil, "Falhas"), NF-e without CPF, rejected or with error (Notas fiscais filtered by that status), unconfirmed UPS purchases (Etiquetas UPS). When `blingConnected` is false and Brazil is on screen (all markets or Brazil), it MUST show "Bling desconectado" linking to Notas fiscais; with the screen filtered to the US it MUST NOT. Counts of zero and markets not on screen MUST NOT show.
 
+For each market on screen, it MUST also list the open address problems of `addressIssues` ("N problemas de endereço abertos", adding "M sem correção há mais de 2 dias" when `stale` is above zero), linking to Entregas Brasil for Brazil and to Etiquetas UPS for the US, both with `problema=endereco`, and the market exceptions of `marketExceptions` ("N exceções de mercado"), linking to Exceções de mercado. The address count is every open problem of the market; the filtered queue shows only the ones on its rows in the range on screen, so the two numbers may differ. The exceptions count has no 200 limit, while the exceptions page lists the first 200.
+
 #### Scenario: Brazil morning
 
 - **WHEN** Today returns 3 to dispatch and 1 rejected NF-e for Brazil
@@ -75,6 +77,16 @@ Today MUST list, for the market on screen, each `fulfillment` count above zero w
 
 - **WHEN** Today reports 2 deliveries on the road for more than 24 hours
 - **THEN** "2 entregas em rota há mais de 24 h" links to the whole "Em rota" tab, oldest first
+
+#### Scenario: Address problems in Brazil
+
+- **WHEN** Today returns `addressIssues.BR` `{ open: 3, stale: 1 }`
+- **THEN** it shows "3 problemas de endereço abertos · 1 sem correção há mais de 2 dias" linking to `/operations/courier?problema=endereco`
+
+#### Scenario: Market exceptions on the US screen
+
+- **WHEN** an admin filters Today to the US and `marketExceptions` is `{ BR: 2, US: 1 }`
+- **THEN** it shows "1 exceção de mercado" linking to `/operations/market-exceptions`
 
 #### Scenario: Nothing pending
 
