@@ -301,6 +301,28 @@ describe('DashboardPage', () => {
     expect(work.queryByText(/compras? UPS sem confirmação/)).not.toBeInTheDocument()
   })
 
+  // admin-flow-fixes-4 (PM-25): part of "a despachar", waiting for the NF-e.
+  it('says how many orders to dispatch wait for the NF-e, and nothing while the lock is off', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUser, { routes: withToday({ fulfillment: { ...zero, courierToDispatch: 3, courierAwaitingNfe: 2 } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    expect(work.getByText('3 pedidos a despachar')).toBeInTheDocument()
+    expect(within(work.getByText('2 pedidos a despachar aguardando NF-e').closest('li') as HTMLElement).getByRole('link')).toHaveAttribute('href', '/operations/courier')
+  })
+
+  it('shows no NF-e wait when the count is null or the screen is on the US', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(adminUser, { routes: withToday({ fulfillment: { ...zero, courierToDispatch: 1, courierAwaitingNfe: 1, upsUnresolved: 1 } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    expect(await screen.findByText('1 pedido a despachar aguardando NF-e')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'EUA' }))
+    await waitFor(() => expect(screen.queryByText(/aguardando NF-e/)).not.toBeInTheDocument())
+  })
+
   it('shows nothing for shipping and invoices when every count is zero', async () => {
     seedAuth()
     installAdminFetchMock(adminUser)

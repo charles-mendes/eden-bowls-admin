@@ -28,6 +28,7 @@ import {
 } from '../lib/deliveryRange'
 import {
   addressLines,
+  courierNfeState,
   productionLabel,
   subscriptionStatusLabel,
   type CourierDelivery,
@@ -193,6 +194,12 @@ export function CourierDeliveriesPage() {
   }
   const items = rowsOf(tab)
   const current = TABS.find((option) => option.id === tab) ?? TABS[0]
+  // PM-25: the NF-e of a row whose box can still leave; nothing from an API without the fiscal lock.
+  const nfeOf = (item: CourierQueueItem) => (
+    (tab === 'to_dispatch' || tab === 'failed') && item.nfe !== undefined
+      ? courierNfeState(item.nfe, Boolean(data?.nfe_required))
+      : null
+  )
   const emptyText = filters(tab) ? 'Nenhum pedido com problema de endereço neste período.' : current.empty
 
   if (otherMarket) return <OtherMarketNotice title="Entregas Brasil" market="BR" />
@@ -283,12 +290,25 @@ export function CourierDeliveriesPage() {
                       <CourierSummary delivery={item.delivery} />
                     </>
                   ) : <span className="muted">{item.invoice_id}</span>}
+                  {nfeOf(item) ? (
+                    <div id={`nfe-${item.invoice_id}`} className={nfeOf(item)?.blocks ? 'badge-warning' : 'muted'}>
+                      <span>{nfeOf(item)?.text}</span>
+                      {nfeOf(item)?.href ? <> · <Link to={nfeOf(item)?.href as string}>Abrir nota</Link></> : null}
+                    </div>
+                  ) : null}
                 </td>
                 <td>
                   <div className="inline-actions">
                     {/* A lock, not a warning: a row with an address problem has no way to leave. */}
                     {canWrite && (tab === 'to_dispatch' || tab === 'failed') && !item.issues?.length ? (
-                      <button type="button" className="primary-button" onClick={() => setDispatching(item)}>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        disabled={Boolean(nfeOf(item)?.blocks)}
+                        title={nfeOf(item)?.blocks ? nfeOf(item)?.text : undefined}
+                        aria-describedby={nfeOf(item)?.blocks ? `nfe-${item.invoice_id}` : undefined}
+                        onClick={() => setDispatching(item)}
+                      >
                         {tab === 'failed' ? 'Despachar de novo' : 'Despachar'}
                       </button>
                     ) : null}

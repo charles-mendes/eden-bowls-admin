@@ -29,7 +29,7 @@ const delivery = (id: number, status: string, extra: Record<string, unknown> = {
   failed_at: null, failure_reason: null, canceled_at: null, ...extra,
 })
 
-type Queue = Record<'to_dispatch' | 'out_for_delivery' | 'failed' | 'delivered', unknown[]> & { truncated: boolean; range?: { from: string; to: string; default: boolean }; later?: number; next_from?: string | null }
+type Queue = Record<'to_dispatch' | 'out_for_delivery' | 'failed' | 'delivered', unknown[]> & { truncated: boolean; nfe_required?: boolean; range?: { from: string; to: string; default: boolean }; later?: number; next_from?: string | null }
 type Reply = { status: number; body: unknown }
 
 function install(user = operatorWriteUser, { queue, dispatch = [], actions = {}, rangeError = false }: { queue?: Queue; dispatch?: Reply[]; actions?: Record<string, Reply>; rangeError?: boolean } = {}) {
@@ -342,6 +342,73 @@ describe('CourierDeliveriesPage', () => {
     installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<CourierDeliveriesPage />, '/operations/courier?aba=xyz', '/operations/courier')
     expect(await screen.findByRole('tab', { name: /A despachar/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  // admin-flow-fixes-4 (PM-25): with the fiscal lock on, the box leaves only with an authorized NF-e.
+  const withNfe = (nfeRequired: boolean, toDispatch: unknown[], failed: unknown[] = []): Queue => ({
+    to_dispatch: toDispatch, out_for_delivery: [], failed, delivered: [], truncated: false, nfe_required: nfeRequired,
+  })
+
+  it('dispatches a row whose NF-e is authorized and shows its number', async () => {
+    install(operatorWriteUser, { queue: withNfe(true, [item(1, { nfe: { id: 3, status: 'authorized', number: '123' } })]) })
+    render()
+
+    expect(await screen.findByText('NF-e 123')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Despachar' })).toBeEnabled()
+  })
+
+  it('locks the rows whose NF-e is in flight or missing, and links a rejected note to its page', async () => {
+    install(operatorWriteUser, {
+      queue: withNfe(true, [
+        item(1, { nfe: { id: 3, status: 'submitted', number: null } }),
+        item(2, { nfe: null }),
+        item(3, { nfe: { id: 9, status: 'rejected', number: null } }),
+      ]),
+    })
+    render()
+
+    const row = async (name: string) => (await screen.findByText(name)).closest('tr') as HTMLElement
+    expect(within(await row('Cliente 1')).getByText('Aguardando NF-e: em emissão')).toBeInTheDocument()
+    expect(within(await row('Cliente 1')).getByRole('button', { name: 'Despachar' })).toBeDisabled()
+    expect(within(await row('Cliente 2')).getByText('Aguardando NF-e: sem nota registrada')).toBeInTheDocument()
+    expect(within(await row('Cliente 2')).getByRole('button', { name: 'Despachar' })).toBeDisabled()
+    expect(within(await row('Cliente 3')).getByRole('link', { name: 'Abrir nota' })).toHaveAttribute('href', '/operations/nfe/9')
+  })
+
+  it('locks Despachar de novo when the note of a failure was canceled', async () => {
+    const user = userEvent.setup()
+    install(operatorWriteUser, {
+      queue: withNfe(true, [], [item(4, { delivery: delivery(7, 'failed'), nfe: { id: 5, status: 'canceled', number: null } })]),
+    })
+    render()
+
+    await user.click(await screen.findByRole('tab', { name: /Falhas/ }))
+    const row = (await screen.findByText('Cliente 4')).closest('tr') as HTMLElement
+    expect(within(row).getByText('Aguardando NF-e: cancelada')).toBeInTheDocument()
+    expect(within(row).queryByRole('link', { name: 'Abrir nota' })).not.toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Despachar de novo' })).toBeDisabled()
+  })
+
+  it('only informs the note while the lock is off', async () => {
+    install(operatorWriteUser, { queue: withNfe(false, [item(1, { nfe: { id: 9, status: 'rejected', number: null } })]) })
+    render()
+
+    expect(await screen.findByText('NF-e: rejeitada')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Despachar' })).toBeEnabled()
+  })
+
+  it('explains a dispatch refused because the note changed after the queue loaded', async () => {
+    const user = userEvent.setup()
+    install(operatorWriteUser, {
+      queue: withNfe(true, [item(1, { nfe: { id: 3, status: 'authorized', number: '123' } })]),
+      dispatch: [{ status: 422, body: { success: false, message: 'locked', details: { code: 'courier_nfe_not_authorized', nfe_status: 'canceled', nfe_id: 3 } } }],
+    })
+    render()
+
+    await user.click(await screen.findByRole('button', { name: 'Despachar' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Despachar entrega' })
+    await user.click(within(dialog).getByRole('button', { name: 'Registrar saída' }))
+    expect(await within(dialog).findByText('A caixa só sai com NF-e autorizada. Situação da nota: cancelada. Nada foi despachado.')).toBeInTheDocument()
   })
 
   // admin-flow-fixes-5 (PM-29): the queue reads a delivery range.

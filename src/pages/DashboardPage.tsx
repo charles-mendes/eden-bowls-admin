@@ -90,6 +90,7 @@ function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'
     if (show && count > 0) list.push({ key, title: plural(count, one, many), to, action })
   }
   add(brazil, fulfillment.courierToDispatch, 'courier-dispatch', 'pedido a despachar', 'pedidos a despachar', courierHref(), 'Abrir entregas')
+  add(brazil, fulfillment.courierAwaitingNfe ?? 0, 'courier-nfe', 'pedido a despachar aguardando NF-e', 'pedidos a despachar aguardando NF-e', courierHref(), 'Abrir entregas')
   add(brazil, fulfillment.courierOnTheRoadLong, 'courier-road', 'entrega em rota há mais de 24 h', 'entregas em rota há mais de 24 h', courierHref('em_rota'), 'Abrir entregas')
   add(brazil, fulfillment.courierFailed, 'courier-failed', 'entrega com falha sem novo despacho', 'entregas com falha sem novo despacho', courierHref('falhas'), 'Abrir entregas')
   add(brazil, fulfillment.nfeMissingDocument, 'nfe-document', 'NF-e sem CPF', 'NF-e sem CPF', nfeListHref({ status: 'blocked_missing_document' }), 'Abrir notas')

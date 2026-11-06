@@ -836,6 +836,7 @@ export const todayOverview = {
     courierToDispatch: 0,
     courierOnTheRoadLong: 0,
     courierFailed: 0,
+    courierAwaitingNfe: null,
     nfeMissingDocument: 0,
     nfeRejected: 0,
     nfeError: 0,

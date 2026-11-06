@@ -33,6 +33,8 @@ export type Fulfillment = {
   courierToDispatch: number
   courierOnTheRoadLong: number
   courierFailed: number
+  // PM-25: part of courierToDispatch, waiting for an authorized NF-e; null while the fiscal lock is off.
+  courierAwaitingNfe?: number | null
   nfeMissingDocument: number
   nfeRejected: number
   nfeError: number

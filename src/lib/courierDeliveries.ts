@@ -2,6 +2,7 @@ import type { DeliveryRangeInfo } from './deliveryRange'
 import { ApiRequestError } from './api'
 import { issueCodeText, type AddressIssue } from './addressIssues'
 import { PRODUCTION_STATUS_LABELS, isProductionStatus } from './productionQueue'
+import type { NfeStatus } from './nfe'
 
 // Brazil courier deliveries (courier-delivery): recorded by hand, no courier API.
 export type CourierMethod = 'uber' | 'motoboy' | 'own_driver' | 'other'
@@ -48,7 +49,11 @@ export type CourierQueueItem = {
   // the box cannot leave.
   issues?: string[]
   address_issue?: AddressIssue | null
+  // PM-25: the invoice's NF-e under "A despachar" and "Falhas"; absent from an API without the fiscal lock.
+  nfe?: CourierNfe | null
 }
+
+export type CourierNfe = { id: number; status: NfeStatus; number: string | null }
 
 export type CourierAddress = {
   street: string | null
@@ -66,6 +71,8 @@ export type CourierQueue = {
   failed: CourierQueueItem[]
   delivered: CourierQueueItem[]
   truncated: boolean
+  // PM-25: true when the API only dispatches a box with an authorized NF-e.
+  nfe_required?: boolean
 } & DeliveryRangeInfo
 
 export type ReadinessReason = { code: 'production_not_ready' | 'subscription_not_active' | string; production_status?: string | null; subscription_status?: string | null }
@@ -147,6 +154,37 @@ export function readinessText(reason: ReadinessReason): string {
   return reason.code
 }
 
+// PM-25: why a note holds the box, in the operator's words. Null is a paid cycle with no note recorded.
+const NFE_REASON: Record<NfeStatus, string> = {
+  pending: 'em emissão',
+  submitted: 'em emissão',
+  blocked_missing_document: 'falta CPF ou nome fiscal',
+  rejected: 'rejeitada',
+  error: 'com erro',
+  canceled: 'cancelada',
+  authorized: 'autorizada',
+}
+// The notes fixed on their own page: "Nova tentativa" or the customer's data. A canceled note is not retried.
+const NFE_FIXED_ON_ITS_PAGE: NfeStatus[] = ['rejected', 'error', 'blocked_missing_document']
+
+export function nfeReasonText(status: NfeStatus | null | undefined) {
+  return status ? (NFE_REASON[status] ?? status) : 'sem nota registrada'
+}
+
+export type CourierNfeState = { text: string; blocks: boolean; href: string | null }
+
+// What a row says about its NF-e and whether it holds the box. `required` is the queue's `nfe_required`.
+export function courierNfeState(nfe: CourierNfe | null, required: boolean): CourierNfeState {
+  if (nfe && nfe.status === 'authorized') {
+    return { text: nfe.number ? `NF-e ${nfe.number}` : 'NF-e autorizada', blocks: false, href: null }
+  }
+  const reason = nfeReasonText(nfe?.status)
+  const href = nfe && NFE_FIXED_ON_ITS_PAGE.includes(nfe.status) ? `/operations/nfe/${nfe.id}` : null
+  return required
+    ? { text: `Aguardando NF-e: ${reason}`, blocks: true, href }
+    : { text: `NF-e: ${reason}`, blocks: false, href }
+}
+
 const ERROR_TEXT: Record<string, string> = {
   courier_delivery_final: 'Esta entrega já foi encerrada por outra pessoa. A lista foi atualizada.',
   courier_delivery_active: 'Esta fatura já tem uma entrega em rota ou entregue.',
@@ -177,6 +215,10 @@ export function courierErrorText(error: unknown): string {
       const issues = Array.isArray(listed) ? listed.map(String) : []
       const missing = issues.length ? `: ${issues.map(issueCodeText).join(', ').toLowerCase()}` : ''
       return `O endereço não serve para a entrega${missing}. Nada foi despachado. O cliente corrige em Meu plano, na loja.`
+    }
+    if (error.code === 'courier_nfe_not_authorized') {
+      const status = typeof error.details?.nfe_status === 'string' ? (error.details.nfe_status as NfeStatus) : null
+      return `A caixa só sai com NF-e autorizada. Situação da nota: ${nfeReasonText(status)}. Nada foi despachado.`
     }
     if (ERROR_TEXT[error.code]) return ERROR_TEXT[error.code]
   }
