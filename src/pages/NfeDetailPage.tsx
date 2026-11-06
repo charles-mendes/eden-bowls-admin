@@ -3,10 +3,12 @@ import { Link, useParams } from 'react-router-dom'
 import { JsonDetails } from '../components/JsonDetails'
 import { MetaGrid } from '../components/MetaGrid'
 import { NfeCustomerDialog } from '../components/NfeCustomerDialog'
+import { AddressIssueStatus } from '../components/AddressIssueStatus'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest } from '../lib/api'
+import { billingHref } from '../lib/billing'
 import {
   blingNfeUrl,
   blingSituacaoTone,
@@ -15,6 +17,7 @@ import {
   formatNfeDate,
   formatNfeNumber,
   formatTaxDocument,
+  missingFieldLabel,
   nfeStatusLabel,
   nfeStatusTone,
   type NfeDetail,
@@ -22,6 +25,8 @@ import {
 
 // The API reads Bling every 5 minutes. The page only has to pick that up without a reload.
 const DETAIL_REFRESH_MS = 60 * 1000
+// While the job is sending the note, the outcome shows up within seconds instead of a minute.
+const IN_FLIGHT_REFRESH_MS = 5 * 1000
 
 type Field = { label: string; value: string | number | null | undefined }
 
@@ -78,10 +83,11 @@ export function NfeDetailPage() {
       .catch((requestError) => setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar a nota'))
   }, [token, id, refreshTick])
 
+  const inFlight = item?.status === 'pending' || item?.status === 'submitted'
   useEffect(() => {
-    const timer = window.setInterval(() => setRefreshTick((current) => current + 1), DETAIL_REFRESH_MS)
+    const timer = window.setInterval(() => setRefreshTick((current) => current + 1), inFlight ? IN_FLIGHT_REFRESH_MS : DETAIL_REFRESH_MS)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [inFlight])
 
   const retry = async () => {
     if (!token || !id) return
@@ -131,6 +137,10 @@ export function NfeDetailPage() {
       description={item ? `${item.customer_name || 'Cliente não informado'} · ${formatNfeAmount(item)}` : 'Carregando nota...'}
       actions={item ? (
         <div className="nfe-actions">
+          {item.user_id ? <Link className="ghost-button" to={`/users/${item.user_id}`}>Abrir cliente</Link> : null}
+          {item.stripe_subscription_id ? (
+            <Link className="ghost-button" to={billingHref({ busca: item.stripe_subscription_id, status: 'all' })}>Abrir assinatura</Link>
+          ) : null}
           {item.bling_nfe_id ? (
             <a className="ghost-button" href={blingNfeUrl(item.bling_nfe_id)} target="_blank" rel="noreferrer">Abrir no Bling</a>
           ) : null}
@@ -161,6 +171,13 @@ export function NfeDetailPage() {
               </div>
             </dl>
             {item.last_error ? <p className="nfe-alert nfe-alert-error" role="alert">{item.last_error}</p> : null}
+            {item.missing_fields?.length ? (
+              <div className="nfe-alert" role="note" aria-label="O que falta na nota">
+                <p>Falta para emitir: {item.missing_fields.map(missingFieldLabel).join(', ')}.</p>
+                <p>O cliente corrige na loja, em Meu plano → Editar assinatura. Quando ele salva, a nota volta para a fila sozinha. "Corrigir dados" fica para exceções.</p>
+                <AddressIssueStatus issue={item.address_issue} />
+              </div>
+            ) : item.address_issue ? <AddressIssueStatus issue={item.address_issue} /> : null}
             {item.imported ? (
               <p className="nfe-alert">Esta nota foi criada direto no Bling. Aqui ela fica só para consulta e o envio é feito por lá.</p>
             ) : null}

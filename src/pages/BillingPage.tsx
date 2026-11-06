@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { MetricCard } from '../components/MetricCard'
@@ -10,6 +10,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate, formatStripeStatus } from '../lib/format'
 import { defaultMarket, defaultStripeAccount, hasBothMarkets } from '../lib/markets'
+import { billingHref, billingStatusFrom, type BillingFilters } from '../lib/billing'
 
 type SubscriptionItem = {
   id: string
@@ -44,11 +45,20 @@ export function BillingPage() {
   const bothMarkets = hasBothMarkets(user)
   const [metrics, setMetrics] = useState<BillingMetrics | null>(null)
   const [subscriptions, setSubscriptions] = useState<Paginated<SubscriptionItem> | null>(null)
-  const [subscriptionPage, setSubscriptionPage] = useState(1)
   const perPage = 20
-  const [subscriptionStatus, setSubscriptionStatus] = useState('active')
-  const [pickedAccount, setPickedAccount] = useState('all')
-  const [search, setSearch] = useState('')
+  // Filters live in the URL so a link (Hoje, NF-e) opens the list already filtered.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const subscriptionStatus = billingStatusFrom(searchParams.get('status'))
+  const pickedAccount = searchParams.get('conta') === 'br' || searchParams.get('conta') === 'us' ? String(searchParams.get('conta')) : 'all'
+  const search = searchParams.get('busca') ?? ''
+  const subscriptionPage = Math.max(1, Number(searchParams.get('pagina')) || 1)
+  const setFilters = (next: BillingFilters) => {
+    const merged = { status: subscriptionStatus, conta: pickedAccount, busca: search, pagina: subscriptionPage, ...next }
+    setSearchParams(new URLSearchParams(billingHref(merged).split('?')[1] ?? ''), { replace: true })
+  }
+  const setSubscriptionPage = (update: number | ((current: number) => number)) => {
+    setFilters({ pagina: typeof update === 'function' ? update(subscriptionPage) : update })
+  }
   const [syncMessage, setSyncMessage] = useState('')
   const [error, setError] = useState('')
   // A two-market admin filters by account; a one-market operator stays in their market.
@@ -115,7 +125,7 @@ export function BillingPage() {
         <FiltersBar>
           <label>
             Status
-            <select value={subscriptionStatus} onChange={(event) => { setSubscriptionStatus(event.target.value); setSubscriptionPage(1) }}>
+            <select value={subscriptionStatus} onChange={(event) => setFilters({ status: billingStatusFrom(event.target.value), pagina: 1 })}>
               <option value="active">{formatStripeStatus('active')}</option>
               <option value="trialing">{formatStripeStatus('trialing')}</option>
               <option value="past_due">{formatStripeStatus('past_due')}</option>
@@ -128,15 +138,15 @@ export function BillingPage() {
             user={user}
             includeAll
             value={account || 'all'}
-            onChange={(value) => { setPickedAccount(value); setSubscriptionPage(1) }}
+            onChange={(value) => setFilters({ conta: value, pagina: 1 })}
           />
           <label>
             Busca
-            <input value={search} onChange={(event) => { setSearch(event.target.value); setSubscriptionPage(1) }} placeholder="e-mail do cliente ou sub_…" />
+            <input value={search} onChange={(event) => setFilters({ busca: event.target.value, pagina: 1 })} placeholder="e-mail do cliente ou sub_…" />
           </label>
         </FiltersBar>
         <div className="inline-actions">
-          <button className="ghost-button" type="button" onClick={() => { setSubscriptionStatus('active'); setPickedAccount(bothMarkets ? 'all' : (defaultStripeAccount(user) ?? '')); setSearch(''); setSubscriptionPage(1) }}>Limpar filtros</button>
+          <button className="ghost-button" type="button" onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}>Limpar filtros</button>
         </div>
 
         <div className="table-shell table-scroll">

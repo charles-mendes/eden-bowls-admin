@@ -7,22 +7,29 @@ import { RowMenu, type RowMenuItem } from '../components/RowMenu'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { getBrowserTimeZone } from '../lib/format'
-import { defaultStripeAccount, hasBothMarkets, isProfileInScope } from '../lib/markets'
+import { defaultStripeAccount, effectiveSessionMarkets, hasBothMarkets, isProfileInScope } from '../lib/markets'
 import {
   DUE_LABELS,
   DUE_TO_API,
   PRODUCTION_STATUS_LABELS,
   PRODUCTION_STATUSES,
+  READY_SHORT_BATCH,
+  READY_SHORT_ONE,
   STOCK_COVERAGE_LABELS,
+  chargeDayMonth,
   formatSeparationShortage,
+  formatStockShortages,
   isProductionStatus,
   isQueueDue,
   plural,
+  stockShortageHref,
+  type BlockPreview,
   type DueBucket,
   type ProductionStatus,
   type ProductionStockResult,
   type QueueDue,
   type StockCoverage,
+  type StockShortage,
 } from '../lib/productionQueue'
 
 type LineItem = {
@@ -64,6 +71,7 @@ type QueueItem = {
   customerProfileInScope?: boolean
   lineItems: LineItem[]
   stockCoverage?: StockCoverage | null
+  stockShortages?: StockShortage[]
   stock?: ProductionStockResult
 }
 
@@ -149,8 +157,28 @@ function TableSkeleton() {
   )
 }
 
+// Where a ready order ships from: the courier queue reads the address country, the label queue the `us` account.
+// Only when both agree is the order on the screen the link opens.
+// PM-15: the block warning, with the date the preview gave for this dialog's cycle.
+function blockChargeText(item: QueueItem, preview: { key: string; preview: BlockPreview | null } | null) {
+  const answer = preview && preview.key === `${item.id}|${item.currentPeriodEnd}` ? preview.preview : null
+  const when = answer && answer.chargeMovesTo ? ` para ${chargeDayMonth(answer.chargeMovesTo, item.stripeAccount)}` : ''
+  return `Este pedido ainda não foi cobrado. Bloquear adia a cobrança${when}, e reabrir pode cobrar o cliente na hora.`
+}
+
+function fulfillmentPath(item: Pick<QueueItem, 'stripeAccount' | 'country'>): string | null {
+  const account = String(item.stripeAccount || '').toLowerCase()
+  const country = String(item.country || '').toUpperCase()
+  if (account === 'br' && country === 'BR') return '/operations/courier'
+  if (account === 'us' && country === 'US') return '/operations/labels'
+  return null
+}
+
 export function ProductionQueuePage() {
   const { token, user, hasPermission } = useAuth()
+  const sessionMarketList = effectiveSessionMarkets(user)
+  // Unknown markets (empty list) keep both links, as the menu does.
+  const showsMarket = (market: 'BR' | 'US') => !sessionMarketList.length || sessionMarketList.includes(market)
   const canWrite = hasPermission('production.write')
   const bothMarkets = hasBothMarkets(user)
   const [params, setParams] = useSearchParams()
@@ -162,6 +190,15 @@ export function ProductionQueuePage() {
   const [denseItem, setDenseItem] = useState<QueueItem | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [stockWarning, setStockWarning] = useState('')
+  // PM-09: a short order asks before it is marked ready.
+  const [readyConfirm, setReadyConfirm] = useState<QueueItem | null>(null)
+  // PM-15: the block preview of the dialog's cycle, kept with the key it was asked for.
+  const [blockPreview, setBlockPreview] = useState<{ key: string; preview: BlockPreview | null } | null>(null)
+  // PM-10: the batch selection belongs to one queue read; another page, filter or reload starts empty.
+  const [selection, setSelection] = useState<{ key: string; ids: Set<string> }>({ key: '', ids: new Set() })
+  const [batchConfirm, setBatchConfirm] = useState<{ status: 'in_production' | 'ready'; items: QueueItem[] } | null>(null)
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null)
+  const [batchResult, setBatchResult] = useState<{ updated: number; failures: Array<{ name: string; message: string }>; shortages: string } | null>(null)
 
   const rawDue = params.get('prazo')
   const due: QueueDue | '' = isQueueDue(rawDue) ? rawDue : ''
@@ -227,26 +264,31 @@ export function ProductionQueuePage() {
     }
   }, [token, user, requestPath, requestKey])
 
+  const sendStatus = (item: QueueItem, status: ProductionStatus, note?: string) => apiRequest<QueueItem>(`/admin/production/queue/${item.id}`, {
+    token: token as string,
+    method: 'PATCH',
+    body: {
+      status,
+      periodEnd: item.currentPeriodEnd,
+      note: note || undefined,
+    },
+  })
+
   const patchStatus = async (item: QueueItem, status: ProductionStatus, note?: string) => {
     if (!token || !canWrite || !item.currentPeriodEnd) return
     setBusyId(`${item.id}-${item.currentPeriodEnd}`)
     setError('')
     setStockWarning('')
+    setBatchResult(null)
     try {
-      const updated = await apiRequest<QueueItem>(`/admin/production/queue/${item.id}`, {
-        token,
-        method: 'PATCH',
-        body: {
-          status,
-          periodEnd: item.currentPeriodEnd,
-          note: note || undefined,
-        },
-      })
+      const updated = await sendStatus(item, status, note)
       if (status === 'ready' && updated.stock && (updated.stock.shortages.length > 0 || updated.stock.unsized > 0)) {
         setStockWarning(formatSeparationShortage(updated.stock))
       }
       setBlockItem(null)
       setBlockNote('')
+      setBlockPreview(null)
+      setReadyConfirm(null)
       setReloadKey((key) => key + 1)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao atualizar o status de produção')
@@ -259,10 +301,89 @@ export function ProductionQueuePage() {
     if (status === 'blocked') {
       setBlockNote(item.note || '')
       setBlockItem(item)
+      if (!isPaid(item) && token && item.currentPeriodEnd) void loadBlockPreview(item)
+      return
+    }
+    if (status === 'ready' && item.stockCoverage === 'short') {
+      setReadyConfirm(item)
       return
     }
     void patchStatus(item, status)
   }
+
+  const itemKey = (item: QueueItem) => `${item.id}|${item.currentPeriodEnd}`
+
+  // PM-15: read where the block would move the charge; an answer for another dialog is dropped.
+  const loadBlockPreview = async (item: QueueItem) => {
+    const key = itemKey(item)
+    setBlockPreview({ key, preview: null })
+    try {
+      const preview = await apiRequest<BlockPreview>(
+        `/admin/production/queue/${item.id}/block-preview${buildQueryString({ periodEnd: item.currentPeriodEnd })}`,
+        { token: token as string },
+      )
+      setBlockPreview((current) => (current && current.key === key ? { key, preview } : current))
+    } catch {
+      setBlockPreview((current) => (current && current.key === key ? { key, preview: null } : current))
+    }
+  }
+
+  const closeBlock = () => {
+    setBlockItem(null)
+    setBlockNote('')
+    setBlockPreview(null)
+  }
+
+  // PM-10: what a batch may change. Unpaid, blocked and ready rows are never selected.
+  const selectable = (item: QueueItem) => canWrite && (
+    (item.productionStatus === 'to_prepare' && isPaid(item)) || item.productionStatus === 'in_production'
+  )
+
+  const runBatch = async (status: 'in_production' | 'ready', items: QueueItem[]) => {
+    if (!token || !canWrite) return
+    setBatchConfirm(null)
+    setError('')
+    setStockWarning('')
+    setBatchResult(null)
+    const failures: Array<{ name: string; message: string }> = []
+    const warnings: string[] = []
+    let updated = 0
+    setBatchProgress({ done: 0, total: items.length })
+    for (const [index, item] of items.entries()) {
+      try {
+        const result = await sendStatus(item, status)
+        updated += 1
+        if (status === 'ready' && result.stock && (result.stock.shortages.length > 0 || result.stock.unsized > 0)) {
+          warnings.push(formatSeparationShortage(result.stock))
+        }
+      } catch (requestError) {
+        failures.push({ name: item.customerName || item.email, message: requestError instanceof Error ? requestError.message : 'Falha ao atualizar' })
+      }
+      setBatchProgress({ done: index + 1, total: items.length })
+    }
+    setBatchProgress(null)
+    setBatchResult({ updated, failures, shortages: warnings.join(' ') })
+    setReloadKey((key) => key + 1)
+  }
+
+  const selectedIds = selection.key === requestKey ? selection.ids : new Set<string>()
+  const pageItems = data?.items ?? []
+  const selectedItems = pageItems.filter((item) => selectedIds.has(itemKey(item)) && selectable(item))
+  const toStart = selectedItems.filter((item) => item.productionStatus === 'to_prepare')
+  const toFinish = selectedItems.filter((item) => item.productionStatus === 'in_production')
+  const selectableItems = pageItems.filter(selectable)
+  const allSelected = selectableItems.length > 0 && selectableItems.every((item) => selectedIds.has(itemKey(item)))
+  const toggleSelected = (item: QueueItem) => {
+    const ids = new Set(selectedIds)
+    if (ids.has(itemKey(item))) ids.delete(itemKey(item))
+    else ids.add(itemKey(item))
+    setSelection({ key: requestKey, ids })
+  }
+  const toggleAll = () => {
+    setSelection({ key: requestKey, ids: allSelected ? new Set() : new Set(selectableItems.map(itemKey)) })
+  }
+  const batchRunning = batchProgress !== null
+  const columns = canWrite ? 7 : 6
 
   const submitBlock = (event: FormEvent) => {
     event.preventDefault()
@@ -312,7 +433,13 @@ export function ProductionQueuePage() {
     <PageFrame
       title="Fila de produção"
       description="Pedidos pagos, na ordem de preparo. Marque o andamento de cada um aqui."
-      actions={<Link className="ghost-button" to="/dashboard">← Voltar para Hoje</Link>}
+      actions={(
+        <div className="inline-actions">
+          {showsMarket('BR') ? <Link className="ghost-button" to="/operations/courier">Entregas Brasil</Link> : null}
+          {showsMarket('US') ? <Link className="ghost-button" to="/operations/labels">Etiquetas UPS</Link> : null}
+          <Link className="ghost-button" to="/dashboard">← Voltar para Hoje</Link>
+        </div>
+      )}
     >
       <div className="queue-due" role="group" aria-label="Filtrar por prazo">
         {dueCards.map((card) => (
@@ -337,7 +464,7 @@ export function ProductionQueuePage() {
             aria-label="Buscar"
             value={search}
             onChange={(event) => setFilter('busca', event.target.value)}
-            placeholder="E-mail do cliente"
+            placeholder="Nome ou e-mail"
           />
         </label>
         <label className="queue-field">
@@ -388,12 +515,40 @@ export function ProductionQueuePage() {
           <button className="link-button" type="button" onClick={() => setStockWarning('')}>Fechar</button>
         </div>
       ) : null}
+      {batchResult ? (
+        <div className={batchResult.failures.length ? 'alert' : 'notice'} role="status" data-testid="batch-result">
+          <p>{plural(batchResult.updated, 'pedido atualizado', 'pedidos atualizados')}.</p>
+          {batchResult.failures.length ? (
+            <ul className="plain-list">
+              {batchResult.failures.map((failure, index) => <li key={`${failure.name}-${index}`}>{failure.name}: {failure.message}</li>)}
+            </ul>
+          ) : null}
+          {batchResult.shortages ? <p>{batchResult.shortages}</p> : null}
+          <button className="link-button" type="button" onClick={() => setBatchResult(null)}>Fechar</button>
+        </div>
+      ) : null}
+      {canWrite && (selectedItems.length > 0 || batchRunning) ? (
+        <div className="queue-batch-bar" role="toolbar" aria-label="Ações em lote">
+          <span>{batchRunning && batchProgress ? `Atualizando ${batchProgress.done} de ${batchProgress.total}` : plural(selectedItems.length, 'selecionado', 'selecionados')}</span>
+          <button className="primary-button" type="button" disabled={batchRunning || toStart.length === 0} onClick={() => setBatchConfirm({ status: 'in_production', items: toStart })}>
+            Iniciar preparo ({toStart.length})
+          </button>
+          <button className="primary-button" type="button" disabled={batchRunning || toFinish.length === 0} onClick={() => setBatchConfirm({ status: 'ready', items: toFinish })}>
+            Marcar como pronto ({toFinish.length})
+          </button>
+        </div>
+      ) : null}
 
       {loading && !data ? <TableSkeleton /> : (
         <div className="queue-table-shell" aria-busy={loading}>
           <table className="queue-table">
             <thead>
               <tr>
+                {canWrite ? (
+                  <th className="queue-select-head">
+                    <input type="checkbox" aria-label="Selecionar todos da página" checked={allSelected} disabled={selectableItems.length === 0 || batchRunning} onChange={toggleAll} />
+                  </th>
+                ) : null}
                 <th>Cliente</th>
                 <th>Dia de preparo</th>
                 <th>Sabores</th>
@@ -405,7 +560,7 @@ export function ProductionQueuePage() {
             <tbody>
               {(data?.items.length ?? 0) === 0 ? (
                 <tr>
-                  <td colSpan={6} className="queue-empty">
+                  <td colSpan={columns} className="queue-empty">
                     {filtering ? (
                       <>
                         Nenhum pedido com estes filtros.{' '}
@@ -425,10 +580,23 @@ export function ProductionQueuePage() {
                   <Fragment key={`${item.id}-${item.currentPeriodEnd}`}>
                     {showHeader && item.dueBucket ? (
                       <tr className="queue-group-row">
-                        <td colSpan={6}>{bucketHeader(item.dueBucket, item)}</td>
+                        <td colSpan={columns}>{bucketHeader(item.dueBucket, item)}</td>
                       </tr>
                     ) : null}
                     <tr>
+                      {canWrite ? (
+                        <td className="queue-cell-select">
+                          {selectable(item) ? (
+                            <input
+                              type="checkbox"
+                              aria-label={`Selecionar ${name}`}
+                              checked={selectedIds.has(itemKey(item))}
+                              disabled={batchRunning}
+                              onChange={() => toggleSelected(item)}
+                            />
+                          ) : null}
+                        </td>
+                      ) : null}
                       <td className="queue-cell-customer">
                         <div className="queue-cell-stack">
                           <strong>{name}</strong>
@@ -456,10 +624,12 @@ export function ProductionQueuePage() {
                       <td data-label="Preparo">
                         <div className="queue-cell-stack">
                           <span className={STATUS_BADGE[item.productionStatus]}>{PRODUCTION_STATUS_LABELS[item.productionStatus]}</span>
-                          {item.stockCoverage ? (
-                            <span className={item.stockCoverage === 'short' ? 'badge-warning' : 'muted'}>
-                              {STOCK_COVERAGE_LABELS[item.stockCoverage]}
-                            </span>
+                          {item.stockCoverage === 'short' ? (
+                            <Link className="badge-warning" to={stockShortageHref(item, bothMarkets)}>
+                              {STOCK_COVERAGE_LABELS.short}
+                            </Link>
+                          ) : item.stockCoverage ? (
+                            <span className="muted">{STOCK_COVERAGE_LABELS[item.stockCoverage]}</span>
                           ) : null}
                           {item.note ? <span className="muted queue-note">{item.note}</span> : null}
                         </div>
@@ -485,7 +655,9 @@ export function ProductionQueuePage() {
                               {primary.label}
                             </button>
                           ) : item.productionStatus === 'ready' ? (
-                            <span className="muted">Concluído</span>
+                            fulfillmentPath(item)
+                              ? <Link className="ghost-button" to={fulfillmentPath(item) as string}>Expedir</Link>
+                              : <span className="badge-warning">Mercado divergente</span>
                           ) : null}
                           <RowMenu label={`Mais opções para ${name}`} items={menuItems(item)} />
                         </div>
@@ -512,10 +684,10 @@ export function ProductionQueuePage() {
         title="Bloquear pedido"
         description="Diga o que impede o preparo. A nota fica visível na fila."
         open={Boolean(blockItem)}
-        onClose={() => { setBlockItem(null); setBlockNote('') }}
+        onClose={closeBlock}
         footer={(
           <>
-            <button className="ghost-button" type="button" onClick={() => { setBlockItem(null); setBlockNote('') }}>
+            <button className="ghost-button" type="button" onClick={closeBlock}>
               Cancelar
             </button>
             <button
@@ -533,6 +705,12 @@ export function ProductionQueuePage() {
           {blockItem ? (
             <p className="closure-context"><strong>{blockItem.customerName || blockItem.email}</strong> · {blockItem.flavorMix || '—'}</p>
           ) : null}
+          {blockItem && (blockItem.paymentState === 'awaiting_payment' || blockItem.paymentState === 'past_due') ? (
+            // Blocking an unpaid cycle moves the Stripe charge; the operator sees it before confirming.
+            <p className="alert" role="note">
+              {blockChargeText(blockItem, blockPreview)}
+            </p>
+          ) : null}
           <label className="closure-field">
             Nota
             <textarea
@@ -545,6 +723,61 @@ export function ProductionQueuePage() {
             />
           </label>
         </form>
+      </Dialog>
+
+      <Dialog
+        title="Falta estoque"
+        open={Boolean(readyConfirm)}
+        onClose={() => setReadyConfirm(null)}
+        footer={readyConfirm ? (
+          <>
+            <button className="ghost-button" type="button" onClick={() => setReadyConfirm(null)}>Cancelar</button>
+            <Link className="ghost-button" to={stockShortageHref(readyConfirm, bothMarkets)}>Abrir estoque</Link>
+            <button className="primary-button" type="button" disabled={busyId !== null} onClick={() => void patchStatus(readyConfirm, 'ready')}>
+              Marcar como pronto
+            </button>
+          </>
+        ) : null}
+      >
+        {readyConfirm ? (
+          <>
+            <p className="closure-context"><strong>{readyConfirm.customerName || readyConfirm.email}</strong> · {readyConfirm.flavorMix || '—'}</p>
+            <p className="alert" role="note">{READY_SHORT_ONE(formatStockShortages(readyConfirm.stockShortages) || 'alguma receita')}</p>
+          </>
+        ) : null}
+      </Dialog>
+
+      <Dialog
+        title={batchConfirm?.status === 'ready' ? 'Marcar como pronto' : 'Iniciar preparo'}
+        description={batchConfirm ? `${plural(batchConfirm.items.length, 'pedido', 'pedidos')} vão mudar.` : undefined}
+        open={Boolean(batchConfirm)}
+        onClose={() => setBatchConfirm(null)}
+        footer={batchConfirm ? (
+          <>
+            <button className="ghost-button" type="button" onClick={() => setBatchConfirm(null)}>Cancelar</button>
+            <button className="primary-button" type="button" onClick={() => void runBatch(batchConfirm.status, batchConfirm.items)}>
+              {batchConfirm.status === 'ready' ? 'Marcar como pronto' : 'Iniciar preparo'}
+            </button>
+          </>
+        ) : null}
+      >
+        {batchConfirm ? (
+          <>
+            {batchConfirm.status === 'ready' && batchConfirm.items.some((item) => item.stockCoverage === 'short') ? (
+              <p className="alert" role="note">{READY_SHORT_BATCH}</p>
+            ) : null}
+            <ul className="plain-list" data-testid="batch-items">
+              {batchConfirm.items.map((item) => (
+                <li key={itemKey(item)}>
+                  <strong>{item.customerName || item.email}</strong> · {item.flavorMix || '—'}
+                  {batchConfirm.status === 'ready' && item.stockCoverage === 'short' ? (
+                    <span className="badge-warning"> Falta: {formatStockShortages(item.stockShortages) || 'estoque'}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
       </Dialog>
 
       <Dialog

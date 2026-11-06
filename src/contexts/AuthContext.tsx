@@ -12,6 +12,8 @@ export type AdminUser = {
   roles: AdminRole[]
   permissions: string[]
   markets?: MarketCode[]
+  // The markets the API scope applies: both for staff without a stored market while enforcement is off.
+  effectiveMarkets?: MarketCode[]
   mustChangePassword?: boolean
   inviteExpiresAt?: number | null
 }

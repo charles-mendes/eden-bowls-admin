@@ -1,3 +1,5 @@
+import { OtherMarketNotice } from '../components/OtherMarketNotice'
+import { isOutsideMarket } from '../lib/markets'
 import { useEffect, useState, type FormEvent, type MouseEvent } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
@@ -7,6 +9,7 @@ import { FiltersBar } from '../components/FiltersBar'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import {
+  NFE_NEEDS_ACTION,
   NFE_STATUS_OPTIONS,
   blingSituacaoTone,
   formatNfeAmount,
@@ -15,7 +18,11 @@ import {
   formatTaxDocument,
   nfeStatusLabel,
   nfeStatusTone,
+  isNfeListStatus,
+  nfeApiStatus,
+  nfeListHref,
   type BlingConnection,
+  type NfeListFilters,
   type NfeListResponse,
 } from '../lib/nfe'
 
@@ -29,28 +36,39 @@ const OAUTH_MESSAGES: Record<string, string> = {
 const LIST_REFRESH_MS = 60 * 1000
 
 export function NfeListPage() {
-  const { token, hasPermission } = useAuth()
-  const [searchParams] = useSearchParams()
+  const { token, hasPermission, user } = useAuth()
+  const otherMarket = isOutsideMarket(user, 'BR')
+  // Wait for the session: its markets decide whether this screen loads at all.
+  const sessionReady = Boolean(user)
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const [data, setData] = useState<NfeListResponse['data'] | null>(null)
   const [connection, setConnection] = useState<BlingConnection | null>(null)
-  const [status, setStatus] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
-  const [searchDraft, setSearchDraft] = useState('')
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
+  // Filters live in the URL, so a link opens the list filtered and going back from a note keeps them.
+  const status = isNfeListStatus(searchParams.get('status')) ? String(searchParams.get('status')) : ''
+  const from = searchParams.get('de') ?? ''
+  const to = searchParams.get('ate') ?? ''
+  const search = searchParams.get('busca') ?? ''
+  const page = Math.max(1, Number(searchParams.get('pagina')) || 1)
+  const [searchDraft, setSearchDraft] = useState(search)
+  const setFilters = (next: NfeListFilters) => {
+    const merged = { status, de: from, ate: to, busca: search, pagina: page, ...next }
+    setSearchParams(new URLSearchParams(nfeListHref(merged).split('?')[1] ?? ''), { replace: true })
+  }
+  const setPage = (update: number | ((current: number) => number)) => {
+    setFilters({ pagina: typeof update === 'function' ? update(page) : update })
+  }
   const [error, setError] = useState('')
   const [authorizing, setAuthorizing] = useState(false)
   const [refreshTick, setRefreshTick] = useState(0)
   const oauthMessage = OAUTH_MESSAGES[searchParams.get('bling') || '']
 
   useEffect(() => {
-    if (!token) return
+    if (!token || !sessionReady || otherMarket) return
     let active = true
     setError('')
     apiRequest<NfeListResponse>(`/admin/nfe${buildQueryString({
-      status: status || undefined,
+      status: status ? nfeApiStatus(status) : undefined,
       from: from || undefined,
       to: to || undefined,
       search: search || undefined,
@@ -61,7 +79,7 @@ export function NfeListPage() {
         if (active) setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar notas fiscais')
       })
     return () => { active = false }
-  }, [token, status, from, to, search, page, refreshTick])
+  }, [token, status, from, to, search, page, refreshTick, sessionReady, otherMarket])
 
   useEffect(() => {
     const timer = window.setInterval(() => setRefreshTick((current) => current + 1), LIST_REFRESH_MS)
@@ -69,11 +87,11 @@ export function NfeListPage() {
   }, [])
 
   useEffect(() => {
-    if (!token) return
+    if (!token || !sessionReady || otherMarket) return
     apiRequest<{ success: boolean; data: BlingConnection }>('/admin/bling/connection', { token })
       .then((response) => setConnection(response.data))
       .catch(() => setConnection(null))
-  }, [token])
+  }, [token, sessionReady, otherMarket])
 
   // The row is a shortcut for the mouse. The link inside it stays the way in for keyboard and screen readers.
   const openNote = (event: MouseEvent<HTMLTableRowElement>, id: number) => {
@@ -84,8 +102,7 @@ export function NfeListPage() {
 
   const submitSearch = (event: FormEvent) => {
     event.preventDefault()
-    setPage(1)
-    setSearch(searchDraft.trim())
+    setFilters({ busca: searchDraft.trim(), pagina: 1 })
   }
 
   // The API builds the link with its state; the browser goes to Bling and the panel never talks to it.
@@ -100,6 +117,8 @@ export function NfeListPage() {
       setAuthorizing(false)
     }
   }
+
+  if (otherMarket) return <OtherMarketNotice title="Notas fiscais" market="BR" />
 
   return (
     <PageFrame
@@ -127,18 +146,19 @@ export function NfeListPage() {
       <FiltersBar className="nfe-filters">
         <label>
           Status
-          <select value={status} onChange={(event) => { setPage(1); setStatus(event.target.value) }}>
+          <select value={status} onChange={(event) => setFilters({ status: event.target.value, pagina: 1 })}>
             <option value="">Todos</option>
+            <option value={NFE_NEEDS_ACTION}>Precisam de ação</option>
             {NFE_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </label>
         <label>
           De
-          <input type="date" value={from} onChange={(event) => { setPage(1); setFrom(event.target.value) }} />
+          <input type="date" value={from} onChange={(event) => setFilters({ de: event.target.value, pagina: 1 })} />
         </label>
         <label>
           Até
-          <input type="date" value={to} onChange={(event) => { setPage(1); setTo(event.target.value) }} />
+          <input type="date" value={to} onChange={(event) => setFilters({ ate: event.target.value, pagina: 1 })} />
         </label>
         <form className="nfe-search" onSubmit={submitSearch}>
           <label>

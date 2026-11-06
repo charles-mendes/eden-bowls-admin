@@ -1,10 +1,17 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UserDetailPage } from './UserDetailPage'
 import { adminUser, checkoutDetail, jsonResponse, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
+
+// Saving the account's address copy asks for a reason in a dialog before anything is sent.
+async function confirmDelivery(user: ReturnType<typeof userEvent.setup>, reason = 'Cliente pediu por telefone') {
+  const dialog = await screen.findByRole('dialog', { name: 'Salvar a cópia do endereço?' })
+  await user.type(within(dialog).getByLabelText('Motivo'), reason)
+  await user.click(within(dialog).getByRole('button', { name: 'Salvar endereço' }))
+}
 
 describe('UserDetailPage', () => {
   afterEach(() => {
@@ -55,6 +62,7 @@ describe('UserDetailPage', () => {
     await user.clear(screen.getByLabelText('Endereço'))
     await user.type(screen.getByLabelText('Endereço'), 'Rua Oscar Freire 200')
     await user.click(screen.getByRole('button', { name: 'Salvar endereço' }))
+    await confirmDelivery(user)
 
     await waitFor(() => {
       expect(screen.getByText('Endereço salvo.')).toBeInTheDocument()
@@ -62,6 +70,28 @@ describe('UserDetailPage', () => {
 
     const patch = calls.find((call) => call.method === 'PATCH' && call.path.endsWith('/delivery') && !call.path.endsWith('/delivery-instructions'))
     expect(patch?.body).toMatchObject({ address: 'Rua Oscar Freire 200', city: 'São Paulo', zipCode: '01310-100' })
+    // The fixture address has no recipient, so the field stays out and the API keeps it.
+    expect(patch?.body).not.toHaveProperty('recipientName')
+    expect(patch?.body).toMatchObject({ reason: 'Cliente pediu por telefone' })
+  })
+
+  it('says the box follows the subscription address and sends nothing when the confirmation is cancelled', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+
+    await screen.findByDisplayValue('Rua Augusta 100')
+    expect(screen.getByText(/a entrega usa o endereço da assinatura, que o cliente edita em Meu Plano/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Salvar endereço' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Salvar a cópia do endereço?' })
+    expect(within(dialog).getByRole('button', { name: 'Salvar endereço' })).toBeDisabled()
+    await user.type(within(dialog).getByLabelText('Motivo'), 'x')
+    expect(within(dialog).getByRole('button', { name: 'Salvar endereço' })).toBeDisabled()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+
+    expect(calls.some((call) => call.method === 'PATCH' && call.path.endsWith('/delivery'))).toBe(false)
   })
 
   it('deactivates a customer account after confirmation', async () => {
@@ -193,6 +223,7 @@ describe('UserDetailPage', () => {
     const name = await screen.findByLabelText('Nome completo')
     expect(name).toHaveValue('Ana Maria Costa')
     expect(screen.getByLabelText('CPF')).toHaveValue('529.982.247-25')
+    expect(screen.getByText(/Uma nota autorizada não muda/)).toBeInTheDocument()
     expect(screen.getByLabelText('Número')).toHaveValue('100')
     expect(screen.getByLabelText('Bairro')).toHaveValue('Consolação')
     expect(screen.getByLabelText('Estado').tagName).toBe('SELECT')
@@ -204,6 +235,7 @@ describe('UserDetailPage', () => {
     expect(calls.find((call) => call.path.endsWith('/fiscal'))?.body).toEqual({ fullName: 'Ana Maria da Costa', cpf: '529.982.247-25' })
 
     await user.click(screen.getByRole('button', { name: 'Salvar endereço' }))
+    await confirmDelivery(user)
     await screen.findByText('Endereço salvo.')
     expect(calls.find((call) => call.path.endsWith('/delivery'))?.body).toMatchObject({ number: '100', neighborhood: 'Consolação', state: 'SP' })
   })

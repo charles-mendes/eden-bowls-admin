@@ -116,3 +116,15 @@ describe('parseCheckoutSnapshots', () => {
     ])
   })
 })
+
+describe('parseCheckoutSnapshots recipient', () => {
+  it('shows who receives the box when the address has one', () => {
+    const snapshots = parseCheckoutSnapshots({ address: { street: 'Rua A', city: 'São Paulo', recipient_name: 'João Lima' } })
+    expect(snapshots.address.items).toEqual(expect.arrayContaining([{ label: 'Quem recebe', value: 'João Lima' }]))
+  })
+
+  it('shows no recipient row for a subscription from before the field', () => {
+    const snapshots = parseCheckoutSnapshots({ address: { street: 'Rua A', city: 'São Paulo' } })
+    expect(snapshots.address.items.some((item) => item.label === 'Quem recebe')).toBe(false)
+  })
+})

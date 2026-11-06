@@ -183,3 +183,20 @@ export function filterStockItems(
 export function formatSignedQuantity(quantity: number) {
   return quantity > 0 ? `+${quantity}` : String(quantity)
 }
+
+// Estoque keeps its filters in the URL (window, admin market, status, search), so a link opens it filtered.
+export type StockFilters = { janela?: number; mercado?: 'BR' | 'US'; situacao?: StockStatus | ''; busca?: string }
+
+export function isStockStatus(value: string | null): value is StockStatus {
+  return value === 'short' || value === 'below' || value === 'ok'
+}
+
+export function stockHref(filters: StockFilters = {}) {
+  const params = new URLSearchParams()
+  if (filters.mercado) params.set('mercado', filters.mercado)
+  if (filters.janela && filters.janela !== 7) params.set('janela', String(filters.janela))
+  if (filters.situacao) params.set('situacao', filters.situacao)
+  if (filters.busca) params.set('busca', filters.busca)
+  const query = params.toString()
+  return query ? `/operations/stock?${query}` : '/operations/stock'
+}

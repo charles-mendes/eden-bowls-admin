@@ -49,7 +49,7 @@ function routes(respond?: (call: FetchCall) => Response | undefined) {
       return jsonResponse({ market, kind: 'terms', current: { market, kind: 'terms', ...current }, versions })
     }
     if (call.path === '/api/v1/admin/settings/automated-emails' && call.method === 'GET') {
-      return jsonResponse({ market, life_stage_change_enabled: true, announcement_batch_size: 50, announcement_daily_cap: 200, updated_at: null })
+      return jsonResponse({ market, life_stage_change_enabled: true, announcement_batch_size: 50, announcement_daily_cap: 200, renewal_notice_enabled: true, plan_ending_notice_enabled: true, plan_notice_days: 7, updated_at: null })
     }
     return undefined
   }
@@ -142,5 +142,24 @@ describe('SettingsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('O limite diário não pode ser menor que o lote por execução.')
     expect(screen.getByLabelText('Limite diário')).toHaveAttribute('aria-invalid', 'true')
     expect(calls.some((call) => call.method === 'PUT' && call.path === '/api/v1/admin/settings/automated-emails')).toBe(false)
+  })
+
+  it('saves the plan notices with the rest of the emails', async () => {
+    const user = userEvent.setup()
+    const { calls } = renderPage(operator, '/config?aba=emails', (call) => {
+      if (call.path === '/api/v1/admin/settings/automated-emails' && call.method === 'PUT') return jsonResponse(call.body)
+      return undefined
+    })
+
+    await user.click(await screen.findByLabelText('Aviso de renovação'))
+    const days = screen.getByLabelText('Dias de antecedência dos avisos')
+    expect(days).toHaveValue(7)
+    await user.clear(days)
+    await user.type(days, '10')
+    await user.click(screen.getByRole('button', { name: 'Salvar e-mails' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('E-mails automáticos salvos.')
+    const saved = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/settings/automated-emails')
+    expect(saved?.body).toMatchObject({ renewal_notice_enabled: false, plan_ending_notice_enabled: true, plan_notice_days: 10 })
   })
 })

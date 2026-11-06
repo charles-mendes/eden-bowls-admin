@@ -249,4 +249,196 @@ describe('ProductionQueuePage', () => {
     expect(await screen.findByText('Separado com estoque negativo: frango 300 g (-2).')).toBeInTheDocument()
     expect(await screen.findByText('Pronto', { selector: '.badge-success' })).toBeInTheDocument()
   })
+
+  // admin-flow-fixes-5 (PM-09): the short badge leads to the stock screen, and ready asks first.
+  it('links a short badge to the stock screen filtered by its recipe', async () => {
+    seedAuth()
+    installAdminFetchMock(adminUser, {
+      productionQueue: [{ ...productionQueueItem, stockCoverage: 'short', stockShortages: [{ flavorKey: 'beef', packSizeGrams: 500, recipeName: 'Bovino', missing: 2 }] }],
+    })
+    renderQueue()
+
+    expect(await screen.findByRole('link', { name: 'Falta estoque' })).toHaveAttribute('href', '/operations/stock?mercado=BR&situacao=short&busca=Bovino')
+  })
+
+  it('asks before marking a short order ready and sends nothing on cancel', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{
+        ...productionQueueItem,
+        productionStatus: 'in_production',
+        stockCoverage: 'short',
+        stockShortages: [
+          { flavorKey: 'beef', packSizeGrams: 500, recipeName: 'Bovino', missing: 2 },
+          { flavorKey: 'turkey', packSizeGrams: 500, recipeName: 'Frango', missing: 1 },
+        ],
+      }],
+    })
+    renderQueue()
+
+    expect(await screen.findByRole('link', { name: 'Falta estoque' })).toHaveAttribute('href', '/operations/stock?situacao=short')
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar como pronto' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Pela ordem da fila, falta estoque de Bovino 500 g, Frango 500 g para este pedido. Marcar como pronto pode deixar o saldo negativo.')).toBeInTheDocument()
+    expect(within(dialog).getByRole('link', { name: 'Abrir estoque' })).toHaveAttribute('href', '/operations/stock?situacao=short')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+    expect(findCall(calls, 'PATCH', '/admin/production/queue/42')).toBeUndefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar como pronto' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Marcar como pronto' }))
+    await waitFor(() => {
+      expect(findCall(calls, 'PATCH', '/admin/production/queue/42')?.body).toMatchObject({ status: 'ready' })
+    })
+  })
+
+  // admin-flow-fixes-5 (PM-15): the block dialog says where the charge moves.
+  it('shows the day the charge moves to when blocking an unpaid cycle', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{ ...productionQueueItem, paymentState: 'awaiting_payment', paymentLabel: 'Aguardando pagamento' }],
+      blockPreview: { charged: false, chargeMovesTo: '2026-10-04T02:00:00.000Z', preparationDay: '2026-10-03' },
+    })
+    renderQueue()
+
+    fireEvent.click(within(await openRowMenu()).getByRole('menuitem', { name: 'Bloquear' }))
+    // 02:00 UTC on the 4th is still the 3rd in São Paulo.
+    expect(await screen.findByText('Este pedido ainda não foi cobrado. Bloquear adia a cobrança para 03/10, e reabrir pode cobrar o cliente na hora.')).toBeInTheDocument()
+  })
+
+  it('keeps the generic block text when the preview fails, and a paid cycle asks for none', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [
+        { ...productionQueueItem, paymentState: 'awaiting_payment', paymentLabel: 'Aguardando pagamento' },
+        { ...productionQueueItem, id: 2, customerName: 'Bia', email: 'bia@edenbowls.com', paymentState: 'paid' },
+      ],
+      blockPreview: { status: 500, code: 'boom' },
+    })
+    renderQueue()
+
+    fireEvent.click(within(await openRowMenu('Bia')).getByRole('menuitem', { name: 'Bloquear' }))
+    await screen.findByRole('dialog')
+    expect(calls.some((call) => call.path.includes('block-preview'))).toBe(false)
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+    fireEvent.click(within(await openRowMenu('Ana Ledger')).getByRole('menuitem', { name: 'Bloquear' }))
+    await waitFor(() => expect(calls.some((call) => call.path.includes('/queue/42/block-preview'))).toBe(true))
+    expect(await screen.findByText('Este pedido ainda não foi cobrado. Bloquear adia a cobrança, e reabrir pode cobrar o cliente na hora.')).toBeInTheDocument()
+  })
+
+  // admin-flow-fixes-5 (PM-10): batch actions call the PATCH once per order, in order.
+  it('starts the selected orders one by one and lists the one that failed', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [
+        { ...productionQueueItem },
+        { ...productionQueueItem, id: 2, customerName: 'Bia', email: 'bia@edenbowls.com' },
+        { ...productionQueueItem, id: 3, customerName: 'Caio', email: 'caio@edenbowls.com' },
+        { ...productionQueueItem, id: 4, customerName: 'Duda', email: 'duda@edenbowls.com', paymentState: 'awaiting_payment', paymentLabel: 'Aguardando pagamento' },
+      ],
+      productionPatchFailures: { 2: 'Ciclo mudou' },
+    })
+    renderQueue()
+
+    await screen.findByText('Ana Ledger')
+    expect(screen.queryByRole('checkbox', { name: 'Selecionar Duda' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar todos da página' }))
+    expect(screen.getByRole('button', { name: 'Marcar como pronto (0)' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar preparo (3)' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(within(dialog).getByTestId('batch-items')).getAllByRole('listitem')).toHaveLength(3)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Iniciar preparo' }))
+
+    const result = await screen.findByTestId('batch-result')
+    expect(within(result).getByText('2 pedidos atualizados.')).toBeInTheDocument()
+    expect(within(result).getByText('Bia: Ciclo mudou')).toBeInTheDocument()
+    const patched = calls.filter((call) => call.method === 'PATCH').map((call) => call.path.split('/').pop())
+    expect(patched).toEqual(['42', '2', '3'])
+  })
+
+  it('warns about short orders before marking a batch ready', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [
+        { ...productionQueueItem, productionStatus: 'in_production', stockCoverage: 'short', stockShortages: [{ flavorKey: 'beef', packSizeGrams: 500, recipeName: 'Bovino', missing: 1 }] },
+        { ...productionQueueItem, id: 2, customerName: 'Bia', email: 'bia@edenbowls.com', productionStatus: 'in_production', stockCoverage: 'covered' },
+      ],
+      productionStock: { shortages: [{ flavorKey: 'beef', packSizeGrams: 500, onHand: -1 }], unsized: 0 },
+    })
+    renderQueue()
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Selecionar Ana Ledger' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar Bia' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar como pronto (2)' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Pela ordem da fila, falta estoque para estes pedidos. Marcar como pronto pode deixar o saldo negativo.')).toBeInTheDocument()
+    expect(within(dialog).getByText(/Falta: Bovino 500 g/)).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Marcar como pronto' }))
+
+    const result = await screen.findByTestId('batch-result')
+    expect(within(result).getByText('2 pedidos atualizados.')).toBeInTheDocument()
+    expect(within(result).getByText(/Separado com estoque negativo: beef 500 g \(-1\)/)).toBeInTheDocument()
+  })
+
+  it('shows no selection to read-only staff', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderQueue()
+
+    await screen.findByText('Ana Ledger')
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['BR order to Entregas Brasil', { stripeAccount: 'br', country: 'BR' }, '/operations/courier'],
+    ['US order to Etiquetas UPS', { stripeAccount: 'us', country: 'US' }, '/operations/labels'],
+  ])('a ready %s', async (_name, market, href) => {
+    seedAuth()
+    installAdminFetchMock(adminUser, { productionQueue: [{ ...productionQueueItem, ...market, productionStatus: 'ready', stockCoverage: null }] })
+    renderQueue()
+
+    const row = (await screen.findByText('Ana Ledger')).closest('tr') as HTMLElement
+    expect(within(row).getByRole('link', { name: 'Expedir' })).toHaveAttribute('href', href)
+    expect(within(row).queryByText('Concluído')).not.toBeInTheDocument()
+  })
+
+  it('flags a ready order whose account and address are in different countries', async () => {
+    seedAuth()
+    installAdminFetchMock(adminUser, { productionQueue: [{ ...productionQueueItem, stripeAccount: 'us', country: 'BR', productionStatus: 'ready', stockCoverage: null }] })
+    renderQueue()
+
+    const row = (await screen.findByText('Ana Ledger')).closest('tr') as HTMLElement
+    expect(within(row).getByText('Mercado divergente')).toBeInTheDocument()
+    expect(within(row).queryByRole('link', { name: 'Expedir' })).not.toBeInTheDocument()
+  })
+
+  it('links the fulfillment screens of the session markets', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderQueue()
+
+    await screen.findByText('ana@edenbowls.com')
+    expect(screen.getByRole('link', { name: 'Entregas Brasil' })).toHaveAttribute('href', '/operations/courier')
+    expect(screen.queryByRole('link', { name: 'Etiquetas UPS' })).not.toBeInTheDocument()
+    expect(screen.getByRole('searchbox', { name: 'Buscar' })).toHaveAttribute('placeholder', 'Nome ou e-mail')
+  })
+
+  it.each([
+    ['awaiting payment', 'awaiting_payment', true],
+    ['refused payment', 'past_due', true],
+    ['paid', 'paid', false],
+  ])('warns about the charge when blocking a cycle with %s', async (_name, paymentState, warns) => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { productionQueue: [{ ...productionQueueItem, paymentState }] })
+    renderQueue()
+
+    const menu = await openRowMenu()
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Bloquear' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Bloquear pedido' })
+    if (warns) {
+      expect(within(dialog).getByRole('note')).toHaveTextContent('Bloquear adia a cobrança')
+    } else {
+      expect(within(dialog).queryByRole('note')).not.toBeInTheDocument()
+    }
+  })
 })

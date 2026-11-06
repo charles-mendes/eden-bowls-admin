@@ -61,11 +61,15 @@ export type AutomatedEmailSettings = {
   life_stage_change_enabled: boolean
   announcement_batch_size: number
   announcement_daily_cap: number
+  renewal_notice_enabled: boolean
+  plan_ending_notice_enabled: boolean
+  plan_notice_days: number
   updated_at?: string | null
 }
 
 export const BATCH_RANGE = { min: 1, max: 500 }
 export const DAILY_CAP_RANGE = { min: 1, max: 5000 }
+export const PLAN_NOTICE_DAYS_RANGE = { min: 1, max: 30 }
 
 // Today in the browser timezone, as the `AAAA-MM-DD` id of a new legal version.
 export function todayVersion(now = new Date()) {
@@ -86,6 +90,9 @@ const FIELD_NAMES: Record<string, string> = {
   announcement_batch_size: 'lote por execução',
   announcement_daily_cap: 'limite diário',
   life_stage_change_enabled: 'e-mail de mudança de fase',
+  renewal_notice_enabled: 'aviso de renovação',
+  plan_ending_notice_enabled: 'aviso de fim de plano',
+  plan_notice_days: 'dias de antecedência',
 }
 
 export function settingsErrorMessage(error: unknown, fallback: string, market: MarketCode = 'BR') {
@@ -97,7 +104,7 @@ export function settingsErrorMessage(error: unknown, fallback: string, market: M
     if (error.code === 'legal_document_invalid') return `Documento inválido: ${list}. A versão é uma data AAAA-MM-DD e o texto não pode ficar vazio.`
     if (error.code === 'legal_version_taken') return 'Essa versão já existe. Escolha outra data.'
     if (error.code === 'legal_document_not_found') return 'Versão não encontrada.'
-    if (error.code === 'automated_email_settings_invalid') return `Configuração inválida: ${list}. O lote vai de 1 a 500, o limite diário de 1 a 5.000 e não pode ser menor que o lote.`
+    if (error.code === 'automated_email_settings_invalid') return `Configuração inválida: ${list}. O lote vai de 1 a 500, o limite diário de 1 a 5.000 e não pode ser menor que o lote, e os dias de antecedência de 1 a 30.`
     if (error.status === 403) return 'Sem permissão para esta ação.'
   }
   return error instanceof Error && error.message ? error.message : fallback

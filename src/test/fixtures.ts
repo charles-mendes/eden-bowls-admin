@@ -36,6 +36,7 @@ export const WRITE_PERMISSIONS = [
   'production.write',
   'reports.read',
   'reports.export',
+  'customers.contact.write',
 ] as const
 
 export const operatorUser: AdminUser = {
@@ -55,6 +56,15 @@ export const operatorWriteUser: AdminUser = {
     ...WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write' && permission !== 'system.health.read'),
     'market.br',
   ],
+}
+
+// Same write access as operatorWriteUser, working in the United States.
+export const operatorUsWriteUser: AdminUser = {
+  ...operatorWriteUser,
+  userId: 'u-operator-us-write',
+  email: 'ops.us.write@edenbowls.com',
+  markets: ['US'],
+  permissions: operatorWriteUser.permissions.map((permission) => (permission === 'market.br' ? 'market.us' : permission)),
 }
 
 export const operatorUsUser: AdminUser = {
@@ -652,6 +662,7 @@ export const shippingSettings = {
           state: 'FL',
           zipcode: '33101',
           country: 'US',
+          phone: '305 555 0100',
         },
         package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12 },
         allowed_service_codes: ['03'],
@@ -815,11 +826,71 @@ export const todayOverview = {
   total: 4,
   items: [
     { ...todayOrder, id: 31, market: 'US', dueBucket: 'overdue', dueLabel: 'Atrasado 1 dia', displayName: 'Ana Costa', city: 'Miami', productionStatus: 'ready', paymentState: 'paid', upsLabel: 'missing' },
-    { ...todayOrder, id: 32, market: 'BR', dueBucket: 'today', displayName: 'Bruno Lima', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'paid', upsLabel: null },
+    { ...todayOrder, id: 32, market: 'BR', dueBucket: 'today', displayName: 'Bruno Lima', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'paid', upsLabel: null, courierDelivery: 'none' },
     { ...todayOrder, id: 33, market: 'US', dueBucket: 'today', displayName: 'Carla Diaz', city: 'Orlando', productionStatus: 'in_production', paymentState: 'paid', upsLabel: 'missing' },
-    { ...todayOrder, id: 34, market: 'BR', dueBucket: 'tomorrow', dueLabel: 'Amanhã', displayName: 'Davi Rocha', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'past_due', upsLabel: null },
+    { ...todayOrder, id: 34, market: 'BR', dueBucket: 'tomorrow', dueLabel: 'Amanhã', displayName: 'Davi Rocha', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'past_due', upsLabel: null, courierDelivery: null, lastContact: null, phone: '+55 41 99999-0000' },
   ],
   closedDays: [
     { market: 'BR', date: '2026-10-08', label: 'Folga da cozinha', closesPreparation: true, closesPickup: false, closesDelivery: true },
   ],
+  fulfillment: {
+    courierToDispatch: 0,
+    courierOnTheRoadLong: 0,
+    courierFailed: 0,
+    courierAwaitingNfe: null,
+    nfeMissingDocument: 0,
+    nfeRejected: 0,
+    nfeError: 0,
+    upsUnresolved: 0,
+    blingConnected: true,
+    addressIssues: { BR: { open: 0, stale: 0 }, US: { open: 0, stale: 0 } },
+    marketExceptions: { BR: 0, US: 0 },
+  },
+}
+
+export const customerContact = {
+  id: 1,
+  subscription_id: 'sub-row-1',
+  channel: 'whatsapp',
+  reason: 'payment_failed',
+  outcome: 'no_answer',
+  note: 'Mandei o link do cartão',
+  actor_email: 'ops@edenbowls.com',
+  created_at: '2026-10-06T17:05:00.000Z',
+}
+
+// delivery-address-issues: an open problem whose email went out on 3 November.
+export const addressIssue = {
+  id: 3,
+  codes: ['address_neighborhood_missing'],
+  source: 'courier_check',
+  open: true,
+  opened_at: '2026-11-03T12:00:00.000Z',
+  email_sent_at: '2026-11-03T12:00:05.000Z',
+  resolved_at: null,
+  resolved_by: null,
+}
+
+// shipment-market: a Brazil account delivered in the US, so it ships from no market.
+export const marketExceptionItem = {
+  subscription_id: 42,
+  stripe_subscription_id: 'sub_cross_1',
+  status: 'active',
+  stripe_account: 'br',
+  address_country: 'US',
+  customer: { id: 7, email: 'ana@example.com', name: 'Ana Costa' },
+  open_paid_cycles: 1,
+}
+
+// ups-pickup: a pickup UPS confirmed, as GET /admin/shipments/pickups lists it.
+export const upsPickupRequested = {
+  id: 31,
+  pickup_date: '2026-11-09',
+  ready_time: '14:00',
+  close_time: '18:00',
+  package_count: 8,
+  status: 'requested',
+  prn: '2929602E9CP',
+  shipment_ids: [101, 102],
+  requested_by: 'ops@edenbowls.com',
 }

@@ -1,8 +1,8 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NfeDetailPage } from './NfeDetailPage'
-import { operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { addressIssue, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { findCall, installAdminFetchMock, nfeDetailState } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -12,6 +12,32 @@ describe('NfeDetailPage', () => {
     localStorage.clear()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it('a note blocked for the fiscal name says what is missing, where it is fixed and the email state', async () => {
+    seedAuth()
+    nfeDetailState.override = {
+      status: 'blocked_missing_document',
+      missing_fields: ['fiscal_name'],
+      address_issue: { ...addressIssue, codes: ['fiscal_name_missing'], source: 'nfe_check' },
+    }
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const note = await screen.findByRole('note', { name: 'O que falta na nota' })
+    expect(note).toHaveTextContent('Falta para emitir: Nome fiscal.')
+    expect(note).toHaveTextContent('Meu plano → Editar assinatura')
+    expect(within(note).getByText('E-mail enviado em 03/11')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Corrigir dados' })).toBeInTheDocument()
+  })
+
+  it('lists CPF and fiscal name when both are missing', async () => {
+    seedAuth()
+    nfeDetailState.override = { status: 'blocked_missing_document', missing_fields: ['tax_document', 'fiscal_name'] }
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    expect(await screen.findByRole('note', { name: 'O que falta na nota' })).toHaveTextContent('Falta para emitir: CPF, Nome fiscal.')
   })
 
   it('shows why the email failed and sends it again after confirmation', async () => {
@@ -147,11 +173,17 @@ describe('NfeDetailPage', () => {
     expect(name).toHaveValue('Ana Souza')
     await user.clear(name)
     await user.type(name, 'Ana Correta')
-    await user.click(screen.getAllByRole('button', { name: 'Salvar' }).at(-1) as HTMLElement)
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('Muda só esta nota')
+    const saveButton = within(dialog).getAllByRole('button', { name: 'Salvar' }).at(-1) as HTMLElement
+    // Without a reason nothing is sent.
+    expect(saveButton).toBeDisabled()
+    await user.type(within(dialog).getByRole('textbox', { name: 'Motivo' }), 'Nome digitado errado no checkout')
+    await user.click(saveButton)
 
     await waitFor(() => expect(findCall(calls, 'PATCH', '/admin/nfe/5/customer')).toBeTruthy())
     const call = findCall(calls, 'PATCH', '/admin/nfe/5/customer')
-    expect(call?.body).toMatchObject({ name: 'Ana Correta', document: '52998224725', address: { street: 'Rua A', city: 'São Paulo' } })
+    expect(call?.body).toMatchObject({ name: 'Ana Correta', document: '52998224725', address: { street: 'Rua A', city: 'São Paulo' }, reason: 'Nome digitado errado no checkout' })
     expect(await screen.findByText(/Use Nova tentativa/)).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -189,4 +221,39 @@ describe('NfeDetailPage', () => {
     expect(await screen.findByText('Nova tentativa na fila.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Nova tentativa' })).not.toBeInTheDocument()
   })
+
+  it('links the note to its customer and its subscription', async () => {
+    nfeDetailState.override = { user_id: 42, stripe_subscription_id: 'sub_123' }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    expect(await screen.findByRole('link', { name: 'Abrir cliente' })).toHaveAttribute('href', '/users/42')
+    expect(screen.getByRole('link', { name: 'Abrir assinatura' })).toHaveAttribute('href', '/billing?busca=sub_123&status=all')
+  })
+
+  it('shows neither link for an imported note without ids', async () => {
+    nfeDetailState.override = { imported: true, can_retry: false, user_id: null, stripe_subscription_id: null }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    await screen.findByRole('heading', { name: /NF-e|Nota/ })
+    await waitFor(() => expect(screen.queryByText('Carregando nota...')).not.toBeInTheDocument())
+    expect(screen.queryByRole('link', { name: 'Abrir cliente' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Abrir assinatura' })).not.toBeInTheDocument()
+  })
+
+  it('reloads every 5 seconds while the note is in flight and every minute otherwise', async () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval')
+    nfeDetailState.override = { status: 'pending' }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    await waitFor(() => expect(setIntervalSpy.mock.calls.some(([, ms]) => ms === 5000)).toBe(true))
+    setIntervalSpy.mockClear()
+    nfeDetailState.override = { status: 'authorized' }
+    await waitFor(() => expect(setIntervalSpy.mock.calls.some(([, ms]) => ms === 60000)).toBe(true), { timeout: 7000 })
+  }, 10000)
 })

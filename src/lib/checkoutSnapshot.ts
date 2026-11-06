@@ -359,6 +359,8 @@ export function parseCheckoutSnapshots(input: {
     address: {
       lines: parseAddressLines(address),
       items: compactItems([
+        // Who receives the box; subscriptions from before the field have none and the label uses the account name.
+        { label: 'Quem recebe', value: displayValue(readString(address, 'recipient_name')), hideIfEmpty: true },
         { label: 'Telefone', value: displayValue(readString(address, 'phone')), hideIfEmpty: true },
         { label: 'Instruções', value: displayValue(readString(address, 'delivery_instructions', 'deliveryInstructions')), hideIfEmpty: true },
       ]),

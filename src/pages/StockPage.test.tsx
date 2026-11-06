@@ -1,14 +1,14 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StockPage } from './StockPage'
-import { operatorUsUser, operatorWriteUser, readonlyUser, stockItemFrango } from '../test/fixtures'
+import { adminUser, operatorUsUser, operatorWriteUser, readonlyUser, stockItemFrango } from '../test/fixtures'
 import { findCall, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
-function renderStock(profile = operatorWriteUser, options: Parameters<typeof installAdminFetchMock>[1] = {}) {
+function renderStock(profile = operatorWriteUser, options: Parameters<typeof installAdminFetchMock>[1] = {}, route = '/operations/stock') {
   seedAuth()
   const mock = installAdminFetchMock(profile, options)
-  renderAuthedPage(<StockPage />, '/operations/stock')
+  renderAuthedPage(<StockPage />, route, '/operations/stock')
   return mock
 }
 
@@ -68,6 +68,23 @@ describe('StockPage', () => {
     expect(screen.getByRole('link', { name: 'frango × 3' })).toHaveAttribute('href', '/billing/subscriptions/123')
   })
 
+  it('asks for the initial count when the market has no movements', async () => {
+    renderStock(operatorWriteUser, { stockMovements: [] })
+    expect(await screen.findByText('Falta a contagem inicial.')).toBeInTheDocument()
+  })
+
+  it('hides the initial count notice once there are movements', async () => {
+    renderStock()
+    await screen.findByText('frango')
+    await waitFor(() => expect(screen.queryByText('Falta a contagem inicial.')).not.toBeInTheDocument())
+  })
+
+  it('hides the initial count notice from readonly users', async () => {
+    renderStock(readonlyUser, { stockMovements: [] })
+    await screen.findByText('frango')
+    expect(screen.queryByText('Falta a contagem inicial.')).not.toBeInTheDocument()
+  })
+
   it('No unsized lines', async () => {
     renderStock()
     await screen.findByText('frango')
@@ -77,8 +94,8 @@ describe('StockPage', () => {
   it('Record a batch', async () => {
     const { calls } = renderStock()
     await screen.findByText('carne')
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar estoque' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Adicionar estoque' })
+    fireEvent.click(screen.getByRole('button', { name: 'Lançar produção' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Lançar produção' })
     fireEvent.change(within(dialog).getByLabelText('Receita'), { target: { value: 'carne' } })
     fireEvent.change(within(dialog).getByLabelText('Tamanho (g)'), { target: { value: '500' } })
     fireEvent.change(within(dialog).getByLabelText('Quantidade'), { target: { value: '30' } })
@@ -101,26 +118,26 @@ describe('StockPage', () => {
   it('Unknown size from the API', async () => {
     renderStock()
     await screen.findByText('frango')
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar estoque' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Adicionar estoque' })
+    fireEvent.click(screen.getByRole('button', { name: 'Lançar produção' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Lançar produção' })
     fireEvent.change(within(dialog).getByLabelText('Receita'), { target: { value: 'invalido' } })
     fireEvent.change(within(dialog).getByLabelText('Tamanho (g)'), { target: { value: '100' } })
     fireEvent.change(within(dialog).getByLabelText('Quantidade'), { target: { value: '1' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Adicionar' }))
 
     expect(await within(dialog).findByText('Essa receita e tamanho não existem no catálogo deste mercado.')).toBeInTheDocument()
-    expect(screen.getByRole('dialog', { name: 'Adicionar estoque' })).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Lançar produção' })).toBeInTheDocument()
   })
 
   it('Readonly sees no actions', async () => {
     renderStock(readonlyUser)
     await screen.findByText('frango')
-    expect(screen.queryByRole('button', { name: 'Adicionar estoque' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Lançar produção' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Ações de frango 300 g' }))
     expect(screen.getByRole('menuitem', { name: 'Ver histórico' })).toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Ajustar' })).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Definir mínimo' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Adicionar estoque' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Lançar produção' })).not.toBeInTheDocument()
   })
 
   it('requires a note when the reason is Outro', async () => {
@@ -168,8 +185,8 @@ describe('StockPage', () => {
       ],
     })
     expect(await screen.findByText('Frango e Arroz')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar estoque' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Adicionar estoque' })
+    fireEvent.click(screen.getByRole('button', { name: 'Lançar produção' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Lançar produção' })
     expect(within(within(dialog).getByLabelText('Receita')).queryByRole('option', { name: 'Peixe' })).not.toBeInTheDocument()
     const size = within(dialog).getByLabelText('Tamanho')
     expect(size).toBeDisabled()
@@ -191,8 +208,8 @@ describe('StockPage', () => {
   it('prefills production from the row with what is missing', async () => {
     renderStock()
     fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Adicionar estoque' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Adicionar estoque' })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Lançar produção' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Lançar produção' })
     expect(within(dialog).getByLabelText('Receita')).toHaveValue('frango')
     expect(within(dialog).getByLabelText('Tamanho (g)')).toHaveValue(300)
     expect(within(dialog).getByLabelText('Quantidade')).toHaveValue(15)
@@ -257,5 +274,22 @@ describe('StockPage', () => {
     const row = link.closest('tr') as HTMLTableRowElement
     expect(row).toHaveTextContent('Separação')
     expect(row.cells[3]).toHaveTextContent('-3')
+  })
+
+  it('opens a link with window, market and search', async () => {
+    const { calls } = renderStock(adminUser, {}, '/operations/stock?mercado=US&janela=14&busca=frango')
+    await waitFor(() => expect(findCall(calls, 'GET', '/admin/stock')?.search).toContain('market=US'))
+    expect(findCall(calls, 'GET', '/admin/stock')?.search).toContain('windowDays=14')
+    expect(screen.getByLabelText('Mercado')).toHaveValue('US')
+    expect(screen.getByLabelText('Janela')).toHaveValue('14')
+    expect(screen.getByLabelText('Buscar receita')).toHaveValue('frango')
+  })
+
+  it('keeps a BR operator in BR whatever the URL says', async () => {
+    const { calls } = renderStock(operatorWriteUser, {}, '/operations/stock?mercado=US&janela=99')
+    await screen.findByText('frango')
+    expect(screen.getByLabelText('Mercado')).toHaveValue('BR')
+    expect(findCall(calls, 'GET', '/admin/stock')?.search).toContain('market=BR')
+    expect(findCall(calls, 'GET', '/admin/stock')?.search).toContain('windowDays=7')
   })
 })

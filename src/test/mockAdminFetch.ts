@@ -95,6 +95,8 @@ export const nfeDetail = {
   next_attempt_at: null,
   submitted_at: null,
   updated_at: '2026-10-30T12:00:00.000Z',
+  missing_fields: [] as string[],
+  address_issue: null as Record<string, unknown> | null,
 }
 
 export const customerInvoice = {
@@ -128,10 +130,16 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   webhookHealth?: WebhookHealthFixture | { status: number; message: string }
   syncStatus?: Record<string, unknown>
   subscriptionInScope?: boolean
+  labelIssues?: Array<{ code: string }>
+  subscriptionMarket?: string
   customerInvoices?: Array<Record<string, unknown>>
   productionInScope?: boolean
   productionQueue?: Array<Record<string, unknown>>
   productionStock?: { shortages: Array<{ flavorKey: string; packSizeGrams: number; onHand: number }>; unsized: number }
+  // production-block-preview: the answer, or a status for an error.
+  // PM-10: a PATCH of these queue ids fails with this message.
+  productionPatchFailures?: Record<number, string>
+  blockPreview?: { charged: boolean; chargeMovesTo: string | null; preparationDay: string | null } | { status: number; code: string }
   stockItems?: Array<Record<string, unknown>>
   stockUnsized?: Array<Record<string, unknown>>
   stockCatalog?: Array<Record<string, unknown>>
@@ -150,6 +158,15 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   recipeContent?: typeof recipeContentFixture
   recipes?: RecipeListItem[]
   recipeImage?: 'invalid'
+  contacts?: Array<Record<string, unknown>>
+  contactError?: { status: number; code: string; field?: string }
+  paidCycles?: Array<Record<string, unknown>>
+  marketExceptions?: Array<Record<string, unknown>>
+  // The subscription detail's shipping market (shipment-market) and address problem (delivery-address-issues).
+  marketException?: boolean
+  addressIssue?: Record<string, unknown> | null
+  // ups-pickup: the pickups GET /admin/shipments/pickups returns.
+  upsPickups?: Array<Record<string, unknown>>
   // Answered before the fixed routes; return undefined to fall through.
   routes?: (call: FetchCall) => Response | undefined
 } = {}) {
@@ -188,6 +205,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     item.belowMinimum = item.minLevel != null && onHand < Number(item.minLevel)
     return item
   }
+
+  let contacts = (options.contacts ?? []).map((item) => ({ ...item }))
+  let nextContactId = contacts.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0) + 1
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = parseUrl(input)
@@ -603,8 +623,18 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       })
     }
 
+    if (/^\/api\/v1\/admin\/production\/queue\/\d+\/block-preview$/.test(path) && method === 'GET') {
+      const preview = options.blockPreview ?? { charged: false, chargeMovesTo: null, preparationDay: null }
+      if ('status' in preview) {
+        return jsonResponse({ success: false, message: 'Falha na prévia', code: preview.code }, preview.status)
+      }
+      return jsonResponse(preview)
+    }
+
     if (/^\/api\/v1\/admin\/production\/queue\/\d+$/.test(path) && method === 'PATCH') {
       const id = Number(path.split('/').pop())
+      const failure = options.productionPatchFailures?.[id]
+      if (failure) return jsonResponse({ success: false, message: failure }, 409)
       const item = queueItems.find((entry) => Number(entry.id) === id) ?? { ...productionQueueItem, id }
       item.productionStatus = body?.status || 'in_production'
       item.note = body?.note || null
@@ -792,8 +822,35 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       })
     }
 
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/contacts$/.test(path) && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: contacts } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/contacts$/.test(path) && method === 'POST') {
+      if (options.contactError) {
+        const { status, code, field } = options.contactError
+        return jsonResponse({ code, message: 'Contato recusado.', details: { code, ...(field ? { field } : {}) } }, status)
+      }
+      const contact = {
+        id: nextContactId++,
+        subscription_id: decodeURIComponent(path.split('/')[6]),
+        channel: 'whatsapp',
+        reason: body?.reason,
+        outcome: body?.outcome,
+        note: body?.note || null,
+        actor_email: profile.email,
+        created_at: new Date().toISOString(),
+      }
+      contacts = [contact, ...contacts]
+      return jsonResponse({ success: true, data: { contact } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/paid-cycles$/.test(path) && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: options.paidCycles ?? [] } })
+    }
+
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/shipments$/.test(path) && method === 'GET') {
-      return jsonResponse({ success: true, data: { items: [] } })
+      return jsonResponse({ success: true, data: { items: [], label_issues: options.labelIssues ?? [] } })
     }
 
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/shipments$/.test(path) && method === 'POST') {
@@ -807,6 +864,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
             stripe_invoice_id: body?.invoice_id || 'in_test_1',
             ups_shipment_id: '1Z999',
             tracking_number: '1Z999AA10123456784',
+            tracking_url: 'https://www.ups.com/track?tracknum=1Z999AA10123456784',
+            tracking_status: 'in_transit',
+            tracking_description: 'Departed from facility',
+            delivered_at: null,
             service_code: '03',
             label_format: 'GIF',
             has_label: true,
@@ -821,6 +882,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       })
     }
 
+    if (/^\/api\/v1\/admin\/shipments\/[^/]+\/label$/.test(path) && method === 'GET') {
+      return new Response('GIF89a', { status: 200, headers: { 'Content-Type': 'image/gif' } })
+    }
+
     if (/^\/api\/v1\/admin\/shipments\/[^/]+\/void$/.test(path) && method === 'POST') {
       return jsonResponse({ success: true, data: { shipment: { id: 'ship_1', status: 'voided' } } })
     }
@@ -832,6 +897,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+$/.test(path) && method === 'GET') {
       return jsonResponse({
         ...subscriptionItem,
+        term: { ...subscriptionItem.term, marketCountry: options.subscriptionMarket ?? subscriptionItem.term.marketCountry },
         stripeSubscriptionId: subscriptionItem.providerSubscriptionId,
         stripeCustomerId: 'cus_1',
         planLabel: 'Adult 1m',
@@ -844,6 +910,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         planSelection: {},
         shipping: {},
         address: {},
+        shipment_market: options.marketException ? null : 'US',
+        market_exception: Boolean(options.marketException),
+        address_issue: options.addressIssue ?? null,
         ...(options.subscriptionSnapshot ?? {}),
         ...(options.subscriptionInScope === undefined ? {} : { customerProfileInScope: options.subscriptionInScope }),
       })
@@ -860,6 +929,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
           closedDays: todayOverview.closedDays.filter((day) => inScope(day.market)),
         },
       })
+    }
+
+    if (path === '/api/v1/admin/shipments/pickups' && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: options.upsPickups ?? [], from: '2026-11-02' } })
     }
 
     if (path === '/api/v1/admin/shipping/settings' && method === 'GET') {
@@ -1052,6 +1125,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (/^\/api\/v1\/admin\/feedbacks\/\d+$/.test(path) && method === 'DELETE') {
       return jsonResponse({ deleted: true, id: Number(path.split('/').pop()) })
+    }
+
+    if (path === '/api/v1/admin/market-exceptions' && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: options.marketExceptions ?? [], truncated: false } })
     }
 
     if (path === '/api/v1/admin/nfe' && method === 'GET') {

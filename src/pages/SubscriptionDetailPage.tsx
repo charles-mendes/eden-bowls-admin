@@ -4,13 +4,22 @@ import { LedgerSnapshotSections } from '../components/LedgerSnapshotSections'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { MetricCard } from '../components/MetricCard'
+import { CustomerContact } from '../components/CustomerContact'
+import { AddressIssueStatus } from '../components/AddressIssueStatus'
+import { type AddressIssue } from '../lib/addressIssues'
 import { useAuth } from '../contexts/AuthContext'
-import { apiRequest, getApiBaseUrl } from '../lib/api'
+import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
 import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
 import { formatDate, formatStripeStatus } from '../lib/format'
+import { printLabel } from '../lib/printLabel'
+import { labelIssueText, labelRefusalText, type LabelIssue } from '../lib/upsLabels'
 import { formatNfeAmount, formatNfeDate, formatNfeNumber, nfeStatusLabel, nfeStatusTone, type NfeSummary } from '../lib/nfe'
 import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
+import { CourierDispatchDialog, CourierRowActions, CourierStatusBadge, CourierSummary } from '../components/shipping/CourierDelivery'
+import { productionLabel, readinessText, type CourierDelivery, type ReadinessReason } from '../lib/courierDeliveries'
+import { lastContactText, outcomeLabel, reasonLabel, contactsPath, type CustomerContact as Contact } from '../lib/customerContacts'
+import { paidCyclesPath, type PaidCycle } from '../lib/paidCycles'
 
 type SubscriptionDetail = {
   id: string
@@ -23,6 +32,7 @@ type SubscriptionDetail = {
   cancelAtPeriodEnd: boolean
   dashboardUrl: string
   stripeAccount?: string
+  term?: { marketCountry: string; months: number }
   customerProfileInScope?: boolean
   customerName?: string | null
   user: { id: string; email: string }
@@ -30,6 +40,11 @@ type SubscriptionDetail = {
   planSelection: unknown
   shipping: unknown
   address: unknown
+  // shipment-market: null when the account and the address country fit no market.
+  shipment_market?: 'BR' | 'US' | null
+  market_exception?: boolean
+  // delivery-address-issues: the open problem, or the last one resolved in 30 days.
+  address_issue?: AddressIssue | null
 }
 
 type InvoiceItem = {
@@ -47,6 +62,10 @@ type UpsShipment = {
   stripe_invoice_id: string
   ups_shipment_id: string | null
   tracking_number: string | null
+  tracking_url: string | null
+  tracking_status: string | null
+  tracking_description: string | null
+  delivered_at: string | null
   service_code: string | null
   label_format: string | null
   has_label: boolean
@@ -58,11 +77,41 @@ type UpsShipment = {
   updated_at: string | null
 }
 
+const TRACKING_STATUS: Record<string, string> = {
+  label_created: 'Aguardando coleta',
+  in_transit: 'Em trânsito',
+  out_for_delivery: 'Saiu para entrega',
+  delivered: 'Entregue',
+  exception: 'Problema na entrega',
+  returned: 'Devolvido ao remetente',
+}
+
+function cycleText(cycle: PaidCycle) {
+  return [
+    cycle.preparation_day ? `Preparo ${formatDay(cycle.preparation_day)}` : null,
+    productionLabel(cycle.production_status),
+    cycle.delivery_date ? `entrega ${formatDay(cycle.delivery_date)}` : null,
+  ].filter(Boolean).join(' · ')
+}
+
+function formatDay(value: string) {
+  const [year, month, day] = value.slice(0, 10).split('-')
+  return year && month && day ? `${day}/${month}/${year}` : value
+}
+
+// The phone saved with this subscription's delivery address. The detail API carries no account phone.
+function addressPhone(address: unknown): string | null {
+  if (!address || typeof address !== 'object') return null
+  const value = (address as Record<string, unknown>).phone
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
 const SHIPMENT_STATUS: Record<string, { label: string; badge: string }> = {
   created: { label: 'Etiqueta criada', badge: 'badge-success' },
   pending: { label: 'Gerando', badge: 'badge-info' },
   unknown: { label: 'Verificar na UPS', badge: 'badge-warning' },
   voided: { label: 'Anulada', badge: 'badge-error' },
+  delivered: { label: 'Entregue', badge: 'badge-success' },
 }
 
 export function SubscriptionDetailPage() {
@@ -71,24 +120,93 @@ export function SubscriptionDetailPage() {
   const [data, setData] = useState<SubscriptionDetail | null>(null)
   const [invoices, setInvoices] = useState<InvoiceItem[]>([])
   const [shipments, setShipments] = useState<UpsShipment[]>([])
+  const [labelIssues, setLabelIssues] = useState<LabelIssue[]>([])
   const [customerInvoices, setCustomerInvoices] = useState<CustomerInvoice[]>([])
   const [nfeItems, setNfeItems] = useState<NfeSummary[]>([])
+  const [courierItems, setCourierItems] = useState<CourierDelivery[]>([])
+  const [courierRecipient, setCourierRecipient] = useState('')
+  const [dispatchInvoice, setDispatchInvoice] = useState<string | null>(null)
+  const [paidCycles, setPaidCycles] = useState<PaidCycle[]>([])
+  const [contacts, setContacts] = useState<Contact[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const canReadShipping = hasPermission('shipping.read')
   const canWriteShipping = hasPermission('shipping.write')
   const canSyncBilling = hasPermission('billing.subscribers.sync')
   const canReadNfe = hasPermission('nfe.read')
+  const canReadSubscription = hasPermission('billing.subscribers.read')
   const profileInScope = isProfileInScope(data?.customerProfileInScope)
+  // Brazil delivers by courier, with no UPS label. The delivery address decides, not the Stripe account.
+  const shipsWithUps = data?.term?.marketCountry === 'US'
+  const shipsByCourier = data?.term?.marketCountry === 'BR'
+
+  const loadCourier = async () => {
+    if (!token || !id || !canReadShipping || !shipsByCourier) return
+    try {
+      const response = await apiRequest<{ success: boolean; data: { items: CourierDelivery[]; recipient_name?: string } }>(
+        `/admin/billing/subscriptions/${id}/courier-deliveries`,
+        { token },
+      )
+      setCourierItems(response.data?.items || [])
+      setCourierRecipient(response.data?.recipient_name || '')
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar entregas')
+    }
+  }
+
+  // Paid cycles decide what waits for a label or a courier, without syncing the Stripe invoices.
+  const loadPaidCycles = async () => {
+    if (!token || !id || !canReadShipping) return
+    try {
+      const response = await apiRequest<{ success: boolean; data: { items: PaidCycle[] } }>(paidCyclesPath(id), { token })
+      setPaidCycles(response.data?.items || [])
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar os ciclos pagos')
+    }
+  }
+
+  const loadContacts = async () => {
+    if (!token || !id || !canReadSubscription) return
+    try {
+      const response = await apiRequest<{ success: boolean; data: { items: Contact[] } }>(contactsPath(id), { token })
+      setContacts(response.data?.items || [])
+    } catch {
+      setContacts([])
+    }
+  }
+
+  useEffect(() => {
+    void loadPaidCycles()
+  }, [token, id, canReadShipping])
+
+  useEffect(() => {
+    void loadContacts()
+  }, [token, id, canReadSubscription])
+
+  const courierDone = (text: string) => {
+    setDispatchInvoice(null)
+    if (text) {
+      setMessage(text)
+      setError('')
+    }
+    void loadCourier()
+    void loadPaidCycles()
+  }
+
+  const courierFailed = (text: string) => {
+    setMessage('')
+    setError(text)
+  }
 
   const loadShipments = async () => {
     if (!token || !id || !canReadShipping) return
     try {
-      const response = await apiRequest<{ success: boolean; data: { items: UpsShipment[] } }>(
+      const response = await apiRequest<{ success: boolean; data: { items: UpsShipment[]; label_issues?: LabelIssue[] } }>(
         `/admin/billing/subscriptions/${id}/shipments`,
         { token },
       )
       setShipments(response.data?.items || [])
+      setLabelIssues(response.data?.label_issues || [])
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar etiquetas UPS')
     }
@@ -112,6 +230,15 @@ export function SubscriptionDetailPage() {
     void loadNfe()
   }, [token, id, canReadNfe])
 
+  // The permissions load after the first render, so this waits for them, like the fiscal notes above.
+  useEffect(() => {
+    void loadShipments()
+  }, [token, id, canReadShipping])
+
+  useEffect(() => {
+    void loadCourier()
+  }, [token, id, canReadShipping, shipsByCourier])
+
   const loadCustomerInvoices = async () => {
     if (!token || !id) return
     try {
@@ -131,7 +258,7 @@ export function SubscriptionDetailPage() {
       setError('')
       const response = await apiRequest<SubscriptionDetail>(`/admin/billing/subscriptions/${id}`, { token })
       setData(response)
-      await Promise.all([loadShipments(), loadCustomerInvoices()])
+      await loadCustomerInvoices()
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar assinatura')
     }
@@ -157,7 +284,9 @@ export function SubscriptionDetailPage() {
 
   const openPdf = async (invoiceId: string) => {
     if (!token) return
-    const response = await apiRequest<{ url: string }>(`/admin/billing/invoices/${invoiceId}/pdf`, { token })
+    // The account tells the API which Stripe holds the invoice; without it an admin of both markets gets 404.
+    const account = data?.stripeAccount ? `?account=${encodeURIComponent(data.stripeAccount)}` : ''
+    const response = await apiRequest<{ url: string }>(`/admin/billing/invoices/${invoiceId}/pdf${account}`, { token })
     if (response.url) {
       window.open(response.url, '_blank', 'noopener,noreferrer')
     }
@@ -224,7 +353,7 @@ export function SubscriptionDetailPage() {
     }
   }
 
-  const createShipment = async (invoiceId: string) => {
+  const createShipment = async (invoiceId: string, confirmNotReady = false): Promise<void> => {
     if (!token || !id) return
     try {
       setError('')
@@ -233,7 +362,7 @@ export function SubscriptionDetailPage() {
         {
           token,
           method: 'POST',
-          body: { invoice_id: invoiceId },
+          body: { invoice_id: invoiceId, ...(confirmNotReady ? { confirm_not_ready: true } : {}) },
         },
       )
       const shipment = response.data?.shipment
@@ -246,8 +375,43 @@ export function SubscriptionDetailPage() {
         await loadShipments()
       }
       setMessage(response.data?.reused ? 'Etiqueta já existia para esta invoice (idempotente).' : 'Etiqueta UPS gerada.')
+      void loadPaidCycles()
     } catch (requestError) {
+      // The order is not ready or the subscription not active: buy only after the operator confirms.
+      if (!confirmNotReady && requestError instanceof ApiRequestError && requestError.code === 'ups_label_needs_confirmation') {
+        const reasons = Array.isArray(requestError.details?.reasons) ? requestError.details.reasons as ReadinessReason[] : []
+        const list = reasons.map((reason) => `- ${readinessText(reason)}`).join('\n')
+        if (window.confirm(`Este pedido ainda não está pronto. Comprar mesmo assim?${list ? `\n\n${list}` : ''}`)) {
+          await createShipment(invoiceId, true)
+        }
+        return
+      }
+      if (requestError instanceof ApiRequestError && requestError.status === 422) {
+        setError(labelRefusalText(requestError.code, requestError.message))
+        return
+      }
       setError(requestError instanceof Error ? requestError.message : 'Falha ao gerar etiqueta')
+    }
+  }
+
+  const fetchLabel = async (shipmentId: string) => {
+    const response = await fetch(`${getApiBaseUrl()}/admin/shipments/${shipmentId}/label`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null) as { message?: string } | null
+      throw new Error(errorBody?.message || 'Falha ao baixar etiqueta')
+    }
+    return response.blob()
+  }
+
+  const printShipmentLabel = async (shipmentId: string) => {
+    if (!token) return
+    try {
+      setError('')
+      await printLabel(await fetchLabel(shipmentId))
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao imprimir etiqueta')
     }
   }
 
@@ -255,14 +419,7 @@ export function SubscriptionDetailPage() {
     if (!token) return
     try {
       setError('')
-      const response = await fetch(`${getApiBaseUrl()}/admin/shipments/${shipmentId}/label`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null) as { message?: string } | null
-        throw new Error(errorBody?.message || 'Falha ao baixar etiqueta')
-      }
-      const blob = await response.blob()
+      const blob = await fetchLabel(shipmentId)
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
@@ -276,10 +433,28 @@ export function SubscriptionDetailPage() {
 
   const voidShipment = async (shipmentId: string) => {
     if (!token) return
+    if (!window.confirm('Anular esta etiqueta na UPS? Ela deixa de valer e a fatura volta a precisar de etiqueta.')) return
     try {
       setError('')
       await apiRequest(`/admin/shipments/${shipmentId}/void`, { token, method: 'POST' })
       setMessage('Etiqueta anulada na UPS.')
+      await loadShipments()
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao anular')
+    }
+  }
+
+  // A row without a UPS id may still hold a label UPS bought. It closes here only after the operator checks UPS.
+  const closeUnresolvedShipment = async (shipmentId: string) => {
+    if (!token) return
+    const confirmed = window.confirm(
+      'Você conferiu no portal da UPS que não existe etiqueta para esta fatura? A linha é fechada só aqui, sem chamar a UPS, e a fatura volta a ficar pronta para etiqueta.',
+    )
+    if (!confirmed) return
+    try {
+      setError('')
+      await apiRequest(`/admin/shipments/${shipmentId}/void`, { token, method: 'POST', body: { confirm_not_created: true } })
+      setMessage('Linha fechada. A fatura pode receber uma nova etiqueta.')
       await loadShipments()
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao anular')
@@ -319,8 +494,18 @@ export function SubscriptionDetailPage() {
       .map((item) => [item.stripe_invoice_id, item]),
   )
 
-  // Paid invoices still waiting for a label: the shipping team starts here.
-  const awaitingLabel = invoices.filter((item) => item.status === 'paid' && !activeByInvoice.has(item.id))
+  // Paid cycles still waiting for a label: the shipping team starts here. An invoice with no cycle never shows.
+  const awaitingLabel = paidCycles.filter((cycle) => !cycle.ups_shipment && !activeByInvoice.has(cycle.invoice_id))
+
+  // Paid cycles with no courier delivery on the road or delivered.
+  const courierActiveInvoices = new Set(
+    courierItems.filter((item) => item.status === 'out_for_delivery' || item.status === 'delivered').map((item) => item.stripe_invoice_id),
+  )
+  const awaitingCourier = paidCycles.filter((cycle) => (
+    (!cycle.courier_delivery || cycle.courier_delivery.status === 'failed') && !courierActiveInvoices.has(cycle.invoice_id)
+  ))
+  const phone = addressPhone(data?.address)
+  const contactName = data?.customerName || data?.user.email || 'Cliente'
 
   return (
     <PageFrame
@@ -356,8 +541,46 @@ export function SubscriptionDetailPage() {
         </div>
       </Section>
 
-      {canReadShipping ? (
+      {data?.market_exception ? (
+        <div className="warning" role="status">
+          Conta e país do endereço não combinam: esta assinatura não sai pela fila de etiquetas nem pela de entregas e não recebe NF-e até a conta e o país do endereço combinarem. Ela aparece em Exceções de mercado.
+        </div>
+      ) : null}
+
+      {data?.address_issue ? (
+        <Section
+          title="Problema de endereço"
+          description="O cliente corrige em Meu plano → Editar assinatura, na loja. O problema fecha sozinho quando ele salva."
+          actions={(
+            <CustomerContact
+              subscriptionId={data.id}
+              name={contactName}
+              phone={phone}
+              reason="address"
+              showLast={false}
+              onSaved={(contact) => setContacts((current) => [contact, ...current.filter((item) => item.id !== contact.id)])}
+            />
+          )}
+        >
+          <AddressIssueStatus issue={data.address_issue} detailed />
+        </Section>
+      ) : null}
+
+      {canReadShipping && shipsWithUps ? (
         <Section title="Envio UPS" description="Uma etiqueta por fatura paga. Compare o frete cobrado no checkout com o custo da UPS.">
+          {labelIssues.length > 0 ? (
+            <div className="warning" role="alert" aria-label="Etiqueta bloqueada">
+              <strong>Não é possível gerar a etiqueta. Corrija antes:</strong>
+              <ul>
+                {labelIssues.map((issue) => (
+                  <li key={issue.code}>
+                    {labelIssueText(issue)}
+                    {issue.code === 'ship_from_missing' ? <> <Link to="/config/shipping">Abrir configuração de frete</Link></> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="table-shell table-scroll">
             <table>
               <thead>
@@ -374,13 +597,13 @@ export function SubscriptionDetailPage() {
               </thead>
               <tbody>
                 {awaitingLabel.map((item) => (
-                  <tr key={`awaiting-${item.id}`}>
-                    <td>{item.number ?? item.id}</td>
+                  <tr key={`awaiting-${item.invoice_id}`}>
+                    <td>{item.invoice_id}</td>
                     <td><span className="badge-warning">Sem etiqueta</span></td>
-                    <td colSpan={5} className="muted">Fatura paga em {formatDate(item.createdAt)}.</td>
+                    <td colSpan={5} className="muted">{cycleText(item)}</td>
                     <td>
                       {canWriteShipping ? (
-                        <button className="primary-button" type="button" onClick={() => void createShipment(item.id)}>
+                        <button className="primary-button" type="button" disabled={labelIssues.length > 0} onClick={() => void createShipment(item.invoice_id)}>
                           Gerar etiqueta UPS
                         </button>
                       ) : null}
@@ -389,14 +612,24 @@ export function SubscriptionDetailPage() {
                 ))}
                 {shipments.length === 0 && awaitingLabel.length === 0 ? (
                   <tr>
-                    <td colSpan={8}>Nenhuma etiqueta ainda. Faturas pagas aparecem aqui para gerar a etiqueta.</td>
+                    <td colSpan={8}>Nenhuma etiqueta ainda. Ciclos pagos aparecem aqui para gerar a etiqueta.</td>
                   </tr>
                 ) : (
                   shipments.map((item) => (
                     <tr key={item.id}>
                       <td>{item.stripe_invoice_id}</td>
                       <td><span className={SHIPMENT_STATUS[item.status]?.badge ?? 'badge-info'}>{SHIPMENT_STATUS[item.status]?.label ?? item.status}</span></td>
-                      <td>{item.tracking_number || '—'}</td>
+                      <td>
+                        {item.tracking_url ? (
+                          <a href={item.tracking_url} target="_blank" rel="noreferrer">{item.tracking_number}</a>
+                        ) : (item.tracking_number || '—')}
+                        {item.tracking_status ? (
+                          <div className="muted">
+                            {TRACKING_STATUS[item.tracking_status] ?? item.tracking_description ?? item.tracking_status}
+                            {item.delivered_at ? ` em ${formatDate(item.delivered_at)}` : ''}
+                          </div>
+                        ) : null}
+                      </td>
                       <td>{item.service_code || '—'}</td>
                       <td>{item.quoted_shipping_cost != null ? item.quoted_shipping_cost : '—'}</td>
                       <td>{item.ups_monetary_value != null ? item.ups_monetary_value : '—'}</td>
@@ -404,18 +637,28 @@ export function SubscriptionDetailPage() {
                       <td>
                         <div className="inline-actions">
                           {item.has_label ? (
+                            <button className="ghost-button" type="button" onClick={() => void printShipmentLabel(item.id)}>
+                              Imprimir
+                            </button>
+                          ) : null}
+                          {item.has_label ? (
                             <button className="ghost-button" type="button" onClick={() => void downloadLabel(item.id)}>
                               Baixar
                             </button>
                           ) : null}
-                          {item.tracking_number ? (
+                          {item.tracking_number && item.status === 'created' ? (
                             <button className="ghost-button" type="button" onClick={() => void refreshTracking(item.id)}>
                               Atualizar rastreio
                             </button>
                           ) : null}
-                          {canWriteShipping && item.status !== 'voided' && item.ups_shipment_id ? (
+                          {canWriteShipping && item.status === 'created' && item.ups_shipment_id ? (
                             <button className="ghost-button" type="button" onClick={() => void voidShipment(item.id)}>
                               Anular
+                            </button>
+                          ) : null}
+                          {canWriteShipping && (item.status === 'pending' || item.status === 'unknown') && !item.ups_shipment_id ? (
+                            <button className="ghost-button" type="button" onClick={() => void closeUnresolvedShipment(item.id)}>
+                              Fechar após conferir na UPS
                             </button>
                           ) : null}
                         </div>
@@ -426,6 +669,91 @@ export function SubscriptionDetailPage() {
               </tbody>
             </table>
           </div>
+        </Section>
+      ) : null}
+
+      {canReadShipping && shipsByCourier ? (
+        <Section title="Entrega Brasil" description="Entrega por Uber, motoboy ou entregador próprio, registrada à mão. Cada tentativa fica no histórico.">
+          <p>Quem recebe: <strong>{courierRecipient || '—'}</strong></p>
+          <div className="table-shell table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fatura</th>
+                  <th>Status</th>
+                  <th>Meio, custo e link</th>
+                  <th>Saiu</th>
+                  <th>Entregue ou falhou</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {awaitingCourier.map((item) => (
+                  <tr key={`courier-awaiting-${item.invoice_id}`}>
+                    <td>{item.invoice_id}</td>
+                    <td><span className="badge-warning">A despachar</span></td>
+                    <td colSpan={3} className="muted">{cycleText(item)}</td>
+                    <td>
+                      {canWriteShipping ? (
+                        <button className="primary-button" type="button" onClick={() => setDispatchInvoice(item.invoice_id)}>Despachar</button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+                {courierItems.length === 0 && awaitingCourier.length === 0 ? (
+                  <tr>
+                    <td colSpan={6}>Nenhuma entrega registrada e nenhum ciclo pago esperando saída.</td>
+                  </tr>
+                ) : null}
+                {courierItems.map((item) => (
+                  <tr key={`courier-${item.id}`}>
+                    <td>{item.stripe_invoice_id}</td>
+                    <td><CourierStatusBadge status={item.status} /></td>
+                    <td><CourierSummary delivery={item} /></td>
+                    <td>{formatDate(item.out_for_delivery_at)}</td>
+                    <td>{formatDate(item.delivered_at || item.failed_at || item.canceled_at)}</td>
+                    <td>
+                      <CourierRowActions token={token} delivery={item} canWrite={canWriteShipping} onDone={courierDone} onError={courierFailed} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <CourierDispatchDialog
+            token={token}
+            target={dispatchInvoice && data ? { subscriptionId: data.id, invoiceId: dispatchInvoice, name: courierRecipient || data.user.email } : null}
+            onClose={() => setDispatchInvoice(null)}
+            onDone={courierDone}
+          />
+        </Section>
+      ) : null}
+
+      {canReadSubscription ? (
+        <Section
+          title="Contatos com o cliente"
+          description="Contatos feitos por WhatsApp, do mais novo para o mais antigo."
+          actions={data ? (
+            <CustomerContact
+              subscriptionId={data.id}
+              name={contactName}
+              phone={phone}
+              showLast={false}
+              onSaved={(contact) => setContacts((current) => [contact, ...current.filter((item) => item.id !== contact.id)])}
+            />
+          ) : null}
+        >
+          {contacts.length ? (
+            <ul className="contact-history">
+              {contacts.map((contact) => (
+                <li key={contact.id}>
+                  <strong>{reasonLabel(contact.reason)} · {outcomeLabel(contact.outcome)}</strong>
+                  <div className="muted">{lastContactText(contact)}</div>
+                  {contact.note ? <div>{contact.note}</div> : null}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="muted">Nenhum contato registrado.</p>}
         </Section>
       ) : null}
 

@@ -2,7 +2,9 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { ApiRequestError, apiRequest } from '../../lib/api'
 import {
   BR_STATES,
+  US_PHONE_INVALID_TEXT,
   US_STATES,
+  usPhoneInvalid,
   brHeadquartersReady,
   usHeadquartersReady,
   type BrCenter,
@@ -22,8 +24,8 @@ function draftFrom(market: Market, settings: ShippingSettings): Draft {
     const { name, street, number, complement, neighborhood, city, state, zipcode } = settings.br.center
     return { name, street, number, complement, neighborhood, city, state, zipcode }
   }
-  const { name, street, street2, city, state, zipcode } = settings.us.ship_from
-  return { name, street, street2, city, state, zipcode }
+  const { name, street, street2, city, state, zipcode, phone } = settings.us.ship_from
+  return { name, street, street2, city, state, zipcode, phone: phone || '' }
 }
 
 function addressKey(market: Market, draft: Draft) {
@@ -45,6 +47,7 @@ function usLines(shipFrom: UsShipFrom) {
     shipFrom.street2,
     [shipFrom.city, [shipFrom.state, shipFrom.zipcode].filter(Boolean).join(' ')].filter(Boolean).join(', '),
     'United States',
+    shipFrom.phone ? `Telefone ${shipFrom.phone}` : '',
   ].filter(Boolean)
 }
 
@@ -83,7 +86,8 @@ export function HeadquartersCard({
   const name = isBr ? settings.br.center.name : settings.us.ship_from.name
   const lines = isBr ? brLines(settings.br.center) : usLines(settings.us.ship_from)
   const errors = validation?.errors || {}
-  const validForDraft = Boolean(validation?.valid) && validatedKey === addressKey(market, draft)
+  const phoneInvalid = !isBr && usPhoneInvalid(draft.phone)
+  const validForDraft = Boolean(validation?.valid) && validatedKey === addressKey(market, draft) && !phoneInvalid
 
   const set = (key: string, value: string) => setDraft((current) => ({ ...current, [key]: value }))
 
@@ -276,6 +280,9 @@ export function HeadquartersCard({
                     inputMode="numeric"
                     autoComplete="postal-code"
                   />
+                </Field>
+                <Field label="Telefone" error={phoneInvalid ? US_PHONE_INVALID_TEXT : undefined} hint="A UPS pede o telefone para buscar as caixas.">
+                  <input value={draft.phone || ''} onChange={(event) => set('phone', event.target.value)} placeholder="305 555 0100" inputMode="tel" autoComplete="tel" />
                 </Field>
               </>
             )}
