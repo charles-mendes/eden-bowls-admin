@@ -142,3 +142,12 @@ The US location card in Configurações > Frete MUST have a "Telefone" field sav
 
 - **WHEN** an admin saves the US location with phone "305 555 0100"
 - **THEN** the panel sends `us.ship_from.phone` "305 555 0100" and shows it on the card
+
+### Requirement: A market exception reads as a blocking reason
+
+A single purchase and the subscription detail's label issues MUST show `shipment_market_exception` as "Conta e país do endereço não combinam". The label queue never lists a crossed subscription; the market exceptions page lists it. A ready row with an `address_issue` MUST show its email state as the courier queue does.
+
+#### Scenario: Crossed order in a single purchase
+
+- **WHEN** a single label purchase returns 422 `shipment_market_exception`
+- **THEN** the detail shows "Conta e país do endereço não combinam" and no label is listed
