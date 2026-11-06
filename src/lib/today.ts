@@ -1,4 +1,6 @@
+import { courierHref } from './courierDeliveries'
 import { productionQueueHref } from './productionQueue'
+import type { CustomerContact } from './customerContacts'
 
 export type Bucket = 'overdue' | 'today' | 'tomorrow'
 export type Counts = Record<Bucket, number>
@@ -17,7 +19,26 @@ export type TodayItem = {
   productionStatus: 'to_prepare' | 'in_production' | 'ready' | 'blocked'
   paymentState: 'awaiting_payment' | 'past_due' | 'paid'
   note: string | null
-  upsLabel: 'created' | 'missing' | null
+  // 'unresolved': a purchase was sent and UPS never confirmed it.
+  upsLabel: 'created' | 'missing' | 'unresolved' | null
+  // Brazil paid items only: where the box is after it is ready.
+  courierDelivery?: 'none' | 'out_for_delivery' | 'delivered' | 'failed' | null
+  // Refused payments only.
+  lastContact?: CustomerContact | null
+  phone?: string | null
+}
+
+// Shipping and invoice work for Today. Counts are already limited to the markets the user sees.
+export type Fulfillment = {
+  courierToDispatch: number
+  courierOnTheRoadLong: number
+  courierFailed: number
+  nfeMissingDocument: number
+  nfeRejected: number
+  nfeError: number
+  upsUnresolved: number
+  // null when the user cannot see Bling or it is not configured.
+  blingConnected: boolean | null
 }
 
 export type ClosedDay = {
@@ -38,7 +59,10 @@ export type TodayOverview = {
   total: number
   items: TodayItem[]
   closedDays: ClosedDay[]
+  fulfillment?: Fulfillment
 }
+
+export const UPS_CHECK_PATH = '/operations/labels#verificar-ups'
 
 export type Tone = 'error' | 'warning' | 'info' | 'success'
 
@@ -51,8 +75,15 @@ export function nextStep(item: TodayItem): { text: string; tone: Tone; to: strin
   if (item.productionStatus === 'blocked') return { text: 'Resolver o bloqueio', tone: 'error', to: production }
   if (item.productionStatus === 'to_prepare') return { text: 'Iniciar o preparo', tone: 'warning', to: production }
   if (item.productionStatus === 'in_production') return { text: 'Marcar como pronto', tone: 'warning', to: production }
+  // A purchase UPS never confirmed: buying again could charge twice.
+  if (item.upsLabel === 'unresolved') return { text: 'Verificar na UPS', tone: 'error', to: UPS_CHECK_PATH }
   if (item.upsLabel === 'missing') return { text: 'Gerar etiqueta UPS', tone: 'warning', to: subscription }
   // The panel has no US dispatch step: once the label exists, the box waits for the UPS pickup.
   if (item.upsLabel === 'created') return { text: 'Aguardando coleta UPS', tone: 'success', to: subscription }
-  return { text: 'Pronto para entregar', tone: 'success', to: subscription }
+  // Brazil: the box stays "ready" after the dispatch, so the courier record says where it is.
+  if (item.courierDelivery === 'out_for_delivery') return { text: 'Em rota', tone: 'info', to: courierHref('em_rota') }
+  if (item.courierDelivery === 'delivered') return { text: 'Entregue', tone: 'success', to: courierHref('entregues') }
+  if (item.courierDelivery === 'failed') return { text: 'Despachar de novo', tone: 'warning', to: courierHref('falhas') }
+  if (item.market === 'BR') return { text: 'Despachar', tone: 'warning', to: courierHref() }
+  return { text: 'Ver o pedido', tone: 'info', to: subscription }
 }

@@ -4,6 +4,7 @@ import { PRODUCTION_STATUS_LABELS, isProductionStatus } from './productionQueue'
 // Brazil courier deliveries (courier-delivery): recorded by hand, no courier API.
 export type CourierMethod = 'uber' | 'motoboy' | 'own_driver' | 'other'
 export type CourierStatus = 'out_for_delivery' | 'delivered' | 'failed' | 'canceled'
+export type FailureKind = 'address_unusable' | 'customer_absent' | 'other'
 
 export type CourierDelivery = {
   id: number
@@ -20,6 +21,7 @@ export type CourierDelivery = {
   delivered_at: string | null
   failed_at: string | null
   failure_reason: string | null
+  failure_kind?: FailureKind | null
   canceled_at: string | null
 }
 
@@ -31,10 +33,25 @@ export type CourierQueueItem = {
   neighborhood: string | null
   city: string | null
   zipcode: string | null
+  address?: CourierAddress
+  phone?: string | null
+  delivery_instructions?: string | null
+  delivery_instructions_source?: 'profile'
+  items?: Array<{ flavor: string; quantity: number; pack_size: string | null }>
   delivery_date: string | null
   production_status: string | null
   subscription_status: string | null
   delivery: CourierDelivery | null
+}
+
+export type CourierAddress = {
+  street: string | null
+  number: string | null
+  complement: string | null
+  neighborhood: string | null
+  city: string | null
+  state: string | null
+  zipcode: string | null
 }
 
 export type CourierQueue = {
@@ -53,6 +70,25 @@ export const COURIER_METHODS: Array<{ value: CourierMethod; label: string }> = [
   { value: 'own_driver', label: 'Entregador próprio' },
   { value: 'other', label: 'Outro' },
 ]
+
+export const FAILURE_KINDS: Array<{ value: FailureKind; label: string }> = [
+  { value: 'address_unusable', label: 'Endereço não serve' },
+  { value: 'customer_absent', label: 'Cliente ausente' },
+  { value: 'other', label: 'Outro' },
+]
+
+export function failureKindLabel(kind: string | null | undefined): string | null {
+  if (!kind) return null
+  return FAILURE_KINDS.find((item) => item.value === kind)?.label ?? kind
+}
+
+// The lines in the order the Uber app asks for them: street and number, complement, neighborhood, city/state, ZIP.
+export function addressLines(address: CourierAddress | undefined): string[] {
+  if (!address) return []
+  const street = [address.street, address.number].filter(Boolean).join(', ')
+  const cityState = [address.city, address.state].filter(Boolean).join('/')
+  return [street, address.complement, address.neighborhood, cityState, address.zipcode].filter((line): line is string => Boolean(line))
+}
 
 export const COURIER_STATUS: Record<CourierStatus, { label: string; badge: string }> = {
   out_for_delivery: { label: 'Em rota', badge: 'badge-info' },
@@ -121,6 +157,7 @@ const FIELD_TEXT: Record<string, string> = {
   courier_name: 'O nome do entregador tem até 120 caracteres.',
   note: 'A observação tem até 500 caracteres.',
   reason: 'Informe o motivo da falha.',
+  failure_kind: 'Escolha o tipo da falha.',
   delivered_at: 'A data de entrega não pode ser no futuro nem antes da saída.',
 }
 

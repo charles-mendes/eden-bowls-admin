@@ -61,7 +61,7 @@ function install(user = operatorUsWriteUser, {
 
 const render = () => renderAuthedPage(<LabelQueuePage />, '/operations/labels', '/operations/labels')
 const select = async (user: ReturnType<typeof userEvent.setup>, name: string) => user.click(await screen.findByRole('checkbox', { name: `Selecionar ${name}` }))
-const purchases = (calls: Array<{ method: string; path: string }>) => calls.filter((call) => call.method === 'POST' && call.path.endsWith('/shipments'))
+const purchases = (calls: Array<{ method: string; path: string; body?: unknown }>) => calls.filter((call) => call.method === 'POST' && call.path.endsWith('/shipments'))
 
 describe('LabelQueuePage', () => {
   beforeEach(() => {
@@ -167,6 +167,59 @@ describe('LabelQueuePage', () => {
     expect(confirm.mock.calls[1][0]).toContain('Cliente 1 (A preparar, Ativa)')
     expect(confirm.mock.calls[1][0]).toContain('Cliente 2 (Pronto, Pausada)')
     expect(purchases(calls)).toHaveLength(0)
+  })
+
+  it('sends confirm_not_ready only for the orders confirmed as not ready', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const { calls } = install(operatorUsWriteUser, {
+      queue: { ready: [order(1, { production_status: 'in_production' }), order(2)], unresolved: [], created: [], truncated: false },
+    })
+    render()
+
+    await select(user, 'Cliente 1')
+    await select(user, 'Cliente 2')
+    await user.click(screen.getByRole('button', { name: 'Comprar e imprimir' }))
+
+    await waitFor(() => expect(printLabels).toHaveBeenCalledTimes(1))
+    expect(purchases(calls).map((call) => call.body)).toEqual([
+      { invoice_id: 'in_1', confirm_not_ready: true },
+      { invoice_id: 'in_2' },
+    ])
+  })
+
+  it('ends an order the API says is not ready as "Precisa confirmar" and buys the others', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    install(operatorUsWriteUser, {
+      purchases: {
+        in_2: {
+          status: 409,
+          body: { message: 'Not ready', code: 'ups_label_needs_confirmation', details: { code: 'ups_label_needs_confirmation', reasons: [{ code: 'production_not_ready', production_status: 'in_production' }] } },
+        },
+      },
+    })
+    render()
+
+    for (const n of [1, 2, 3]) await select(user, `Cliente ${n}`)
+    await user.click(screen.getByRole('button', { name: 'Comprar e imprimir' }))
+
+    await waitFor(() => expect(printLabels).toHaveBeenCalledTimes(1))
+    expect(printLabels.mock.calls[0][0]).toHaveLength(2)
+    expect(screen.getByTestId('outcome-in_2')).toHaveTextContent('Precisa confirmar: Preparo: Em preparo. Nada foi comprado')
+    expect(screen.getByTestId('outcome-in_3')).toHaveTextContent('Etiqueta comprada')
+  })
+
+  it('scrolls to Verificar na UPS once the queue loads when opened at #verificar-ups', async () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+    install(operatorUsWriteUser, { queue: { ready: [], unresolved: [order(5)], created: [], truncated: false } })
+    renderAuthedPage(<LabelQueuePage />, '/operations/labels#verificar-ups', '/operations/labels')
+
+    await screen.findByText('Cliente 5')
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+    expect(scrollIntoView.mock.instances[0]).toBe(document.getElementById('verificar-ups'))
+    expect(document.getElementById('verificar-ups')).toHaveTextContent('Verificar na UPS')
   })
 
   it('Printing labels already created buys nothing, and a missing file is named', async () => {

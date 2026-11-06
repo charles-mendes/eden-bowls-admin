@@ -2,6 +2,8 @@ import { OtherMarketNotice } from '../components/OtherMarketNotice'
 import { isOutsideMarket } from '../lib/markets'
 import { useCallback, useEffect, useState, type KeyboardEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { CopyButton } from '../components/CopyButton'
+import { CustomerContact } from '../components/CustomerContact'
 import { PageFrame } from '../components/PageFrame'
 import {
   CourierDispatchDialog,
@@ -13,8 +15,10 @@ import {
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest } from '../lib/api'
 import {
+  addressLines,
   productionLabel,
   subscriptionStatusLabel,
+  type CourierDelivery,
   type CourierQueue,
   type CourierQueueItem,
 } from '../lib/courierDeliveries'
@@ -48,6 +52,52 @@ function itemName(item: CourierQueueItem): string {
   return item.recipient_name || item.stripe_subscription_id || item.subscription_id
 }
 
+function itemsText(item: CourierQueueItem): string {
+  return (item.items ?? [])
+    .map((line) => `${line.flavor} ${line.quantity}${line.pack_size ? ` × ${line.pack_size}` : ''}`)
+    .join(' · ')
+}
+
+// Address lines in the order the Uber app asks for them, with one button to copy them all.
+function AddressCell({ item }: { item: CourierQueueItem }) {
+  const lines = addressLines(item.address)
+  if (!lines.length) {
+    return (
+      <>
+        {[item.neighborhood, item.city].filter(Boolean).join(' · ') || '—'}
+        {item.zipcode ? <div className="muted">{item.zipcode}</div> : null}
+      </>
+    )
+  }
+  return (
+    <div className="stack">
+      <p className="courier-address">{lines.join('\n')}</p>
+      <CopyButton value={lines.join('\n')} label={`Copiar endereço de ${itemName(item)}`} />
+    </div>
+  )
+}
+
+// Who receives, the account phone and what goes in the box: what the courier app and WhatsApp need.
+function RecipientCell({ item, details }: { item: CourierQueueItem; details: boolean }) {
+  const lines = itemsText(item)
+  return (
+    <div className="stack">
+      <strong>{itemName(item)}</strong>
+      {details ? (
+        <>
+          {item.phone ? (
+            <span className="contact-inline">{item.phone}<CopyButton value={item.phone} label={`Copiar telefone de ${itemName(item)}`} /></span>
+          ) : <span className="muted">Sem telefone</span>}
+          <span className="muted">
+            {item.delivery_instructions ? `Instruções (do perfil): ${item.delivery_instructions}` : 'Sem instruções'}
+          </span>
+          {lines ? <span>{lines}</span> : null}
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 export function CourierDeliveriesPage() {
   const { token, hasPermission, user } = useAuth()
   const otherMarket = isOutsideMarket(user, 'BR')
@@ -64,6 +114,7 @@ export function CourierDeliveriesPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [dispatching, setDispatching] = useState<CourierQueueItem | null>(null)
+  const [editing, setEditing] = useState<{ item: CourierQueueItem; delivery: CourierDelivery } | null>(null)
 
   const load = useCallback(async () => {
     if (!token || !sessionReady || otherMarket) return
@@ -81,6 +132,7 @@ export function CourierDeliveriesPage() {
 
   const done = (text: string) => {
     setDispatching(null)
+    setEditing(null)
     if (text) {
       setMessage(text)
       setError('')
@@ -139,7 +191,7 @@ export function CourierDeliveriesPage() {
           <thead>
             <tr>
               <th>Quem recebe</th>
-              <th>Bairro e cidade</th>
+              <th>Endereço</th>
               <th>Entrega</th>
               <th>Preparo</th>
               <th>Assinatura</th>
@@ -152,11 +204,8 @@ export function CourierDeliveriesPage() {
             {data && !items.length ? <tr><td colSpan={7}>{current.empty}</td></tr> : null}
             {items.map((item) => (
               <tr key={`${tab}-${item.invoice_id}`}>
-                <td><strong>{itemName(item)}</strong></td>
-                <td>
-                  {[item.neighborhood, item.city].filter(Boolean).join(' · ') || '—'}
-                  {item.zipcode ? <div className="muted">{item.zipcode}</div> : null}
-                </td>
+                <td><RecipientCell item={item} details={tab !== 'delivered'} /></td>
+                <td><AddressCell item={item} /></td>
                 <td>{formatDay(item.delivery_date)}</td>
                 <td>{productionLabel(item.production_status)}</td>
                 <td>{subscriptionStatusLabel(item.subscription_status)}</td>
@@ -180,7 +229,23 @@ export function CourierDeliveriesPage() {
                       </button>
                     ) : null}
                     {item.delivery ? (
-                      <CourierRowActions token={token} delivery={item.delivery} canWrite={canWrite} onDone={done} onError={fail} />
+                      <CourierRowActions
+                        token={token}
+                        delivery={item.delivery}
+                        canWrite={canWrite}
+                        onDone={done}
+                        onError={fail}
+                        onEdit={(delivery) => setEditing({ item, delivery })}
+                      />
+                    ) : null}
+                    {tab === 'out_for_delivery' || tab === 'failed' ? (
+                      <CustomerContact
+                        subscriptionId={item.subscription_id}
+                        name={itemName(item)}
+                        phone={item.phone}
+                        reason={tab === 'failed' ? 'delivery_failed' : undefined}
+                        showLast={false}
+                      />
                     ) : null}
                     <Link className="ghost-button" to={`/billing/subscriptions/${item.subscription_id}`}>Assinatura</Link>
                   </div>
@@ -195,6 +260,13 @@ export function CourierDeliveriesPage() {
         token={token}
         target={dispatching ? { subscriptionId: dispatching.subscription_id, invoiceId: dispatching.invoice_id, name: itemName(dispatching) } : null}
         onClose={() => setDispatching(null)}
+        onDone={done}
+      />
+      <CourierDispatchDialog
+        token={token}
+        target={editing ? { subscriptionId: editing.item.subscription_id, invoiceId: editing.item.invoice_id, name: itemName(editing.item) } : null}
+        editing={editing?.delivery ?? null}
+        onClose={() => setEditing(null)}
         onDone={done}
       />
     </PageFrame>

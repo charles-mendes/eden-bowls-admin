@@ -2,12 +2,23 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SubscriptionDetailPage } from './SubscriptionDetailPage'
-import { adminUser, checkoutDetail, operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { adminUser, checkoutDetail, customerContact, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { customerInvoice, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
 const printLabel = vi.hoisted(() => vi.fn())
 vi.mock('../lib/printLabel', () => ({ printLabel }))
+
+const cycle = (invoiceId: string, extra: Record<string, unknown> = {}) => ({
+  invoice_id: invoiceId,
+  preparation_day: '2026-11-03',
+  production_status: 'ready',
+  delivery_date: '2026-11-05',
+  paid_at: '2026-11-01T12:00:00.000Z',
+  ups_shipment: null,
+  courier_delivery: null,
+  ...extra,
+})
 
 describe('SubscriptionDetailPage', () => {
   afterEach(() => {
@@ -85,19 +96,17 @@ describe('SubscriptionDetailPage', () => {
   })
 
   it('warns about what blocks the label and disables the button before the click', async () => {
-    const user = userEvent.setup()
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser, {
       subscriptionMarket: 'US',
       labelIssues: [{ code: 'address_incomplete' }, { code: 'ship_from_missing' }],
+      paidCycles: [cycle('in_test_1')],
     })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
     const warning = await screen.findByRole('alert', { name: 'Etiqueta bloqueada' })
     expect(warning).toHaveTextContent('Falta rua, cidade, estado ou ZIP')
     expect(within(warning).getByRole('link', { name: 'Abrir configuração de frete' })).toHaveAttribute('href', '/config/shipping')
-
-    await user.click(screen.getByRole('button', { name: 'Sincronizar faturas' }))
 
     expect(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' })).toBeDisabled()
     expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/shipments'))).toBe(false)
@@ -107,13 +116,9 @@ describe('SubscriptionDetailPage', () => {
     const user = userEvent.setup()
     seedAuth()
     printLabel.mockReset().mockResolvedValue(undefined)
-    installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US' })
+    installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US', paidCycles: [cycle('in_test_1')] })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    await waitFor(() => {
-      expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
-    })
-    await user.click(screen.getByRole('button', { name: 'Sincronizar faturas' }))
     await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
 
     expect(await screen.findByRole('link', { name: '1Z999AA10123456784' })).toHaveAttribute(
@@ -193,22 +198,16 @@ describe('SubscriptionDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Gerar etiqueta UPS' })).toBeNull()
   })
 
-  it('creates a UPS label from a synced invoice', async () => {
+  it('lists a ready paid cycle as waiting for a label before any sync, and buys it', async () => {
     const user = userEvent.setup()
     seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US' })
+    const { calls } = installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US', paidCycles: [cycle('in_test_1')] })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    await waitFor(() => {
-      expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByRole('button', { name: 'Sincronizar faturas' }))
-
-    await waitFor(() => {
-      expect(screen.getAllByText('INV-1001').length).toBeGreaterThan(0)
-    })
-    expect(screen.getByText('Sem etiqueta')).toBeInTheDocument()
+    const section = (await screen.findByRole('heading', { name: 'Envio UPS' })).closest('section') as HTMLElement
+    expect(await within(section).findByText('Sem etiqueta')).toBeInTheDocument()
+    expect(within(section).getByText('Preparo 03/11/2026 · Pronto · entrega 05/11/2026')).toBeInTheDocument()
+    expect(calls.some((call) => call.path.endsWith('/sync-invoices'))).toBe(false)
 
     await user.click(screen.getByRole('button', { name: 'Gerar etiqueta UPS' }))
 
@@ -221,6 +220,111 @@ describe('SubscriptionDetailPage', () => {
       && call.path === '/api/v1/admin/billing/subscriptions/sub-row-1/shipments'
       && (call.body as { invoice_id?: string } | null)?.invoice_id === 'in_test_1'
     ))).toBe(true)
+  })
+
+  it('does not list a paid invoice with no cycle as waiting for a label', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US', paidCycles: [] })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await user.click(await screen.findByRole('button', { name: 'Sincronizar faturas' }))
+    await screen.findByText('Faturas sincronizadas.')
+    const section = screen.getByRole('heading', { name: 'Envio UPS' }).closest('section') as HTMLElement
+    expect(within(section).queryByText('Sem etiqueta')).toBeNull()
+    expect(within(section).queryByRole('button', { name: 'Gerar etiqueta UPS' })).toBeNull()
+  })
+
+  // The first purchase answers 409 (order not ready); the next one goes to the default mock and buys.
+  const notReadyOnce = () => {
+    let answered = false
+    return ({ path, method }: { path: string; method: string }) => {
+      if (answered || path !== '/api/v1/admin/billing/subscriptions/sub-row-1/shipments' || method !== 'POST') return undefined
+      answered = true
+      return new Response(JSON.stringify({
+        message: 'Not ready',
+        code: 'ups_label_needs_confirmation',
+        details: { code: 'ups_label_needs_confirmation', reasons: [{ code: 'production_not_ready', production_status: 'in_production' }] },
+      }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+    }
+  }
+  const labelPosts = (calls: Array<{ method: string; path: string; body?: unknown }>) => calls.filter((call) => call.method === 'POST' && call.path.endsWith('/shipments'))
+
+  it('asks before buying a label for an order not ready, and buys only after the confirmation', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const confirm = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('confirm', confirm)
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'US',
+      paidCycles: [cycle('in_test_1', { production_status: 'in_production' })],
+      routes: notReadyOnce(),
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
+
+    expect(await screen.findByText('Etiqueta UPS gerada.')).toBeInTheDocument()
+    expect(confirm.mock.calls[0][0]).toContain('Este pedido ainda não está pronto. Comprar mesmo assim?')
+    expect(confirm.mock.calls[0][0]).toContain('Preparo: Em preparo')
+    expect(labelPosts(calls).map((call) => call.body)).toEqual([{ invoice_id: 'in_test_1' }, { invoice_id: 'in_test_1', confirm_not_ready: true }])
+  })
+
+  it('buys nothing when the operator does not confirm an order not ready', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(false))
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'US',
+      paidCycles: [cycle('in_test_1', { production_status: 'in_production' })],
+      routes: notReadyOnce(),
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
+
+    await waitFor(() => expect(labelPosts(calls)).toHaveLength(1))
+    expect(screen.queryByText('Etiqueta UPS gerada.')).toBeNull()
+  })
+
+  it('shows the contact history newest first and records a contact with the phone', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const older = { ...customerContact, id: 1, reason: 'late', outcome: 'resolved', note: null, created_at: '2026-10-01T12:00:00.000Z' }
+    const newer = { ...customerContact, id: 2, created_at: '2026-10-06T17:05:00.000Z' }
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      contacts: [newer, older],
+      subscriptionSnapshot: { address: { phone: '(41) 99890-5819' } },
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const section = (await screen.findByRole('heading', { name: 'Contatos com o cliente' })).closest('section') as HTMLElement
+    const rows = await within(section).findAllByRole('listitem')
+    expect(rows.map((row) => row.querySelector('strong')?.textContent)).toEqual(['Pagamento recusado · Sem resposta', 'Atraso · Resolvido'])
+    expect(within(rows[0]).getByText('Mandei o link do cartão')).toBeInTheDocument()
+    expect(within(rows[0]).getByText(/por ops@edenbowls.com/)).toBeInTheDocument()
+
+    await user.click(within(section).getByRole('button', { name: 'Registrar contato' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Registrar contato' }))
+    expect(dialog.getByText('(41) 99890-5819')).toBeInTheDocument()
+    expect(dialog.getByRole('button', { name: 'Copiar telefone' })).toBeInTheDocument()
+    await user.selectOptions(dialog.getByLabelText('Motivo'), 'address')
+    await user.click(dialog.getByLabelText('Resolvido'))
+    await user.click(dialog.getByRole('button', { name: 'Salvar contato' }))
+
+    await waitFor(() => expect(within(section).getAllByRole('listitem')).toHaveLength(3))
+    expect(within(section).getAllByRole('listitem')[0]).toHaveTextContent('Endereço · Resolvido')
+    expect(calls.some((call) => call.method === 'POST' && call.path === '/api/v1/admin/billing/subscriptions/sub-row-1/contacts')).toBe(true)
+  })
+
+  it('shows the contact history to a readonly user without Registrar contato', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser, { contacts: [customerContact] })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const section = (await screen.findByRole('heading', { name: 'Contatos com o cliente' })).closest('section') as HTMLElement
+    expect(await within(section).findByText('Pagamento recusado · Sem resposta')).toBeInTheDocument()
+    expect(within(section).queryByRole('button', { name: 'Registrar contato' })).toBeNull()
   })
 
   it('lists Eden Bowls invoices with when and to whom each was sent', async () => {
@@ -469,6 +573,24 @@ describe('SubscriptionDetailPage courier section', () => {
     expect(within(section).getByText('Motivo: Ninguém em casa')).toBeInTheDocument()
     expect(within(section).queryByRole('button', { name: 'Entregue' })).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Envio UPS' })).toBeNull()
+  })
+
+  it('lists a paid cycle waiting for the courier before any sync, and not one already on the road', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'BR',
+      paidCycles: [
+        cycle('in_br_2'),
+        cycle('in_br_1', { courier_delivery: { id: 1, status: 'out_for_delivery', out_for_delivery_at: '2026-11-03T12:00:00.000Z', delivered_at: null, failed_at: null } }),
+      ],
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const section = (await screen.findByRole('heading', { name: 'Entrega Brasil' })).closest('section') as HTMLElement
+    expect(await within(section).findByText('in_br_2')).toBeInTheDocument()
+    expect(within(section).getAllByText('A despachar')).toHaveLength(1)
+    expect(within(section).queryByText('in_br_1')).toBeNull()
+    expect(within(section).getByRole('button', { name: 'Despachar' })).toBeInTheDocument()
   })
 
   it('a US subscription shows no courier section', async () => {

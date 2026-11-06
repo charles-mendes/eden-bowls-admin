@@ -1,13 +1,14 @@
 import { OtherMarketNotice } from '../components/OtherMarketNotice'
 import { isOutsideMarket } from '../lib/markets'
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
 import { printLabels } from '../lib/printLabel'
 import { PRODUCTION_STATUS_LABELS, isProductionStatus } from '../lib/productionQueue'
+import { readinessText, type ReadinessReason } from '../lib/courierDeliveries'
 import { labelIssueText, type LabelIssue } from '../lib/upsLabels'
 
 type QueueShipment = { id: string | number; status: string; tracking_number: string | null; has_label: boolean }
@@ -34,6 +35,7 @@ type Outcome =
   | { kind: 'in_progress'; shipmentId: string | null }
   | { kind: 'failed'; reason: string }
   | { kind: 'missing_file' }
+  | { kind: 'needs_confirmation'; reasons: ReadinessReason[] }
 
 type CreateResponse = { data?: { reused?: boolean; shipment?: { id: string | number; has_label?: boolean } } }
 
@@ -76,6 +78,8 @@ function outcomeText(outcome: Outcome): string {
       return `Falhou: ${outcome.reason}`
     case 'missing_file':
       return 'Arquivo da etiqueta ausente. Veja o detalhe da assinatura'
+    case 'needs_confirmation':
+      return `Precisa confirmar${outcome.reasons.length ? `: ${outcome.reasons.map(readinessText).join(', ')}` : ''}. Nada foi comprado`
   }
 }
 
@@ -91,6 +95,7 @@ export function LabelQueuePage() {
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({})
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState('')
+  const { hash } = useLocation()
 
   const load = useCallback(async () => {
     if (!token || !sessionReady || otherMarket) return
@@ -105,6 +110,13 @@ export function LabelQueuePage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  // Today links to #verificar-ups; the section only exists at its final place once the queue has loaded.
+  const loaded = Boolean(data)
+  useEffect(() => {
+    if (!loaded || hash !== '#verificar-ups') return
+    document.getElementById('verificar-ups')?.scrollIntoView?.({ block: 'start' })
+  }, [loaded, hash])
 
   const toggle = (invoiceId: string) => {
     setSelected((current) => {
@@ -124,12 +136,13 @@ export function LabelQueuePage() {
     return response.blob()
   }
 
-  const buy = async (item: QueueItem): Promise<Outcome> => {
+  // confirmNotReady goes only for the orders the operator confirmed as not ready.
+  const buy = async (item: QueueItem, confirmNotReady: boolean): Promise<Outcome> => {
     try {
       const response = await apiRequest<CreateResponse>(`/admin/billing/subscriptions/${item.subscription_id}/shipments`, {
         token,
         method: 'POST',
-        body: { invoice_id: item.invoice_id },
+        body: { invoice_id: item.invoice_id, ...(confirmNotReady ? { confirm_not_ready: true } : {}) },
       })
       const shipmentId = String(response?.data?.shipment?.id ?? '')
       return response?.data?.reused ? { kind: 'existing', shipmentId } : { kind: 'created', shipmentId }
@@ -137,6 +150,11 @@ export function LabelQueuePage() {
       if (requestError instanceof ApiRequestError && IN_PROGRESS_CODES.has(requestError.code)) {
         const id = requestError.details?.shipment_id
         return { kind: 'in_progress', shipmentId: id == null ? null : String(id) }
+      }
+      // The order changed since the queue loaded: nothing is bought and the batch goes on.
+      if (requestError instanceof ApiRequestError && requestError.code === 'ups_label_needs_confirmation') {
+        const reasons = requestError.details?.reasons
+        return { kind: 'needs_confirmation', reasons: Array.isArray(reasons) ? reasons as ReadinessReason[] : [] }
       }
       return { kind: 'failed', reason: requestError instanceof Error ? requestError.message : 'erro desconhecido' }
     }
@@ -148,15 +166,18 @@ export function LabelQueuePage() {
     const toPrint = data.created.filter((item) => selected.has(item.invoice_id))
     if (!toBuy.length && !toPrint.length) return
 
+    const notReady = (item: QueueItem) => item.production_status !== 'ready' || !ACTIVE_SUBSCRIPTION.has(item.subscription_status)
+    const confirmed = new Set<string>()
     if (toBuy.length) {
       const total = toBuy.length === 1 ? '1 etiqueta' : `${toBuy.length} etiquetas`
       if (!window.confirm(`Comprar ${total} na UPS e imprimir as etiquetas da seleção? Cada etiqueta é cobrada pela UPS.`)) return
-      const unusual = toBuy.filter((item) => item.production_status !== 'ready' || !ACTIVE_SUBSCRIPTION.has(item.subscription_status))
+      const unusual = toBuy.filter(notReady)
       if (unusual.length) {
         const names = unusual
           .map((item) => `${orderName(item)} (${productionLabel(item.production_status)}, ${SUBSCRIPTION_STATUS[item.subscription_status] ?? item.subscription_status})`)
           .join('\n')
         if (!window.confirm(`Estes pedidos não estão prontos ou a assinatura não está ativa:\n${names}\n\nComprar mesmo assim?`)) return
+        unusual.forEach((item) => confirmed.add(item.invoice_id))
       }
     }
 
@@ -167,7 +188,7 @@ export function LabelQueuePage() {
     try {
       for (const [index, item] of toBuy.entries()) {
         setProgress(`Comprando ${index + 1} de ${toBuy.length}…`)
-        const outcome = await buy(item)
+        const outcome = await buy(item, confirmed.has(item.invoice_id))
         next[item.invoice_id] = outcome
         setOutcomes({ ...next })
         if ((outcome.kind === 'created' || outcome.kind === 'existing') && outcome.shipmentId) {
@@ -282,7 +303,7 @@ export function LabelQueuePage() {
         {table(data?.ready ?? [], (item) => row(item, canBuy && (item.issues ?? []).length === 0, item.issues ?? []), data ? 'Nenhum pedido sem etiqueta.' : 'Carregando…')}
       </Section>
 
-      <Section title="Verificar na UPS" description="A compra não teve resposta confirmada da UPS. Confira no portal da UPS e resolva no detalhe da assinatura.">
+      <Section id="verificar-ups" title="Verificar na UPS" description="A compra não teve resposta confirmada da UPS. Confira no portal da UPS e resolva no detalhe da assinatura.">
         {table(data?.unresolved ?? [], (item) => row(item, false), 'Nenhuma compra pendente.')}
       </Section>
 

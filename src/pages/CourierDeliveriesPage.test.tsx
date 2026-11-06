@@ -107,7 +107,7 @@ describe('CourierDeliveriesPage', () => {
     expect(posts(calls, '/1/courier-deliveries')[1].body).toMatchObject({ confirm_not_ready: true })
   })
 
-  it('marks a delivery failed with a reason', async () => {
+  it('marks a delivery failed with a kind and a reason, both required', async () => {
     const user = userEvent.setup()
     const { calls } = install()
     render()
@@ -115,12 +115,145 @@ describe('CourierDeliveriesPage', () => {
     await user.click(await screen.findByRole('tab', { name: /Em rota/ }))
     await user.click(await screen.findByRole('button', { name: 'Falhou' }))
     const dialog = await screen.findByRole('dialog', { name: 'Registrar falha na entrega' })
-    expect(within(dialog.parentElement as HTMLElement).getByRole('button', { name: 'Registrar falha' })).toBeDisabled()
-    await user.type(within(dialog).getByLabelText('Motivo'), 'Ninguém em casa')
-    await user.click(screen.getByRole('button', { name: 'Registrar falha' }))
+    const save = within(dialog).getByRole('button', { name: 'Registrar falha' })
+    expect(save).toBeDisabled()
+    await user.type(within(dialog).getByLabelText('Motivo'), 'Portaria não aceita')
+    expect(save).toBeDisabled()
+    await user.click(within(dialog).getByLabelText('Endereço não serve'))
+    await user.click(save)
 
     expect(await screen.findByRole('status')).toHaveTextContent('Falha registrada')
-    expect(posts(calls, '/5/failed')[0].body).toEqual({ reason: 'Ninguém em casa' })
+    expect(posts(calls, '/5/failed')[0].body).toEqual({ reason: 'Portaria não aceita', failure_kind: 'address_unusable' })
+  })
+
+  it('shows the failure kind on the Falhas row and records a contact preset to delivery failure', async () => {
+    const user = userEvent.setup()
+    install(operatorWriteUser, {
+      queue: {
+        to_dispatch: [],
+        out_for_delivery: [],
+        failed: [item(9, { phone: '+55 11 98888-7777', delivery: delivery(5, 'failed', { failure_kind: 'customer_absent', failure_reason: 'Ninguém em casa', failed_at: '2026-11-04T15:00:00.000Z' }) })],
+        delivered: [],
+        truncated: false,
+      },
+    })
+    renderAuthedPage(<CourierDeliveriesPage />, '/operations/courier?aba=falhas', '/operations/courier')
+
+    expect(await screen.findByText('Cliente ausente')).toBeInTheDocument()
+    expect(screen.getByText('Motivo: Ninguém em casa')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Registrar contato' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Registrar contato' }))
+    expect(dialog.getByLabelText('Motivo')).toHaveValue('delivery_failed')
+    expect(dialog.getByText('+55 11 98888-7777')).toBeInTheDocument()
+  })
+
+  it('offers Registrar contato on the road, with no preset reason', async () => {
+    const user = userEvent.setup()
+    install()
+    render()
+
+    await user.click(await screen.findByRole('tab', { name: /Em rota/ }))
+    await user.click(await screen.findByRole('button', { name: 'Registrar contato' }))
+    expect(within(screen.getByRole('dialog', { name: 'Registrar contato' })).getByLabelText('Motivo')).toHaveValue('')
+  })
+
+  const fullItem = (n: number, extra: Record<string, unknown> = {}) => item(n, {
+    address: { street: 'Rua dos Pinheiros', number: '100', complement: 'Apto 12', neighborhood: 'Pinheiros', city: 'São Paulo', state: 'SP', zipcode: '05422-000' },
+    phone: '+55 11 97777-0000',
+    delivery_instructions: 'Deixar na portaria',
+    delivery_instructions_source: 'profile',
+    items: [{ flavor: 'Frango', quantity: 2, pack_size: '500 g' }, { flavor: 'Carne', quantity: 1, pack_size: '500 g' }],
+    ...extra,
+  })
+
+  it('shows what the courier needs on the row and copies the address', async () => {
+    const user = userEvent.setup()
+    install(operatorWriteUser, { queue: { to_dispatch: [fullItem(1)], out_for_delivery: [], failed: [], delivered: [], truncated: false } })
+    render()
+
+    expect(await screen.findByText('+55 11 97777-0000')).toBeInTheDocument()
+    expect(screen.getByText('Instruções (do perfil): Deixar na portaria')).toBeInTheDocument()
+    expect(screen.getByText('Frango 2 × 500 g · Carne 1 × 500 g')).toBeInTheDocument()
+    const address = 'Rua dos Pinheiros, 100\nApto 12\nPinheiros\nSão Paulo/SP\n05422-000'
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined)
+    await user.click(screen.getByRole('button', { name: 'Copiar endereço de Cliente 1' }))
+    expect(writeText).toHaveBeenCalledWith(address)
+    expect(await screen.findByText('Copiado')).toBeInTheDocument()
+  })
+
+  it('says when the phone and the instructions are missing', async () => {
+    install(operatorWriteUser, { queue: { to_dispatch: [fullItem(1, { phone: null, delivery_instructions: null })], out_for_delivery: [], failed: [], delivered: [], truncated: false } })
+    render()
+
+    expect(await screen.findByText('Sem telefone')).toBeInTheDocument()
+    expect(screen.getByText('Sem instruções')).toBeInTheDocument()
+  })
+
+  it('explains the link field and keeps Uber preselected', async () => {
+    const user = userEvent.setup()
+    install()
+    render()
+
+    await user.click(await screen.findByRole('button', { name: 'Despachar' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
+    expect(dialog.getByLabelText('Meio de entrega')).toHaveValue('uber')
+    expect(dialog.getByLabelText('Link de acompanhamento')).toHaveAccessibleDescription(/link de acompanhamento que o app/)
+  })
+
+  it('edits a delivery on the road with its saved details, one delivery at a time', async () => {
+    const user = userEvent.setup()
+    const patches: Array<{ path: string; body: unknown }> = []
+    const queue = {
+      to_dispatch: [],
+      out_for_delivery: [
+        item(9, { delivery: delivery(5, 'out_for_delivery', { method: 'uber', tracking_url: 'https://trip.uber.com/abc', cost_minor: 1850, note: 'Portão azul' }) }),
+        item(10, { invoice_id: 'in_10', delivery: delivery(6, 'out_for_delivery', { method: 'motoboy', courier_name: 'Zé', tracking_url: null, cost_minor: 1200, note: null }) }),
+      ],
+      failed: [],
+      delivered: [],
+      truncated: false,
+    }
+    installAdminFetchMock(operatorWriteUser, {
+      routes: ({ path, method, body }) => {
+        if (path === '/api/v1/admin/courier-deliveries/queue' && method === 'GET') return json(200, { success: true, data: queue })
+        if (/^\/api\/v1\/admin\/courier-deliveries\/\d+$/.test(path) && method === 'PATCH') {
+          patches.push({ path, body })
+          return json(200, { success: true, data: { delivery: delivery(5, 'out_for_delivery') } })
+        }
+        return undefined
+      },
+    })
+    renderAuthedPage(<CourierDeliveriesPage />, '/operations/courier?aba=em_rota', '/operations/courier')
+
+    const rows = await screen.findAllByRole('button', { name: 'Editar' })
+    await user.click(rows[0])
+    let dialog = within(await screen.findByRole('dialog', { name: 'Editar entrega' }))
+    expect(dialog.getByLabelText('Meio de entrega')).toHaveValue('uber')
+    expect(dialog.getByLabelText('Link de acompanhamento')).toHaveValue('https://trip.uber.com/abc')
+    expect(dialog.getByLabelText('Custo (R$)')).toHaveValue('18,50')
+    expect(dialog.getByLabelText('Observação')).toHaveValue('Portão azul')
+    await user.click(dialog.getByRole('button', { name: 'Fechar' }))
+
+    await user.click(rows[1])
+    dialog = within(await screen.findByRole('dialog', { name: 'Editar entrega' }))
+    expect(dialog.getByLabelText('Meio de entrega')).toHaveValue('motoboy')
+    expect(dialog.getByLabelText('Entregador')).toHaveValue('Zé')
+    expect(dialog.getByLabelText('Link de acompanhamento')).toHaveValue('')
+    expect(dialog.getByLabelText('Custo (R$)')).toHaveValue('12,00')
+    await user.click(dialog.getByRole('button', { name: 'Fechar' }))
+
+    await user.click(rows[0])
+    dialog = within(await screen.findByRole('dialog', { name: 'Editar entrega' }))
+    const link = dialog.getByLabelText('Link de acompanhamento')
+    await user.clear(link)
+    await user.type(link, 'https://trip.uber.com/certo')
+    await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Entrega de Cliente 9 atualizada.')
+    expect(patches).toHaveLength(1)
+    expect(patches[0].path).toBe('/api/v1/admin/courier-deliveries/5')
+    expect(patches[0].body).toMatchObject({ method: 'uber', tracking_url: 'https://trip.uber.com/certo', cost: '18.50', note: 'Portão azul' })
+    expect(patches[0].body).not.toHaveProperty('confirm_not_ready')
   })
 
   it('explains a 409 courier_delivery_final and reloads the queue', async () => {
@@ -148,6 +281,8 @@ describe('CourierDeliveriesPage', () => {
     await user.click(screen.getByRole('tab', { name: /Em rota/ }))
     expect(await screen.findByText('Cliente 9')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Entregue' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Registrar contato' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Acompanhar' })).toHaveAttribute('href', 'https://trip.uber.com/abc')
   })
 

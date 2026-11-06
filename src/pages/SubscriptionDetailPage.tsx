@@ -4,8 +4,9 @@ import { LedgerSnapshotSections } from '../components/LedgerSnapshotSections'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { MetricCard } from '../components/MetricCard'
+import { CustomerContact } from '../components/CustomerContact'
 import { useAuth } from '../contexts/AuthContext'
-import { apiRequest, getApiBaseUrl } from '../lib/api'
+import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
 import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
 import { formatDate, formatStripeStatus } from '../lib/format'
 import { printLabel } from '../lib/printLabel'
@@ -14,7 +15,9 @@ import { formatNfeAmount, formatNfeDate, formatNfeNumber, nfeStatusLabel, nfeSta
 import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
 import { CourierDispatchDialog, CourierRowActions, CourierStatusBadge, CourierSummary } from '../components/shipping/CourierDelivery'
-import type { CourierDelivery } from '../lib/courierDeliveries'
+import { productionLabel, readinessText, type CourierDelivery, type ReadinessReason } from '../lib/courierDeliveries'
+import { lastContactText, outcomeLabel, reasonLabel, contactsPath, type CustomerContact as Contact } from '../lib/customerContacts'
+import { paidCyclesPath, type PaidCycle } from '../lib/paidCycles'
 
 type SubscriptionDetail = {
   id: string
@@ -76,6 +79,26 @@ const TRACKING_STATUS: Record<string, string> = {
   returned: 'Devolvido ao remetente',
 }
 
+function cycleText(cycle: PaidCycle) {
+  return [
+    cycle.preparation_day ? `Preparo ${formatDay(cycle.preparation_day)}` : null,
+    productionLabel(cycle.production_status),
+    cycle.delivery_date ? `entrega ${formatDay(cycle.delivery_date)}` : null,
+  ].filter(Boolean).join(' · ')
+}
+
+function formatDay(value: string) {
+  const [year, month, day] = value.slice(0, 10).split('-')
+  return year && month && day ? `${day}/${month}/${year}` : value
+}
+
+// The phone saved with this subscription's delivery address. The detail API carries no account phone.
+function addressPhone(address: unknown): string | null {
+  if (!address || typeof address !== 'object') return null
+  const value = (address as Record<string, unknown>).phone
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
 const SHIPMENT_STATUS: Record<string, { label: string; badge: string }> = {
   created: { label: 'Etiqueta criada', badge: 'badge-success' },
   pending: { label: 'Gerando', badge: 'badge-info' },
@@ -96,12 +119,15 @@ export function SubscriptionDetailPage() {
   const [courierItems, setCourierItems] = useState<CourierDelivery[]>([])
   const [courierRecipient, setCourierRecipient] = useState('')
   const [dispatchInvoice, setDispatchInvoice] = useState<string | null>(null)
+  const [paidCycles, setPaidCycles] = useState<PaidCycle[]>([])
+  const [contacts, setContacts] = useState<Contact[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const canReadShipping = hasPermission('shipping.read')
   const canWriteShipping = hasPermission('shipping.write')
   const canSyncBilling = hasPermission('billing.subscribers.sync')
   const canReadNfe = hasPermission('nfe.read')
+  const canReadSubscription = hasPermission('billing.subscribers.read')
   const profileInScope = isProfileInScope(data?.customerProfileInScope)
   // Brazil delivers by courier, with no UPS label. The delivery address decides, not the Stripe account.
   const shipsWithUps = data?.term?.marketCountry === 'US'
@@ -121,6 +147,35 @@ export function SubscriptionDetailPage() {
     }
   }
 
+  // Paid cycles decide what waits for a label or a courier, without syncing the Stripe invoices.
+  const loadPaidCycles = async () => {
+    if (!token || !id || !canReadShipping) return
+    try {
+      const response = await apiRequest<{ success: boolean; data: { items: PaidCycle[] } }>(paidCyclesPath(id), { token })
+      setPaidCycles(response.data?.items || [])
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar os ciclos pagos')
+    }
+  }
+
+  const loadContacts = async () => {
+    if (!token || !id || !canReadSubscription) return
+    try {
+      const response = await apiRequest<{ success: boolean; data: { items: Contact[] } }>(contactsPath(id), { token })
+      setContacts(response.data?.items || [])
+    } catch {
+      setContacts([])
+    }
+  }
+
+  useEffect(() => {
+    void loadPaidCycles()
+  }, [token, id, canReadShipping])
+
+  useEffect(() => {
+    void loadContacts()
+  }, [token, id, canReadSubscription])
+
   const courierDone = (text: string) => {
     setDispatchInvoice(null)
     if (text) {
@@ -128,6 +183,7 @@ export function SubscriptionDetailPage() {
       setError('')
     }
     void loadCourier()
+    void loadPaidCycles()
   }
 
   const courierFailed = (text: string) => {
@@ -290,7 +346,7 @@ export function SubscriptionDetailPage() {
     }
   }
 
-  const createShipment = async (invoiceId: string) => {
+  const createShipment = async (invoiceId: string, confirmNotReady = false): Promise<void> => {
     if (!token || !id) return
     try {
       setError('')
@@ -299,7 +355,7 @@ export function SubscriptionDetailPage() {
         {
           token,
           method: 'POST',
-          body: { invoice_id: invoiceId },
+          body: { invoice_id: invoiceId, ...(confirmNotReady ? { confirm_not_ready: true } : {}) },
         },
       )
       const shipment = response.data?.shipment
@@ -312,7 +368,17 @@ export function SubscriptionDetailPage() {
         await loadShipments()
       }
       setMessage(response.data?.reused ? 'Etiqueta já existia para esta invoice (idempotente).' : 'Etiqueta UPS gerada.')
+      void loadPaidCycles()
     } catch (requestError) {
+      // The order is not ready or the subscription not active: buy only after the operator confirms.
+      if (!confirmNotReady && requestError instanceof ApiRequestError && requestError.code === 'ups_label_needs_confirmation') {
+        const reasons = Array.isArray(requestError.details?.reasons) ? requestError.details.reasons as ReadinessReason[] : []
+        const list = reasons.map((reason) => `- ${readinessText(reason)}`).join('\n')
+        if (window.confirm(`Este pedido ainda não está pronto. Comprar mesmo assim?${list ? `\n\n${list}` : ''}`)) {
+          await createShipment(invoiceId, true)
+        }
+        return
+      }
       setError(requestError instanceof Error ? requestError.message : 'Falha ao gerar etiqueta')
     }
   }
@@ -417,14 +483,18 @@ export function SubscriptionDetailPage() {
       .map((item) => [item.stripe_invoice_id, item]),
   )
 
-  // Paid invoices still waiting for a label: the shipping team starts here.
-  const awaitingLabel = invoices.filter((item) => item.status === 'paid' && !activeByInvoice.has(item.id))
+  // Paid cycles still waiting for a label: the shipping team starts here. An invoice with no cycle never shows.
+  const awaitingLabel = paidCycles.filter((cycle) => !cycle.ups_shipment && !activeByInvoice.has(cycle.invoice_id))
 
-  // Paid invoices with no courier delivery on the road or delivered (after "Sincronizar faturas").
+  // Paid cycles with no courier delivery on the road or delivered.
   const courierActiveInvoices = new Set(
     courierItems.filter((item) => item.status === 'out_for_delivery' || item.status === 'delivered').map((item) => item.stripe_invoice_id),
   )
-  const awaitingCourier = invoices.filter((item) => item.status === 'paid' && !courierActiveInvoices.has(item.id))
+  const awaitingCourier = paidCycles.filter((cycle) => (
+    (!cycle.courier_delivery || cycle.courier_delivery.status === 'failed') && !courierActiveInvoices.has(cycle.invoice_id)
+  ))
+  const phone = addressPhone(data?.address)
+  const contactName = data?.customerName || data?.user.email || 'Cliente'
 
   return (
     <PageFrame
@@ -491,13 +561,13 @@ export function SubscriptionDetailPage() {
               </thead>
               <tbody>
                 {awaitingLabel.map((item) => (
-                  <tr key={`awaiting-${item.id}`}>
-                    <td>{item.number ?? item.id}</td>
+                  <tr key={`awaiting-${item.invoice_id}`}>
+                    <td>{item.invoice_id}</td>
                     <td><span className="badge-warning">Sem etiqueta</span></td>
-                    <td colSpan={5} className="muted">Fatura paga em {formatDate(item.createdAt)}.</td>
+                    <td colSpan={5} className="muted">{cycleText(item)}</td>
                     <td>
                       {canWriteShipping ? (
-                        <button className="primary-button" type="button" disabled={labelIssues.length > 0} onClick={() => void createShipment(item.id)}>
+                        <button className="primary-button" type="button" disabled={labelIssues.length > 0} onClick={() => void createShipment(item.invoice_id)}>
                           Gerar etiqueta UPS
                         </button>
                       ) : null}
@@ -506,7 +576,7 @@ export function SubscriptionDetailPage() {
                 ))}
                 {shipments.length === 0 && awaitingLabel.length === 0 ? (
                   <tr>
-                    <td colSpan={8}>Nenhuma etiqueta ainda. Faturas pagas aparecem aqui para gerar a etiqueta.</td>
+                    <td colSpan={8}>Nenhuma etiqueta ainda. Ciclos pagos aparecem aqui para gerar a etiqueta.</td>
                   </tr>
                 ) : (
                   shipments.map((item) => (
@@ -583,20 +653,20 @@ export function SubscriptionDetailPage() {
               </thead>
               <tbody>
                 {awaitingCourier.map((item) => (
-                  <tr key={`courier-awaiting-${item.id}`}>
-                    <td>{item.number ?? item.id}</td>
+                  <tr key={`courier-awaiting-${item.invoice_id}`}>
+                    <td>{item.invoice_id}</td>
                     <td><span className="badge-warning">A despachar</span></td>
-                    <td colSpan={3} className="muted">Fatura paga em {formatDate(item.createdAt)}.</td>
+                    <td colSpan={3} className="muted">{cycleText(item)}</td>
                     <td>
                       {canWriteShipping ? (
-                        <button className="primary-button" type="button" onClick={() => setDispatchInvoice(item.id)}>Despachar</button>
+                        <button className="primary-button" type="button" onClick={() => setDispatchInvoice(item.invoice_id)}>Despachar</button>
                       ) : null}
                     </td>
                   </tr>
                 ))}
                 {courierItems.length === 0 && awaitingCourier.length === 0 ? (
                   <tr>
-                    <td colSpan={6}>Nenhuma entrega registrada. Sincronize as faturas para despachar uma fatura paga, ou use Entregas Brasil.</td>
+                    <td colSpan={6}>Nenhuma entrega registrada e nenhum ciclo pago esperando saída.</td>
                   </tr>
                 ) : null}
                 {courierItems.map((item) => (
@@ -620,6 +690,34 @@ export function SubscriptionDetailPage() {
             onClose={() => setDispatchInvoice(null)}
             onDone={courierDone}
           />
+        </Section>
+      ) : null}
+
+      {canReadSubscription ? (
+        <Section
+          title="Contatos com o cliente"
+          description="Contatos feitos por WhatsApp, do mais novo para o mais antigo."
+          actions={data ? (
+            <CustomerContact
+              subscriptionId={data.id}
+              name={contactName}
+              phone={phone}
+              showLast={false}
+              onSaved={(contact) => setContacts((current) => [contact, ...current.filter((item) => item.id !== contact.id)])}
+            />
+          ) : null}
+        >
+          {contacts.length ? (
+            <ul className="contact-history">
+              {contacts.map((contact) => (
+                <li key={contact.id}>
+                  <strong>{reasonLabel(contact.reason)} · {outcomeLabel(contact.outcome)}</strong>
+                  <div className="muted">{lastContactText(contact)}</div>
+                  {contact.note ? <div>{contact.note}</div> : null}
+                </li>
+              ))}
+            </ul>
+          ) : <p className="muted">Nenhum contato registrado.</p>}
         </Section>
       ) : null}
 

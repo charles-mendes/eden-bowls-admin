@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DashboardPage } from './DashboardPage'
 import { SystemHealth } from '../components/SystemHealth'
 import { nextStep } from '../lib/today'
-import { adminUser, jsonResponse, operatorUsUser, operatorUser, syncStatus, todayOverview, webhookHealth } from '../test/fixtures'
+import { adminUser, customerContact, jsonResponse, operatorUsUser, operatorUser, operatorWriteUser, syncStatus, todayOverview, webhookHealth } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -268,7 +268,105 @@ describe('DashboardPage', () => {
     expect(nextStep({ ...base, productionStatus: 'blocked', paymentState: 'paid', upsLabel: 'missing' }).text).toBe('Resolver o bloqueio')
     expect(nextStep({ ...base, productionStatus: 'ready', paymentState: 'paid', upsLabel: 'missing' }).text).toBe('Gerar etiqueta UPS')
     expect(nextStep({ ...base, productionStatus: 'ready', paymentState: 'paid', upsLabel: 'created' }).text).toBe('Aguardando coleta UPS')
-    expect(nextStep({ ...base, market: 'BR', productionStatus: 'ready', paymentState: 'paid', upsLabel: null }).text).toBe('Pronto para entregar')
+    expect(nextStep({ ...base, productionStatus: 'ready', paymentState: 'paid', upsLabel: 'unresolved' })).toEqual({ text: 'Verificar na UPS', tone: 'error', to: '/operations/labels#verificar-ups' })
+    const br = { ...base, market: 'BR' as const, productionStatus: 'ready' as const, paymentState: 'paid' as const, upsLabel: null }
+    expect(nextStep({ ...br, courierDelivery: 'none' })).toEqual({ text: 'Despachar', tone: 'warning', to: '/operations/courier' })
+    expect(nextStep({ ...br, courierDelivery: 'out_for_delivery' })).toMatchObject({ text: 'Em rota', to: '/operations/courier?aba=em_rota' })
+    expect(nextStep({ ...br, courierDelivery: 'delivered' }).text).toBe('Entregue')
+    expect(nextStep({ ...br, courierDelivery: 'failed' })).toEqual({ text: 'Despachar de novo', tone: 'warning', to: '/operations/courier?aba=falhas' })
+    expect(nextStep({ ...br, courierDelivery: 'none' }).text).not.toBe('Pronto para entregar')
+  })
+
+  const withToday = (data: Record<string, unknown>) => ({ path, method }: { path: string; method: string }) => (
+    path === '/api/v1/admin/today' && method === 'GET' ? jsonResponse({ success: true, data: { ...todayOverview, ...data } }) : undefined
+  )
+  const zero = todayOverview.fulfillment
+
+  it('lists shipping and invoice work with filtered links for Brazil', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUser, {
+      routes: withToday({ fulfillment: { ...zero, courierToDispatch: 3, courierOnTheRoadLong: 2, courierFailed: 1, nfeMissingDocument: 1, nfeRejected: 1, nfeError: 2, upsUnresolved: 4 } }),
+    })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    const link = (text: string) => within(work.getByText(text).closest('li') as HTMLElement).getByRole('link')
+    expect(link('3 pedidos a despachar')).toHaveAttribute('href', '/operations/courier')
+    expect(link('2 entregas em rota há mais de 24 h')).toHaveAttribute('href', '/operations/courier?aba=em_rota')
+    expect(link('1 entrega com falha sem novo despacho')).toHaveAttribute('href', '/operations/courier?aba=falhas')
+    expect(link('1 NF-e sem CPF')).toHaveAttribute('href', '/operations/nfe?status=blocked_missing_document')
+    expect(link('1 NF-e rejeitada')).toHaveAttribute('href', '/operations/nfe?status=rejected')
+    expect(link('2 NF-e com erro')).toHaveAttribute('href', '/operations/nfe?status=error')
+    // A Brazil-only operator does not see the US work.
+    expect(work.queryByText(/compras? UPS sem confirmação/)).not.toBeInTheDocument()
+  })
+
+  it('shows nothing for shipping and invoices when every count is zero', async () => {
+    seedAuth()
+    installAdminFetchMock(adminUser)
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    await screen.findByText('Bruno Lima')
+    expect(screen.queryByRole('region', { name: 'Expedição e notas' })).not.toBeInTheDocument()
+  })
+
+  it('says Bling is disconnected to an admin, and not with the US on screen', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(adminUser, { routes: withToday({ fulfillment: { ...zero, blingConnected: false, upsUnresolved: 1 } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    expect(within(work.getByText('Bling desconectado').closest('li') as HTMLElement).getByRole('link')).toHaveAttribute('href', '/operations/nfe')
+    expect(within(work.getByText('1 compra UPS sem confirmação').closest('li') as HTMLElement).getByRole('link')).toHaveAttribute('href', '/operations/labels#verificar-ups')
+
+    await user.click(screen.getByRole('button', { name: 'EUA' }))
+    await waitFor(() => expect(screen.queryByText('Bling desconectado')).not.toBeInTheDocument())
+    expect(screen.getByText('1 compra UPS sem confirmação')).toBeInTheDocument()
+  })
+
+  it('hides the Brazil work from a US operator', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUsUser, { routes: withToday({ fulfillment: { ...zero, courierToDispatch: 3, nfeRejected: 1, blingConnected: false, upsUnresolved: 2 } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    expect(work.getByText('2 compras UPS sem confirmação')).toBeInTheDocument()
+    expect(work.queryByText('3 pedidos a despachar')).not.toBeInTheDocument()
+    expect(work.queryByText('1 NF-e rejeitada')).not.toBeInTheDocument()
+    expect(work.queryByText('Bling desconectado')).not.toBeInTheDocument()
+  })
+
+  it('shows the last contact of a refused payment and records a new one with the phone', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const refused = todayOverview.items[3]
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      routes: withToday({ items: [{ ...refused, lastContact: { ...customerContact, subscription_id: '34' } }] }),
+    })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const pending = within(await screen.findByRole('region', { name: 'Pendências' }))
+    expect(await pending.findByText(/^Contatado .*sem resposta, por ops@edenbowls.com$/)).toBeInTheDocument()
+    await user.click(pending.getByRole('button', { name: 'Registrar contato' }))
+    const dialog = within(screen.getByRole('dialog'))
+    expect(dialog.getByText('+55 41 99999-0000')).toBeInTheDocument()
+    expect(dialog.getByLabelText('Motivo')).toHaveValue('payment_failed')
+    await user.click(dialog.getByLabelText('Cliente vai resolver'))
+    await user.click(dialog.getByRole('button', { name: 'Salvar contato' }))
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'POST' && call.path === '/api/v1/admin/billing/subscriptions/34/contacts')).toBe(true))
+    expect(await pending.findByText(/^Contatado hoje, .*cliente vai resolver/)).toBeInTheDocument()
+  })
+
+  it('records a contact for a refused payment without a phone', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { routes: withToday({ items: [{ ...todayOverview.items[3], phone: null }] }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    await user.click(await screen.findByRole('button', { name: 'Registrar contato' }))
+    expect(within(screen.getByRole('dialog')).getByText('Sem telefone')).toBeInTheDocument()
   })
 
   it('opens the refused subscribers and the label queue when several orders wait', async () => {

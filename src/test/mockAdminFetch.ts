@@ -152,6 +152,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   recipeContent?: typeof recipeContentFixture
   recipes?: RecipeListItem[]
   recipeImage?: 'invalid'
+  contacts?: Array<Record<string, unknown>>
+  contactError?: { status: number; code: string; field?: string }
+  paidCycles?: Array<Record<string, unknown>>
   // Answered before the fixed routes; return undefined to fall through.
   routes?: (call: FetchCall) => Response | undefined
 } = {}) {
@@ -190,6 +193,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     item.belowMinimum = item.minLevel != null && onHand < Number(item.minLevel)
     return item
   }
+
+  let contacts = (options.contacts ?? []).map((item) => ({ ...item }))
+  let nextContactId = contacts.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0) + 1
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = parseUrl(input)
@@ -792,6 +798,33 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
           ],
         },
       })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/contacts$/.test(path) && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: contacts } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/contacts$/.test(path) && method === 'POST') {
+      if (options.contactError) {
+        const { status, code, field } = options.contactError
+        return jsonResponse({ code, message: 'Contato recusado.', details: { code, ...(field ? { field } : {}) } }, status)
+      }
+      const contact = {
+        id: nextContactId++,
+        subscription_id: decodeURIComponent(path.split('/')[6]),
+        channel: 'whatsapp',
+        reason: body?.reason,
+        outcome: body?.outcome,
+        note: body?.note || null,
+        actor_email: profile.email,
+        created_at: new Date().toISOString(),
+      }
+      contacts = [contact, ...contacts]
+      return jsonResponse({ success: true, data: { contact } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/paid-cycles$/.test(path) && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: options.paidCycles ?? [] } })
     }
 
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/shipments$/.test(path) && method === 'GET') {

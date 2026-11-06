@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { CustomerContact } from '../components/CustomerContact'
 import { PageFrame } from '../components/PageFrame'
 import { SystemHealth } from '../components/SystemHealth'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { billingHref } from '../lib/billing'
+import { courierHref } from '../lib/courierDeliveries'
+import { nfeListHref } from '../lib/nfe'
 import { getBrowserTimeZone } from '../lib/format'
 import { effectiveSessionMarkets } from '../lib/markets'
 import { plural, productionQueueHref, QUEUE_PATH, type QueueFilters } from '../lib/productionQueue'
-import { nextStep, type Bucket, type ClosedDay, type Counts, type TodayItem, type TodayOverview, type Tone } from '../lib/today'
+import { nextStep, UPS_CHECK_PATH, type Bucket, type ClosedDay, type Counts, type Fulfillment, type TodayItem, type TodayOverview, type Tone } from '../lib/today'
 
 const MARKET_NAME = { BR: 'Brasil', US: 'EUA' } as const
 
@@ -19,7 +22,7 @@ type Severity = 'high' | 'medium' | 'low'
 
 const SEVERITY_LABEL: Record<Severity, string> = { high: 'Alta', medium: 'Média', low: 'Baixa' }
 
-type Pending = { key: string; severity: Severity; title: string; detail: string; action: string; to: string }
+type Pending = { key: string; severity: Severity; title: string; detail: string; action: string; to: string; refused?: TodayItem[] }
 
 const customer = (item: TodayItem) => item.displayName || item.email
 
@@ -45,6 +48,7 @@ function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado']): Pen
       key: 'refused', severity: 'high', title: plural(refused.length, 'pagamento recusado', 'pagamentos recusados'),
       detail: one ? `${customer(one)}: falar com o cliente antes de preparar.` : 'Falar com os clientes antes de preparar.',
       action: one ? 'Abrir pedido' : 'Ver assinantes', to: one ? `/billing/subscriptions/${one.id}` : billingHref({ status: 'past_due' }),
+      refused,
     })
   }
   if (blocked.length) {
@@ -72,6 +76,37 @@ function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado']): Pen
     })
   }
   return list
+}
+
+type Work = { key: string; title: string; to: string; action: string }
+
+// Shipping and invoice work, counted by the API. Only counts above zero and markets on screen show.
+function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'BR' | 'US'>): Work[] {
+  if (!fulfillment) return []
+  const brazil = markets.includes('BR')
+  const us = markets.includes('US')
+  const list: Work[] = []
+  const add = (show: boolean, count: number, key: string, one: string, many: string, to: string, action: string) => {
+    if (show && count > 0) list.push({ key, title: plural(count, one, many), to, action })
+  }
+  add(brazil, fulfillment.courierToDispatch, 'courier-dispatch', 'pedido a despachar', 'pedidos a despachar', courierHref(), 'Abrir entregas')
+  add(brazil, fulfillment.courierOnTheRoadLong, 'courier-road', 'entrega em rota há mais de 24 h', 'entregas em rota há mais de 24 h', courierHref('em_rota'), 'Abrir entregas')
+  add(brazil, fulfillment.courierFailed, 'courier-failed', 'entrega com falha sem novo despacho', 'entregas com falha sem novo despacho', courierHref('falhas'), 'Abrir entregas')
+  add(brazil, fulfillment.nfeMissingDocument, 'nfe-document', 'NF-e sem CPF', 'NF-e sem CPF', nfeListHref({ status: 'blocked_missing_document' }), 'Abrir notas')
+  add(brazil, fulfillment.nfeRejected, 'nfe-rejected', 'NF-e rejeitada', 'NF-e rejeitadas', nfeListHref({ status: 'rejected' }), 'Abrir notas')
+  add(brazil, fulfillment.nfeError, 'nfe-error', 'NF-e com erro', 'NF-e com erro', nfeListHref({ status: 'error' }), 'Abrir notas')
+  add(us, fulfillment.upsUnresolved, 'ups-unresolved', 'compra UPS sem confirmação', 'compras UPS sem confirmação', UPS_CHECK_PATH, 'Verificar na UPS')
+  if (brazil && fulfillment.blingConnected === false) {
+    list.push({ key: 'bling', title: 'Bling desconectado', to: nfeListHref(), action: 'Abrir notas' })
+  }
+  return list
+}
+
+function stepAction(to: string) {
+  if (to.startsWith(QUEUE_PATH)) return 'Abrir na fila'
+  if (to.startsWith('/operations/courier')) return 'Abrir entregas'
+  if (to.startsWith(LABELS_PATH)) return 'Abrir etiquetas'
+  return 'Abrir pedido'
 }
 
 function closedDayText(day: ClosedDay, today: string) {
@@ -146,6 +181,7 @@ export function DashboardPage() {
   })
   const shownMarkets = market ? [market] : markets
   const showUps = shownMarkets.includes('US')
+  const work = fulfillmentItems(data?.fulfillment, shownMarkets)
   const readyWithoutLabel = items.filter((item) => item.upsLabel === 'missing' && item.productionStatus === 'ready').length
 
   const cards: Array<{ key: string; label: string; value: number | undefined; hint: string; split?: string; tone?: string; to: string }> = [
@@ -249,6 +285,12 @@ export function DashboardPage() {
                 <div className="day-pending-text">
                   <strong>{entry.title}</strong>
                   <span>{entry.detail}</span>
+                  {entry.refused?.map((item) => (
+                    <div key={item.id} className="contact-inline">
+                      {entry.refused && entry.refused.length > 1 ? <span>{customer(item)}:</span> : null}
+                      <CustomerContact subscriptionId={item.id} name={customer(item)} phone={item.phone} reason="payment_failed" lastContact={item.lastContact} />
+                    </div>
+                  ))}
                 </div>
                 <Link className="ghost-button" to={entry.to}>{entry.action}</Link>
               </li>
@@ -261,6 +303,24 @@ export function DashboardPage() {
           </p>
         ) : null}
       </section>
+
+      {work.length > 0 ? (
+        <section className="day-section" aria-labelledby="day-fulfillment">
+          <div className="day-section-head">
+            <h3 id="day-fulfillment">Expedição e notas</h3>
+          </div>
+          <ul className="day-pending">
+            {work.map((entry) => (
+              <li key={entry.key}>
+                <div className="day-pending-text">
+                  <strong>{entry.title}</strong>
+                </div>
+                <Link className="ghost-button" to={entry.to}>{entry.action}</Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       <section className="day-section" aria-labelledby="day-needs-you">
         <div className="day-section-head">
@@ -275,7 +335,7 @@ export function DashboardPage() {
           <ul className="day-orders">
             {needsYou.map((item) => {
               const step = nextStep(item)
-              const inQueue = step.to.startsWith(QUEUE_PATH)
+              const action = stepAction(step.to)
               return (
                 <li key={`${item.id}-${item.dueBucket}`} className="day-order">
                   <div className="day-order-head">
@@ -287,8 +347,8 @@ export function DashboardPage() {
                   </span>
                   <span className={`day-order-step ${STEP_TONE[step.tone]}`}>{step.text}</span>
                   {item.note ? <span className="muted day-order-note">{item.note}</span> : null}
-                  <Link to={step.to} className="day-order-link" aria-label={`${inQueue ? 'Abrir na fila' : 'Abrir pedido'}: ${customer(item)}`}>
-                    {inQueue ? 'Abrir na fila' : 'Abrir pedido'} →
+                  <Link to={step.to} className="day-order-link" aria-label={`${action}: ${customer(item)}`}>
+                    {action} →
                   </Link>
                 </li>
               )

@@ -36,6 +36,7 @@ export const WRITE_PERMISSIONS = [
   'production.write',
   'reports.read',
   'reports.export',
+  'customers.contact.write',
 ] as const
 
 export const operatorUser: AdminUser = {
@@ -824,11 +825,32 @@ export const todayOverview = {
   total: 4,
   items: [
     { ...todayOrder, id: 31, market: 'US', dueBucket: 'overdue', dueLabel: 'Atrasado 1 dia', displayName: 'Ana Costa', city: 'Miami', productionStatus: 'ready', paymentState: 'paid', upsLabel: 'missing' },
-    { ...todayOrder, id: 32, market: 'BR', dueBucket: 'today', displayName: 'Bruno Lima', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'paid', upsLabel: null },
+    { ...todayOrder, id: 32, market: 'BR', dueBucket: 'today', displayName: 'Bruno Lima', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'paid', upsLabel: null, courierDelivery: 'none' },
     { ...todayOrder, id: 33, market: 'US', dueBucket: 'today', displayName: 'Carla Diaz', city: 'Orlando', productionStatus: 'in_production', paymentState: 'paid', upsLabel: 'missing' },
-    { ...todayOrder, id: 34, market: 'BR', dueBucket: 'tomorrow', dueLabel: 'Amanhã', displayName: 'Davi Rocha', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'past_due', upsLabel: null },
+    { ...todayOrder, id: 34, market: 'BR', dueBucket: 'tomorrow', dueLabel: 'Amanhã', displayName: 'Davi Rocha', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'past_due', upsLabel: null, courierDelivery: null, lastContact: null, phone: '+55 41 99999-0000' },
   ],
   closedDays: [
     { market: 'BR', date: '2026-10-08', label: 'Folga da cozinha', closesPreparation: true, closesPickup: false, closesDelivery: true },
   ],
+  fulfillment: {
+    courierToDispatch: 0,
+    courierOnTheRoadLong: 0,
+    courierFailed: 0,
+    nfeMissingDocument: 0,
+    nfeRejected: 0,
+    nfeError: 0,
+    upsUnresolved: 0,
+    blingConnected: true,
+  },
+}
+
+export const customerContact = {
+  id: 1,
+  subscription_id: 'sub-row-1',
+  channel: 'whatsapp',
+  reason: 'payment_failed',
+  outcome: 'no_answer',
+  note: 'Mandei o link do cartão',
+  actor_email: 'ops@edenbowls.com',
+  created_at: '2026-10-06T17:05:00.000Z',
 }
