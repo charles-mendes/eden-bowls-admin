@@ -5,12 +5,14 @@ import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { MetricCard } from '../components/MetricCard'
 import { CustomerContact } from '../components/CustomerContact'
+import { AddressIssueStatus } from '../components/AddressIssueStatus'
+import { type AddressIssue } from '../lib/addressIssues'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
 import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
 import { formatDate, formatStripeStatus } from '../lib/format'
 import { printLabel } from '../lib/printLabel'
-import { labelIssueText, type LabelIssue } from '../lib/upsLabels'
+import { labelIssueText, labelRefusalText, type LabelIssue } from '../lib/upsLabels'
 import { formatNfeAmount, formatNfeDate, formatNfeNumber, nfeStatusLabel, nfeStatusTone, type NfeSummary } from '../lib/nfe'
 import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
@@ -38,6 +40,11 @@ type SubscriptionDetail = {
   planSelection: unknown
   shipping: unknown
   address: unknown
+  // shipment-market: null when the account and the address country fit no market.
+  shipment_market?: 'BR' | 'US' | null
+  market_exception?: boolean
+  // delivery-address-issues: the open problem, or the last one resolved in 30 days.
+  address_issue?: AddressIssue | null
 }
 
 type InvoiceItem = {
@@ -379,6 +386,10 @@ export function SubscriptionDetailPage() {
         }
         return
       }
+      if (requestError instanceof ApiRequestError && requestError.status === 422) {
+        setError(labelRefusalText(requestError.code, requestError.message))
+        return
+      }
       setError(requestError instanceof Error ? requestError.message : 'Falha ao gerar etiqueta')
     }
   }
@@ -529,6 +540,31 @@ export function SubscriptionDetailPage() {
           )}
         </div>
       </Section>
+
+      {data?.market_exception ? (
+        <div className="warning" role="status">
+          Conta e país do endereço não combinam: esta assinatura não sai pela fila de etiquetas nem pela de entregas e não recebe NF-e até a conta e o país do endereço combinarem. Ela aparece em Exceções de mercado.
+        </div>
+      ) : null}
+
+      {data?.address_issue ? (
+        <Section
+          title="Problema de endereço"
+          description="O cliente corrige em Meu plano → Editar assinatura, na loja. O problema fecha sozinho quando ele salva."
+          actions={(
+            <CustomerContact
+              subscriptionId={data.id}
+              name={contactName}
+              phone={phone}
+              reason="address"
+              showLast={false}
+              onSaved={(contact) => setContacts((current) => [contact, ...current.filter((item) => item.id !== contact.id)])}
+            />
+          )}
+        >
+          <AddressIssueStatus issue={data.address_issue} detailed />
+        </Section>
+      ) : null}
 
       {canReadShipping && shipsWithUps ? (
         <Section title="Envio UPS" description="Uma etiqueta por fatura paga. Compare o frete cobrado no checkout com o custo da UPS.">

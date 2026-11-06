@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NfeDetailPage } from './NfeDetailPage'
-import { operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { addressIssue, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { findCall, installAdminFetchMock, nfeDetailState } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -12,6 +12,32 @@ describe('NfeDetailPage', () => {
     localStorage.clear()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it('a note blocked for the fiscal name says what is missing, where it is fixed and the email state', async () => {
+    seedAuth()
+    nfeDetailState.override = {
+      status: 'blocked_missing_document',
+      missing_fields: ['fiscal_name'],
+      address_issue: { ...addressIssue, codes: ['fiscal_name_missing'], source: 'nfe_check' },
+    }
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const note = await screen.findByRole('note', { name: 'O que falta na nota' })
+    expect(note).toHaveTextContent('Falta para emitir: Nome fiscal.')
+    expect(note).toHaveTextContent('Meu plano → Editar assinatura')
+    expect(within(note).getByText('E-mail enviado em 03/11')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Corrigir dados' })).toBeInTheDocument()
+  })
+
+  it('lists CPF and fiscal name when both are missing', async () => {
+    seedAuth()
+    nfeDetailState.override = { status: 'blocked_missing_document', missing_fields: ['tax_document', 'fiscal_name'] }
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    expect(await screen.findByRole('note', { name: 'O que falta na nota' })).toHaveTextContent('Falta para emitir: CPF, Nome fiscal.')
   })
 
   it('shows why the email failed and sends it again after confirmation', async () => {

@@ -854,3 +854,26 @@ export const customerContact = {
   actor_email: 'ops@edenbowls.com',
   created_at: '2026-10-06T17:05:00.000Z',
 }
+
+// delivery-address-issues: an open problem whose email went out on 3 November.
+export const addressIssue = {
+  id: 3,
+  codes: ['address_neighborhood_missing'],
+  source: 'courier_check',
+  open: true,
+  opened_at: '2026-11-03T12:00:00.000Z',
+  email_sent_at: '2026-11-03T12:00:05.000Z',
+  resolved_at: null,
+  resolved_by: null,
+}
+
+// shipment-market: a Brazil account delivered in the US, so it ships from no market.
+export const marketExceptionItem = {
+  subscription_id: 42,
+  stripe_subscription_id: 'sub_cross_1',
+  status: 'active',
+  stripe_account: 'br',
+  address_country: 'US',
+  customer: { id: 7, email: 'ana@example.com', name: 'Ana Costa' },
+  open_paid_cycles: 1,
+}

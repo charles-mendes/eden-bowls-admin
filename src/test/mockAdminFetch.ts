@@ -95,6 +95,8 @@ export const nfeDetail = {
   next_attempt_at: null,
   submitted_at: null,
   updated_at: '2026-10-30T12:00:00.000Z',
+  missing_fields: [] as string[],
+  address_issue: null as Record<string, unknown> | null,
 }
 
 export const customerInvoice = {
@@ -155,6 +157,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   contacts?: Array<Record<string, unknown>>
   contactError?: { status: number; code: string; field?: string }
   paidCycles?: Array<Record<string, unknown>>
+  marketExceptions?: Array<Record<string, unknown>>
+  // The subscription detail's shipping market (shipment-market) and address problem (delivery-address-issues).
+  marketException?: boolean
+  addressIssue?: Record<string, unknown> | null
   // Answered before the fixed routes; return undefined to fall through.
   routes?: (call: FetchCall) => Response | undefined
 } = {}) {
@@ -888,6 +894,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         planSelection: {},
         shipping: {},
         address: {},
+        shipment_market: options.marketException ? null : 'US',
+        market_exception: Boolean(options.marketException),
+        address_issue: options.addressIssue ?? null,
         ...(options.subscriptionSnapshot ?? {}),
         ...(options.subscriptionInScope === undefined ? {} : { customerProfileInScope: options.subscriptionInScope }),
       })
@@ -1096,6 +1105,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (/^\/api\/v1\/admin\/feedbacks\/\d+$/.test(path) && method === 'DELETE') {
       return jsonResponse({ deleted: true, id: Number(path.split('/').pop()) })
+    }
+
+    if (path === '/api/v1/admin/market-exceptions' && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: options.marketExceptions ?? [], truncated: false } })
     }
 
     if (path === '/api/v1/admin/nfe' && method === 'GET') {

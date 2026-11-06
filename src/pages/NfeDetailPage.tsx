@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { JsonDetails } from '../components/JsonDetails'
 import { MetaGrid } from '../components/MetaGrid'
 import { NfeCustomerDialog } from '../components/NfeCustomerDialog'
+import { AddressIssueStatus } from '../components/AddressIssueStatus'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
@@ -16,6 +17,7 @@ import {
   formatNfeDate,
   formatNfeNumber,
   formatTaxDocument,
+  missingFieldLabel,
   nfeStatusLabel,
   nfeStatusTone,
   type NfeDetail,
@@ -169,6 +171,13 @@ export function NfeDetailPage() {
               </div>
             </dl>
             {item.last_error ? <p className="nfe-alert nfe-alert-error" role="alert">{item.last_error}</p> : null}
+            {item.missing_fields?.length ? (
+              <div className="nfe-alert" role="note" aria-label="O que falta na nota">
+                <p>Falta para emitir: {item.missing_fields.map(missingFieldLabel).join(', ')}.</p>
+                <p>O cliente corrige na loja, em Meu plano → Editar assinatura. Quando ele salva, a nota volta para a fila sozinha. "Corrigir dados" fica para exceções.</p>
+                <AddressIssueStatus issue={item.address_issue} />
+              </div>
+            ) : item.address_issue ? <AddressIssueStatus issue={item.address_issue} /> : null}
             {item.imported ? (
               <p className="nfe-alert">Esta nota foi criada direto no Bling. Aqui ela fica só para consulta e o envio é feito por lá.</p>
             ) : null}

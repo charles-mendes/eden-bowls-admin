@@ -138,4 +138,12 @@ describe('admin menu', () => {
     expect(hrefs([])).toEqual(expect.arrayContaining(['/operations/labels', '/operations/courier', '/operations/nfe']))
     expect(groupedMenuItems(['operator'], ['shipping.read'], ['BR']).flatMap((group) => group.items).map((item) => item.href)).not.toContain('/operations/labels')
   })
+
+  it('shows Exceções de mercado only with shipping.read, in every market', () => {
+    const hrefs = (permissions: string[], markets: ('BR' | 'US')[] = []) => visibleMenuItems(['operator'], permissions, markets).map((item) => item.href)
+    expect(hrefs(['shipping.read'])).toContain('/operations/market-exceptions')
+    expect(hrefs(['shipping.read'], ['US'])).toContain('/operations/market-exceptions')
+    expect(hrefs(['shipping.read'], ['BR'])).toContain('/operations/market-exceptions')
+    expect(hrefs([])).not.toContain('/operations/market-exceptions')
+  })
 })

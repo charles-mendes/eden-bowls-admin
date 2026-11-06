@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SubscriptionDetailPage } from './SubscriptionDetailPage'
-import { adminUser, checkoutDetail, customerContact, operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { addressIssue, adminUser, checkoutDetail, customerContact, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { customerInvoice, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -24,6 +24,46 @@ describe('SubscriptionDetailPage', () => {
   afterEach(() => {
     localStorage.clear()
     vi.unstubAllGlobals()
+  })
+
+  it('warns when the subscription ships from no market', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { marketException: true })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    expect(await screen.findByText(/Conta e país do endereço não combinam/)).toBeInTheDocument()
+  })
+
+  it('shows an open address problem with the email state and Registrar contato, and no address field', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { addressIssue })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const section = (await screen.findByRole('heading', { name: 'Problema de endereço' })).closest('section') as HTMLElement
+    expect(within(section).getByText('Falta o bairro')).toBeInTheDocument()
+    expect(within(section).getByText('E-mail enviado em 03/11')).toBeInTheDocument()
+    expect(within(section).getByText('Origem: Despacho recusado')).toBeInTheDocument()
+    expect(within(section).getByRole('button', { name: 'Registrar contato' })).toBeInTheDocument()
+    expect(within(section).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Conta e país do endereço não combinam/)).not.toBeInTheDocument()
+  })
+
+  it('shows a problem the customer fixed', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { addressIssue: { ...addressIssue, open: false, resolved_by: 'customer', resolved_at: '2026-11-05T13:00:00.000Z' } })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    expect(await screen.findByText('Cliente corrigiu em 05/11')).toBeInTheDocument()
+    expect(screen.queryByText('Falta o bairro')).not.toBeInTheDocument()
+  })
+
+  it('has no address problem section without a problem', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await screen.findByText('ana@edenbowls.com')
+    expect(screen.queryByRole('heading', { name: 'Problema de endereço' })).not.toBeInTheDocument()
   })
 
   it('loads subscription detail and POSTs invoice sync', async () => {
@@ -110,6 +150,32 @@ describe('SubscriptionDetailPage', () => {
 
     expect(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' })).toBeDisabled()
     expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/shipments'))).toBe(false)
+  })
+
+  it('a single purchase refused as a market exception says so and lists no label', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'US',
+      paidCycles: [cycle('in_test_1')],
+      routes: ({ path, method }) => (/\/shipments$/.test(path) && method === 'POST'
+        ? new Response(JSON.stringify({ message: 'Crossed', code: 'shipment_market_exception', details: { code: 'shipment_market_exception' } }), { status: 422, headers: { 'Content-Type': 'application/json' } })
+        : undefined),
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
+    expect(await screen.findByText(/Conta e país do endereço não combinam: esta assinatura não sai por nenhum mercado/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '1Z999AA10123456784' })).not.toBeInTheDocument()
+  })
+
+  it('names a market exception among the label issues', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US', labelIssues: [{ code: 'shipment_market_exception' }], paidCycles: [cycle('in_test_1')] })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const warning = await screen.findByRole('alert', { name: 'Etiqueta bloqueada' })
+    expect(warning).toHaveTextContent('Conta e país do endereço não combinam')
   })
 
   it('prints the label and links the tracking with its status', async () => {

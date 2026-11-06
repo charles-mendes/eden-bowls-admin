@@ -244,6 +244,22 @@ describe('LabelQueuePage', () => {
     expect(confirm).not.toHaveBeenCalled()
   })
 
+  it('a ready row shows its address problem and the email state', async () => {
+    install(operatorUsWriteUser, {
+      queue: {
+        ready: [order(1, { issues: [{ code: 'po_box_not_allowed' }], address_issue: { id: 3, codes: ['po_box_not_allowed'], source: 'ups_check', open: true, opened_at: new Date().toISOString(), email_sent_at: null, resolved_at: null, resolved_by: null } })],
+        unresolved: [],
+        created: [],
+        truncated: false,
+      },
+    })
+    render()
+
+    const row = (await screen.findByText('Cliente 1')).closest('tr') as HTMLElement
+    expect(within(row).getByText('E-mail não enviado')).toBeInTheDocument()
+    expect(within(row).getByText(/PO Box/)).toBeInTheDocument()
+  })
+
   it('blocked and unresolved orders cannot be selected and link to the subscription', async () => {
     install(operatorUsWriteUser, {
       queue: {

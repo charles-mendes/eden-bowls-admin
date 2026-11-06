@@ -1,3 +1,4 @@
+import { type AddressIssue } from './addressIssues'
 import { formatDate } from './format'
 
 export type NfeStatus = 'pending' | 'blocked_missing_document' | 'submitted' | 'authorized' | 'rejected' | 'canceled' | 'error'
@@ -60,6 +61,19 @@ export type NfeDetail = NfeSummary & {
   next_attempt_at: string | null
   submitted_at: string | null
   updated_at: string | null
+  // What keeps a blocked note from leaving (nfe-admin): `tax_document`, `fiscal_name`.
+  missing_fields?: string[]
+  // delivery-address-issues: what the customer was told about the subscription of this note.
+  address_issue?: AddressIssue | null
+}
+
+const MISSING_FIELD_LABELS: Record<string, string> = {
+  tax_document: 'CPF',
+  fiscal_name: 'Nome fiscal',
+}
+
+export function missingFieldLabel(field: string): string {
+  return MISSING_FIELD_LABELS[field] ?? field
 }
 
 export type NfeListResponse = {

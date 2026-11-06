@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState, type KeyboardEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CopyButton } from '../components/CopyButton'
 import { CustomerContact } from '../components/CustomerContact'
+import { AddressIssueStatus } from '../components/AddressIssueStatus'
+import { issueCodeText } from '../lib/addressIssues'
 import { PageFrame } from '../components/PageFrame'
 import {
   CourierDispatchDialog,
@@ -205,7 +207,15 @@ export function CourierDeliveriesPage() {
             {items.map((item) => (
               <tr key={`${tab}-${item.invoice_id}`}>
                 <td><RecipientCell item={item} details={tab !== 'delivered'} /></td>
-                <td><AddressCell item={item} /></td>
+                <td>
+                  <AddressCell item={item} />
+                  {item.issues?.length ? (
+                    <ul className="plain-list address-issues" aria-label={`O que falta no endereço de ${itemName(item)}`}>
+                      {item.issues.map((code) => <li key={code}>{issueCodeText(code)}</li>)}
+                    </ul>
+                  ) : null}
+                  <AddressIssueStatus issue={item.address_issue} />
+                </td>
                 <td>{formatDay(item.delivery_date)}</td>
                 <td>{productionLabel(item.production_status)}</td>
                 <td>{subscriptionStatusLabel(item.subscription_status)}</td>
@@ -223,7 +233,8 @@ export function CourierDeliveriesPage() {
                 </td>
                 <td>
                   <div className="inline-actions">
-                    {canWrite && (tab === 'to_dispatch' || tab === 'failed') ? (
+                    {/* A lock, not a warning: a row with an address problem has no way to leave. */}
+                    {canWrite && (tab === 'to_dispatch' || tab === 'failed') && !item.issues?.length ? (
                       <button type="button" className="primary-button" onClick={() => setDispatching(item)}>
                         {tab === 'failed' ? 'Despachar de novo' : 'Despachar'}
                       </button>
@@ -238,12 +249,12 @@ export function CourierDeliveriesPage() {
                         onEdit={(delivery) => setEditing({ item, delivery })}
                       />
                     ) : null}
-                    {tab === 'out_for_delivery' || tab === 'failed' ? (
+                    {tab === 'out_for_delivery' || tab === 'failed' || item.issues?.length ? (
                       <CustomerContact
                         subscriptionId={item.subscription_id}
                         name={itemName(item)}
                         phone={item.phone}
-                        reason={tab === 'failed' ? 'delivery_failed' : undefined}
+                        reason={item.issues?.length ? 'address' : (tab === 'failed' ? 'delivery_failed' : undefined)}
                         showLast={false}
                       />
                     ) : null}

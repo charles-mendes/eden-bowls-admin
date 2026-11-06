@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CourierDeliveriesPage } from './CourierDeliveriesPage'
-import { operatorWriteUser, readonlyUser, operatorUsUser } from '../test/fixtures'
+import { addressIssue, operatorWriteUser, readonlyUser, operatorUsUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -105,6 +105,46 @@ describe('CourierDeliveriesPage', () => {
 
     await waitFor(() => expect(posts(calls, '/1/courier-deliveries')).toHaveLength(2))
     expect(posts(calls, '/1/courier-deliveries')[1].body).toMatchObject({ confirm_not_ready: true })
+  })
+
+  it('a row with an address problem says what is missing, offers no Despachar and shows the email state', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-07T15:00:00Z'))
+    install(operatorWriteUser, {
+      queue: {
+        to_dispatch: [item(1, { issues: ['address_number_missing'], address_issue: { ...addressIssue, codes: ['address_number_missing'] } }), item(2)],
+        out_for_delivery: [],
+        failed: [],
+        delivered: [],
+        truncated: false,
+      },
+    })
+    render()
+
+    const row = (await screen.findByText('Cliente 1')).closest('tr') as HTMLElement
+    expect(within(row).getByText('Falta o número')).toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: 'Despachar' })).not.toBeInTheDocument()
+    expect(within(row).getByText('E-mail enviado em 03/11')).toBeInTheDocument()
+    expect(within(row).getByText('Sem correção há 4 dias')).toBeInTheDocument()
+    expect(within(row).getByRole('button', { name: 'Registrar contato' })).toBeInTheDocument()
+    const other = screen.getByText('Cliente 2').closest('tr') as HTMLElement
+    expect(within(other).getByRole('button', { name: 'Despachar' })).toBeInTheDocument()
+    vi.useRealTimers()
+  })
+
+  it.each([
+    [{ code: 'courier_address_incomplete', details: { code: 'courier_address_incomplete', issues: ['address_neighborhood_missing'] } }, 'O endereço não serve para a entrega: falta o bairro. Nada foi despachado.'],
+    [{ code: 'shipment_market_exception', details: { code: 'shipment_market_exception' } }, 'Conta e país do endereço não combinam'],
+  ])('explains a dispatch refused by the API (%#)', async (body, text) => {
+    const user = userEvent.setup()
+    const { calls } = install(operatorWriteUser, { dispatch: [{ status: 422, body: { message: 'Refused', ...body } }] })
+    render()
+
+    await user.click(await screen.findByRole('button', { name: 'Despachar' }))
+    await user.click(await screen.findByRole('button', { name: 'Registrar saída' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Despachar entrega' })
+    expect(await within(dialog).findByText(new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))).toBeInTheDocument()
+    expect(posts(calls, '/courier-deliveries')).toHaveLength(1)
   })
 
   it('marks a delivery failed with a kind and a reason, both required', async () => {

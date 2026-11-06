@@ -9,7 +9,9 @@ import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
 import { printLabels } from '../lib/printLabel'
 import { PRODUCTION_STATUS_LABELS, isProductionStatus } from '../lib/productionQueue'
 import { readinessText, type ReadinessReason } from '../lib/courierDeliveries'
-import { labelIssueText, type LabelIssue } from '../lib/upsLabels'
+import { labelIssueText, labelRefusalText, type LabelIssue } from '../lib/upsLabels'
+import { AddressIssueStatus } from '../components/AddressIssueStatus'
+import { type AddressIssue } from '../lib/addressIssues'
 
 type QueueShipment = { id: string | number; status: string; tracking_number: string | null; has_label: boolean }
 
@@ -25,6 +27,8 @@ type QueueItem = {
   delivery_date: string | null
   shipment: QueueShipment | null
   issues?: LabelIssue[]
+  // delivery-address-issues: on ready rows, the subscription's problem and the email state.
+  address_issue?: AddressIssue | null
 }
 
 type QueueData = { ready: QueueItem[]; unresolved: QueueItem[]; created: QueueItem[]; truncated: boolean }
@@ -156,6 +160,9 @@ export function LabelQueuePage() {
         const reasons = requestError.details?.reasons
         return { kind: 'needs_confirmation', reasons: Array.isArray(reasons) ? reasons as ReadinessReason[] : [] }
       }
+      if (requestError instanceof ApiRequestError) {
+        return { kind: 'failed', reason: labelRefusalText(requestError.code, requestError.message) }
+      }
       return { kind: 'failed', reason: requestError instanceof Error ? requestError.message : 'erro desconhecido' }
     }
   }
@@ -243,6 +250,7 @@ export function LabelQueuePage() {
         <td>{formatDay(item.delivery_date)}</td>
         <td>
           {blocked.map((issue) => <div key={issue.code} className="muted" role="note">{labelIssueText(issue)}</div>)}
+          <AddressIssueStatus issue={item.address_issue} />
           {outcome ? <div data-testid={`outcome-${item.invoice_id}`}>{outcomeText(outcome)}</div> : null}
         </td>
         <td>

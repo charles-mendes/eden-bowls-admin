@@ -10,7 +10,7 @@ Lote 3 da proposta de melhorias do painel (`docs/analise/proposta-melhorias.md`,
 - **Trava do courier (PM-22).**
   - **Antes do clique.** Em "A despachar" e "Falhas", a linha com `issues` mostra o que falta no endereço, e "Despachar" fica indisponível. Não há "despachar mesmo assim".
   - **Recusa da API.** `422 courier_address_incomplete` e `422 shipment_market_exception` ganham texto próprio em `courierErrorText`.
-- **Etiquetas UPS.** O motivo novo `shipment_market_exception` ganha texto em `labelIssueText`.
+- **Etiquetas UPS.** O motivo novo `shipment_market_exception` ganha texto em `labelIssueText`. O texto aparece na compra avulsa e nos `label_issues` do detalhe da assinatura. A fila não lista o par cruzado, que fica só na página de exceções.
 - **Problema de endereço (PM-24).**
   - **Onde.** As linhas do courier e das etiquetas, o detalhe da assinatura e o detalhe da NF-e.
   - **Estado.** Mostra "E-mail enviado em dd/mm", "E-mail não enviado", "Cliente corrigiu em dd/mm" ou "Sem correção há N dias".

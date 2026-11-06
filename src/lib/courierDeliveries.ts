@@ -1,4 +1,5 @@
 import { ApiRequestError } from './api'
+import { issueCodeText, type AddressIssue } from './addressIssues'
 import { PRODUCTION_STATUS_LABELS, isProductionStatus } from './productionQueue'
 
 // Brazil courier deliveries (courier-delivery): recorded by hand, no courier API.
@@ -42,6 +43,10 @@ export type CourierQueueItem = {
   production_status: string | null
   subscription_status: string | null
   delivery: CourierDelivery | null
+  // Under "A despachar" and "Falhas": what the courier lock finds missing (courier-delivery). Not empty means
+  // the box cannot leave.
+  issues?: string[]
+  address_issue?: AddressIssue | null
 }
 
 export type CourierAddress = {
@@ -145,6 +150,7 @@ const ERROR_TEXT: Record<string, string> = {
   courier_delivery_final: 'Esta entrega já foi encerrada por outra pessoa. A lista foi atualizada.',
   courier_delivery_active: 'Esta fatura já tem uma entrega em rota ou entregue.',
   courier_country_not_supported: 'Esta assinatura não entrega no Brasil.',
+  shipment_market_exception: 'Conta e país do endereço não combinam: esta assinatura não sai por nenhum mercado. Veja Exceções de mercado.',
   invoice_not_paid: 'A fatura ainda não foi paga.',
   invoice_not_delivery: 'Esta fatura não é uma entrega cobrada (ciclo pulado).',
   invoice_not_in_subscription: 'A fatura não pertence a esta assinatura.',
@@ -165,6 +171,12 @@ export function courierErrorText(error: unknown): string {
   if (error instanceof ApiRequestError) {
     const field = typeof error.details?.field === 'string' ? error.details.field : ''
     if (field && FIELD_TEXT[field]) return FIELD_TEXT[field]
+    if (error.code === 'courier_address_incomplete') {
+      const listed = error.details?.issues
+      const issues = Array.isArray(listed) ? listed.map(String) : []
+      const missing = issues.length ? `: ${issues.map(issueCodeText).join(', ').toLowerCase()}` : ''
+      return `O endereço não serve para a entrega${missing}. Nada foi despachado. O cliente corrige em Meu plano, na loja.`
+    }
     if (ERROR_TEXT[error.code]) return ERROR_TEXT[error.code]
   }
   return error instanceof Error ? error.message : 'Falha ao salvar a entrega'
