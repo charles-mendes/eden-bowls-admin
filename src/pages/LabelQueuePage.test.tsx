@@ -2,7 +2,8 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LabelQueuePage } from './LabelQueuePage'
-import { addressIssue, operatorUsWriteUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { addressIssue, operatorUsWriteUser, operatorWriteUser, readonlyUser, upsPickupRequested } from '../test/fixtures'
+import { LABELS_TIMEZONE, todayIn } from '../lib/deliveryRange'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -351,5 +352,218 @@ describe('LabelQueuePage', () => {
     expect(await screen.findByText(/Esta tela é do mercado Estados Unidos e sua conta não trabalha nele/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Voltar para Hoje' })).toHaveAttribute('href', '/dashboard')
     expect(calls.some((call) => call.path === '/api/v1/admin/shipments/queue')).toBe(false)
+  })
+})
+
+// admin-flow-fixes-6 (ups-pickup, PM-28 option B): the day's pickup is asked of UPS from the label queue.
+describe('LabelQueuePage pickup', () => {
+  const withPickup = (n: number, pickup: Record<string, unknown> | null) => ({ ...created(n), pickup })
+  type PickupRoute = { status: number; body: unknown }
+
+  function installPickup(user = operatorUsWriteUser, {
+    createdItems = [created(1), created(2)].map((item) => ({ ...item, pickup: null })) as Array<Record<string, unknown>>,
+    pickups = [] as Array<Record<string, unknown>>,
+    post = { status: 200, body: { success: true, data: { pickup: { ...upsPickupRequested } } } } as PickupRoute,
+    action = { status: 200, body: { success: true, data: {} } } as PickupRoute,
+  } = {}) {
+    return installAdminFetchMock(user, {
+      upsPickups: pickups,
+      routes: ({ path, method }) => {
+        if (path === '/api/v1/admin/shipments/queue' && method === 'GET') {
+          return json(200, { success: true, data: { ready: [], unresolved: [], created: createdItems, truncated: false } })
+        }
+        if (path === '/api/v1/admin/shipments/pickups' && method === 'POST') return json(post.status, post.body)
+        if (/^\/api\/v1\/admin\/shipments\/pickups\/\d+\/(cancel|not-created)$/.test(path) && method === 'POST') return json(action.status, action.body)
+        return undefined
+      },
+    })
+  }
+
+  const section = async () => within(await screen.findByRole('heading', { name: 'Coleta' }).then((heading) => heading.closest('section') as HTMLElement))
+  const pickupPosts = (calls: Array<{ method: string; path: string; body?: unknown }>) => calls.filter((call) => call.method === 'POST' && call.path.startsWith('/api/v1/admin/shipments/pickups'))
+
+  beforeEach(() => {
+    seedAuth()
+  })
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllGlobals()
+  })
+
+  it('Monday with eight boxes: the eight labels are selected and the count is 8', async () => {
+    installPickup(operatorUsWriteUser, { createdItems: Array.from({ length: 8 }, (_, index) => withPickup(index + 1, null)) })
+    render()
+
+    const coleta = await section()
+    await waitFor(() => expect(coleta.getAllByRole('checkbox', { name: /na coleta$/ })).toHaveLength(8))
+    for (const box of coleta.getAllByRole('checkbox', { name: /na coleta$/ })) expect(box).toBeChecked()
+    expect(coleta.getByRole('spinbutton', { name: 'Caixas' })).toHaveValue(8)
+  })
+
+  it('Requested: confirms, sends the body and shows the PRN', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('confirm', confirm)
+    const { calls } = installPickup()
+    render()
+
+    const coleta = await section()
+    await user.click(await coleta.findByRole('button', { name: 'Pedir coleta à UPS' }))
+
+    expect(await coleta.findByText('Coleta pedida. PRN 2929602E9CP.')).toBeInTheDocument()
+    expect(confirm.mock.calls[0][0]).toMatch(/^Pedir coleta à UPS para \d{2}\/\d{2}, das 14:00 às 18:00, com 2 caixas \(2 etiquetas\)\?$/)
+    expect(pickupPosts(calls)[0].body).toEqual({
+      pickup_date: todayIn(LABELS_TIMEZONE),
+      ready_time: '14:00',
+      close_time: '18:00',
+      package_count: 2,
+      shipment_ids: [101, 102],
+    })
+  })
+
+  it('a count the operator typed does not follow the selection', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const { calls } = installPickup()
+    render()
+
+    const coleta = await section()
+    const boxes = await coleta.findByRole('spinbutton', { name: 'Caixas' })
+    await user.clear(boxes)
+    await user.type(boxes, '1')
+    await user.click(coleta.getByRole('checkbox', { name: 'Incluir Cliente 2 na coleta' }))
+    expect(boxes).toHaveValue(1)
+    await user.click(coleta.getByRole('checkbox', { name: 'Incluir Cliente 2 na coleta' }))
+    await user.click(coleta.getByRole('button', { name: 'Pedir coleta à UPS' }))
+
+    await waitFor(() => expect(pickupPosts(calls)).toHaveLength(1))
+    expect(pickupPosts(calls)[0].body).toMatchObject({ package_count: 1, shipment_ids: [101, 102] })
+  })
+
+  it('Box already scanned: a label UPS read in transit is not listed', async () => {
+    const scanned = { ...withPickup(2, null), shipment: { id: 102, status: 'created', tracking_number: '1Z2', has_label: true, in_transit_at: '2026-11-09T18:00:00Z' } }
+    installPickup(operatorUsWriteUser, { createdItems: [withPickup(1, null), scanned] })
+    render()
+
+    const coleta = await section()
+    await waitFor(() => expect(coleta.getAllByRole('checkbox', { name: /na coleta$/ })).toHaveLength(1))
+    expect(coleta.queryByRole('checkbox', { name: 'Incluir Cliente 2 na coleta' })).not.toBeInTheDocument()
+  })
+
+  it('Fewer boxes than labels: the confirmation says both', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.fn().mockReturnValue(false)
+    vi.stubGlobal('confirm', confirm)
+    installPickup(operatorUsWriteUser, { createdItems: Array.from({ length: 15 }, (_, index) => withPickup(index + 1, null)) })
+    render()
+
+    const coleta = await section()
+    const boxes = await coleta.findByRole('spinbutton', { name: 'Caixas' })
+    await waitFor(() => expect(boxes).toHaveValue(15))
+    await user.clear(boxes)
+    await user.type(boxes, '14')
+    await user.click(coleta.getByRole('button', { name: 'Pedir coleta à UPS' }))
+
+    expect(confirm.mock.calls[0][0]).toContain('com 14 caixas (15 etiquetas)')
+  })
+
+  it('A pickup in progress shows "Pedindo à UPS" without actions', async () => {
+    installPickup(operatorUsWriteUser, { pickups: [{ ...upsPickupRequested, status: 'pending', prn: null }] })
+    render()
+
+    const coleta = await section()
+    expect(await coleta.findByText('Pedindo à UPS')).toBeInTheDocument()
+    expect(coleta.queryByRole('button', { name: 'Cancelar coleta' })).not.toBeInTheDocument()
+    expect(coleta.queryByRole('button', { name: 'Não foi criada' })).not.toBeInTheDocument()
+  })
+
+  it('Nothing to collect', async () => {
+    installPickup(operatorUsWriteUser, { createdItems: [withPickup(1, { id: 31, pickup_date: '2026-11-09', status: 'requested', prn: 'X' })] })
+    render()
+
+    const coleta = await section()
+    expect(await coleta.findByText('Nenhuma etiqueta sem coleta.')).toBeInTheDocument()
+    expect(coleta.queryByRole('button', { name: 'Pedir coleta à UPS' })).not.toBeInTheDocument()
+  })
+
+  it('Read-only staff see the labels and pickups without the form or the actions', async () => {
+    installPickup({ ...readonlyUser, markets: ['US'] }, { pickups: [upsPickupRequested] })
+    render()
+
+    const coleta = await section()
+    expect(await coleta.findByText('Cliente 1 · 1Z1')).toBeInTheDocument()
+    expect(await coleta.findByText('2929602E9CP')).toBeInTheDocument()
+    expect(coleta.queryByRole('button', { name: 'Pedir coleta à UPS' })).not.toBeInTheDocument()
+    expect(coleta.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(coleta.queryByRole('button', { name: 'Cancelar coleta' })).not.toBeInTheDocument()
+  })
+
+  it('Phone missing: says what UPS needs and links to the shipping settings', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    installPickup(operatorUsWriteUser, { post: { status: 422, body: { message: 'No.', details: { code: 'pickup_ship_from_incomplete', missing: ['phone'] } } } })
+    render()
+
+    const coleta = await section()
+    await user.click(await coleta.findByRole('button', { name: 'Pedir coleta à UPS' }))
+
+    expect(await coleta.findByText(/O telefone da sede dos EUA está faltando ou curto/)).toBeInTheDocument()
+    expect(coleta.getByRole('link', { name: 'Abrir Configurações > Frete' })).toHaveAttribute('href', '/config/shipping?aba=sede&mercado=us')
+  })
+
+  it('No UPS answer: shows the text and reloads', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const { calls } = installPickup(operatorUsWriteUser, { post: { status: 502, body: { message: 'No.', details: { code: 'pickup_unconfirmed', pickup_id: 31 } } } })
+    render()
+
+    const coleta = await section()
+    await user.click(await coleta.findByRole('button', { name: 'Pedir coleta à UPS' }))
+
+    expect(await coleta.findByText('A UPS não confirmou a coleta. Confira no portal da UPS antes de pedir de novo.')).toBeInTheDocument()
+    await waitFor(() => expect(queueCalls(calls)).toHaveLength(2))
+    expect(calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/admin/shipments/pickups').length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('Cancel: confirms and calls the cancel route', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))
+    const { calls } = installPickup(operatorUsWriteUser, { pickups: [upsPickupRequested] })
+    render()
+
+    const coleta = await section()
+    await user.click(await coleta.findByRole('button', { name: 'Cancelar coleta' }))
+
+    await waitFor(() => expect(pickupPosts(calls).map((call) => call.path)).toEqual(['/api/v1/admin/shipments/pickups/31/cancel']))
+    expect(await coleta.findByText('Coleta cancelada na UPS.')).toBeInTheDocument()
+  })
+
+  it('Checked on the portal: an unknown pickup closes as not created', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('confirm', confirm)
+    const { calls } = installPickup(operatorUsWriteUser, { pickups: [{ ...upsPickupRequested, status: 'unknown', prn: null }] })
+    render()
+
+    const coleta = await section()
+    expect(await coleta.findByText('Verificar no portal da UPS')).toBeInTheDocument()
+    expect(coleta.queryByRole('button', { name: 'Cancelar coleta' })).not.toBeInTheDocument()
+    await user.click(coleta.getByRole('button', { name: 'Não foi criada' }))
+
+    expect(confirm.mock.calls[0][0]).toMatch(/Confira no portal da UPS/)
+    await waitFor(() => expect(pickupPosts(calls).map((call) => call.path)).toEqual(['/api/v1/admin/shipments/pickups/31/not-created']))
+  })
+
+  it('A created label shows its pickup or "Sem coleta"', async () => {
+    installPickup(operatorUsWriteUser, {
+      createdItems: [
+        withPickup(1, { id: 31, pickup_date: '2026-11-09', status: 'requested', prn: '2929602E9CP' }),
+        withPickup(2, null),
+      ],
+    })
+    render()
+
+    expect(await screen.findByText('Coleta pedida para 09/11 · PRN 2929602E9CP')).toBeInTheDocument()
+    expect(screen.getByText('Sem coleta')).toBeInTheDocument()
   })
 })

@@ -165,6 +165,8 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   // The subscription detail's shipping market (shipment-market) and address problem (delivery-address-issues).
   marketException?: boolean
   addressIssue?: Record<string, unknown> | null
+  // ups-pickup: the pickups GET /admin/shipments/pickups returns.
+  upsPickups?: Array<Record<string, unknown>>
   // Answered before the fixed routes; return undefined to fall through.
   routes?: (call: FetchCall) => Response | undefined
 } = {}) {
@@ -927,6 +929,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
           closedDays: todayOverview.closedDays.filter((day) => inScope(day.market)),
         },
       })
+    }
+
+    if (path === '/api/v1/admin/shipments/pickups' && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: options.upsPickups ?? [], from: '2026-11-02' } })
     }
 
     if (path === '/api/v1/admin/shipping/settings' && method === 'GET') {

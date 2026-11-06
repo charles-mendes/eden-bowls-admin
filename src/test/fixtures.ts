@@ -662,6 +662,7 @@ export const shippingSettings = {
           state: 'FL',
           zipcode: '33101',
           country: 'US',
+          phone: '305 555 0100',
         },
         package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12 },
         allowed_service_codes: ['03'],
@@ -879,4 +880,17 @@ export const marketExceptionItem = {
   address_country: 'US',
   customer: { id: 7, email: 'ana@example.com', name: 'Ana Costa' },
   open_paid_cycles: 1,
+}
+
+// ups-pickup: a pickup UPS confirmed, as GET /admin/shipments/pickups lists it.
+export const upsPickupRequested = {
+  id: 31,
+  pickup_date: '2026-11-09',
+  ready_time: '14:00',
+  close_time: '18:00',
+  package_count: 8,
+  status: 'requested',
+  prn: '2929602E9CP',
+  shipment_ids: [101, 102],
+  requested_by: 'ops@edenbowls.com',
 }

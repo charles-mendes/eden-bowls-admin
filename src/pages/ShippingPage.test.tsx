@@ -122,6 +122,39 @@ describe('ShippingPage', () => {
     expect(within(card).getByRole('button', { name: 'Salvar sede' })).toBeDisabled()
   })
 
+  // admin-flow-fixes-6 (ups-pickup): UPS asks for the phone of the US location on the pickup.
+  it('saves the US location phone', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(adminUser, {
+      routes: ({ path, method }) => (path === '/api/v1/admin/shipping/headquarters/validate' && method === 'POST'
+        ? new Response(JSON.stringify({ success: true, data: { valid: true, country: 'US', address: {}, errors: {}, warnings: [] } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        : undefined),
+    })
+    renderAuthedPage(<ShippingPage />, '/config/shipping?aba=sede&mercado=us', '/config/shipping')
+
+    const card = await screen.findByRole('article', { name: 'Sede Estados Unidos' })
+    await user.click(within(card).getByRole('button', { name: 'Alterar endereço' }))
+    expect(within(card).getByText('A UPS pede o telefone para buscar as caixas.')).toBeInTheDocument()
+    expect(within(card).getByLabelText(/^Telefone/)).toHaveValue('305 555 0100')
+    await user.clear(within(card).getByLabelText(/^Telefone/))
+    await user.type(within(card).getByLabelText(/^Telefone/), '555 0100')
+    expect(within(card).getByText('O telefone precisa de 10 dígitos (código de área e número).')).toBeInTheDocument()
+    await user.click(within(card).getByRole('button', { name: 'Validar endereço' }))
+    await waitFor(() => expect(within(card).getByText('Endereço válido')).toBeInTheDocument())
+    expect(within(card).getByRole('button', { name: 'Salvar sede' })).toBeDisabled()
+    await user.clear(within(card).getByLabelText(/^Telefone/))
+    await user.type(within(card).getByLabelText(/^Telefone/), '305 555 0199')
+    await user.click(within(card).getByRole('button', { name: 'Validar endereço' }))
+    await waitFor(() => expect(within(card).getByRole('button', { name: 'Salvar sede' })).toBeEnabled())
+    await user.click(within(card).getByRole('button', { name: 'Salvar sede' }))
+
+    await waitFor(() => {
+      const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
+      expect(put?.body).toMatchObject({ us: { ship_from: { phone: '305 555 0199', street: '100 Main St', country: 'US' } } })
+    })
+  })
+
   it('shows only the UPS fields in UPS mode and simulates with the saved rules', async () => {
     const user = userEvent.setup()
     seedAuth()

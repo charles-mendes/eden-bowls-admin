@@ -359,6 +359,46 @@ describe('DashboardPage', () => {
     expect(work.queryByText('Bling desconectado')).not.toBeInTheDocument()
   })
 
+  // admin-flow-fixes-6 (ups-pickup): created labels with no pickup asked of UPS.
+  it('says how many US labels have no pickup, linking to the pickup section', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUsUser, { routes: withToday({ fulfillment: { ...zero, upsLabelsWithoutPickup: 3 } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    expect(within(work.getByText('3 etiquetas sem coleta pedida').closest('li') as HTMLElement).getByRole('link')).toHaveAttribute('href', '/operations/labels#coleta')
+  })
+
+  it('uses the singular for one label without a pickup', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUsUser, { routes: withToday({ fulfillment: { ...zero, upsLabelsWithoutPickup: 1 } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    expect(await screen.findByText('1 etiqueta sem coleta pedida')).toBeInTheDocument()
+  })
+
+  it('shows no pickup item at zero, when absent, or with Brazil on screen', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(adminUser, { routes: withToday({ fulfillment: { ...zero, upsLabelsWithoutPickup: 3, courierToDispatch: 1 } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    expect(await screen.findByText('3 etiquetas sem coleta pedida')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Brasil' }))
+    await waitFor(() => expect(screen.queryByText(/sem coleta pedida/)).not.toBeInTheDocument())
+  })
+
+  it('shows no pickup item when the count is zero or the API has none', async () => {
+    seedAuth()
+    const older: Record<string, unknown> = { ...zero }
+    delete older.upsLabelsWithoutPickup
+    installAdminFetchMock(operatorUsUser, { routes: withToday({ fulfillment: { ...older, upsUnresolved: 1 } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    expect(await screen.findByText('1 compra UPS sem confirmação')).toBeInTheDocument()
+    expect(screen.queryByText(/sem coleta pedida/)).not.toBeInTheDocument()
+  })
+
   // admin-flow-fixes-5 (PM-26): address problems and market exceptions per market.
   it('counts the open address problems and the market exceptions of the market on screen', async () => {
     seedAuth()

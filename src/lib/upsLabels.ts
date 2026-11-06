@@ -38,3 +38,76 @@ export function labelIssueText(issue: LabelIssue): string {
       return `Etiqueta bloqueada: ${issue.code}.`
   }
 }
+
+// ups-pickup: the pickup a created label belongs to, as the label queue returns it.
+export type QueuePickup = { id: number; pickup_date: string; status: 'pending' | 'requested' | 'unknown'; prn: string | null }
+
+export type UpsPickupStatus = 'pending' | 'requested' | 'unknown' | 'canceled' | 'not_created'
+
+export type UpsPickup = {
+  id: number
+  pickup_date: string
+  ready_time: string
+  close_time: string
+  package_count: number
+  status: UpsPickupStatus
+  prn: string | null
+  shipment_ids: number[]
+  requested_by: string | null
+}
+
+export const PICKUP_STATUS_LABELS: Record<UpsPickupStatus, string> = {
+  pending: 'Pedindo à UPS',
+  requested: 'Pedida',
+  unknown: 'Sem confirmação da UPS',
+  canceled: 'Cancelada',
+  not_created: 'Não foi criada',
+}
+
+// "2026-11-09" → "09/11", read as a calendar day, without a time zone.
+export function pickupDay(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''))
+  return match ? `${match[3]}/${match[2]}` : '—'
+}
+
+// The pickup line of a created label.
+export function pickupLabel(pickup: QueuePickup | null | undefined): string {
+  if (!pickup) return 'Sem coleta'
+  if (pickup.status === 'unknown') return 'Coleta sem confirmação da UPS'
+  if (pickup.status === 'pending') return 'Coleta sendo pedida à UPS'
+  return `Coleta pedida para ${pickupDay(pickup.pickup_date)}${pickup.prn ? ` · PRN ${pickup.prn}` : ''}`
+}
+
+// The text of a refused pickup request, cancel or close; the API message for a code not listed.
+// `missing` comes with pickup_ship_from_incomplete: the ship-from fields UPS needs.
+export function pickupErrorText(code: string, fallback: string, missing: string[] = []): string {
+  if (code === 'pickup_ship_from_incomplete' && missing.length === 1 && missing[0] === 'phone') {
+    return 'O telefone da sede dos EUA está faltando ou curto. A UPS precisa de 10 dígitos (código de área e número) para buscar as caixas.'
+  }
+  switch (code) {
+    case 'pickup_date_not_allowed':
+      return 'Não há coleta da UPS nesse dia. Escolha hoje ou o próximo dia útil sem fechamento no calendário.'
+    case 'pickup_window_invalid':
+      return 'Janela inválida: use HH:MM e um horário de fechamento depois do início.'
+    case 'pickup_count_invalid':
+      return 'A quantidade de caixas precisa ser um número inteiro a partir de 1.'
+    case 'pickup_shipments_required':
+      return 'Marque as etiquetas que entram na coleta.'
+    case 'pickup_shipment_not_eligible':
+      return 'Alguma etiqueta já está em outra coleta ou não está mais criada. A lista foi atualizada; confira e peça de novo.'
+    case 'pickup_ship_from_incomplete':
+      return 'A UPS precisa do endereço e do telefone da sede dos EUA para buscar as caixas.'
+    case 'pickup_unconfirmed':
+      return 'A UPS não confirmou a coleta. Confira no portal da UPS antes de pedir de novo.'
+    case 'pickup_not_cancelable':
+      return 'Só uma coleta pedida pode ser cancelada.'
+    case 'pickup_not_unknown':
+      return 'Só uma coleta sem confirmação da UPS pode ser fechada como não criada.'
+    case 'ups_simulation_only':
+      return 'A UPS deste ambiente só simula: não pede nem cancela coleta.'
+    case 'ups_not_configured':
+      return 'As credenciais da UPS não estão configuradas na API.'
+    default:
+      return fallback
+  }
+}

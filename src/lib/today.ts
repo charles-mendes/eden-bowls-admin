@@ -39,6 +39,8 @@ export type Fulfillment = {
   nfeRejected: number
   nfeError: number
   upsUnresolved: number
+  // ups-pickup: created US labels with no pickup asked of UPS and no tracking scan. Absent on an older API.
+  upsLabelsWithoutPickup?: number
   // null when the user cannot see Bling or it is not configured.
   blingConnected: boolean | null
   // admin-flow-fixes-5: open address problems (stale = open 72 h or more) and market exceptions, per market.
@@ -69,6 +71,7 @@ export type TodayOverview = {
 }
 
 export const UPS_CHECK_PATH = '/operations/labels#verificar-ups'
+export const UPS_PICKUP_PATH = '/operations/labels#coleta'
 
 export type Tone = 'error' | 'warning' | 'info' | 'success'
 

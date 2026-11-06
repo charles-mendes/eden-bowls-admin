@@ -20,6 +20,8 @@ export type UsShipFrom = {
   state: string
   zipcode: string
   country: string
+  // UPS asks for it on the pickup (ups-pickup); a label buys without it.
+  phone: string
 }
 
 export type ShippingSettings = {
@@ -116,7 +118,7 @@ export const emptySettings = (): ShippingSettings => ({
     label: 'FedEx 3–5 business days',
     quote_mode: 'fixed',
     fallback_enabled: true,
-    ship_from: { name: '', street: '', street2: '', city: '', state: '', zipcode: '', country: 'US' },
+    ship_from: { name: '', street: '', street2: '', city: '', state: '', zipcode: '', country: 'US', phone: '' },
     package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12 },
     allowed_service_codes: ['03'],
     max_transit_days: 1,
@@ -150,6 +152,14 @@ export function mergeSettings(input: Partial<ShippingSettings> | undefined): Shi
 export function brHeadquartersReady(center: BrCenter) {
   return Boolean(center.zipcode && center.street && center.city && (center.lat !== 0 || center.lng !== 0))
 }
+
+// The US phone UPS takes on the pickup: empty, or 10 digits at least (the API rule).
+export function usPhoneInvalid(phone: string | undefined) {
+  const digits = String(phone || '').replace(/\D/g, '')
+  return digits.length > 0 && digits.length < 10
+}
+
+export const US_PHONE_INVALID_TEXT = 'O telefone precisa de 10 dígitos (código de área e número).'
 
 export function usHeadquartersReady(shipFrom: UsShipFrom) {
   return Boolean(shipFrom.zipcode && shipFrom.street && shipFrom.city && shipFrom.state)

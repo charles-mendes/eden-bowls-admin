@@ -11,7 +11,7 @@ import { nfeListHref } from '../lib/nfe'
 import { getBrowserTimeZone } from '../lib/format'
 import { effectiveSessionMarkets } from '../lib/markets'
 import { plural, productionQueueHref, QUEUE_PATH, type QueueFilters } from '../lib/productionQueue'
-import { nextStep, UPS_CHECK_PATH, type Bucket, type ClosedDay, type Counts, type Fulfillment, type TodayItem, type TodayOverview, type Tone } from '../lib/today'
+import { nextStep, UPS_CHECK_PATH, UPS_PICKUP_PATH, type Bucket, type ClosedDay, type Counts, type Fulfillment, type TodayItem, type TodayOverview, type Tone } from '../lib/today'
 
 const MARKET_NAME = { BR: 'Brasil', US: 'EUA' } as const
 
@@ -97,6 +97,7 @@ function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'
   add(brazil, fulfillment.nfeRejected, 'nfe-rejected', 'NF-e rejeitada', 'NF-e rejeitadas', nfeListHref({ status: 'rejected' }), 'Abrir notas')
   add(brazil, fulfillment.nfeError, 'nfe-error', 'NF-e com erro', 'NF-e com erro', nfeListHref({ status: 'error' }), 'Abrir notas')
   add(us, fulfillment.upsUnresolved, 'ups-unresolved', 'compra UPS sem confirmação', 'compras UPS sem confirmação', UPS_CHECK_PATH, 'Verificar na UPS')
+  add(us, fulfillment.upsLabelsWithoutPickup ?? 0, 'ups-without-pickup', 'etiqueta sem coleta pedida', 'etiquetas sem coleta pedida', UPS_PICKUP_PATH, 'Pedir coleta')
   // PM-26: open address problems and market exceptions, per market on screen.
   const suffix = (market: 'BR' | 'US') => (markets.length > 1 ? ` (${MARKET_NAME[market]})` : '')
   for (const market of markets) {

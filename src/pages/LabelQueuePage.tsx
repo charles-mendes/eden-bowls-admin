@@ -9,7 +9,8 @@ import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
 import { printLabels } from '../lib/printLabel'
 import { PRODUCTION_STATUS_LABELS, isProductionStatus } from '../lib/productionQueue'
 import { readinessText, type ReadinessReason } from '../lib/courierDeliveries'
-import { labelIssueText, labelRefusalText, type LabelIssue } from '../lib/upsLabels'
+import { labelIssueText, labelRefusalText, pickupLabel, type LabelIssue, type QueuePickup } from '../lib/upsLabels'
+import { UpsPickupSection } from '../components/shipping/UpsPickupSection'
 import { AddressIssueStatus } from '../components/AddressIssueStatus'
 import { type AddressIssue } from '../lib/addressIssues'
 import { DeliveryRangeFilter } from '../components/shipping/DeliveryRangeFilter'
@@ -24,7 +25,7 @@ import {
   type DeliveryRangeInfo,
 } from '../lib/deliveryRange'
 
-type QueueShipment = { id: string | number; status: string; tracking_number: string | null; has_label: boolean }
+type QueueShipment = { id: string | number; status: string; tracking_number: string | null; has_label: boolean; in_transit_at?: string | null; out_for_delivery_at?: string | null }
 
 type QueueItem = {
   subscription_id: string
@@ -40,6 +41,8 @@ type QueueItem = {
   issues?: LabelIssue[]
   // delivery-address-issues: on ready rows, the subscription's problem and the email state.
   address_issue?: AddressIssue | null
+  // ups-pickup: on created rows, the active pickup of the label, or null.
+  pickup?: QueuePickup | null
 }
 
 type QueueData = { ready: QueueItem[]; unresolved: QueueItem[]; created: QueueItem[]; truncated: boolean } & DeliveryRangeInfo
@@ -145,11 +148,11 @@ export function LabelQueuePage() {
     void load()
   }, [load])
 
-  // Today links to #verificar-ups; the section only exists at its final place once the queue has loaded.
+  // Today links to #verificar-ups and #coleta; the sections only exist at their final place once the queue has loaded.
   const loaded = Boolean(data)
   useEffect(() => {
-    if (!loaded || hash !== '#verificar-ups') return
-    document.getElementById('verificar-ups')?.scrollIntoView?.({ block: 'start' })
+    if (!loaded || (hash !== '#verificar-ups' && hash !== '#coleta')) return
+    document.getElementById(hash.slice(1))?.scrollIntoView?.({ block: 'start' })
   }, [loaded, hash])
 
   const toggle = (invoiceId: string) => {
@@ -255,7 +258,7 @@ export function LabelQueuePage() {
     }
   }
 
-  const row = (item: QueueItem, selectable: boolean, blocked: LabelIssue[] = []) => {
+  const row = (item: QueueItem, selectable: boolean, blocked: LabelIssue[] = [], withPickup = false) => {
     const outcome = outcomes[item.invoice_id]
     return (
       <tr key={item.invoice_id}>
@@ -281,6 +284,7 @@ export function LabelQueuePage() {
         <td>
           {blocked.map((issue) => <div key={issue.code} className="muted" role="note">{labelIssueText(issue)}</div>)}
           <AddressIssueStatus issue={item.address_issue} />
+          {withPickup ? <div className="muted">{pickupLabel(item.pickup)}</div> : null}
           {outcome ? <div data-testid={`outcome-${item.invoice_id}`}>{outcomeText(outcome)}</div> : null}
         </td>
         <td>
@@ -364,8 +368,10 @@ export function LabelQueuePage() {
       </Section>
 
       <Section title="Etiquetas criadas" description="Ainda não entregues. Selecione para imprimir de novo.">
-        {table(data?.created ?? [], (item) => row(item, true), 'Nenhuma etiqueta aberta.')}
+        {table(data?.created ?? [], (item) => row(item, true, [], true), 'Nenhuma etiqueta aberta.')}
       </Section>
+
+      <UpsPickupSection token={token} canWrite={canBuy} labels={data ? data.created : null} onChanged={load} />
     </PageFrame>
   )
 }
