@@ -33,4 +33,4 @@ Rode só os testes relacionados (`npx vitest run <arquivo>`). Depende do backend
 
 ## 5. Fechamento
 
-- [ ] 5.1 `npm run contract:sync` com o backend do lote 6 e commitar `contracts/backend-routes.json`; `npx vitest run` nos arquivos alterados, `npm run lint` e `npx tsc --noEmit`.
+- [x] 5.1 `npm run contract:sync` com o backend do lote 6 e commitar `contracts/backend-routes.json`; `npx vitest run` nos arquivos alterados, `npm run lint` e `npx tsc --noEmit`.

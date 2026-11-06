@@ -60,6 +60,8 @@ For each market on screen, it MUST also list the open address problems of `addre
 
 When `courierAwaitingNfe` is above zero and Brazil is on screen, Today MUST show "N pedidos a despachar aguardando NF-e" ("1 pedido a despachar aguardando NF-e") linking to Entregas Brasil. It is part of "N pedidos a despachar", which MUST keep counting them; both items open "A despachar". When it is `null` or absent, it MUST NOT show.
 
+When `upsLabelsWithoutPickup` is above zero and the US is on screen, Today MUST show "N etiquetas sem coleta pedida" ("1 etiqueta sem coleta pedida") linking to `/operations/labels#coleta`. When it is zero or absent, it MUST NOT show.
+
 #### Scenario: Brazil morning
 
 - **WHEN** Today returns 3 to dispatch and 1 rejected NF-e for Brazil
@@ -104,6 +106,16 @@ When `courierAwaitingNfe` is above zero and Brazil is on screen, Today MUST show
 
 - **WHEN** Today returns `courierAwaitingNfe` null
 - **THEN** no "aguardando NF-e" item shows
+
+#### Scenario: Labels waiting for a pickup
+
+- **WHEN** Today returns `upsLabelsWithoutPickup` 3 with the US on screen
+- **THEN** it shows "3 etiquetas sem coleta pedida" linking to `/operations/labels#coleta`
+
+#### Scenario: Labels without pickup on the Brazil screen
+
+- **WHEN** an admin filters Today to Brazil and `upsLabelsWithoutPickup` is 3
+- **THEN** no pickup item shows
 
 ### Requirement: A ready Brazil order says where the box is
 
