@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CourierDeliveriesPage } from './CourierDeliveriesPage'
 import { addressIssue, operatorWriteUser, readonlyUser, operatorUsUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
+import { COURIER_TIMEZONE, nextSevenDays } from '../lib/deliveryRange'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -28,10 +29,10 @@ const delivery = (id: number, status: string, extra: Record<string, unknown> = {
   failed_at: null, failure_reason: null, canceled_at: null, ...extra,
 })
 
-type Queue = Record<'to_dispatch' | 'out_for_delivery' | 'failed' | 'delivered', unknown[]> & { truncated: boolean }
+type Queue = Record<'to_dispatch' | 'out_for_delivery' | 'failed' | 'delivered', unknown[]> & { truncated: boolean; range?: { from: string; to: string; default: boolean }; later?: number; next_from?: string | null }
 type Reply = { status: number; body: unknown }
 
-function install(user = operatorWriteUser, { queue, dispatch = [], actions = {} }: { queue?: Queue; dispatch?: Reply[]; actions?: Record<string, Reply> } = {}) {
+function install(user = operatorWriteUser, { queue, dispatch = [], actions = {}, rangeError = false }: { queue?: Queue; dispatch?: Reply[]; actions?: Record<string, Reply>; rangeError?: boolean } = {}) {
   const data: Queue = queue ?? {
     to_dispatch: [item(1)],
     out_for_delivery: [item(9, { delivery: delivery(5, 'out_for_delivery') })],
@@ -42,7 +43,10 @@ function install(user = operatorWriteUser, { queue, dispatch = [], actions = {} 
   const replies = [...dispatch]
   return installAdminFetchMock(user, {
     routes: ({ path, method }: { path: string; method: string }) => {
-      if (path === '/api/v1/admin/courier-deliveries/queue' && method === 'GET') return json(200, { success: true, data })
+      if (path === '/api/v1/admin/courier-deliveries/queue' && method === 'GET') {
+        if (rangeError) return json(400, { success: false, message: 'Bad range', details: { code: 'invalid_delivery_range' } })
+        return json(200, { success: true, data })
+      }
       if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/courier-deliveries$/.test(path) && method === 'POST') {
         const reply = replies.shift() ?? { status: 200, body: { success: true, data: { delivery: delivery(6, 'out_for_delivery') } } }
         return json(reply.status, reply.body)
@@ -57,7 +61,7 @@ function install(user = operatorWriteUser, { queue, dispatch = [], actions = {} 
   })
 }
 
-const render = () => renderAuthedPage(<CourierDeliveriesPage />, '/operations/courier', '/operations/courier')
+const render = (route = '/operations/courier') => renderAuthedPage(<CourierDeliveriesPage />, route, '/operations/courier')
 const posts = (calls: Array<{ method: string; path: string; body?: unknown }>, suffix: string) => calls.filter((call) => call.method === 'POST' && call.path.endsWith(suffix))
 
 describe('CourierDeliveriesPage', () => {
@@ -338,6 +342,73 @@ describe('CourierDeliveriesPage', () => {
     installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<CourierDeliveriesPage />, '/operations/courier?aba=xyz', '/operations/courier')
     expect(await screen.findByRole('tab', { name: /A despachar/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  // admin-flow-fixes-5 (PM-29): the queue reads a delivery range.
+  it('asks for the default range and says what comes later', async () => {
+    const { calls } = install(operatorWriteUser, {
+      queue: { to_dispatch: [item(1)], out_for_delivery: [], failed: [], delivered: [], truncated: false, range: { from: '2026-10-07', to: '2026-11-07', default: true }, later: 4, next_from: null },
+    })
+    render()
+
+    expect(await screen.findByText('Cliente 1')).toBeInTheDocument()
+    expect(calls.find((call) => call.path === '/api/v1/admin/courier-deliveries/queue')?.search).toBe('')
+    expect(screen.getByRole('button', { name: 'Até amanhã' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Mais 4 pedidos com entrega depois de 07/11.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Ver os próximos dias' }))
+    await waitFor(() => expect(calls.filter((call) => call.path.endsWith('/courier-deliveries/queue')).at(-1)?.search).toBe('?from=2026-11-08&to=2026-11-14'))
+  })
+
+  it('sends the next seven days and the range of the URL', async () => {
+    const { calls } = install()
+    render('/operations/courier?aba=falhas&de=2026-11-01&ate=2026-11-03')
+
+    await waitFor(() => expect(calls.find((call) => call.path.endsWith('/courier-deliveries/queue'))?.search).toBe('?from=2026-11-01&to=2026-11-03'))
+    expect(await screen.findByText('Período: 01/11 a 03/11')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Falhas/ })).toHaveAttribute('aria-selected', 'true')
+    await userEvent.click(screen.getByRole('button', { name: 'Próximos 7 dias' }))
+    const seven = nextSevenDays(COURIER_TIMEZONE)
+    await waitFor(() => expect(calls.filter((call) => call.path.endsWith('/courier-deliveries/queue')).at(-1)?.search).toBe(`?from=${seven.from}&to=${seven.to}`))
+    expect(screen.getByRole('tab', { name: /Falhas/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('offers the next cut when the list is truncated', async () => {
+    const { calls } = install(operatorWriteUser, {
+      queue: { to_dispatch: [item(1)], out_for_delivery: [], failed: [], delivered: [], truncated: true, range: { from: '2026-10-07', to: '2026-11-07', default: true }, later: 0, next_from: '2026-11-05' },
+    })
+    render()
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Ver a partir de 05/11' }))
+    await waitFor(() => expect(calls.filter((call) => call.path.endsWith('/courier-deliveries/queue')).at(-1)?.search).toBe('?from=2026-11-05&to=2026-11-07'))
+  })
+
+  it('explains an invalid range', async () => {
+    install(operatorWriteUser, { rangeError: true })
+    render('/operations/courier?de=2020-01-01&ate=2020-01-03')
+
+    expect(await screen.findByText('Período inválido: até 31 dias, a partir de 30 dias atrás.')).toBeInTheDocument()
+  })
+
+  // admin-flow-fixes-5 (PM-26): Hoje opens the queue on the rows with an address problem.
+  it('keeps only the rows with an open address problem when Hoje asks', async () => {
+    install(operatorWriteUser, {
+      queue: {
+        to_dispatch: [item(1, { address_issue: addressIssue }), item(2)],
+        out_for_delivery: [],
+        failed: [],
+        delivered: [],
+        truncated: false,
+      },
+    })
+    render('/operations/courier?problema=endereco')
+
+    expect(await screen.findByText('Cliente 1')).toBeInTheDocument()
+    expect(screen.queryByText('Cliente 2')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByRole('tab', { name: /Falhas/ }))
+    expect(await screen.findByText('Nenhum pedido com problema de endereço neste período.')).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Remover filtro Com problema de endereço' }))
+    await userEvent.click(screen.getByRole('tab', { name: /A despachar/ }))
+    expect(await screen.findByText('Cliente 2')).toBeInTheDocument()
   })
 
   it('says the screen belongs to the Brasil market and skips the list for a session outside it', async () => {

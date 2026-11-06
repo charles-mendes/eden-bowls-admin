@@ -136,6 +136,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   productionInScope?: boolean
   productionQueue?: Array<Record<string, unknown>>
   productionStock?: { shortages: Array<{ flavorKey: string; packSizeGrams: number; onHand: number }>; unsized: number }
+  // production-block-preview: the answer, or a status for an error.
+  // PM-10: a PATCH of these queue ids fails with this message.
+  productionPatchFailures?: Record<number, string>
+  blockPreview?: { charged: boolean; chargeMovesTo: string | null; preparationDay: string | null } | { status: number; code: string }
   stockItems?: Array<Record<string, unknown>>
   stockUnsized?: Array<Record<string, unknown>>
   stockCatalog?: Array<Record<string, unknown>>
@@ -617,8 +621,18 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       })
     }
 
+    if (/^\/api\/v1\/admin\/production\/queue\/\d+\/block-preview$/.test(path) && method === 'GET') {
+      const preview = options.blockPreview ?? { charged: false, chargeMovesTo: null, preparationDay: null }
+      if ('status' in preview) {
+        return jsonResponse({ success: false, message: 'Falha na prévia', code: preview.code }, preview.status)
+      }
+      return jsonResponse(preview)
+    }
+
     if (/^\/api\/v1\/admin\/production\/queue\/\d+$/.test(path) && method === 'PATCH') {
       const id = Number(path.split('/').pop())
+      const failure = options.productionPatchFailures?.[id]
+      if (failure) return jsonResponse({ success: false, message: failure }, 409)
       const item = queueItems.find((entry) => Number(entry.id) === id) ?? { ...productionQueueItem, id }
       item.productionStatus = body?.status || 'in_production'
       item.note = body?.note || null

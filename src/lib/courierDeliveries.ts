@@ -1,3 +1,4 @@
+import type { DeliveryRangeInfo } from './deliveryRange'
 import { ApiRequestError } from './api'
 import { issueCodeText, type AddressIssue } from './addressIssues'
 import { PRODUCTION_STATUS_LABELS, isProductionStatus } from './productionQueue'
@@ -65,7 +66,7 @@ export type CourierQueue = {
   failed: CourierQueueItem[]
   delivered: CourierQueueItem[]
   truncated: boolean
-}
+} & DeliveryRangeInfo
 
 export type ReadinessReason = { code: 'production_not_ready' | 'subscription_not_active' | string; production_status?: string | null; subscription_status?: string | null }
 

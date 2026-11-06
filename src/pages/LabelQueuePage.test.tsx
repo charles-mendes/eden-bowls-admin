@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LabelQueuePage } from './LabelQueuePage'
-import { operatorUsWriteUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { addressIssue, operatorUsWriteUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -29,7 +29,7 @@ const created = (n: number) => order(n, { issues: undefined, shipment: { id: 100
 
 type Purchase = { status: number; body: unknown }
 type Order = ReturnType<typeof order>
-type Queue = { ready: Order[]; unresolved: Order[]; created: Order[]; truncated: boolean }
+type Queue = { ready: Order[]; unresolved: Order[]; created: Order[]; truncated: boolean; range?: { from: string; to: string; default: boolean }; later?: number; next_from?: string | null }
 type InstallOptions = { queue?: Queue; purchases?: Record<string, Purchase>; missingLabels?: string[] }
 
 function install(user = operatorUsWriteUser, {
@@ -59,7 +59,8 @@ function install(user = operatorUsWriteUser, {
   })
 }
 
-const render = () => renderAuthedPage(<LabelQueuePage />, '/operations/labels', '/operations/labels')
+const render = (route = '/operations/labels') => renderAuthedPage(<LabelQueuePage />, route, '/operations/labels')
+const queueCalls = (calls: Array<{ method: string; path: string; search?: string }>) => calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/admin/shipments/queue')
 const select = async (user: ReturnType<typeof userEvent.setup>, name: string) => user.click(await screen.findByRole('checkbox', { name: `Selecionar ${name}` }))
 const purchases = (calls: Array<{ method: string; path: string; body?: unknown }>) => calls.filter((call) => call.method === 'POST' && call.path.endsWith('/shipments'))
 
@@ -296,6 +297,50 @@ describe('LabelQueuePage', () => {
     await waitFor(() => expect(printLabels).toHaveBeenCalled())
     expect(screen.getByRole('button', { name: /Comprar e imprimir|Imprimir/ })).toBeDisabled()
     release()
+  })
+
+  // admin-flow-fixes-5 (PM-29): ready orders by delivery range; created labels always show.
+  it('reads the default range, lists a created label of a later day and says what comes later', async () => {
+    const { calls } = install(operatorUsWriteUser, {
+      queue: {
+        ready: [order(1)],
+        unresolved: [],
+        created: [{ ...created(5), delivery_date: '2026-11-20' }],
+        truncated: false,
+        range: { from: '2026-10-07', to: '2026-11-07', default: true },
+        later: 1,
+        next_from: null,
+      },
+    })
+    render()
+
+    expect(await screen.findByText('Cliente 5')).toBeInTheDocument()
+    expect(queueCalls(calls)[0].search).toBe('')
+    expect(screen.getByText('Mais 1 pedido com entrega depois de 07/11.')).toBeInTheDocument()
+  })
+
+  it('sends the range of the URL and moves to the next cut of a full list', async () => {
+    const { calls } = install(operatorUsWriteUser, {
+      queue: { ready: [order(1)], unresolved: [], created: [], truncated: true, range: { from: '2026-11-01', to: '2026-11-20', default: false }, later: 0, next_from: '2026-11-09' },
+    })
+    render('/operations/labels?de=2026-11-01&ate=2026-11-20')
+
+    await waitFor(() => expect(queueCalls(calls)[0]?.search).toBe('?from=2026-11-01&to=2026-11-20'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ver a partir de 09/11' }))
+    await waitFor(() => expect(queueCalls(calls).at(-1)?.search).toBe('?from=2026-11-09&to=2026-11-20'))
+  })
+
+  // admin-flow-fixes-5 (PM-26): the address filter applies to ready orders only.
+  it('keeps the ready orders with an open address problem and every created label', async () => {
+    install(operatorUsWriteUser, {
+      queue: { ready: [order(1, { address_issue: addressIssue }), order(2)], unresolved: [], created: [created(5)], truncated: false },
+    })
+    render('/operations/labels?problema=endereco')
+
+    expect(await screen.findByText('Cliente 1')).toBeInTheDocument()
+    expect(screen.queryByText('Cliente 2')).not.toBeInTheDocument()
+    expect(screen.getByText('Cliente 5')).toBeInTheDocument()
+    expect(screen.getByText('Com problema de endereço')).toBeInTheDocument()
   })
 
   it('says the screen belongs to the Estados Unidos market and skips the list for a session outside it', async () => {

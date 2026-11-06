@@ -337,6 +337,47 @@ describe('DashboardPage', () => {
     expect(work.queryByText('Bling desconectado')).not.toBeInTheDocument()
   })
 
+  // admin-flow-fixes-5 (PM-26): address problems and market exceptions per market.
+  it('counts the open address problems and the market exceptions of the market on screen', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUser, {
+      routes: withToday({ fulfillment: { ...zero, addressIssues: { BR: { open: 3, stale: 1 }, US: { open: 5, stale: 0 } }, marketExceptions: { BR: 1, US: 2 } } }),
+    })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    const link = (text: string) => within(work.getByText(text).closest('li') as HTMLElement).getByRole('link')
+    expect(link('3 problemas de endereço abertos · 1 sem correção há mais de 2 dias')).toHaveAttribute('href', '/operations/courier?problema=endereco')
+    expect(link('1 exceção de mercado')).toHaveAttribute('href', '/operations/market-exceptions')
+    expect(work.queryByText(/5 problemas de endereço/)).not.toBeInTheDocument()
+    expect(work.queryByText('2 exceções de mercado')).not.toBeInTheDocument()
+  })
+
+  it('links the US address problems to the label queue and hides zero counts', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUsUser, {
+      routes: withToday({ fulfillment: { ...zero, addressIssues: { BR: { open: 3, stale: 0 }, US: { open: 1, stale: 0 } }, marketExceptions: { BR: 4, US: 0 } } }),
+    })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    expect(within(work.getByText('1 problema de endereço aberto').closest('li') as HTMLElement).getByRole('link')).toHaveAttribute('href', '/operations/labels?problema=endereco')
+    expect(work.queryByText(/exceç/)).not.toBeInTheDocument()
+  })
+
+  it('shows no address or exception line when the API sends neither field', async () => {
+    seedAuth()
+    const older: Record<string, unknown> = { ...zero }
+    delete older.addressIssues
+    delete older.marketExceptions
+    installAdminFetchMock(operatorUser, { routes: withToday({ fulfillment: { ...older, courierToDispatch: 1 } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    expect(work.getByText('1 pedido a despachar')).toBeInTheDocument()
+    expect(work.queryByText(/problema de endereço|exceç/)).not.toBeInTheDocument()
+  })
+
   it('shows the last contact of a refused payment and records a new one with the phone', async () => {
     const user = userEvent.setup()
     seedAuth()

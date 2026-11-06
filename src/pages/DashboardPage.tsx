@@ -96,6 +96,29 @@ function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'
   add(brazil, fulfillment.nfeRejected, 'nfe-rejected', 'NF-e rejeitada', 'NF-e rejeitadas', nfeListHref({ status: 'rejected' }), 'Abrir notas')
   add(brazil, fulfillment.nfeError, 'nfe-error', 'NF-e com erro', 'NF-e com erro', nfeListHref({ status: 'error' }), 'Abrir notas')
   add(us, fulfillment.upsUnresolved, 'ups-unresolved', 'compra UPS sem confirmação', 'compras UPS sem confirmação', UPS_CHECK_PATH, 'Verificar na UPS')
+  // PM-26: open address problems and market exceptions, per market on screen.
+  const suffix = (market: 'BR' | 'US') => (markets.length > 1 ? ` (${MARKET_NAME[market]})` : '')
+  for (const market of markets) {
+    const issues = fulfillment.addressIssues?.[market]
+    if (issues && issues.open > 0) {
+      const stale = issues.stale > 0 ? ` · ${issues.stale} sem correção há mais de 2 dias` : ''
+      list.push({
+        key: `address-issues-${market}`,
+        title: `${plural(issues.open, 'problema de endereço aberto', 'problemas de endereço abertos')}${stale}${suffix(market)}`,
+        to: market === 'BR' ? '/operations/courier?problema=endereco' : `${LABELS_PATH}?problema=endereco`,
+        action: market === 'BR' ? 'Abrir entregas' : 'Abrir etiquetas',
+      })
+    }
+    const exceptions = fulfillment.marketExceptions?.[market] ?? 0
+    if (exceptions > 0) {
+      list.push({
+        key: `market-exceptions-${market}`,
+        title: `${plural(exceptions, 'exceção de mercado', 'exceções de mercado')}${suffix(market)}`,
+        to: '/operations/market-exceptions',
+        action: 'Abrir exceções',
+      })
+    }
+  }
   if (brazil && fulfillment.blingConnected === false) {
     list.push({ key: 'bling', title: 'Bling desconectado', to: nfeListHref(), action: 'Abrir notas' })
   }

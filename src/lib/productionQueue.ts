@@ -1,5 +1,12 @@
+import { stockHref } from './packStock'
 export type ProductionStatus = 'to_prepare' | 'in_production' | 'ready' | 'blocked'
 export type StockCoverage = 'covered' | 'short' | 'unknown'
+
+// pack-stock: for a short cycle, each recipe the stock left over did not cover, by the queue's due order.
+export type StockShortage = { flavorKey: string; packSizeGrams: number; recipeName: string; missing: number }
+
+// production-block-preview: where blocking an unpaid cycle moves its charge.
+export type BlockPreview = { charged: boolean; chargeMovesTo: string | null; preparationDay: string | null }
 
 export type ProductionStockResult = {
   shortages: Array<{ flavorKey: string; packSizeGrams: number; onHand: number }>
@@ -78,4 +85,32 @@ export function productionQueueHref(filters: QueueFilters = {}) {
 // "1 pedido", "2 pedidos": counts in copy read as words, not as "pedido(s)".
 export function plural(count: number, one: string, many: string) {
   return `${count} ${count === 1 ? one : many}`
+}
+
+// pack-stock: "Frango 300 g, Carne 300 g" for the recipes a short cycle is missing.
+export function formatStockShortages(shortages: StockShortage[] = []) {
+  return shortages.map((item) => `${item.recipeName} ${item.packSizeGrams} g`).join(', ')
+}
+
+// The stock screen for a short cycle: short items, the cycle's market when the session has both, and the recipe
+// when only one is missing.
+export function stockShortageHref(
+  item: { stripeAccount: string; stockShortages?: StockShortage[] },
+  bothMarkets: boolean,
+) {
+  const shortages = item.stockShortages ?? []
+  return stockHref({
+    mercado: bothMarkets ? (String(item.stripeAccount).toLowerCase() === 'us' ? 'US' : 'BR') : undefined,
+    situacao: 'short',
+    busca: shortages.length === 1 ? shortages[0].recipeName : undefined,
+  })
+}
+
+export const READY_SHORT_ONE = (recipes: string) => `Pela ordem da fila, falta estoque de ${recipes} para este pedido. Marcar como pronto pode deixar o saldo negativo.`
+export const READY_SHORT_BATCH = 'Pela ordem da fila, falta estoque para estes pedidos. Marcar como pronto pode deixar o saldo negativo.'
+
+// production-block-preview: "12/11" for the instant the charge moves to, in the market's timezone.
+export function chargeDayMonth(instant: string, stripeAccount: string) {
+  const timeZone = String(stripeAccount).toLowerCase() === 'br' ? 'America/Sao_Paulo' : 'America/New_York'
+  return new Intl.DateTimeFormat('pt-BR', { timeZone, day: '2-digit', month: '2-digit' }).format(new Date(instant))
 }

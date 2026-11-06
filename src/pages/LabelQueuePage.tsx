@@ -1,7 +1,7 @@
 import { OtherMarketNotice } from '../components/OtherMarketNotice'
 import { isOutsideMarket } from '../lib/markets'
 import { useCallback, useEffect, useState, type ReactElement } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
@@ -12,6 +12,17 @@ import { readinessText, type ReadinessReason } from '../lib/courierDeliveries'
 import { labelIssueText, labelRefusalText, type LabelIssue } from '../lib/upsLabels'
 import { AddressIssueStatus } from '../components/AddressIssueStatus'
 import { type AddressIssue } from '../lib/addressIssues'
+import { DeliveryRangeFilter } from '../components/shipping/DeliveryRangeFilter'
+import {
+  LABELS_TIMEZONE,
+  RANGE_INVALID_TEXT,
+  rangeFromKey,
+  rangeQuery,
+  readRange,
+  writeRange,
+  type DeliveryRange,
+  type DeliveryRangeInfo,
+} from '../lib/deliveryRange'
 
 type QueueShipment = { id: string | number; status: string; tracking_number: string | null; has_label: boolean }
 
@@ -31,7 +42,7 @@ type QueueItem = {
   address_issue?: AddressIssue | null
 }
 
-type QueueData = { ready: QueueItem[]; unresolved: QueueItem[]; created: QueueItem[]; truncated: boolean }
+type QueueData = { ready: QueueItem[]; unresolved: QueueItem[]; created: QueueItem[]; truncated: boolean } & DeliveryRangeInfo
 
 type Outcome =
   | { kind: 'created'; shipmentId: string }
@@ -100,16 +111,35 @@ export function LabelQueuePage() {
   const [running, setRunning] = useState(false)
   const [progress, setProgress] = useState('')
   const { hash } = useLocation()
+  // PM-29: the delivery range of the ready orders (`de`/`ate`); created and unresolved labels ignore it.
+  // PM-26: `problema=endereco`, from Hoje, keeps the ready orders with an open address problem.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const range = readRange(searchParams)
+  const rangeKey = range ? `${range.from}|${range.to}` : ''
+  const addressOnly = searchParams.get('problema') === 'endereco'
+  const [rangeInvalid, setRangeInvalid] = useState(false)
+  const setRange = (next: DeliveryRange | null) => setSearchParams(writeRange(searchParams, next), { replace: true })
+  const clearAddressFilter = () => {
+    const params = new URLSearchParams(searchParams)
+    params.delete('problema')
+    setSearchParams(params, { replace: true })
+  }
 
   const load = useCallback(async () => {
     if (!token || !sessionReady || otherMarket) return
     try {
-      const response = await apiRequest<{ data: QueueData }>('/admin/shipments/queue', { token })
+      const response = await apiRequest<{ data: QueueData }>(`/admin/shipments/queue${rangeQuery(rangeFromKey(rangeKey))}`, { token })
+      setRangeInvalid(false)
       setData(response.data)
     } catch (requestError) {
+      if (requestError instanceof ApiRequestError && requestError.code === 'invalid_delivery_range') {
+        setData(null)
+        setRangeInvalid(true)
+        return
+      }
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar a fila')
     }
-  }, [token, sessionReady, otherMarket])
+  }, [token, sessionReady, otherMarket, rangeKey])
 
   useEffect(() => {
     void load()
@@ -282,6 +312,8 @@ export function LabelQueuePage() {
     </div>
   )
 
+  const readyRows = (data?.ready ?? []).filter((item) => !addressOnly || item.address_issue?.open)
+  const readyEmpty = addressOnly ? 'Nenhum pedido com problema de endereço neste período.' : 'Nenhum pedido sem etiqueta.'
   const selectedReady = data?.ready.filter((item) => selected.has(item.invoice_id)).length ?? 0
   const selectedCreated = data?.created.filter((item) => selected.has(item.invoice_id)).length ?? 0
   const actionLabel = selectedReady ? 'Comprar e imprimir' : 'Imprimir'
@@ -305,10 +337,26 @@ export function LabelQueuePage() {
     >
       {error ? <div className="alert">{error}</div> : null}
       {progress ? <div className="muted" aria-live="polite">{progress}</div> : null}
-      {data?.truncated ? <div className="warning">A fila mostra os 100 primeiros pedidos.</div> : null}
+      {rangeInvalid ? <div className="alert" role="alert">{RANGE_INVALID_TEXT}</div> : null}
+      <DeliveryRangeFilter
+        key={rangeKey}
+        range={range}
+        info={data}
+        timeZone={LABELS_TIMEZONE}
+        truncated={Boolean(data?.truncated)}
+        onChange={setRange}
+      />
+      {addressOnly ? (
+        <div className="queue-summary-main">
+          <span className="filter-chip">
+            Com problema de endereço
+            <button type="button" aria-label="Remover filtro Com problema de endereço" onClick={clearAddressFilter}>×</button>
+          </span>
+        </div>
+      ) : null}
 
       <Section title="Prontos para etiqueta" description="Fatura paga e sem etiqueta. Um pedido bloqueado mostra o motivo e não pode ser selecionado.">
-        {table(data?.ready ?? [], (item) => row(item, canBuy && (item.issues ?? []).length === 0, item.issues ?? []), data ? 'Nenhum pedido sem etiqueta.' : 'Carregando…')}
+        {table(readyRows, (item) => row(item, canBuy && (item.issues ?? []).length === 0, item.issues ?? []), data ? readyEmpty : 'Carregando…')}
       </Section>
 
       <Section id="verificar-ups" title="Verificar na UPS" description="A compra não teve resposta confirmada da UPS. Confira no portal da UPS e resolva no detalhe da assinatura.">

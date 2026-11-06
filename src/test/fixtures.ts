@@ -841,6 +841,8 @@ export const todayOverview = {
     nfeError: 0,
     upsUnresolved: 0,
     blingConnected: true,
+    addressIssues: { BR: { open: 0, stale: 0 }, US: { open: 0, stale: 0 } },
+    marketExceptions: { BR: 0, US: 0 },
   },
 }
 

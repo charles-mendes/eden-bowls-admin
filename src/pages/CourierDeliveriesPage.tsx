@@ -15,7 +15,17 @@ import {
   courierStageText,
 } from '../components/shipping/CourierDelivery'
 import { useAuth } from '../contexts/AuthContext'
-import { apiRequest } from '../lib/api'
+import { ApiRequestError, apiRequest } from '../lib/api'
+import { DeliveryRangeFilter } from '../components/shipping/DeliveryRangeFilter'
+import {
+  COURIER_TIMEZONE,
+  RANGE_INVALID_TEXT,
+  rangeFromKey,
+  rangeQuery,
+  readRange,
+  writeRange,
+  type DeliveryRange,
+} from '../lib/deliveryRange'
 import {
   addressLines,
   productionLabel,
@@ -111,9 +121,24 @@ export function CourierDeliveriesPage() {
   const tab: TabId = (TABS.find((option) => option.aba === searchParams.get('aba')) ?? TABS[0]).id
   const setTab = (next: TabId) => {
     const aba = (TABS.find((option) => option.id === next) ?? TABS[0]).aba
-    setSearchParams(aba === 'a_despachar' ? new URLSearchParams() : new URLSearchParams({ aba }), { replace: true })
+    const params = new URLSearchParams(searchParams)
+    if (aba === 'a_despachar') params.delete('aba')
+    else params.set('aba', aba)
+    setSearchParams(params, { replace: true })
+  }
+  // PM-29: the delivery range (`de`/`ate`); PM-26: `problema=endereco`, from Hoje, keeps the rows with an open
+  // address problem in "A despachar" and "Falhas".
+  const range = readRange(searchParams)
+  const rangeKey = range ? `${range.from}|${range.to}` : ''
+  const addressOnly = searchParams.get('problema') === 'endereco'
+  const setRange = (next: DeliveryRange | null) => setSearchParams(writeRange(searchParams, next), { replace: true })
+  const clearAddressFilter = () => {
+    const params = new URLSearchParams(searchParams)
+    params.delete('problema')
+    setSearchParams(params, { replace: true })
   }
   const [error, setError] = useState('')
+  const [rangeInvalid, setRangeInvalid] = useState(false)
   const [message, setMessage] = useState('')
   const [dispatching, setDispatching] = useState<CourierQueueItem | null>(null)
   const [editing, setEditing] = useState<{ item: CourierQueueItem; delivery: CourierDelivery } | null>(null)
@@ -121,12 +146,18 @@ export function CourierDeliveriesPage() {
   const load = useCallback(async () => {
     if (!token || !sessionReady || otherMarket) return
     try {
-      const response = await apiRequest<{ data: CourierQueue }>('/admin/courier-deliveries/queue', { token })
+      const response = await apiRequest<{ data: CourierQueue }>(`/admin/courier-deliveries/queue${rangeQuery(rangeFromKey(rangeKey))}`, { token })
+      setRangeInvalid(false)
       setData(response.data)
     } catch (requestError) {
+      if (requestError instanceof ApiRequestError && requestError.code === 'invalid_delivery_range') {
+        setData(null)
+        setRangeInvalid(true)
+        return
+      }
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar as entregas')
     }
-  }, [token, sessionReady, otherMarket])
+  }, [token, sessionReady, otherMarket, rangeKey])
 
   useEffect(() => {
     void load()
@@ -155,8 +186,14 @@ export function CourierDeliveriesPage() {
     document.getElementById(`courier-tab-${next.id}`)?.focus()
   }
 
-  const items = data ? data[tab] : []
+  const filters = (id: TabId) => addressOnly && (id === 'to_dispatch' || id === 'failed')
+  const rowsOf = (id: TabId) => {
+    const rows = data ? data[id] : []
+    return filters(id) ? rows.filter((item) => item.address_issue?.open) : rows
+  }
+  const items = rowsOf(tab)
   const current = TABS.find((option) => option.id === tab) ?? TABS[0]
+  const emptyText = filters(tab) ? 'Nenhum pedido com problema de endereço neste período.' : current.empty
 
   if (otherMarket) return <OtherMarketNotice title="Entregas Brasil" market="BR" />
 
@@ -166,8 +203,24 @@ export function CourierDeliveriesPage() {
       description="Pedidos pagos do Brasil entregues por Uber, motoboy ou entregador próprio. Registre a saída, depois marque entregue ou falha. Nenhuma transportadora é chamada."
     >
       {error ? <div className="alert" role="alert">{error}</div> : null}
+      {rangeInvalid ? <div className="alert" role="alert">{RANGE_INVALID_TEXT}</div> : null}
       {message ? <div className="success" role="status">{message}</div> : null}
-      {data?.truncated ? <div className="warning">A lista "A despachar" mostra os 200 primeiros pedidos.</div> : null}
+      <DeliveryRangeFilter
+        key={rangeKey}
+        range={range}
+        info={data}
+        timeZone={COURIER_TIMEZONE}
+        truncated={Boolean(data?.truncated)}
+        onChange={setRange}
+      />
+      {addressOnly ? (
+        <div className="queue-summary-main">
+          <span className="filter-chip">
+            Com problema de endereço
+            <button type="button" aria-label="Remover filtro Com problema de endereço" onClick={clearAddressFilter}>×</button>
+          </span>
+        </div>
+      ) : null}
 
       <div className="page-tabs" role="tablist" aria-label="Entregas Brasil" onKeyDown={moveTabFocus}>
         {TABS.map((option) => (
@@ -183,7 +236,7 @@ export function CourierDeliveriesPage() {
             onClick={() => setTab(option.id)}
           >
             {option.label}
-            {data && data[option.id].length ? <span className="page-tab-flag">{data[option.id].length}</span> : null}
+            {data && rowsOf(option.id).length ? <span className="page-tab-flag">{rowsOf(option.id).length}</span> : null}
           </button>
         ))}
       </div>
@@ -203,7 +256,7 @@ export function CourierDeliveriesPage() {
           </thead>
           <tbody>
             {!data ? <tr><td colSpan={7}>Carregando…</td></tr> : null}
-            {data && !items.length ? <tr><td colSpan={7}>{current.empty}</td></tr> : null}
+            {data && !items.length ? <tr><td colSpan={7}>{emptyText}</td></tr> : null}
             {items.map((item) => (
               <tr key={`${tab}-${item.invoice_id}`}>
                 <td><RecipientCell item={item} details={tab !== 'delivered'} /></td>

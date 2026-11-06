@@ -39,6 +39,10 @@ export type Fulfillment = {
   upsUnresolved: number
   // null when the user cannot see Bling or it is not configured.
   blingConnected: boolean | null
+  // admin-flow-fixes-5: open address problems (stale = open 72 h or more) and market exceptions, per market.
+  // Absent on an older API.
+  addressIssues?: Record<'BR' | 'US', { open: number; stale: number }>
+  marketExceptions?: Record<'BR' | 'US', number>
 }
 
 export type ClosedDay = {
