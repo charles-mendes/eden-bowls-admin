@@ -23,6 +23,8 @@ export type TodayItem = {
   upsLabel: 'created' | 'missing' | 'unresolved' | null
   // Brazil paid items only: where the box is after it is ready.
   courierDelivery?: 'none' | 'out_for_delivery' | 'delivered' | 'failed' | null
+  // Paid, still not ready and more than 30 days past its preparation day. Absent on an older API.
+  stale?: boolean
   // Refused payments only.
   lastContact?: CustomerContact | null
   phone?: string | null
@@ -63,6 +65,8 @@ export type TodayOverview = {
   today: string
   totals: Counts
   byMarket: Record<'BR' | 'US', Counts>
+  // Paid cycles still not ready more than 30 days late, counted apart from the list cut. Absent on an older API.
+  stalePaid?: number
   truncated: boolean
   total: number
   items: TodayItem[]

@@ -27,14 +27,23 @@ type Pending = { key: string; severity: Severity; title: string; detail: string;
 const customer = (item: TodayItem) => item.displayName || item.email
 
 // What blocks the deliveries, worst first. Each one opens the place where it gets solved.
-function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado']): Pending[] {
-  const overdue = items.filter((item) => item.dueBucket === 'overdue' && item.productionStatus !== 'ready')
+function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado'], stalePaid = 0): Pending[] {
+  // Paid boxes stuck for over a month are counted apart: they need a decision, not just the kitchen.
+  const overdue = items.filter((item) => item.dueBucket === 'overdue' && item.productionStatus !== 'ready' && !item.stale)
   const refused = items.filter((item) => item.paymentState === 'past_due')
   const blocked = items.filter((item) => item.productionStatus === 'blocked')
   const notStarted = items.filter((item) => item.dueBucket === 'today' && item.paymentState === 'paid' && item.productionStatus === 'to_prepare')
   const noLabel = items.filter((item) => item.upsLabel === 'missing' && item.productionStatus === 'ready')
 
   const list: Pending[] = []
+  if (stalePaid > 0) {
+    list.push({
+      key: 'stale-paid', severity: 'high',
+      title: plural(stalePaid, 'pedido pago parado há mais de 30 dias', 'pedidos pagos parados há mais de 30 dias'),
+      detail: 'O cliente pagou e não recebeu. Marque como pronto se já saiu, bloqueie com nota ou cancele e reembolse na assinatura.',
+      action: 'Ver na fila', to: productionQueueHref({ prazo: 'atrasados', mercado }),
+    })
+  }
   if (overdue.length) {
     list.push({
       key: 'overdue', severity: 'high', title: plural(overdue.length, 'pedido atrasado', 'pedidos atrasados'),
@@ -199,7 +208,7 @@ export function DashboardPage() {
 
   const items = data?.items ?? []
   const mercado: QueueFilters['mercado'] = market ? (market === 'US' ? 'us' : 'br') : undefined
-  const pending = pendingItems(items, mercado)
+  const pending = pendingItems(items, mercado, data?.stalePaid ?? 0)
   const needsYou = items.filter((item) => {
     const tone = nextStep(item).tone
     return tone === 'error' || tone === 'warning'

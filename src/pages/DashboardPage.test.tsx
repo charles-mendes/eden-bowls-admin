@@ -205,6 +205,27 @@ describe('DashboardPage', () => {
     expect(today?.authorization).toBe('Bearer access-token')
   })
 
+  // A paid box stuck over a month gets its own blocker, counted by the API; the day's overdue one leaves it out.
+  it('asks for a decision on paid orders stuck over 30 days, apart from the overdue ones', async () => {
+    seedAuth()
+    installAdminFetchMock(adminUser, {
+      routes: withToday({
+        stalePaid: 2,
+        items: [
+          { ...todayOverview.items[1], id: 40, dueBucket: 'overdue', dueLabel: 'Atrasado 40 dias', productionStatus: 'to_prepare', stale: true },
+          { ...todayOverview.items[1], id: 41, dueBucket: 'overdue', dueLabel: 'Atrasado 2 dias', productionStatus: 'to_prepare' },
+        ],
+      }),
+    })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const stale = (await screen.findByText('2 pedidos pagos parados há mais de 30 dias')).closest('li') as HTMLElement
+    const region = within(screen.getByRole('region', { name: 'Pendências' }))
+    expect(within(stale).getByText('Alta')).toBeInTheDocument()
+    expect(within(stale).getByRole('link', { name: 'Ver na fila' })).toHaveAttribute('href', '/operations/production?prazo=atrasados')
+    expect(region.getByText('1 pedido atrasado')).toBeInTheDocument()
+  })
+
   it('keeps system health for admins only', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorUser)
