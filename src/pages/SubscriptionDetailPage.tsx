@@ -575,7 +575,7 @@ export function SubscriptionDetailPage() {
                 {labelIssues.map((issue) => (
                   <li key={issue.code}>
                     {labelIssueText(issue)}
-                    {issue.code === 'ship_from_missing' ? <> <Link to="/config/shipping">Abrir configuração de frete</Link></> : null}
+                    {issue.code === 'ship_from_missing' ? <> <Link to="/config/shipping?aba=sede&mercado=us">Abrir configuração de frete</Link></> : null}
                   </li>
                 ))}
               </ul>

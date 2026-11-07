@@ -12,17 +12,16 @@ describe('ShippingPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('opens on the simulator for a writer too, and saves only the Brazil rules from Regras', async () => {
-    const user = userEvent.setup()
+  it('opens on Regras, tabs in setup order, and saves only the Brazil rules', async () => {
     seedAuth()
+    const user = userEvent.setup()
     const { calls } = installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<ShippingPage />, '/config/shipping')
 
-    expect(await screen.findByRole('heading', { name: 'Simular frete por CEP' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Simulador de frete' })).toHaveAttribute('aria-selected', 'true')
-
-    await user.click(screen.getByRole('tab', { name: /Regras de entrega/ }))
     expect(await screen.findByRole('heading', { name: 'Entrega local' })).toBeInTheDocument()
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.replace(/não salvo|pendente/, '').trim()))
+      .toEqual(['Regras de entrega', 'Sede', 'Simulador de frete'])
+    expect(screen.getByRole('tab', { name: /Regras de entrega/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
     expect(screen.queryByText('CD SP')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Latitude')).not.toBeInTheDocument()
@@ -41,16 +40,14 @@ describe('ShippingPage', () => {
     expect(put?.body).not.toHaveProperty('us')
   })
 
-  it('opens on the simulator for readonly accounts and hides every mutation', async () => {
+  it('opens on Regras for readonly accounts and hides every mutation', async () => {
     const user = userEvent.setup()
     seedAuth()
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<ShippingPage />, '/config/shipping')
 
-    expect(await screen.findByRole('heading', { name: 'Simular frete por CEP' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Simulador/ })).toHaveAttribute('aria-selected', 'true')
-
-    await user.click(screen.getByRole('tab', { name: /Regras de entrega/ }))
+    expect(await screen.findByRole('heading', { name: 'Entrega local' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /Regras de entrega/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('button', { name: /Salvar regras/ })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: /Sede/ }))

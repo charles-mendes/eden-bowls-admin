@@ -146,7 +146,7 @@ describe('SubscriptionDetailPage', () => {
 
     const warning = await screen.findByRole('alert', { name: 'Etiqueta bloqueada' })
     expect(warning).toHaveTextContent('Falta rua, cidade, estado ou ZIP')
-    expect(within(warning).getByRole('link', { name: 'Abrir configuração de frete' })).toHaveAttribute('href', '/config/shipping')
+    expect(within(warning).getByRole('link', { name: 'Abrir configuração de frete' })).toHaveAttribute('href', '/config/shipping?aba=sede&mercado=us')
 
     expect(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' })).toBeDisabled()
     expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/shipments'))).toBe(false)
