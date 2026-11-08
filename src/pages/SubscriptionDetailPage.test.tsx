@@ -659,6 +659,29 @@ describe('SubscriptionDetailPage courier section', () => {
     expect(within(section).getByRole('button', { name: 'Despachar' })).toBeInTheDocument()
   })
 
+  // simplify-brazil-dispatch: the subscription opens the same dialog, so a new Uber dispatch is the short form.
+  it('dispatches from the subscription with the short Uber form, sending only the method', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'BR',
+      paidCycles: [cycle('in_br_2')],
+      routes: ({ path, method }) => (path === '/api/v1/admin/billing/subscriptions/sub-row-1/courier-deliveries' && method === 'POST'
+        ? json({ success: true, data: { delivery: courier(3, 'out_for_delivery', { stripe_invoice_id: 'in_br_2', method: 'uber' }) } })
+        : undefined),
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const section = (await screen.findByRole('heading', { name: 'Entrega Brasil' })).closest('section') as HTMLElement
+    await user.click(await within(section).findByRole('button', { name: 'Despachar' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
+    expect((dialog.getByText('Detalhes').closest('details') as HTMLDetailsElement).open).toBe(false)
+    expect(dialog.getByLabelText('Custo (R$)')).toBeVisible()
+    await user.click(dialog.getByRole('button', { name: 'Registrar saída' }))
+
+    await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path.endsWith('/sub-row-1/courier-deliveries'))?.body).toEqual({ invoice_id: 'in_br_2', method: 'uber' }))
+  })
+
   it('a US subscription shows no courier section', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US' })

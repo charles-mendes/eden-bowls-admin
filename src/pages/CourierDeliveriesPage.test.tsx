@@ -241,7 +241,40 @@ describe('CourierDeliveriesPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Despachar' }))
     const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
     expect(dialog.getByLabelText('Meio de entrega')).toHaveValue('uber')
+    await user.click(dialog.getByText('Detalhes'))
     expect(dialog.getByLabelText('Link de acompanhamento')).toHaveAccessibleDescription(/link de acompanhamento que o app/)
+  })
+
+  // simplify-brazil-dispatch: the short Uber form.
+  it('asks a new Uber dispatch for the cost only, keeps the rest behind Detalhes, and sends no hidden field', async () => {
+    const user = userEvent.setup()
+    const { calls } = install()
+    render()
+
+    await user.click(await screen.findByRole('button', { name: 'Despachar' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
+    const details = dialog.getByText('Detalhes').closest('details') as HTMLDetailsElement
+    expect(details.open).toBe(false)
+    expect(details).not.toContainElement(dialog.getByLabelText('Custo (R$)'))
+    for (const label of ['Entregador', 'Link de acompanhamento', 'Observação']) expect(details).toContainElement(dialog.getByLabelText(label))
+
+    await user.type(dialog.getByLabelText('Custo (R$)'), '21,90')
+    await user.click(screen.getByRole('button', { name: 'Registrar saída' }))
+
+    await screen.findByRole('status')
+    expect(posts(calls, '/1/courier-deliveries')[0].body).toEqual({ invoice_id: 'in_1', method: 'uber', cost: '21.90' })
+  })
+
+  it('shows every field for another method', async () => {
+    const user = userEvent.setup()
+    install()
+    render()
+
+    await user.click(await screen.findByRole('button', { name: 'Despachar' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
+    await user.selectOptions(dialog.getByLabelText('Meio de entrega'), 'motoboy')
+    expect(dialog.queryByText('Detalhes')).not.toBeInTheDocument()
+    for (const label of ['Entregador', 'Link de acompanhamento', 'Custo (R$)', 'Observação']) expect(dialog.getByLabelText(label)).toBeVisible()
   })
 
   it('edits a delivery on the road with its saved details, one delivery at a time', async () => {
@@ -273,6 +306,8 @@ describe('CourierDeliveriesPage', () => {
     await user.click(rows[0])
     let dialog = within(await screen.findByRole('dialog', { name: 'Editar entrega' }))
     expect(dialog.getByLabelText('Meio de entrega')).toHaveValue('uber')
+    // An edit never uses the short form, Uber included.
+    expect(dialog.queryByText('Detalhes')).not.toBeInTheDocument()
     expect(dialog.getByLabelText('Link de acompanhamento')).toHaveValue('https://trip.uber.com/abc')
     expect(dialog.getByLabelText('Custo (R$)')).toHaveValue('18,50')
     expect(dialog.getByLabelText('Observação')).toHaveValue('Portão azul')
@@ -412,6 +447,158 @@ describe('CourierDeliveriesPage', () => {
   })
 
   // admin-flow-fixes-5 (PM-29): the queue reads a delivery range.
+  // simplify-brazil-dispatch: "A despachar" opens on ready orders.
+  it('asks for ready orders first, then every paid order with Mostrar todos, and back', async () => {
+    const user = userEvent.setup()
+    const { calls } = install()
+    render('/operations/courier?problema=endereco')
+    const searches = () => calls.filter((call) => call.path.endsWith('/courier-deliveries/queue')).map((call) => call.search)
+
+    await waitFor(() => expect(searches()[0]).toBe(''))
+    expect(screen.getByRole('button', { name: 'Só prontos' })).toHaveAttribute('aria-pressed', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'Mostrar todos' }))
+    await waitFor(() => expect(searches().at(-1)).toBe('?preparo=todos'))
+    expect(screen.getByRole('button', { name: 'Mostrar todos' })).toHaveAttribute('aria-pressed', 'true')
+    // The address filter from Hoje stays on top.
+    expect(screen.getByText('Com problema de endereço')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Só prontos' }))
+    await waitFor(() => expect(searches().at(-1)).toBe(''))
+  })
+
+  it('keeps preparo with the range of the URL and says no ready order is waiting', async () => {
+    const { calls } = install(operatorWriteUser, { queue: { to_dispatch: [], out_for_delivery: [], failed: [], delivered: [], truncated: false } })
+    render('/operations/courier?de=2026-11-01&ate=2026-11-03&preparo=todos')
+    await waitFor(() => expect(calls.find((call) => call.path.endsWith('/courier-deliveries/queue'))?.search).toBe('?from=2026-11-01&to=2026-11-03&preparo=todos'))
+    expect(await screen.findByText('Nenhum pedido pago esperando saída.')).toBeInTheDocument()
+  })
+
+  it('says no ready order is waiting on the default list', async () => {
+    install(operatorWriteUser, { queue: { to_dispatch: [], out_for_delivery: [], failed: [], delivered: [], truncated: false } })
+    render()
+    expect(await screen.findByText('Nenhum pedido pronto esperando saída.')).toBeInTheDocument()
+  })
+
+  // simplify-brazil-dispatch: Expedir names the invoice.
+  it('opens the dispatch dialog for the invoice Expedir names', async () => {
+    install(operatorWriteUser, { queue: { to_dispatch: [item(1), item(2)], out_for_delivery: [], failed: [], delivered: [], truncated: false } })
+    render('/operations/courier?fatura=in_2&assinatura=2')
+    const dialog = await screen.findByRole('dialog', { name: 'Despachar entrega' })
+    expect(dialog).toHaveTextContent('Cliente 2')
+    expect(screen.queryByLabelText('Pedido fora do período')).not.toBeInTheDocument()
+  })
+
+  it('loads the range Expedir sends and opens that invoice', async () => {
+    const { calls } = install(operatorWriteUser, { queue: { to_dispatch: [item(3, { delivery_date: '2026-11-11' })], out_for_delivery: [], failed: [], delivered: [], truncated: false } })
+    render('/operations/courier?fatura=in_3&assinatura=3&de=2026-11-08&ate=2026-11-11')
+    expect(await screen.findByRole('dialog', { name: 'Despachar entrega' })).toHaveTextContent('Cliente 3')
+    expect(calls.find((call) => call.path.endsWith('/courier-deliveries/queue'))?.search).toBe('?from=2026-11-08&to=2026-11-11')
+  })
+
+  it('selects the tab of an invoice already on the road, without the dialog, over the aba of the URL', async () => {
+    install()
+    render('/operations/courier?aba=falhas&fatura=in_9&assinatura=9')
+    await waitFor(() => expect(screen.getByRole('tab', { name: /Em rota/ })).toHaveAttribute('aria-selected', 'true'))
+    expect(screen.queryByRole('dialog', { name: 'Despachar entrega' })).not.toBeInTheDocument()
+  })
+
+  it('says the invoice is outside this period and links to its subscription', async () => {
+    install()
+    render('/operations/courier?fatura=in_77&assinatura=42')
+    const notice = await screen.findByLabelText('Pedido fora do período')
+    expect(within(notice).getByRole('link', { name: 'Abrir a assinatura' })).toHaveAttribute('href', '/billing/subscriptions/42')
+    expect(screen.queryByRole('dialog', { name: 'Despachar entrega' })).not.toBeInTheDocument()
+  })
+
+  it('does not open the dialog for an invoice whose address holds the box', async () => {
+    install(operatorWriteUser, { queue: { to_dispatch: [item(4, { issues: ['missing_number'] })], out_for_delivery: [], failed: [], delivered: [], truncated: false } })
+    render('/operations/courier?fatura=in_4&assinatura=4')
+    expect(await screen.findByText('Cliente 4')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Despachar entrega' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Pedido fora do período')).not.toBeInTheDocument()
+  })
+
+  // simplify-brazil-dispatch: deliveries on the road closed together.
+  const road = () => ({
+    to_dispatch: [],
+    out_for_delivery: [
+      item(9, { delivery: delivery(5, 'out_for_delivery') }),
+      item(10, { invoice_id: 'in_10', delivery: delivery(6, 'out_for_delivery', { stripe_invoice_id: 'in_10' }) }),
+      item(11, { invoice_id: 'in_11', delivery: delivery(7, 'out_for_delivery', { stripe_invoice_id: 'in_11' }) }),
+    ],
+    failed: [],
+    delivered: [],
+    truncated: false,
+  })
+
+  it('closes the selected deliveries on the road at the time picked, one request each', async () => {
+    const user = userEvent.setup()
+    const { calls } = install(operatorWriteUser, { queue: road() })
+    render('/operations/courier?aba=em_rota')
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Selecionar entrega de Cliente 9' }))
+    await user.click(screen.getByRole('checkbox', { name: 'Selecionar entrega de Cliente 10' }))
+    await user.click(screen.getByRole('button', { name: 'Marcar entregues (2)' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Marcar entregues' }))
+    const when = dialog.getByLabelText('Entregue em (horário de Brasília)')
+    expect((when as HTMLInputElement).value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+    await user.clear(when)
+    await user.type(when, '2026-11-08T15:40')
+    await user.click(dialog.getByRole('button', { name: 'Marcar entregues' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('2 entregas marcadas como entregues.')
+    expect(posts(calls, '/delivered').map((call) => [call.path, call.body])).toEqual([
+      ['/api/v1/admin/courier-deliveries/5/delivered', { delivered_at: '2026-11-08T18:40:00.000Z' }],
+      ['/api/v1/admin/courier-deliveries/6/delivered', { delivered_at: '2026-11-08T18:40:00.000Z' }],
+    ])
+  })
+
+  it('keeps a refused delivery selected with its error and closes the others', async () => {
+    const user = userEvent.setup()
+    install(operatorWriteUser, {
+      queue: road(),
+      actions: { delivered: { status: 422, body: { success: false, message: 'The delivery cannot be before the box left.', details: { code: 'invalid_field', field: 'delivered_at' } } } },
+    })
+    render('/operations/courier?aba=em_rota')
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Selecionar entrega de Cliente 9' }))
+    await user.click(screen.getByRole('button', { name: 'Marcar entregues (1)' }))
+    await user.click(within(await screen.findByRole('dialog', { name: 'Marcar entregues' })).getByRole('button', { name: 'Marcar entregues' }))
+
+    expect(await screen.findByLabelText('Erro na entrega de Cliente 9')).toBeInTheDocument()
+    expect(screen.getByRole('checkbox', { name: 'Selecionar entrega de Cliente 9' })).toBeChecked()
+    expect(screen.getAllByRole('alert').some((node) => node.textContent?.includes('1 entrega não foi marcada'))).toBe(true)
+  })
+
+  it('offers no control that selects every delivery', async () => {
+    install(operatorWriteUser, { queue: road() })
+    render('/operations/courier?aba=em_rota')
+    await screen.findByRole('checkbox', { name: 'Selecionar entrega de Cliente 9' })
+    expect(screen.getAllByRole('checkbox')).toHaveLength(3)
+    expect(screen.queryByRole('button', { name: /Marcar entregues/ })).not.toBeInTheDocument()
+  })
+
+  it('shows no selection to a read-only account', async () => {
+    install(readonlyUser, { queue: road() })
+    render('/operations/courier?aba=em_rota')
+    expect(await screen.findByText('Cliente 9')).toBeInTheDocument()
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  it('keeps the single-row Entregue: a confirmation and no date in the request', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('confirm', vi.fn(() => true))
+    const { calls } = install(operatorWriteUser, { queue: road() })
+    render('/operations/courier?aba=em_rota')
+
+    const row = (await screen.findByText('Cliente 9')).closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: 'Entregue' }))
+    await waitFor(() => expect(posts(calls, '/5/delivered')).toHaveLength(1))
+    expect(window.confirm).toHaveBeenCalled()
+    expect(posts(calls, '/5/delivered')[0].body).toEqual({})
+  })
+
   it('asks for the default range and says what comes later', async () => {
     const { calls } = install(operatorWriteUser, {
       queue: { to_dispatch: [item(1)], out_for_delivery: [], failed: [], delivered: [], truncated: false, range: { from: '2026-10-07', to: '2026-11-07', default: true }, later: 4, next_from: null },

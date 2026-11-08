@@ -106,3 +106,36 @@ export function rangeFromKey(key: string): DeliveryRange | null {
   const [from, to] = key.split('|')
   return from && to ? { from, to } : null
 }
+
+// simplify-brazil-dispatch: a `datetime-local` value read in the market's zone, whatever the browser's zone.
+function zoneParts(date: Date, timeZone: string) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(date).map((part) => [part.type, part.value]))
+  return { year: parts.year, month: parts.month, day: parts.day, hour: parts.hour, minute: parts.minute, second: parts.second }
+}
+
+function zoneOffsetMs(date: Date, timeZone: string) {
+  const p = zoneParts(date, timeZone)
+  const wall = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour), Number(p.minute), Number(p.second))
+  return wall - Math.floor(date.getTime() / 1000) * 1000
+}
+
+// "2026-11-08T15:40" for now in the zone, the value a `datetime-local` input takes.
+export function nowInputIn(timeZone: string, now = new Date()) {
+  const p = zoneParts(now, timeZone)
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`
+}
+
+// The instant of a `datetime-local` value read as wall time in the zone, or null for a malformed value.
+export function zonedInputToIso(value: string, timeZone: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value)
+  if (!match) return null
+  const [year, month, day, hour, minute] = match.slice(1).map(Number)
+  const wall = Date.UTC(year, month - 1, day, hour, minute)
+  let instant = wall - zoneOffsetMs(new Date(wall), timeZone)
+  // Across a clock change the offset at the instant decides.
+  instant = wall - zoneOffsetMs(new Date(instant), timeZone)
+  const date = new Date(instant)
+  return Number.isNaN(date.getTime()) ? null : date.toISOString()
+}

@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { addDays, COURIER_TIMEZONE, todayIn } from '../lib/deliveryRange'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProductionQueuePage } from './ProductionQueuePage'
 import { adminUser, operatorWriteUser, productionQueueItem, readonlyUser, WRITE_PERMISSIONS } from '../test/fixtures'
@@ -387,6 +388,24 @@ describe('ProductionQueuePage', () => {
 
     await screen.findByText('Ana Ledger')
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  // simplify-brazil-dispatch: Expedir opens Entregas Brasil on the invoice, with a range when it ships later.
+  it.each([
+    ['delivered tomorrow, on the default range', { deliveryDate: addDays(todayIn(COURIER_TIMEZONE), 1) }, (id: number) => `/operations/courier?fatura=in_123&assinatura=${id}`],
+    ['delivered in three days, with a range that holds it', { deliveryDate: addDays(todayIn(COURIER_TIMEZONE), 3) },
+      (id: number) => `/operations/courier?fatura=in_123&assinatura=${id}&de=${todayIn(COURIER_TIMEZONE)}&ate=${addDays(todayIn(COURIER_TIMEZONE), 3)}`],
+    ['with no delivery date', { deliveryDate: null }, (id: number) => `/operations/courier?fatura=in_123&assinatura=${id}`],
+    ['delivered past the 31-day range', { deliveryDate: addDays(todayIn(COURIER_TIMEZONE), 40) }, (id: number) => `/operations/courier?fatura=in_123&assinatura=${id}`],
+    ['with no paid invoice', { paidInvoiceId: null }, () => '/operations/courier'],
+  ])('a ready Brazil order %s', async (_name, extra, href) => {
+    seedAuth()
+    const item = { ...productionQueueItem, stripeAccount: 'br', country: 'BR', productionStatus: 'ready', stockCoverage: null, paidInvoiceId: 'in_123', ...extra }
+    installAdminFetchMock(adminUser, { productionQueue: [item] })
+    renderQueue()
+
+    const row = (await screen.findByText('Ana Ledger')).closest('tr') as HTMLElement
+    expect(within(row).getByRole('link', { name: 'Expedir' })).toHaveAttribute('href', href(Number(item.id)))
   })
 
   it.each([

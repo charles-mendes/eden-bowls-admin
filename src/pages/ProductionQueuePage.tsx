@@ -8,6 +8,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { getBrowserTimeZone } from '../lib/format'
 import { defaultStripeAccount, effectiveSessionMarkets, hasBothMarkets, isProfileInScope } from '../lib/markets'
+import { addDays, COURIER_TIMEZONE, todayIn } from '../lib/deliveryRange'
 import {
   DUE_LABELS,
   DUE_TO_API,
@@ -63,6 +64,9 @@ type QueueItem = {
   paymentState?: 'awaiting_payment' | 'past_due' | 'paid'
   paymentLabel?: string | null
   preparationDay?: string | null
+  deliveryDate?: string | null
+  // The paid invoice of the cycle, null while unpaid; absent on an older API.
+  paidInvoiceId?: string | null
   note: string | null
   subtotal: number | null
   currency: string | null
@@ -166,10 +170,25 @@ function blockChargeText(item: QueueItem, preview: { key: string; preview: Block
   return `Este pedido ainda não foi cobrado. Bloquear adia a cobrança${when}, e reabrir pode cobrar o cliente na hora.`
 }
 
-function fulfillmentPath(item: Pick<QueueItem, 'stripeAccount' | 'country'>): string | null {
+// simplify-brazil-dispatch: a Brazil order opens Entregas Brasil on its invoice. A box ready before its delivery
+// day is after the default range (up to tomorrow), so the link also asks for a range that holds it; past 31 days
+// the API refuses that range and the page shows the order as outside the period.
+function courierPath(item: Pick<QueueItem, 'id' | 'paidInvoiceId' | 'deliveryDate'>, now = new Date()) {
+  if (!item.paidInvoiceId) return '/operations/courier'
+  const params = new URLSearchParams({ fatura: item.paidInvoiceId, assinatura: String(item.id) })
+  const today = todayIn(COURIER_TIMEZONE, now)
+  const delivery = item.deliveryDate ? String(item.deliveryDate).slice(0, 10) : ''
+  if (delivery && delivery > addDays(today, 1) && delivery <= addDays(today, 31)) {
+    params.set('de', today)
+    params.set('ate', delivery)
+  }
+  return `/operations/courier?${params.toString()}`
+}
+
+function fulfillmentPath(item: Pick<QueueItem, 'id' | 'stripeAccount' | 'country' | 'paidInvoiceId' | 'deliveryDate'>): string | null {
   const account = String(item.stripeAccount || '').toLowerCase()
   const country = String(item.country || '').toUpperCase()
-  if (account === 'br' && country === 'BR') return '/operations/courier'
+  if (account === 'br' && country === 'BR') return courierPath(item)
   if (account === 'us' && country === 'US') return '/operations/labels'
   return null
 }

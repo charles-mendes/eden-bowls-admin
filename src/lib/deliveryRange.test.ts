@@ -6,11 +6,13 @@ import {
   laterText,
   nextFromRange,
   nextSevenDays,
+  nowInputIn,
   presetOf,
   rangeLabel,
   rangeQuery,
   readRange,
   writeRange,
+  zonedInputToIso,
 } from './deliveryRange'
 
 // 2026-11-07 02:30 UTC: still the 6th in New York, already 23:30 of the 6th in São Paulo.
@@ -58,5 +60,16 @@ describe('deliveryRange', () => {
     expect(laterRange('2026-11-30')).toEqual({ from: '2026-12-01', to: '2026-12-07' })
     expect(laterText(4, '2026-11-07')).toBe('Mais 4 pedidos com entrega depois de 07/11.')
     expect(laterText(1, '2026-11-07')).toBe('Mais 1 pedido com entrega depois de 07/11.')
+  })
+
+  // simplify-brazil-dispatch: the batch "Entregue" time is São Paulo wall time, whatever the browser's zone.
+  it('reads a datetime-local value in the market zone and writes now in it', () => {
+    expect(nowInputIn(COURIER_TIMEZONE, NOW)).toBe('2026-11-06T23:30')
+    expect(nowInputIn(LABELS_TIMEZONE, NOW)).toBe('2026-11-06T21:30')
+    expect(zonedInputToIso('2026-11-08T15:40', COURIER_TIMEZONE)).toBe('2026-11-08T18:40:00.000Z')
+    // New York leaves daylight time on 2026-11-01: 08:00 is EST, 07:00 the day before is EDT.
+    expect(zonedInputToIso('2026-11-01T08:00', LABELS_TIMEZONE)).toBe('2026-11-01T13:00:00.000Z')
+    expect(zonedInputToIso('2026-10-31T07:00', LABELS_TIMEZONE)).toBe('2026-10-31T11:00:00.000Z')
+    expect(zonedInputToIso('15:40', COURIER_TIMEZONE)).toBeNull()
   })
 })

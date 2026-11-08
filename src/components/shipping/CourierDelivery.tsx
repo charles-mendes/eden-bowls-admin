@@ -102,6 +102,37 @@ function DispatchDialogBody({ token, target, editing = null, onClose, onDone }: 
     void send(false)
   }
 
+  // simplify-brazil-dispatch: a new Uber dispatch asks only for the method and the cost; the courier, the link
+  // and the note wait behind "Detalhes". Another method, and every edit, show the whole form.
+  const shortForm = !editing && method === 'uber'
+  const courierField = (
+    <label>
+      Entregador
+      <input value={courierName} maxLength={120} onChange={(event) => setCourierName(event.target.value)} />
+    </label>
+  )
+  const linkField = (
+    <>
+      <label>
+        Link de acompanhamento
+        <input type="url" inputMode="url" placeholder="https://" value={trackingUrl} maxLength={500} aria-describedby="courier-link-hint" onChange={(event) => setTrackingUrl(event.target.value)} />
+      </label>
+      <p id="courier-link-hint" className="muted">O link de acompanhamento que o app (Uber ou outro) gera para compartilhar a viagem.</p>
+    </>
+  )
+  const costField = (
+    <label>
+      Custo (R$)
+      <input inputMode="decimal" placeholder="18,50" value={cost} onChange={(event) => setCost(event.target.value)} />
+    </label>
+  )
+  const noteField = (
+    <label>
+      Observação
+      <textarea value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} />
+    </label>
+  )
+
   const title = reasons ? 'Pedido ainda não está pronto' : editing ? 'Editar entrega' : 'Despachar entrega'
   const description = editing
     ? `${target.name} · a entrega continua em rota e o cliente não é avisado de novo`
@@ -138,23 +169,26 @@ function DispatchDialogBody({ token, target, editing = null, onClose, onDone }: 
               {COURIER_METHODS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-          <label>
-            Entregador
-            <input value={courierName} maxLength={120} onChange={(event) => setCourierName(event.target.value)} />
-          </label>
-          <label>
-            Link de acompanhamento
-            <input type="url" inputMode="url" placeholder="https://" value={trackingUrl} maxLength={500} aria-describedby="courier-link-hint" onChange={(event) => setTrackingUrl(event.target.value)} />
-          </label>
-          <p id="courier-link-hint" className="muted">O link de acompanhamento que o app (Uber ou outro) gera para compartilhar a viagem.</p>
-          <label>
-            Custo (R$)
-            <input inputMode="decimal" placeholder="18,50" value={cost} onChange={(event) => setCost(event.target.value)} />
-          </label>
-          <label>
-            Observação
-            <textarea value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} />
-          </label>
+          {shortForm ? (
+            <>
+              {costField}
+              <details className="courier-details">
+                <summary>Detalhes</summary>
+                <div className="stack">
+                  {courierField}
+                  {linkField}
+                  {noteField}
+                </div>
+              </details>
+            </>
+          ) : (
+            <>
+              {courierField}
+              {linkField}
+              {costField}
+              {noteField}
+            </>
+          )}
         </form>
       )}
     </Dialog>
