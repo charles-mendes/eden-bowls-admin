@@ -378,7 +378,7 @@ The queue search (`q`) MUST also match, case-insensitively and as a substring, t
 
 ### Requirement: Ready orders past their day have their own group
 
-Rows whose `dueBucket` is `overdue` and whose production status is ready MUST be shown in a group "Prontos para expedir", placed before the "Atrasados" group, and MUST NOT be shown under "Atrasados". The "Atrasados" metric card MUST keep showing the API's `overdue` metric, which counts only overdue rows not ready.
+Rows whose `dueBucket` is `overdue` and whose production status is ready MUST be shown in a group "Prontos para expedir", placed before the "Atrasados" group, and MUST NOT be shown under "Atrasados". The "Atrasados" metric card MUST keep showing the API's `overdue` metric, which counts only overdue rows not ready. The card MUST carry the text "Só o que a cozinha não terminou. Pronto esperando saída não conta." and MUST NOT show a second number.
 
 #### Scenario: One late order ready and one still in the kitchen
 
@@ -389,6 +389,11 @@ Rows whose `dueBucket` is `overdue` and whose production status is ready MUST be
 
 - **WHEN** an operator on `?prazo=atrasados` marks an overdue Brazil row ready
 - **THEN** after the refresh the row is under "Prontos para expedir" with its fulfillment action
+
+#### Scenario: The card says what it counts
+
+- **WHEN** the queue shows the "Atrasados" card
+- **THEN** the card shows the `overdue` number and the text "Só o que a cozinha não terminou. Pronto esperando saída não conta.", and no other number
 
 ### Requirement: A ready row locked by the recipient name can be filled here
 A row locked by `recipient_name_missing` MUST offer "Informar quem recebe" to a user with `users.delivery.write`. It MUST open a dialog with one empty field, "Nome de quem recebe", the text "Fica nesta assinatura e vale para os próximos pedidos. O nome da conta não muda. Se for presente, confirme com o cliente." and "Salvar nome". When the item has `account_name`, the dialog MUST offer "Usar nome da conta ({account_name})", which fills the field without saving. A 409 `recipient_name_present` MUST say "Esta assinatura já tem nome de quem recebe." and reload. Saving MUST send the name to the subscription's recipient-name route and reload the list; a 422 MUST show under the field.
