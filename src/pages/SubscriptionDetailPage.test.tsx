@@ -302,7 +302,7 @@ describe('SubscriptionDetailPage', () => {
   })
 
   // The first purchase answers 409 (order not ready); the next one goes to the default mock and buys.
-  const notReadyOnce = () => {
+  const notReadyOnce = (reasons: unknown[] = [{ code: 'production_not_ready', production_status: 'in_production' }]) => {
     let answered = false
     return ({ path, method }: { path: string; method: string }) => {
       if (answered || path !== '/api/v1/admin/billing/subscriptions/sub-row-1/shipments' || method !== 'POST') return undefined
@@ -310,7 +310,7 @@ describe('SubscriptionDetailPage', () => {
       return new Response(JSON.stringify({
         message: 'Not ready',
         code: 'ups_label_needs_confirmation',
-        details: { code: 'ups_label_needs_confirmation', reasons: [{ code: 'production_not_ready', production_status: 'in_production' }] },
+        details: { code: 'ups_label_needs_confirmation', reasons },
       }), { status: 409, headers: { 'Content-Type': 'application/json' } })
     }
   }
@@ -331,9 +331,37 @@ describe('SubscriptionDetailPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
 
     expect(await screen.findByText('Etiqueta UPS gerada.')).toBeInTheDocument()
-    expect(confirm.mock.calls[0][0]).toContain('Este pedido ainda não está pronto. Comprar mesmo assim?')
-    expect(confirm.mock.calls[0][0]).toContain('Preparo: Em preparo')
+    const question = confirm.mock.calls[0][0] as string
+    expect(question.startsWith('Pedido ainda não está pronto.')).toBe(true)
+    expect(question).toContain('- Preparo: Em preparo')
+    expect(question.endsWith('Comprar mesmo assim?')).toBe(true)
     expect(labelPosts(calls).map((call) => call.body)).toEqual([{ invoice_id: 'in_test_1' }, { invoice_id: 'in_test_1', confirm_not_ready: true }])
+  })
+
+  // explain-hold-reason-and-overdue: the question opens with the reason, or the label's generic title.
+  it.each([
+    ['a canceled subscription', [{ code: 'subscription_not_active', subscription_status: 'canceled' }], 'Assinatura cancelada.', ['- Assinatura: Cancelada']],
+    ['two reasons', [{ code: 'production_not_ready', production_status: 'in_production' }, { code: 'subscription_not_active', subscription_status: 'canceled' }], 'Confirme antes de comprar a etiqueta.', ['- Preparo: Em preparo', '- Assinatura: Cancelada']],
+  ])('opens the label question with its reason: %s', async (_case, reasons, title, lines) => {
+    const user = userEvent.setup()
+    seedAuth()
+    const confirm = vi.fn().mockReturnValue(false)
+    vi.stubGlobal('confirm', confirm)
+    installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'US',
+      paidCycles: [cycle('in_test_1', { production_status: 'in_production' })],
+      routes: notReadyOnce(reasons),
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
+
+    await waitFor(() => expect(confirm).toHaveBeenCalled())
+    const question = confirm.mock.calls[0][0] as string
+    expect(question.startsWith(title)).toBe(true)
+    expect(question).not.toContain('Pedido ainda não está pronto')
+    lines.forEach((line) => expect(question).toContain(line))
+    expect(question.endsWith('Comprar mesmo assim?')).toBe(true)
   })
 
   it('buys nothing when the operator does not confirm an order not ready', async () => {

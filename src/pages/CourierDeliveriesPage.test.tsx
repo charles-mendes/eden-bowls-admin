@@ -111,6 +111,30 @@ describe('CourierDeliveriesPage', () => {
     expect(posts(calls, '/1/courier-deliveries')[1].body).toMatchObject({ confirm_not_ready: true })
   })
 
+  // explain-hold-reason-and-overdue: the title names the one reason; several get the generic title.
+  it.each([
+    ['a canceled subscription', [{ code: 'subscription_not_active', subscription_status: 'canceled' }], 'Assinatura cancelada', ['Assinatura: Cancelada']],
+    ['an order still in the kitchen', [{ code: 'production_not_ready', production_status: 'in_production' }], 'Pedido ainda não está pronto', ['Preparo: Em preparo']],
+    ['two reasons', [{ code: 'production_not_ready', production_status: 'in_production' }, { code: 'subscription_not_active', subscription_status: 'canceled' }], 'Confirme antes de despachar', ['Preparo: Em preparo', 'Assinatura: Cancelada']],
+  ])('titles the dispatch confirmation by its reason: %s', async (_case, reasons, title, lines) => {
+    const user = userEvent.setup()
+    install(operatorWriteUser, {
+      dispatch: [{
+        status: 409,
+        body: { message: 'Not ready', code: 'courier_dispatch_needs_confirmation', details: { code: 'courier_dispatch_needs_confirmation', reasons } },
+      }],
+    })
+    render()
+
+    await user.click(await screen.findByRole('button', { name: 'Despachar' }))
+    await user.click(await screen.findByRole('button', { name: 'Registrar saída' }))
+
+    expect(await screen.findByRole('dialog', { name: title })).toBeInTheDocument()
+    const warning = screen.getByRole('alert', { name: 'Confirmação de despacho' })
+    lines.forEach((line) => expect(warning).toHaveTextContent(line))
+    expect(screen.getByRole('button', { name: 'Despachar mesmo assim' })).toBeInTheDocument()
+  })
+
   it('a row with an address problem says what is missing, offers no Despachar and shows the email state', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-11-07T15:00:00Z'))

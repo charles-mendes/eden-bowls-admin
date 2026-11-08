@@ -468,8 +468,9 @@ export function ProductionQueuePage() {
   }
 
   const metrics = data?.metrics
-  const dueCards: Array<{ id: QueueDue; label: string; value: number | undefined; tone?: string }> = [
-    { id: 'atrasados', label: 'Atrasados', value: metrics?.overdue, tone: metrics && metrics.overdue > 0 ? 'queue-due-danger' : undefined },
+  // explain-hold-reason-and-overdue: the overdue number is only the kitchen's; a ready order waiting to leave is not in it.
+  const dueCards: Array<{ id: QueueDue; label: string; value: number | undefined; tone?: string; hint?: string }> = [
+    { id: 'atrasados', label: 'Atrasados', value: metrics?.overdue, tone: metrics && metrics.overdue > 0 ? 'queue-due-danger' : undefined, hint: 'Só o que a cozinha não terminou. Pronto esperando saída não conta.' },
     { id: 'hoje', label: 'Hoje', value: metrics?.today },
     { id: 'amanha', label: 'Amanhã', value: metrics?.tomorrow },
     { id: 'proximos', label: `Próximos ${windowDays} dias`, value: metrics?.upcoming },
@@ -526,6 +527,7 @@ export function ProductionQueuePage() {
           >
             <span className="queue-due-label">{card.label}</span>
             <strong className="queue-due-value">{card.value ?? '—'}</strong>
+            {card.hint ? <span className="queue-due-hint">{card.hint}</span> : null}
           </button>
         ))}
       </div>

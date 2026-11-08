@@ -175,7 +175,10 @@ describe('DashboardPage', () => {
     expect(within(forToday).getByText('2')).toBeInTheDocument()
     expect(within(forToday).getByText('Brasil 1 · EUA 1')).toBeInTheDocument()
     expect(forToday).toHaveAttribute('href', '/operations/production?prazo=hoje')
-    expect(screen.getByRole('link', { name: /^Atrasados/ })).toHaveAttribute('href', '/operations/production?prazo=atrasados')
+    const overdueCard = screen.getByRole('link', { name: /^Atrasados/ })
+    expect(overdueCard).toHaveAttribute('href', '/operations/production?prazo=atrasados')
+    // explain-hold-reason-and-overdue: the card says the number is only the kitchen's.
+    expect(within(overdueCard).getByText('Só o que a cozinha não terminou. Pronto esperando saída conta em pedidos a despachar.')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /^Amanhã/ })).toHaveAttribute('href', '/operations/production?prazo=amanha')
     const ups = screen.getByRole('link', { name: /^Sem etiqueta UPS/ })
     // Only ready orders wait for a label, the same rule the blocker uses.

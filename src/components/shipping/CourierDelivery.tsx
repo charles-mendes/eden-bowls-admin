@@ -10,6 +10,7 @@ import {
   failureKindLabel,
   formatCost,
   methodLabel,
+  holdTitle,
   readinessText,
   type CourierDelivery,
   type CourierMethod,
@@ -133,7 +134,7 @@ function DispatchDialogBody({ token, target, editing = null, onClose, onDone }: 
     </label>
   )
 
-  const title = reasons ? 'Pedido ainda não está pronto' : editing ? 'Editar entrega' : 'Despachar entrega'
+  const title = reasons ? holdTitle(reasons, 'Confirme antes de despachar') : editing ? 'Editar entrega' : 'Despachar entrega'
   const description = editing
     ? `${target.name} · a entrega continua em rota e o cliente não é avisado de novo`
     : `${target.name} · fatura ${target.invoiceId}`

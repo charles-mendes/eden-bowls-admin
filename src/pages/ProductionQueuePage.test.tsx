@@ -466,7 +466,11 @@ describe('ProductionQueuePage', () => {
     const rows = screen.getAllByRole('row').map((row) => row.textContent || '')
     expect(rows.findIndex((text) => text.includes('Ana Ledger'))).toBeLessThan(rows.findIndex((text) => text === 'Atrasados'))
     expect(rows.findIndex((text) => text.includes('Bia Cozinha'))).toBeGreaterThan(rows.findIndex((text) => text === 'Atrasados'))
-    expect(screen.getByRole('button', { name: /^Atrasados/ })).toHaveTextContent('1')
+    const overdueCard = screen.getByRole('button', { name: /^Atrasados/ })
+    expect(within(overdueCard).getByText('1')).toBeInTheDocument()
+    // explain-hold-reason-and-overdue: one number, and the text says the ready ones are not in it.
+    expect(within(overdueCard).getByText('Só o que a cozinha não terminou. Pronto esperando saída não conta.')).toBeInTheDocument()
+    expect(overdueCard.textContent?.match(/\d+/g)).toEqual(['1'])
   })
 
   it('a late order marked ready from the overdue filter moves to Prontos para expedir', async () => {
@@ -533,9 +537,10 @@ describe('ProductionQueuePage recipient name', () => {
   })
 
   const lockedItem = (extra: Record<string, unknown> = {}) => {
-    const { customerName: _legacy, ...item } = productionQueueItem
+    // The current API shape has no customerName; undefined is dropped when the mock serializes the item.
     return {
-      ...item,
+      ...productionQueueItem,
+      customerName: undefined,
       displayName: 'Ana Costa',
       nameSource: 'account',
       accountName: 'Ana Costa',

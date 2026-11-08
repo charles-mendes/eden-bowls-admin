@@ -157,6 +157,24 @@ export function readinessText(reason: ReadinessReason): string {
   return reason.code
 }
 
+// explain-hold-reason-and-overdue: one known reason names the confirmation; anything else gets the caller's
+// generic text, so the dispatch and the label purchase share the rule without sharing the verb.
+const SUBSCRIPTION_HOLD_TITLE: Record<string, string> = {
+  canceled: 'Assinatura cancelada',
+  paused: 'Assinatura pausada',
+  past_due: 'Assinatura com pagamento pendente',
+}
+
+export function holdTitle(reasons: ReadinessReason[] | null | undefined, several: string): string {
+  if (!reasons || reasons.length !== 1) return several
+  const [reason] = reasons
+  if (reason.code === 'production_not_ready') return 'Pedido ainda não está pronto'
+  if (reason.code === 'subscription_not_active') {
+    return SUBSCRIPTION_HOLD_TITLE[reason.subscription_status ?? ''] ?? 'Assinatura não está ativa'
+  }
+  return several
+}
+
 // PM-25: why a note holds the box, in the operator's words. Null is a paid cycle with no note recorded.
 const NFE_REASON: Record<NfeStatus, string> = {
   pending: 'em emissão',

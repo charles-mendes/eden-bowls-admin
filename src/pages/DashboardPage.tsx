@@ -235,7 +235,7 @@ export function DashboardPage() {
 
   const cards: Array<{ key: string; label: string; value: number | undefined; hint: string; split?: string; tone?: string; to: string }> = [
     {
-      key: 'overdue', label: 'Atrasados', value: data?.totals.overdue, hint: 'O dia de preparo já passou',
+      key: 'overdue', label: 'Atrasados', value: data?.totals.overdue, hint: 'Só o que a cozinha não terminou. Pronto esperando saída conta em pedidos a despachar.',
       split: data ? splitHint(data.byMarket, 'overdue', shownMarkets) : undefined,
       tone: data && data.totals.overdue > 0 ? 'day-card-danger' : undefined,
       to: productionQueueHref({ prazo: 'atrasados', mercado }),

@@ -18,7 +18,7 @@ import { formatNfeAmount, formatNfeDate, formatNfeNumber, nfeStatusLabel, nfeSta
 import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
 import { CourierDispatchDialog, CourierRowActions, CourierStatusBadge, CourierSummary } from '../components/shipping/CourierDelivery'
-import { productionLabel, readinessText, type CourierDelivery, type ReadinessReason } from '../lib/courierDeliveries'
+import { holdTitle, productionLabel, readinessText, type CourierDelivery, type ReadinessReason } from '../lib/courierDeliveries'
 import { lastContactText, outcomeLabel, reasonLabel, contactsPath, type CustomerContact as Contact } from '../lib/customerContacts'
 import { paidCyclesPath, type PaidCycle } from '../lib/paidCycles'
 
@@ -389,7 +389,8 @@ export function SubscriptionDetailPage() {
       if (!confirmNotReady && requestError instanceof ApiRequestError && requestError.code === 'ups_label_needs_confirmation') {
         const reasons = Array.isArray(requestError.details?.reasons) ? requestError.details.reasons as ReadinessReason[] : []
         const list = reasons.map((reason) => `- ${readinessText(reason)}`).join('\n')
-        if (window.confirm(`Este pedido ainda não está pronto. Comprar mesmo assim?${list ? `\n\n${list}` : ''}`)) {
+        const title = holdTitle(reasons, 'Confirme antes de comprar a etiqueta')
+        if (window.confirm(`${title}.${list ? `\n\n${list}` : ''}\n\nComprar mesmo assim?`)) {
           await createShipment(invoiceId, true)
         }
         return
