@@ -267,7 +267,8 @@ export function CourierDeliveriesPage() {
   const filters = (id: TabId) => addressOnly && (id === 'to_dispatch' || id === 'failed')
   const rowsOf = (id: TabId) => {
     const rows = data ? data[id] : []
-    return filters(id) ? rows.filter((item) => item.address_issue?.open) : rows
+    // keep-ready-orders-dispatchable: a row the address holds is listed too, problem opened or not.
+    return filters(id) ? rows.filter((item) => item.address_issue?.open || (item.issues?.length ?? 0) > 0) : rows
   }
   const items = rowsOf(tab)
   const current = TABS.find((option) => option.id === tab) ?? TABS[0]

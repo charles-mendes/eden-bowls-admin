@@ -335,6 +335,37 @@ describe('DashboardPage', () => {
     expect(work.getByText('1 NF-e rejeitada')).toBeInTheDocument()
   })
 
+  // keep-ready-orders-dispatchable: the orders the address keeps from leaving, on the same line, linked to the filter.
+  it('says on the dispatch line how many of those orders the address holds', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUser, { routes: withToday({ fulfillment: { ...zero, courierToDispatch: 4, courierAddressLocked: 4 } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    const line = work.getByText((_, element) => element?.tagName === 'STRONG' && element.textContent === '4 pedidos a despachar · 4 travados por endereço').closest('li') as HTMLElement
+    expect(within(line).getByRole('link', { name: '4 travados por endereço' })).toHaveAttribute('href', '/operations/courier?problema=endereco')
+    expect(within(line).getByRole('link', { name: 'Abrir entregas' })).toHaveAttribute('href', '/operations/courier')
+  })
+
+  it('puts the address and the NF-e parts on one line, in the singular when one', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUser, { routes: withToday({ fulfillment: { ...zero, courierToDispatch: 5, courierAddressLocked: 1, courierAwaitingNfe: 2 } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    expect(work.getByText((_, element) => element?.tagName === 'STRONG' && element.textContent === '5 pedidos a despachar · 1 travado por endereço · 2 aguardando NF-e')).toBeInTheDocument()
+  })
+
+  it.each([['0', 0], ['null', null], ['absent', undefined]])('adds no address part when the lock count is %s', async (_name, locked) => {
+    seedAuth()
+    installAdminFetchMock(operatorUser, { routes: withToday({ fulfillment: { ...zero, courierToDispatch: 3, courierAddressLocked: locked } }) })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    expect(work.getByText('3 pedidos a despachar')).toBeInTheDocument()
+    expect(work.queryByText(/travad/)).not.toBeInTheDocument()
+  })
+
   it.each([['null', null], ['0', 0]])('shows the dispatch line alone when the NF-e wait is %s', async (_name, awaiting) => {
     seedAuth()
     installAdminFetchMock(operatorUser, { routes: withToday({ fulfillment: { ...zero, courierToDispatch: 3, courierAwaitingNfe: awaiting } }) })

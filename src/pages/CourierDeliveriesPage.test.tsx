@@ -665,6 +665,24 @@ describe('CourierDeliveriesPage', () => {
     expect(await screen.findByText('Cliente 2')).toBeInTheDocument()
   })
 
+  // keep-ready-orders-dispatchable: a row the address holds is listed too, even with no problem opened.
+  it('keeps a row held by the address with no problem opened when Hoje asks', async () => {
+    install(operatorWriteUser, {
+      queue: {
+        to_dispatch: [item(1, { issues: ['recipient_name_missing'], address_issue: null }), item(2, { issues: [] })],
+        out_for_delivery: [],
+        failed: [],
+        delivered: [],
+        truncated: false,
+      },
+    })
+    render('/operations/courier?problema=endereco')
+
+    const row = (await screen.findByText('Cliente 1')).closest('tr') as HTMLElement
+    expect(within(row).getByText('Falta o nome de quem recebe')).toBeInTheDocument()
+    expect(screen.queryByText('Cliente 2')).not.toBeInTheDocument()
+  })
+
   it('says the screen belongs to the Brasil market and skips the list for a session outside it', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorUsUser)

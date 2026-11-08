@@ -682,6 +682,39 @@ describe('SubscriptionDetailPage courier section', () => {
     await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path.endsWith('/sub-row-1/courier-deliveries'))?.body).toEqual({ invoice_id: 'in_br_2', method: 'uber' }))
   })
 
+  // keep-ready-orders-dispatchable: the address lock shows before the dialog, as on Entregas Brasil.
+  it('greys out Despachar and says what the address lacks when the dispatch would be refused', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'BR',
+      paidCycles: [cycle('in_br_2')],
+      subscriptionSnapshot: { courier_issues: ['recipient_name_missing'] },
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const section = (await screen.findByRole('heading', { name: 'Entrega Brasil' })).closest('section') as HTMLElement
+    const button = await within(section).findByRole('button', { name: 'Despachar' })
+    expect(button).toBeDisabled()
+    expect(within(section).getByText('Travado: Falta o nome de quem recebe')).toBeInTheDocument()
+    expect(button).toHaveAccessibleDescription('Travado: Falta o nome de quem recebe')
+    await user.click(button)
+    expect(screen.queryByRole('dialog', { name: 'Despachar entrega' })).toBeNull()
+    expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/courier-deliveries'))).toBe(false)
+  })
+
+  it.each([['an empty lock', { courier_issues: [] }], ['an older API without the field', {}]])('keeps Despachar with %s', async (_name, snapshot) => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'BR', paidCycles: [cycle('in_br_2')], subscriptionSnapshot: snapshot })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const section = (await screen.findByRole('heading', { name: 'Entrega Brasil' })).closest('section') as HTMLElement
+    await user.click(await within(section).findByRole('button', { name: 'Despachar' }))
+    expect(await screen.findByRole('dialog', { name: 'Despachar entrega' })).toBeInTheDocument()
+    expect(within(section).queryByText(/^Travado/)).toBeNull()
+  })
+
   it('a US subscription shows no courier section', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US' })

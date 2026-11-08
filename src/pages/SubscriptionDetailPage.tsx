@@ -6,7 +6,7 @@ import { Section } from '../components/Section'
 import { MetricCard } from '../components/MetricCard'
 import { CustomerContact } from '../components/CustomerContact'
 import { AddressIssueStatus } from '../components/AddressIssueStatus'
-import { type AddressIssue } from '../lib/addressIssues'
+import { issueCodeText, type AddressIssue } from '../lib/addressIssues'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
 import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
@@ -45,6 +45,9 @@ type SubscriptionDetail = {
   market_exception?: boolean
   // delivery-address-issues: the open problem, or the last one resolved in 30 days.
   address_issue?: AddressIssue | null
+  // keep-ready-orders-dispatchable: what the courier dispatch would refuse for this address; null outside the
+  // Brazil market, absent on an older API.
+  courier_issues?: string[] | null
 }
 
 type InvoiceItem = {
@@ -504,6 +507,7 @@ export function SubscriptionDetailPage() {
   const awaitingCourier = paidCycles.filter((cycle) => (
     (!cycle.courier_delivery || cycle.courier_delivery.status === 'failed') && !courierActiveInvoices.has(cycle.invoice_id)
   ))
+  const courierLock = data?.courier_issues ?? []
   const phone = addressPhone(data?.address)
   const contactName = data?.customerName || data?.user.email || 'Cliente'
 
@@ -675,6 +679,10 @@ export function SubscriptionDetailPage() {
       {canReadShipping && shipsByCourier ? (
         <Section title="Entrega Brasil" description="Entrega por Uber, motoboy ou entregador próprio, registrada à mão. Cada tentativa fica no histórico.">
           <p>Quem recebe: <strong>{courierRecipient || '—'}</strong></p>
+          {/* A lock, as on Entregas Brasil: no dialog opens and there is no way to dispatch anyway. */}
+          {courierLock.length && awaitingCourier.length ? (
+            <p id="courier-lock" className="badge-warning">Travado: {courierLock.map(issueCodeText).join(' · ')}</p>
+          ) : null}
           <div className="table-shell table-scroll">
             <table>
               <thead>
@@ -695,7 +703,15 @@ export function SubscriptionDetailPage() {
                     <td colSpan={3} className="muted">{cycleText(item)}</td>
                     <td>
                       {canWriteShipping ? (
-                        <button className="primary-button" type="button" onClick={() => setDispatchInvoice(item.invoice_id)}>Despachar</button>
+                        <button
+                          className="primary-button"
+                          type="button"
+                          disabled={courierLock.length > 0}
+                          aria-describedby={courierLock.length ? 'courier-lock' : undefined}
+                          onClick={() => setDispatchInvoice(item.invoice_id)}
+                        >
+                          Despachar
+                        </button>
                       ) : null}
                     </td>
                   </tr>

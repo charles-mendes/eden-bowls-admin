@@ -135,6 +135,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   customerInvoices?: Array<Record<string, unknown>>
   productionInScope?: boolean
   productionQueue?: Array<Record<string, unknown>>
+  productionMetrics?: { today: number; tomorrow: number; upcoming: number; overdue: number }
   productionStock?: { shortages: Array<{ flavorKey: string; packSizeGrams: number; onHand: number }>; unsized: number }
   // production-block-preview: the answer, or a status for an error.
   // PM-10: a PATCH of these queue ids fails with this message.
@@ -149,6 +150,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     planSelection?: unknown
     address?: unknown
     shipping?: unknown
+    courier_issues?: string[] | null
   }
   products?: typeof productsList.items
   product?: typeof productDetail
@@ -617,6 +619,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         : queueItems
       return jsonResponse({
         ...productionQueueList,
+        metrics: options.productionMetrics ?? productionQueueList.metrics,
         total: items.length,
         totalPages: 1,
         items,

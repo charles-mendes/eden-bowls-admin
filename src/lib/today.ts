@@ -37,6 +37,8 @@ export type Fulfillment = {
   courierFailed: number
   // PM-25: part of courierToDispatch, waiting for an authorized NF-e; null while the fiscal lock is off.
   courierAwaitingNfe?: number | null
+  // keep-ready-orders-dispatchable: part of courierToDispatch the address keeps from leaving. Absent on an older API.
+  courierAddressLocked?: number | null
   nfeMissingDocument: number
   nfeRejected: number
   nfeError: number

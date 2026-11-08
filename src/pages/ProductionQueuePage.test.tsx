@@ -421,6 +421,69 @@ describe('ProductionQueuePage', () => {
     expect(within(row).queryByText('Concluído')).not.toBeInTheDocument()
   })
 
+  // keep-ready-orders-dispatchable: the address lock shows on the ready row, before anyone clicks Expedir.
+  it('a ready Brazil order held by the address says why instead of Expedir', async () => {
+    seedAuth()
+    const item = { ...productionQueueItem, productionStatus: 'ready', stockCoverage: null, paidInvoiceId: 'in_123', deliveryDate: null, courierIssues: ['recipient_name_missing'] }
+    installAdminFetchMock(adminUser, { productionQueue: [item] })
+    renderQueue()
+
+    const row = (await screen.findByText('Ana Ledger')).closest('tr') as HTMLElement
+    expect(within(row).getByText('Travado: Falta o nome de quem recebe')).toBeInTheDocument()
+    expect(within(row).getByRole('link', { name: 'Ver na entrega' })).toHaveAttribute('href', '/operations/courier?fatura=in_123&assinatura=42')
+    expect(within(row).queryByRole('link', { name: 'Expedir' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['an empty list', []],
+    ['no field, as an older API', undefined],
+  ])('a ready Brazil order with %s of courier issues keeps Expedir', async (_name, courierIssues) => {
+    seedAuth()
+    const item = { ...productionQueueItem, productionStatus: 'ready', stockCoverage: null, paidInvoiceId: 'in_123', deliveryDate: null, courierIssues }
+    installAdminFetchMock(adminUser, { productionQueue: [item] })
+    renderQueue()
+
+    const row = (await screen.findByText('Ana Ledger')).closest('tr') as HTMLElement
+    expect(within(row).getByRole('link', { name: 'Expedir' })).toBeInTheDocument()
+    expect(within(row).queryByText(/^Travado/)).not.toBeInTheDocument()
+  })
+
+  it('puts the ready orders past their day in their own group above Atrasados', async () => {
+    seedAuth()
+    const late = { ...productionQueueItem, dueBucket: 'overdue', daysUntil: -24, dueLabel: 'Atrasado 24 dias', stockCoverage: null }
+    installAdminFetchMock(adminUser, {
+      productionQueue: [
+        { ...late, id: 41, customerName: 'Bia Cozinha', productionStatus: 'to_prepare' },
+        { ...late, id: 42, productionStatus: 'ready', paidInvoiceId: 'in_123', deliveryDate: null },
+      ],
+      productionMetrics: { today: 0, tomorrow: 0, upcoming: 0, overdue: 1 },
+    })
+    renderQueue()
+
+    await screen.findByText('Ana Ledger')
+    const groups = screen.getAllByRole('row').filter((row) => row.classList.contains('queue-group-row')).map((row) => row.textContent)
+    expect(groups).toEqual(['Prontos para expedir', 'Atrasados'])
+    const rows = screen.getAllByRole('row').map((row) => row.textContent || '')
+    expect(rows.findIndex((text) => text.includes('Ana Ledger'))).toBeLessThan(rows.findIndex((text) => text === 'Atrasados'))
+    expect(rows.findIndex((text) => text.includes('Bia Cozinha'))).toBeGreaterThan(rows.findIndex((text) => text === 'Atrasados'))
+    expect(screen.getByRole('button', { name: /^Atrasados/ })).toHaveTextContent('1')
+  })
+
+  it('a late order marked ready from the overdue filter moves to Prontos para expedir', async () => {
+    seedAuth()
+    const late = { ...productionQueueItem, dueBucket: 'overdue', daysUntil: -24, dueLabel: 'Atrasado 24 dias', stockCoverage: null, productionStatus: 'in_production', paidInvoiceId: 'in_123', deliveryDate: null, courierIssues: [] }
+    installAdminFetchMock(operatorWriteUser, { productionQueue: [late] })
+    renderQueue('/operations/production?prazo=atrasados')
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Marcar como pronto' }))
+    const confirm = await screen.findByRole('dialog').catch(() => null)
+    if (confirm) fireEvent.click(within(confirm).getByRole('button', { name: 'Marcar como pronto' }))
+
+    const row = (await screen.findByRole('link', { name: 'Expedir' })).closest('tr') as HTMLElement
+    expect(within(row).getByText('Ana Ledger')).toBeInTheDocument()
+    expect(screen.getByText('Prontos para expedir')).toBeInTheDocument()
+  })
+
   it('flags a ready order whose account and address are in different countries', async () => {
     seedAuth()
     installAdminFetchMock(adminUser, { productionQueue: [{ ...productionQueueItem, stripeAccount: 'us', country: 'BR', productionStatus: 'ready', stockCoverage: null }] })

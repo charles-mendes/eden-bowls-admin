@@ -9,6 +9,7 @@ import { apiRequest, buildQueryString } from '../lib/api'
 import { getBrowserTimeZone } from '../lib/format'
 import { defaultStripeAccount, effectiveSessionMarkets, hasBothMarkets, isProfileInScope } from '../lib/markets'
 import { addDays, COURIER_TIMEZONE, todayIn } from '../lib/deliveryRange'
+import { issueCodeText } from '../lib/addressIssues'
 import {
   DUE_LABELS,
   DUE_TO_API,
@@ -67,6 +68,9 @@ type QueueItem = {
   deliveryDate?: string | null
   // The paid invoice of the cycle, null while unpaid; absent on an older API.
   paidInvoiceId?: string | null
+  // keep-ready-orders-dispatchable: what the courier dispatch would refuse for the address on a Brazil cycle;
+  // null elsewhere, absent on an older API.
+  courierIssues?: string[] | null
   note: string | null
   subtotal: number | null
   currency: string | null
@@ -98,11 +102,25 @@ const STATUS_BADGE: Record<ProductionStatus, string> = {
   blocked: 'badge-error',
 }
 
-const BUCKET_HEADERS: Record<DueBucket, string> = {
+// keep-ready-orders-dispatchable: a ready order past its day waits to leave, not for the kitchen.
+type QueueGroup = DueBucket | 'readyLate'
+
+const BUCKET_HEADERS: Record<QueueGroup, string> = {
+  readyLate: 'Prontos para expedir',
   overdue: 'Atrasados',
   today: 'Hoje',
   tomorrow: 'Amanhã',
   upcoming: 'Próximos dias',
+}
+
+function queueGroup(item: QueueItem): QueueGroup | null {
+  if (item.dueBucket === 'overdue' && item.productionStatus === 'ready') return 'readyLate'
+  return item.dueBucket
+}
+
+// The API sorts by due day; the ready ones past their day move above "Atrasados", each group in its order.
+function groupedItems(items: QueueItem[]) {
+  return [...items.filter((item) => queueGroup(item) === 'readyLate'), ...items.filter((item) => queueGroup(item) !== 'readyLate')]
 }
 
 // The forward step of each status: the one button a row shows.
@@ -138,7 +156,7 @@ function longDay(isoDay: string) {
   return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(dayDate(isoDay))
 }
 
-function bucketHeader(bucket: DueBucket, item: QueueItem) {
+function bucketHeader(bucket: QueueGroup, item: QueueItem) {
   const day = civilDay(item)
   return (bucket === 'today' || bucket === 'tomorrow') && day ? `${BUCKET_HEADERS[bucket]} · ${longDay(day)}` : BUCKET_HEADERS[bucket]
 }
@@ -191,6 +209,27 @@ function fulfillmentPath(item: Pick<QueueItem, 'id' | 'stripeAccount' | 'country
   if (account === 'br' && country === 'BR') return courierPath(item)
   if (account === 'us' && country === 'US') return '/operations/labels'
   return null
+}
+
+function isBrazilRow(item: Pick<QueueItem, 'stripeAccount' | 'country'>) {
+  return String(item.stripeAccount || '').toLowerCase() === 'br' && String(item.country || '').toUpperCase() === 'BR'
+}
+
+// What a ready row offers: Expedir, or, for a Brazil order the address keeps from leaving, why and where it is
+// handled. The lock shows before the click, in the words of Entregas Brasil.
+function fulfillmentAction(item: QueueItem) {
+  const to = fulfillmentPath(item)
+  if (!to) return <span className="badge-warning">Mercado divergente</span>
+  const issues = isBrazilRow(item) ? item.courierIssues || [] : []
+  if (issues.length) {
+    return (
+      <div className="queue-cell-stack">
+        <span className="badge-warning">Travado: {issues.map(issueCodeText).join(' · ')}</span>
+        <Link className="link-button" to={to}>Ver na entrega</Link>
+      </div>
+    )
+  }
+  return <Link className="ghost-button" to={to}>Expedir</Link>
 }
 
 export function ProductionQueuePage() {
@@ -445,7 +484,7 @@ export function ProductionQueuePage() {
     return entries
   }
 
-  let lastBucket: DueBucket | null = null
+  let lastBucket: QueueGroup | null = null
   const total = data?.total ?? 0
 
   return (
@@ -588,18 +627,19 @@ export function ProductionQueuePage() {
                     ) : `Nenhum pedido para preparar nos próximos ${windowDays} dias.`}
                   </td>
                 </tr>
-              ) : data?.items.map((item) => {
-                const showHeader = item.dueBucket && item.dueBucket !== lastBucket
-                if (item.dueBucket) lastBucket = item.dueBucket
+              ) : groupedItems(data?.items ?? []).map((item) => {
+                const group = queueGroup(item)
+                const showHeader = group && group !== lastBucket
+                if (group) lastBucket = group
                 const primary = PRIMARY_ACTION[item.productionStatus]
                 const canStart = primary && (primary.status !== 'in_production' || isPaid(item))
                 const busy = busyId === `${item.id}-${item.currentPeriodEnd}`
                 const name = item.customerName || item.email
                 return (
                   <Fragment key={`${item.id}-${item.currentPeriodEnd}`}>
-                    {showHeader && item.dueBucket ? (
+                    {showHeader && group ? (
                       <tr className="queue-group-row">
-                        <td colSpan={columns}>{bucketHeader(item.dueBucket, item)}</td>
+                        <td colSpan={columns}>{bucketHeader(group, item)}</td>
                       </tr>
                     ) : null}
                     <tr>
@@ -673,11 +713,7 @@ export function ProductionQueuePage() {
                             >
                               {primary.label}
                             </button>
-                          ) : item.productionStatus === 'ready' ? (
-                            fulfillmentPath(item)
-                              ? <Link className="ghost-button" to={fulfillmentPath(item) as string}>Expedir</Link>
-                              : <span className="badge-warning">Mercado divergente</span>
-                          ) : null}
+                          ) : item.productionStatus === 'ready' ? fulfillmentAction(item) : null}
                           <RowMenu label={`Mais opções para ${name}`} items={menuItems(item)} />
                         </div>
                       </td>

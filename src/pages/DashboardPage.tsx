@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CustomerContact } from '../components/CustomerContact'
 import { PageFrame } from '../components/PageFrame'
@@ -87,7 +87,9 @@ function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado'], stal
   return list
 }
 
-type Work = { key: string; title: string; to: string; action: string }
+// keep-ready-orders-dispatchable: parts after the title, each with its own link when it has one.
+type WorkPart = { key: string; text: string; to?: string }
+type Work = { key: string; title: string; to: string; action: string; parts?: WorkPart[] }
 
 // Shipping and invoice work, counted by the API. Only counts above zero and markets on screen show.
 function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'BR' | 'US'>): Work[] {
@@ -101,9 +103,18 @@ function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'
   add(brazil, fulfillment.courierToDispatch, 'courier-dispatch', 'pedido a despachar', 'pedidos a despachar', courierHref(), 'Abrir entregas')
   // simplify-brazil-dispatch: the ready orders still held by the fiscal lock are part of that count, so they share
   // its line instead of counting the same boxes twice. Null (lock off) or 0 adds nothing.
+  // keep-ready-orders-dispatchable: so do the ones the address keeps from leaving, linked to that filter.
   const awaitingNfe = fulfillment.courierAwaitingNfe ?? 0
+  const addressLocked = fulfillment.courierAddressLocked ?? 0
   const dispatch = list.find((work) => work.key === 'courier-dispatch')
-  if (dispatch && awaitingNfe > 0) dispatch.title = `${dispatch.title} · ${awaitingNfe} aguardando NF-e`
+  if (dispatch) {
+    const parts: WorkPart[] = []
+    if (addressLocked > 0) {
+      parts.push({ key: 'address', text: plural(addressLocked, 'travado por endereço', 'travados por endereço'), to: '/operations/courier?problema=endereco' })
+    }
+    if (awaitingNfe > 0) parts.push({ key: 'nfe', text: `${awaitingNfe} aguardando NF-e` })
+    if (parts.length) dispatch.parts = parts
+  }
   add(brazil, fulfillment.courierOnTheRoadLong, 'courier-road', 'entrega em rota há mais de 24 h', 'entregas em rota há mais de 24 h', courierHref('em_rota'), 'Abrir entregas')
   add(brazil, fulfillment.courierFailed, 'courier-failed', 'entrega com falha sem novo despacho', 'entregas com falha sem novo despacho', courierHref('falhas'), 'Abrir entregas')
   add(brazil, fulfillment.nfeMissingDocument, 'nfe-document', 'NF-e sem CPF', 'NF-e sem CPF', nfeListHref({ status: 'blocked_missing_document' }), 'Abrir notas')
@@ -351,7 +362,15 @@ export function DashboardPage() {
             {work.map((entry) => (
               <li key={entry.key}>
                 <div className="day-pending-text">
-                  <strong>{entry.title}</strong>
+                  <strong>
+                    {entry.title}
+                    {entry.parts?.map((part) => (
+                      <Fragment key={part.key}>
+                        {' · '}
+                        {part.to ? <Link to={part.to}>{part.text}</Link> : part.text}
+                      </Fragment>
+                    ))}
+                  </strong>
                 </div>
                 <Link className="ghost-button" to={entry.to}>{entry.action}</Link>
               </li>
