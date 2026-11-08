@@ -85,7 +85,6 @@ describe('admin menu', () => {
 
     expect(groupedHrefs).toEqual(items.map((item) => item.href))
     expect(groups.map((group) => group.group)).toEqual([
-      'Visão geral',
       'Operação',
       'Clientes',
       'Loja',
@@ -114,18 +113,37 @@ describe('admin menu', () => {
     expect(activeMenuHref('/catalog/recipes/BR/beef', visibleMenuItems(['operator']))).toBe('/catalog/recipes')
   })
 
-  it('lists Visão do negócio and Relatórios after Hoje only with reports.read', () => {
-    const overview = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) =>
-      groupedMenuItems(roles, permissions).find((group) => group.group === 'Visão geral')?.items.map((item) => item.href)
+  it('lists Visão do negócio and Relatórios in Negócio, below Loja, only with reports.read', () => {
+    const groupsOf = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) => groupedMenuItems(roles, permissions)
+    const negocio = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) =>
+      groupsOf(roles, permissions).find((group) => group.group === 'Negócio')?.items.map((item) => item.href)
 
     for (const role of ['admin', 'operator', 'readonly'] as const) {
-      expect(overview([role], ['reports.read'])).toEqual(['/dashboard', '/insights', '/reports'])
-      expect(overview([role], [])).toEqual(['/dashboard'])
+      expect(negocio([role], ['reports.read'])).toEqual(['/insights', '/reports'])
+      const names = groupsOf([role], ['reports.read']).map((group) => group.group)
+      expect(names.indexOf('Negócio')).toBe(names.indexOf('Loja') + 1)
+      expect(negocio([role], [])).toBeUndefined()
     }
 
     const vet = visibleMenuItems(['veterinarian'], ['reports.read']).map((item) => item.href)
     expect(vet).not.toContain('/insights')
     expect(vet).not.toContain('/reports')
+  })
+
+  it('orders Operação by the day of work in each market, with Hoje after the daily screens', () => {
+    const operacao = (markets: ('BR' | 'US')[]) =>
+      groupedMenuItems(['operator'], ['shipping.read', 'reports.read'], markets)[0]
+    const br = operacao(['BR'])
+    const us = operacao(['US'])
+
+    expect(br.group).toBe('Operação')
+    expect(br.items.map((item) => item.label)).toEqual([
+      'Fila de produção', 'Entregas Brasil', 'Exceções de mercado', 'Estoque', 'Notas fiscais', 'Hoje', 'Feriados e fechamentos', 'Frete',
+    ])
+    expect(us.group).toBe('Operação')
+    expect(us.items.map((item) => item.label)).toEqual([
+      'Fila de produção', 'Etiquetas UPS', 'Exceções de mercado', 'Estoque', 'Hoje', 'Feriados e fechamentos', 'Frete',
+    ])
   })
 
   it('shows UPS labels only to US sessions and the Brazil screens only to BR sessions', () => {

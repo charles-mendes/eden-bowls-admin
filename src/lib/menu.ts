@@ -3,7 +3,7 @@ import { type MarketCode } from './markets'
 
 export type { AdminRole }
 
-export type MenuGroup = 'Visão geral' | 'Operação' | 'Clientes' | 'Loja' | 'Ferramentas' | 'Administração'
+export type MenuGroup = 'Operação' | 'Clientes' | 'Loja' | 'Negócio' | 'Ferramentas' | 'Administração'
 
 export type MenuItem = {
   label: string
@@ -16,15 +16,16 @@ export type MenuItem = {
   markets?: MarketCode[]
 }
 
-// Grouped by the job: ship orders, look after customers, run the store, run the team.
+// Grouped by the job, daily work first: ship orders, look after customers, run the store, read the numbers, run the team.
+// Hoje is the day's checklist, so it sits in Operação after the queues; the panel still opens on it.
 export const adminMenu: MenuItem[] = [
-  { label: 'Hoje', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Visão geral' },
   { label: 'Fila de produção', href: '/operations/production', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Etiquetas UPS', href: '/operations/labels', roles: ['admin', 'operator', 'readonly'], group: 'Operação', markets: ['US'] },
   { label: 'Entregas Brasil', href: '/operations/courier', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'shipping.read', markets: ['BR'] },
   { label: 'Exceções de mercado', href: '/operations/market-exceptions', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'shipping.read' },
   { label: 'Estoque', href: '/operations/stock', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Notas fiscais', href: '/operations/nfe', roles: ['admin', 'operator', 'readonly'], group: 'Operação', markets: ['BR'] },
+  { label: 'Hoje', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Feriados e fechamentos', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Frete', href: '/config/shipping', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
@@ -33,6 +34,8 @@ export const adminMenu: MenuItem[] = [
   { label: 'Receitas', href: '/catalog/recipes', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
   { label: 'Cupons 1ª compra', href: '/billing/coupons', roles: ['admin', 'operator'], group: 'Loja' },
   { label: 'Feedbacks', href: '/feedbacks', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
+  { label: 'Visão do negócio', href: '/insights', roles: ['admin', 'operator', 'readonly'], group: 'Negócio', permission: 'reports.read' },
+  { label: 'Relatórios', href: '/reports', roles: ['admin', 'operator', 'readonly'], group: 'Negócio', permission: 'reports.read' },
   { label: 'Simulador nutricional', href: '/nutrition/simulate', roles: ['admin', 'operator', 'veterinarian'], group: 'Ferramentas' },
   { label: 'Parâmetros nutricionais', href: '/nutrition/settings', roles: ['admin', 'operator', 'readonly', 'veterinarian'], group: 'Ferramentas' },
   { label: 'Equipe e papéis', href: '/users/roles', roles: ['admin'], group: 'Administração' },
@@ -50,35 +53,13 @@ export function activeMenuHref(pathname: string, items: MenuItem[]) {
   return best
 }
 
-const INSIGHTS_ITEM: MenuItem = {
-  label: 'Visão do negócio',
-  href: '/insights',
-  roles: ['admin', 'operator', 'readonly'],
-  group: 'Visão geral',
-  permission: 'reports.read',
-}
-
-const REPORTS_ITEM: MenuItem = {
-  label: 'Relatórios',
-  href: '/reports',
-  roles: ['admin', 'operator', 'readonly'],
-  group: 'Visão geral',
-  permission: 'reports.read',
-}
-
 // An empty market list means the session is not scoped (or not known yet), so every item shows.
 export function visibleMenuItems(roles: AdminRole[], permissions: string[] = [], markets: MarketCode[] = []) {
   const roleSet = new Set(roles)
   const permissionSet = new Set(permissions)
   const inMarket = (item: MenuItem) => !markets.length || !item.markets || item.markets.some((market) => markets.includes(market))
   const allowed = (item: MenuItem) => item.roles.some((role) => roleSet.has(role)) && (!item.permission || permissionSet.has(item.permission)) && inMarket(item)
-  const items = adminMenu.filter(allowed)
-  // Hoje, then Visão do negócio and Relatórios.
-  const afterToday = [INSIGHTS_ITEM, REPORTS_ITEM].filter(allowed)
-  if (!afterToday.length) return items
-  const today = items.findIndex((item) => item.href === '/dashboard')
-  if (today === -1) return [...items, ...afterToday]
-  return [...items.slice(0, today + 1), ...afterToday, ...items.slice(today + 1)]
+  return adminMenu.filter(allowed)
 }
 
 export function groupedMenuItems(roles: AdminRole[], permissions: string[] = [], markets: MarketCode[] = []) {
