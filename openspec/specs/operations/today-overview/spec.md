@@ -58,7 +58,7 @@ Today MUST list, for the market on screen, each `fulfillment` count above zero w
 
 For each market on screen, it MUST also list the open address problems of `addressIssues` ("N problemas de endereço abertos", adding "M sem correção há mais de 2 dias" when `stale` is above zero), linking to Entregas Brasil for Brazil and to Etiquetas UPS for the US, both with `problema=endereco`, and the market exceptions of `marketExceptions` ("N exceções de mercado"), linking to Exceções de mercado. The address count is every open problem of the market; the filtered queue shows only the ones on its rows in the range on screen, so the two numbers may differ. The exceptions count has no 200 limit, while the exceptions page lists the first 200.
 
-When `courierAwaitingNfe` is above zero and Brazil is on screen, Today MUST show "N pedidos a despachar aguardando NF-e" ("1 pedido a despachar aguardando NF-e") linking to Entregas Brasil. It is part of "N pedidos a despachar", which MUST keep counting them; both items open "A despachar". When it is `null` or absent, it MUST NOT show.
+Today MUST NOT show a separate work item for `courierAwaitingNfe`. "N pedidos a despachar" MUST use `courierToDispatch`, and when `courierAwaitingNfe` is above zero the same item MUST add "· M aguardando NF-e" (those orders are part of the N, held by the fiscal lock). When `courierAwaitingNfe` is 0 or null, the item MUST NOT add it. NF-e without CPF, rejected or with error MUST keep their own items.
 
 When `upsLabelsWithoutPickup` is above zero and the US is on screen, Today MUST show "N etiquetas sem coleta pedida" ("1 etiqueta sem coleta pedida") linking to `/operations/labels#coleta`. When it is zero or absent, it MUST NOT show.
 
@@ -99,13 +99,18 @@ When `upsLabelsWithoutPickup` is above zero and the US is on screen, Today MUST 
 
 #### Scenario: Orders waiting for the NF-e
 
-- **WHEN** Today returns `courierAwaitingNfe` 2 with Brazil on screen
-- **THEN** it shows "2 pedidos a despachar aguardando NF-e" linking to `/operations/courier`
+- **WHEN** Today returns `courierToDispatch` 3 and `courierAwaitingNfe` 2 with Brazil on screen
+- **THEN** it shows one item "3 pedidos a despachar · 2 aguardando NF-e" and no separate "aguardando NF-e" item
 
 #### Scenario: Fiscal lock off
 
-- **WHEN** Today returns `courierAwaitingNfe` null
-- **THEN** no "aguardando NF-e" item shows
+- **WHEN** Today returns `courierToDispatch` 3 and `courierAwaitingNfe` null
+- **THEN** it shows "3 pedidos a despachar" with no "aguardando NF-e"
+
+#### Scenario: Every ready order has its note
+
+- **WHEN** Today returns `courierToDispatch` 3 and `courierAwaitingNfe` 0
+- **THEN** it shows "3 pedidos a despachar" with no "aguardando NF-e"
 
 #### Scenario: Labels waiting for a pickup
 
