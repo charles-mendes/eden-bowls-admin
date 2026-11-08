@@ -11,10 +11,13 @@ A change irmã `operator-fills-recipient-name` em `eden-bowls-backend` cria a ro
 ## What Changes
 
 - **"Informar quem recebe" na trava.** Onde a trava diz "Falta o nome de quem recebe", o painel oferece "Informar quem recebe" a quem tem `users.delivery.write`. Isso vale na fila de produção (linha pronta), em Entregas Brasil (linhas de "A despachar" e "Falhas") e em "Entrega Brasil" no detalhe da assinatura.
-  - Abre um diálogo com um só campo, já preenchido com `account_name` quando existir, e o texto "Fica só nesta assinatura. O nome da conta não muda."
+  - Abre um diálogo com um campo vazio e o texto "Fica nesta assinatura e vale para os próximos pedidos. O nome da conta não muda. Se for presente, confirme com o cliente."
+  - Com `account_name`, oferece "Usar nome da conta (Ana Costa)", que preenche o campo sem salvar.
+  - 409 `recipient_name_present` diz "Esta assinatura já tem nome de quem recebe." e recarrega.
   - Ao salvar, chama `PATCH /api/v1/admin/billing/subscriptions/:id/recipient-name` e recarrega a linha. Sem outra trava, a linha passa a oferecer "Expedir" ou "Despachar".
   - Erro 422 aparece no campo.
 - **Exceção à regra de não editar o endereço:** só o nome de quem recebe. Número, CEP, rua e os outros campos continuam fora do alcance do painel nessas telas.
+- **Nome da conta marcado:** quando o nome mostrado vem da conta (`name_source: account`), a fila e Entregas Brasil mostram "Ana Costa (conta)", em texto apagado, para não parecer o nome de quem recebe ao lado da trava.
 - **Nome na fila:** a fila mostra o nome que a API devolve (quem recebe, depois nome da conta, depois e-mail). A busca passa a achar também pelo nome da conta.
 - **Sem mudança:** o diálogo de despacho, o "Marcar entregues" (a correção da hora é só na API) e as outras travas.
 
@@ -26,8 +29,8 @@ Nenhuma.
 
 ### Modified Capabilities
 
-- `operations/production-queue`: a linha pronta travada pelo nome oferece "Informar quem recebe"; a busca acha pelo nome da conta.
-- `operations/courier-deliveries`: a linha travada pelo nome oferece "Informar quem recebe"; o resto do endereço continua sem edição.
+- `operations/production-queue`: a linha pronta travada pelo nome oferece "Informar quem recebe"; nome da conta marcado "(conta)"; a busca acha pelo nome da conta.
+- `operations/courier-deliveries`: a linha travada pelo nome oferece "Informar quem recebe"; o resto do endereço continua sem edição; nome da conta marcado "(conta)".
 - `operations/subscription-detail`: "Entrega Brasil" travada pelo nome oferece "Informar quem recebe".
 
 ## Impact
