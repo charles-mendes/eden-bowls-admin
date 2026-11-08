@@ -58,7 +58,7 @@ Today MUST list, for the market on screen, each `fulfillment` count above zero w
 
 For each market on screen, it MUST also list the open address problems of `addressIssues` ("N problemas de endereço abertos", adding "M sem correção há mais de 2 dias" when `stale` is above zero), linking to Entregas Brasil for Brazil and to Etiquetas UPS for the US, both with `problema=endereco`, and the market exceptions of `marketExceptions` ("N exceções de mercado"), linking to Exceções de mercado. The address count is every open problem of the market; the filtered queue shows only the ones on its rows in the range on screen, so the two numbers may differ. The exceptions count has no 200 limit, while the exceptions page lists the first 200.
 
-Today MUST NOT show a separate work item for `courierAwaitingNfe`. "N pedidos a despachar" MUST use `courierToDispatch`, and when `courierAwaitingNfe` is above zero the same item MUST add "· M aguardando NF-e" (those orders are part of the N, held by the fiscal lock). When `courierAwaitingNfe` is 0 or null, the item MUST NOT add it. NF-e without CPF, rejected or with error MUST keep their own items.
+Today MUST NOT show a separate work item for `courierAwaitingNfe` or for `courierAddressLocked`. "N pedidos a despachar" MUST use `courierToDispatch`. When `courierAddressLocked` is above zero the same item MUST add "· M travados por endereço" ("1 travado por endereço"), linking to `/operations/courier?problema=endereco`; when it is 0, null or absent, it MUST NOT add it. When `courierAwaitingNfe` is above zero the same item MUST then add "· K aguardando NF-e" (those orders are part of the N, held by the fiscal lock). When `courierAwaitingNfe` is 0 or null, the item MUST NOT add it. Both parts are part of the N and MAY overlap. NF-e without CPF, rejected or with error MUST keep their own items.
 
 When `upsLabelsWithoutPickup` is above zero and the US is on screen, Today MUST show "N etiquetas sem coleta pedida" ("1 etiqueta sem coleta pedida") linking to `/operations/labels#coleta`. When it is zero or absent, it MUST NOT show.
 
@@ -121,6 +121,16 @@ When `upsLabelsWithoutPickup` is above zero and the US is on screen, Today MUST 
 
 - **WHEN** an admin filters Today to Brazil and `upsLabelsWithoutPickup` is 3
 - **THEN** no pickup item shows
+
+#### Scenario: Orders held by the address
+
+- **WHEN** Today returns `courierToDispatch` 4 and `courierAddressLocked` 4 with Brazil on screen
+- **THEN** it shows one item "4 pedidos a despachar · 4 travados por endereço", the second part linking to `/operations/courier?problema=endereco`
+
+#### Scenario: Held and waiting for the NF-e
+
+- **WHEN** Today returns `courierToDispatch` 5, `courierAddressLocked` 1 and `courierAwaitingNfe` 2
+- **THEN** it shows "5 pedidos a despachar · 1 travado por endereço · 2 aguardando NF-e"
 
 ### Requirement: A ready Brazil order says where the box is
 
