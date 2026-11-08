@@ -693,3 +693,122 @@ describe('CourierDeliveriesPage', () => {
     expect(calls.some((call) => call.path === '/api/v1/admin/courier-deliveries/queue')).toBe(false)
   })
 })
+
+// operator-fills-recipient-name: the recipient is the one address field the panel fills, and only when missing.
+describe('CourierDeliveriesPage recipient name', () => {
+  beforeEach(() => {
+    seedAuth()
+  })
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllGlobals()
+  })
+
+  const locked = (extra: Record<string, unknown> = {}) => item(1, {
+    recipient_name: 'Ana Costa',
+    name_source: 'account',
+    account_name: 'Ana Costa',
+    issues: ['recipient_name_missing'],
+    ...extra,
+  })
+
+  function installRecipient(user = operatorWriteUser, { reply, row = locked() }: { reply?: Reply; row?: Record<string, unknown> } = {}) {
+    let filled = false
+    return installAdminFetchMock(user, {
+      routes: ({ path, method }: { path: string; method: string }) => {
+        if (path === '/api/v1/admin/courier-deliveries/queue' && method === 'GET') {
+          const issues = ((row.issues as string[]) ?? []).filter((code) => !(filled && code === 'recipient_name_missing'))
+          const current = filled ? { ...row, recipient_name: 'Ana Costa', name_source: 'recipient', issues } : row
+          return json(200, { success: true, data: { to_dispatch: [current], out_for_delivery: [], failed: [], delivered: [], truncated: false } })
+        }
+        if (path === '/api/v1/admin/billing/subscriptions/1/recipient-name' && method === 'PATCH') {
+          const answer = reply ?? { status: 200, body: { success: true, data: { subscription_id: '1', recipient_name: 'Ana Costa', courier_issues: [] } } }
+          if (answer.status === 200) filled = true
+          return json(answer.status, answer.body)
+        }
+        return undefined
+      },
+    })
+  }
+
+  const patches = (calls: Array<{ method: string; path: string; body?: unknown }>) => calls.filter((call) => call.method === 'PATCH' && call.path.endsWith('/recipient-name'))
+
+  it('marks a name taken from the account', async () => {
+    installRecipient()
+    render()
+    const name = await screen.findByText('Ana Costa', { selector: 'strong' })
+    expect(name).toHaveTextContent('Ana Costa (conta)')
+  })
+
+  it('fills the suggested name only on the button and unlocks the row after saving', async () => {
+    const user = userEvent.setup()
+    const { calls } = installRecipient()
+    render()
+    await user.click(await screen.findByRole('button', { name: 'Informar quem recebe' }))
+    const dialog = screen.getByRole('dialog', { name: 'Informar quem recebe' })
+    const field = within(dialog).getByLabelText('Nome de quem recebe')
+    expect(field).toHaveValue('')
+    expect(within(dialog).getByText(/Se for presente, confirme com o cliente/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Usar nome da conta (Ana Costa)' }))
+    expect(field).toHaveValue('Ana Costa')
+    expect(patches(calls)).toHaveLength(0)
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar nome' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Nome de quem recebe salvo: Ana Costa.')
+    expect(patches(calls)[0].body).toEqual({ recipient_name: 'Ana Costa' })
+    expect(await screen.findByRole('button', { name: 'Despachar' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Informar quem recebe' })).not.toBeInTheDocument()
+  })
+
+  it('shows a refused name under the field and keeps the dialog', async () => {
+    const user = userEvent.setup()
+    installRecipient(operatorWriteUser, { reply: { status: 422, body: { success: false, message: 'Invalid', details: { code: 'invalid_recipient_name', field: 'recipient_name' } } } })
+    render()
+    await user.click(await screen.findByRole('button', { name: 'Informar quem recebe' }))
+    const dialog = screen.getByRole('dialog', { name: 'Informar quem recebe' })
+    await user.type(within(dialog).getByLabelText('Nome de quem recebe'), '12')
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar nome' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Use de 2 a 60 caracteres, com pelo menos uma letra e sem @.')
+    expect(within(dialog).getByLabelText('Nome de quem recebe')).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  it('says when someone filled the name in between and reloads', async () => {
+    const user = userEvent.setup()
+    const { calls } = installRecipient(operatorWriteUser, { reply: { status: 409, body: { success: false, message: 'Present', details: { code: 'recipient_name_present' } } } })
+    render()
+    await user.click(await screen.findByRole('button', { name: 'Informar quem recebe' }))
+    const dialog = screen.getByRole('dialog', { name: 'Informar quem recebe' })
+    await user.type(within(dialog).getByLabelText('Nome de quem recebe'), 'João Lima')
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar nome' }))
+    expect(await screen.findByRole('status')).toHaveTextContent('Esta assinatura já tem nome de quem recebe.')
+    expect(screen.queryByRole('dialog', { name: 'Informar quem recebe' })).not.toBeInTheDocument()
+    await waitFor(() => expect(calls.filter((call) => call.path.endsWith('/courier-deliveries/queue'))).toHaveLength(2))
+  })
+
+  it('without an account name there is no suggestion button', async () => {
+    const user = userEvent.setup()
+    installRecipient(operatorWriteUser, { row: locked({ recipient_name: 'ana@example.com', name_source: 'email', account_name: null }) })
+    render()
+    await user.click(await screen.findByRole('button', { name: 'Informar quem recebe' }))
+    expect(screen.queryByRole('button', { name: /Usar nome da conta/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps the other lock after the name and offers nothing without the permission', async () => {
+    installRecipient(readonlyUser)
+    render()
+    await screen.findByText('Falta o nome de quem recebe')
+    expect(screen.queryByRole('button', { name: 'Informar quem recebe' })).not.toBeInTheDocument()
+  })
+
+  it('a row missing the name and the number stays locked by the number after saving', async () => {
+    const user = userEvent.setup()
+    installRecipient(operatorWriteUser, { row: locked({ issues: ['recipient_name_missing', 'address_number_missing'] }) })
+    render()
+    await user.click(await screen.findByRole('button', { name: 'Informar quem recebe' }))
+    const dialog = screen.getByRole('dialog', { name: 'Informar quem recebe' })
+    await user.type(within(dialog).getByLabelText('Nome de quem recebe'), 'Ana Costa')
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar nome' }))
+    await screen.findByRole('status')
+    expect(await screen.findByText('Falta o número')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Despachar' })).not.toBeInTheDocument()
+  })
+})

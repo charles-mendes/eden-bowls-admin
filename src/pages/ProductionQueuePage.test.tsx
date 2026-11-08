@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { addDays, COURIER_TIMEZONE, todayIn } from '../lib/deliveryRange'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProductionQueuePage } from './ProductionQueuePage'
-import { adminUser, operatorWriteUser, productionQueueItem, readonlyUser, WRITE_PERMISSIONS } from '../test/fixtures'
+import { adminUser, operatorWriteUser, productionQueueItem, productionQueueList, readonlyUser, WRITE_PERMISSIONS } from '../test/fixtures'
 import { findCall, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -524,3 +524,88 @@ describe('ProductionQueuePage', () => {
     }
   })
 })
+
+// operator-fills-recipient-name: the API answer has no customerName; displayName is the name the API picked.
+describe('ProductionQueuePage recipient name', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllGlobals()
+  })
+
+  const lockedItem = (extra: Record<string, unknown> = {}) => {
+    const { customerName: _legacy, ...item } = productionQueueItem
+    return {
+      ...item,
+      displayName: 'Ana Costa',
+      nameSource: 'account',
+      accountName: 'Ana Costa',
+      productionStatus: 'ready',
+      stockCoverage: null,
+      paidInvoiceId: 'in_123',
+      deliveryDate: null,
+      courierIssues: ['recipient_name_missing'],
+      ...extra,
+    }
+  }
+
+  function installLocked(user = operatorWriteUser, item: Record<string, unknown> = lockedItem()) {
+    return installAdminFetchMock(user, {
+      productionQueue: [item],
+      routes: ({ path, method }: { path: string; method: string }) => {
+        // The mock copies productionQueue once; this answer reads the item as the PATCH left it.
+        if (path === '/api/v1/admin/production/queue' && method === 'GET') {
+          return new Response(JSON.stringify({ ...productionQueueList, total: 1, totalPages: 1, items: [item] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        }
+        if (path === `/api/v1/admin/billing/subscriptions/${item.id}/recipient-name` && method === 'PATCH') {
+          Object.assign(item, { nameSource: 'recipient', courierIssues: [] })
+          return new Response(JSON.stringify({ success: true, data: { subscription_id: String(item.id), recipient_name: 'Ana Costa', courier_issues: [] } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        }
+        return undefined
+      },
+    })
+  }
+
+  it('shows the name the API picked and marks one taken from the account', async () => {
+    seedAuth()
+    installLocked()
+    renderQueue()
+    const name = await screen.findByText('Ana Costa', { selector: 'strong' })
+    expect(name).toHaveTextContent('Ana Costa (conta)')
+    const row = name.closest('tr') as HTMLElement
+    expect(within(row).getByText('ana@edenbowls.com')).toBeInTheDocument()
+    expect(within(row).getByText('Travado: Falta o nome de quem recebe')).toBeInTheDocument()
+  })
+
+  it('a recipient name reads as before, without the mark', async () => {
+    seedAuth()
+    installLocked(operatorWriteUser, lockedItem({ displayName: 'João Lima', nameSource: 'recipient', courierIssues: [] }))
+    renderQueue()
+    const name = await screen.findByText('João Lima', { selector: 'strong' })
+    expect(name).toHaveTextContent(/^João Lima$/)
+  })
+
+  it('fills the recipient from the ready row and the row offers Expedir', async () => {
+    seedAuth()
+    const { calls } = installLocked()
+    renderQueue()
+    const row = (await screen.findByText('Ana Costa', { selector: 'strong' })).closest('tr') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: 'Informar quem recebe' }))
+    const dialog = screen.getByRole('dialog', { name: 'Informar quem recebe' })
+    expect(within(dialog).getByLabelText('Nome de quem recebe')).toHaveValue('')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Usar nome da conta (Ana Costa)' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar nome' }))
+    expect(await screen.findByText('Nome de quem recebe salvo: Ana Costa.')).toBeInTheDocument()
+    expect(findCall(calls, 'PATCH', '/api/v1/admin/billing/subscriptions/42/recipient-name')?.body).toEqual({ recipient_name: 'Ana Costa' })
+    expect(await screen.findByRole('link', { name: 'Expedir' })).toBeInTheDocument()
+  })
+
+  it('without the permission the row keeps only the lock and Ver na entrega', async () => {
+    seedAuth()
+    installLocked(readonlyUser)
+    renderQueue()
+    const row = (await screen.findByText('Ana Costa', { selector: 'strong' })).closest('tr') as HTMLElement
+    expect(within(row).getByRole('link', { name: 'Ver na entrega' })).toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: 'Informar quem recebe' })).not.toBeInTheDocument()
+  })
+})
+

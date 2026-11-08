@@ -703,6 +703,37 @@ describe('SubscriptionDetailPage courier section', () => {
     expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/courier-deliveries'))).toBe(false)
   })
 
+  // operator-fills-recipient-name: the recipient is filled here and the subscription reloads.
+  it('fills the missing recipient and Despachar comes back', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const snapshot: { courier_issues: string[]; account_name: string | null } = { courier_issues: ['recipient_name_missing'], account_name: 'Ana Costa' }
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'BR',
+      paidCycles: [cycle('in_br_2')],
+      subscriptionSnapshot: snapshot,
+      routes: ({ path, method }: { path: string; method: string }) => {
+        if (path === '/api/v1/admin/billing/subscriptions/sub-row-1/recipient-name' && method === 'PATCH') {
+          snapshot.courier_issues = []
+          return new Response(JSON.stringify({ success: true, data: { subscription_id: 'sub-row-1', recipient_name: 'Ana Costa', courier_issues: [] } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        }
+        return undefined
+      },
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const section = (await screen.findByRole('heading', { name: 'Entrega Brasil' })).closest('section') as HTMLElement
+    expect(await within(section).findByRole('button', { name: 'Despachar' })).toBeDisabled()
+    await user.click(within(section).getByRole('button', { name: 'Informar quem recebe' }))
+    const dialog = screen.getByRole('dialog', { name: 'Informar quem recebe' })
+    await user.click(within(dialog).getByRole('button', { name: 'Usar nome da conta (Ana Costa)' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar nome' }))
+    expect(await screen.findByText('Nome de quem recebe salvo: Ana Costa.')).toBeInTheDocument()
+    expect(calls.find((call) => call.method === 'PATCH' && call.path.endsWith('/recipient-name'))?.body).toEqual({ recipient_name: 'Ana Costa' })
+    await waitFor(() => expect(within(section).getByRole('button', { name: 'Despachar' })).toBeEnabled())
+    expect(within(section).queryByRole('button', { name: 'Informar quem recebe' })).not.toBeInTheDocument()
+  })
+
   it.each([['an empty lock', { courier_issues: [] }], ['an older API without the field', {}]])('keeps Despachar with %s', async (_name, snapshot) => {
     const user = userEvent.setup()
     seedAuth()

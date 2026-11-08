@@ -33,6 +33,9 @@ export type CourierQueueItem = {
   stripe_subscription_id: string | null
   invoice_id: string
   recipient_name: string | null
+  // operator-fills-recipient-name: where recipient_name comes from, and the account name to suggest.
+  name_source?: 'recipient' | 'account' | 'email' | null
+  account_name?: string | null
   neighborhood: string | null
   city: string | null
   zipcode: string | null

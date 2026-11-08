@@ -10,6 +10,7 @@ import { getBrowserTimeZone } from '../lib/format'
 import { defaultStripeAccount, effectiveSessionMarkets, hasBothMarkets, isProfileInScope } from '../lib/markets'
 import { addDays, COURIER_TIMEZONE, todayIn } from '../lib/deliveryRange'
 import { issueCodeText } from '../lib/addressIssues'
+import { RecipientNameDialog } from '../components/shipping/RecipientNameDialog'
 import {
   DUE_LABELS,
   DUE_TO_API,
@@ -71,6 +72,9 @@ type QueueItem = {
   // keep-ready-orders-dispatchable: what the courier dispatch would refuse for the address on a Brazil cycle;
   // null elsewhere, absent on an older API.
   courierIssues?: string[] | null
+  // operator-fills-recipient-name: where displayName comes from, and the account name to suggest.
+  nameSource?: 'recipient' | 'account' | 'email' | null
+  accountName?: string | null
   note: string | null
   subtotal: number | null
   currency: string | null
@@ -215,9 +219,15 @@ function isBrazilRow(item: Pick<QueueItem, 'stripeAccount' | 'country'>) {
   return String(item.stripeAccount || '').toLowerCase() === 'br' && String(item.country || '').toUpperCase() === 'BR'
 }
 
+// The name the row shows: the one the API picks in displayName (recipient, account name in scope, email).
+// `customerName` is an older field the API no longer sends, kept first so an older answer reads as before.
+function rowName(item: Pick<QueueItem, 'displayName' | 'customerName' | 'email'>) {
+  return item.customerName || item.displayName || item.email
+}
+
 // What a ready row offers: Expedir, or, for a Brazil order the address keeps from leaving, why and where it is
-// handled. The lock shows before the click, in the words of Entregas Brasil.
-function fulfillmentAction(item: QueueItem) {
+// handled. The lock shows before the click, in the words of Entregas Brasil. A missing recipient can be filled here.
+function fulfillmentAction(item: QueueItem, onFillRecipient?: (item: QueueItem) => void) {
   const to = fulfillmentPath(item)
   if (!to) return <span className="badge-warning">Mercado divergente</span>
   const issues = isBrazilRow(item) ? item.courierIssues || [] : []
@@ -225,6 +235,9 @@ function fulfillmentAction(item: QueueItem) {
     return (
       <div className="queue-cell-stack">
         <span className="badge-warning">Travado: {issues.map(issueCodeText).join(' · ')}</span>
+        {onFillRecipient && issues.includes('recipient_name_missing') ? (
+          <button className="link-button" type="button" onClick={() => onFillRecipient(item)}>Informar quem recebe</button>
+        ) : null}
         <Link className="link-button" to={to}>Ver na entrega</Link>
       </div>
     )
@@ -238,6 +251,7 @@ export function ProductionQueuePage() {
   // Unknown markets (empty list) keep both links, as the menu does.
   const showsMarket = (market: 'BR' | 'US') => !sessionMarketList.length || sessionMarketList.includes(market)
   const canWrite = hasPermission('production.write')
+  const canFillRecipient = hasPermission('users.delivery.write')
   const bothMarkets = hasBothMarkets(user)
   const [params, setParams] = useSearchParams()
   const [data, setData] = useState<QueueResponse | null>(null)
@@ -248,6 +262,8 @@ export function ProductionQueuePage() {
   const [denseItem, setDenseItem] = useState<QueueItem | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [stockWarning, setStockWarning] = useState('')
+  const [recipientItem, setRecipientItem] = useState<QueueItem | null>(null)
+  const [recipientNotice, setRecipientNotice] = useState('')
   // PM-09: a short order asks before it is marked ready.
   const [readyConfirm, setReadyConfirm] = useState<QueueItem | null>(null)
   // PM-15: the block preview of the dialog's cycle, kept with the key it was asked for.
@@ -415,7 +431,7 @@ export function ProductionQueuePage() {
           warnings.push(formatSeparationShortage(result.stock))
         }
       } catch (requestError) {
-        failures.push({ name: item.customerName || item.email, message: requestError instanceof Error ? requestError.message : 'Falha ao atualizar' })
+        failures.push({ name: rowName(item), message: requestError instanceof Error ? requestError.message : 'Falha ao atualizar' })
       }
       setBatchProgress({ done: index + 1, total: items.length })
     }
@@ -567,6 +583,12 @@ export function ProductionQueuePage() {
       </div>
 
       {error ? <div className="alert" role="alert">{error}</div> : null}
+      {recipientNotice ? (
+        <div className="notice" role="status">
+          {recipientNotice}
+          <button className="link-button" type="button" onClick={() => setRecipientNotice('')}>Fechar</button>
+        </div>
+      ) : null}
       {stockWarning ? (
         <div className="alert" role="status">
           {stockWarning}
@@ -634,7 +656,7 @@ export function ProductionQueuePage() {
                 const primary = PRIMARY_ACTION[item.productionStatus]
                 const canStart = primary && (primary.status !== 'in_production' || isPaid(item))
                 const busy = busyId === `${item.id}-${item.currentPeriodEnd}`
-                const name = item.customerName || item.email
+                const name = rowName(item)
                 return (
                   <Fragment key={`${item.id}-${item.currentPeriodEnd}`}>
                     {showHeader && group ? (
@@ -658,8 +680,11 @@ export function ProductionQueuePage() {
                       ) : null}
                       <td className="queue-cell-customer">
                         <div className="queue-cell-stack">
-                          <strong>{name}</strong>
-                          {item.customerName ? <span className="muted">{item.email}</span> : null}
+                          <strong>
+                            {name}
+                            {item.nameSource === 'account' ? <span className="muted name-source"> (conta)</span> : null}
+                          </strong>
+                          {name !== item.email ? <span className="muted">{item.email}</span> : null}
                           <span className="muted">{[item.country, item.city].filter(Boolean).join(' · ') || '—'}</span>
                         </div>
                       </td>
@@ -713,7 +738,7 @@ export function ProductionQueuePage() {
                             >
                               {primary.label}
                             </button>
-                          ) : item.productionStatus === 'ready' ? fulfillmentAction(item) : null}
+                          ) : item.productionStatus === 'ready' ? fulfillmentAction(item, canFillRecipient ? setRecipientItem : undefined) : null}
                           <RowMenu label={`Mais opções para ${name}`} items={menuItems(item)} />
                         </div>
                       </td>
@@ -758,7 +783,7 @@ export function ProductionQueuePage() {
       >
         <form id="production-block-form" className="closure-form" onSubmit={submitBlock}>
           {blockItem ? (
-            <p className="closure-context"><strong>{blockItem.customerName || blockItem.email}</strong> · {blockItem.flavorMix || '—'}</p>
+            <p className="closure-context"><strong>{rowName(blockItem)}</strong> · {blockItem.flavorMix || '—'}</p>
           ) : null}
           {blockItem && (blockItem.paymentState === 'awaiting_payment' || blockItem.paymentState === 'past_due') ? (
             // Blocking an unpaid cycle moves the Stripe charge; the operator sees it before confirming.
@@ -796,7 +821,7 @@ export function ProductionQueuePage() {
       >
         {readyConfirm ? (
           <>
-            <p className="closure-context"><strong>{readyConfirm.customerName || readyConfirm.email}</strong> · {readyConfirm.flavorMix || '—'}</p>
+            <p className="closure-context"><strong>{rowName(readyConfirm)}</strong> · {readyConfirm.flavorMix || '—'}</p>
             <p className="alert" role="note">{READY_SHORT_ONE(formatStockShortages(readyConfirm.stockShortages) || 'alguma receita')}</p>
           </>
         ) : null}
@@ -824,7 +849,7 @@ export function ProductionQueuePage() {
             <ul className="plain-list" data-testid="batch-items">
               {batchConfirm.items.map((item) => (
                 <li key={itemKey(item)}>
-                  <strong>{item.customerName || item.email}</strong> · {item.flavorMix || '—'}
+                  <strong>{rowName(item)}</strong> · {item.flavorMix || '—'}
                   {batchConfirm.status === 'ready' && item.stockCoverage === 'short' ? (
                     <span className="badge-warning"> Falta: {formatStockShortages(item.stockShortages) || 'estoque'}</span>
                   ) : null}
@@ -849,6 +874,18 @@ export function ProductionQueuePage() {
           ))}
         </ul>
       </Dialog>
+      {recipientItem ? (
+        <RecipientNameDialog
+          subscriptionId={recipientItem.id}
+          accountName={recipientItem.accountName}
+          onClose={() => setRecipientItem(null)}
+          onSaved={(message) => {
+            setRecipientItem(null)
+            setRecipientNotice(message)
+            setReloadKey((key) => key + 1)
+          }}
+        />
+      ) : null}
     </PageFrame>
   )
 }

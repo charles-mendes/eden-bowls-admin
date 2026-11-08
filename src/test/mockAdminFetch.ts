@@ -151,6 +151,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     address?: unknown
     shipping?: unknown
     courier_issues?: string[] | null
+    account_name?: string | null
   }
   products?: typeof productsList.items
   product?: typeof productDetail

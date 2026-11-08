@@ -5,6 +5,7 @@ import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { MetricCard } from '../components/MetricCard'
 import { CustomerContact } from '../components/CustomerContact'
+import { RecipientNameDialog } from '../components/shipping/RecipientNameDialog'
 import { AddressIssueStatus } from '../components/AddressIssueStatus'
 import { issueCodeText, type AddressIssue } from '../lib/addressIssues'
 import { useAuth } from '../contexts/AuthContext'
@@ -48,6 +49,8 @@ type SubscriptionDetail = {
   // keep-ready-orders-dispatchable: what the courier dispatch would refuse for this address; null outside the
   // Brazil market, absent on an older API.
   courier_issues?: string[] | null
+  // operator-fills-recipient-name: the account name to suggest, null outside the operator's market.
+  account_name?: string | null
 }
 
 type InvoiceItem = {
@@ -138,6 +141,8 @@ export function SubscriptionDetailPage() {
   const canSyncBilling = hasPermission('billing.subscribers.sync')
   const canReadNfe = hasPermission('nfe.read')
   const canReadSubscription = hasPermission('billing.subscribers.read')
+  const canFillRecipient = hasPermission('users.delivery.write')
+  const [fillingRecipient, setFillingRecipient] = useState(false)
   const profileInScope = isProfileInScope(data?.customerProfileInScope)
   // Brazil delivers by courier, with no UPS label. The delivery address decides, not the Stripe account.
   const shipsWithUps = data?.term?.marketCountry === 'US'
@@ -683,6 +688,10 @@ export function SubscriptionDetailPage() {
           {courierLock.length && awaitingCourier.length ? (
             <p id="courier-lock" className="badge-warning">Travado: {courierLock.map(issueCodeText).join(' · ')}</p>
           ) : null}
+          {/* operator-fills-recipient-name: the recipient is the one address field filled here, only when missing. */}
+          {canFillRecipient && courierLock.includes('recipient_name_missing') ? (
+            <button className="link-button" type="button" onClick={() => setFillingRecipient(true)}>Informar quem recebe</button>
+          ) : null}
           <div className="table-shell table-scroll">
             <table>
               <thead>
@@ -927,6 +936,20 @@ export function SubscriptionDetailPage() {
             planSelection: data.planSelection,
             address: data.address,
             shipping: data.shipping,
+          }}
+        />
+      ) : null}
+      {fillingRecipient && id ? (
+        <RecipientNameDialog
+          subscriptionId={id}
+          accountName={data?.account_name}
+          onClose={() => setFillingRecipient(false)}
+          onSaved={(text) => {
+            setFillingRecipient(false)
+            setError('')
+            setMessage(text)
+            void load()
+            void loadCourier()
           }}
         />
       ) : null}

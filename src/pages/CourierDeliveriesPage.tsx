@@ -5,6 +5,7 @@ import { Dialog } from '../components/Dialog'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CopyButton } from '../components/CopyButton'
 import { CustomerContact } from '../components/CustomerContact'
+import { RecipientNameDialog } from '../components/shipping/RecipientNameDialog'
 import { AddressIssueStatus } from '../components/AddressIssueStatus'
 import { issueCodeText } from '../lib/addressIssues'
 import { PageFrame } from '../components/PageFrame'
@@ -99,7 +100,10 @@ function RecipientCell({ item, details }: { item: CourierQueueItem; details: boo
   const lines = itemsText(item)
   return (
     <div className="stack">
-      <strong>{itemName(item)}</strong>
+      <strong>
+        {itemName(item)}
+        {item.name_source === 'account' ? <span className="muted name-source"> (conta)</span> : null}
+      </strong>
       {details ? (
         <>
           {item.phone ? (
@@ -121,6 +125,8 @@ export function CourierDeliveriesPage() {
   // Wait for the session: its markets decide whether this screen loads at all.
   const sessionReady = Boolean(user)
   const canWrite = hasPermission('shipping.write')
+  const canFillRecipient = hasPermission('users.delivery.write')
+  const [recipientItem, setRecipientItem] = useState<CourierQueueItem | null>(null)
   const [data, setData] = useState<CourierQueue | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const tab: TabId = (TABS.find((option) => option.aba === searchParams.get('aba')) ?? TABS[0]).id
@@ -386,6 +392,10 @@ export function CourierDeliveriesPage() {
                       {item.issues.map((code) => <li key={code}>{issueCodeText(code)}</li>)}
                     </ul>
                   ) : null}
+                  {/* operator-fills-recipient-name: the one address field the panel fills, and only when missing. */}
+                  {canFillRecipient && (tab === 'to_dispatch' || tab === 'failed') && item.issues?.includes('recipient_name_missing') ? (
+                    <button className="link-button" type="button" onClick={() => setRecipientItem(item)}>Informar quem recebe</button>
+                  ) : null}
                   <AddressIssueStatus issue={item.address_issue} />
                 </td>
                 <td>{formatDay(item.delivery_date)}</td>
@@ -454,6 +464,18 @@ export function CourierDeliveriesPage() {
           </tbody>
         </table>
       </div>
+
+      {recipientItem ? (
+        <RecipientNameDialog
+          subscriptionId={recipientItem.subscription_id}
+          accountName={recipientItem.account_name}
+          onClose={() => setRecipientItem(null)}
+          onSaved={(text) => {
+            setRecipientItem(null)
+            done(text)
+          }}
+        />
+      ) : null}
 
       <Dialog
         open={batchAt !== null}
