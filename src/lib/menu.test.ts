@@ -130,7 +130,7 @@ describe('admin menu', () => {
     expect(vet).not.toContain('/reports')
   })
 
-  it('orders Operação by the day of work in each market, with Hoje after the daily screens', () => {
+  it('orders Operação by the day of work in each market, with Hoje first', () => {
     const operacao = (markets: ('BR' | 'US')[]) =>
       groupedMenuItems(['operator'], ['shipping.read', 'reports.read'], markets)[0]
     const br = operacao(['BR'])
@@ -138,11 +138,11 @@ describe('admin menu', () => {
 
     expect(br.group).toBe('Operação')
     expect(br.items.map((item) => item.label)).toEqual([
-      'Fila de produção', 'Entregas Brasil', 'Exceções de mercado', 'Estoque', 'Notas fiscais', 'Hoje', 'Feriados e fechamentos', 'Frete',
+      'Hoje', 'Fila de produção', 'Entregas Brasil', 'Exceções de mercado', 'Estoque', 'Notas fiscais', 'Feriados e fechamentos', 'Frete',
     ])
     expect(us.group).toBe('Operação')
     expect(us.items.map((item) => item.label)).toEqual([
-      'Fila de produção', 'Etiquetas UPS', 'Exceções de mercado', 'Estoque', 'Hoje', 'Feriados e fechamentos', 'Frete',
+      'Hoje', 'Fila de produção', 'Etiquetas UPS', 'Exceções de mercado', 'Estoque', 'Feriados e fechamentos', 'Frete',
     ])
   })
 

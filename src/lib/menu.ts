@@ -17,15 +17,15 @@ export type MenuItem = {
 }
 
 // Grouped by the job, daily work first: ship orders, look after customers, run the store, read the numbers, run the team.
-// Hoje is the day's checklist, so it sits in Operação after the queues; the panel still opens on it.
+// Hoje opens Operação: it is the day's checklist and the panel's landing page.
 export const adminMenu: MenuItem[] = [
+  { label: 'Hoje', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Fila de produção', href: '/operations/production', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Etiquetas UPS', href: '/operations/labels', roles: ['admin', 'operator', 'readonly'], group: 'Operação', markets: ['US'] },
   { label: 'Entregas Brasil', href: '/operations/courier', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'shipping.read', markets: ['BR'] },
   { label: 'Exceções de mercado', href: '/operations/market-exceptions', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'shipping.read' },
   { label: 'Estoque', href: '/operations/stock', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Notas fiscais', href: '/operations/nfe', roles: ['admin', 'operator', 'readonly'], group: 'Operação', markets: ['BR'] },
-  { label: 'Hoje', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Feriados e fechamentos', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Frete', href: '/config/shipping', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
