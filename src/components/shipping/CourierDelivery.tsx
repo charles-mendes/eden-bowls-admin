@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Dialog } from '../Dialog'
+import { InfoHint } from '../InfoHint'
 import { ApiRequestError, apiRequest } from '../../lib/api'
 import {
   COURIER_METHODS,
@@ -9,17 +10,36 @@ import {
   courierErrorText,
   failureKindLabel,
   formatCost,
+  formatCustomerShipping,
+  formatDistanceKm,
   methodLabel,
   holdTitle,
   readinessText,
   type CourierDelivery,
   type CourierMethod,
+  type CustomerShipping,
   type FailureKind,
   type ReadinessReason,
 } from '../../lib/courierDeliveries'
 import { formatDate } from '../../lib/format'
 
-type DispatchTarget = { subscriptionId: string; invoiceId: string; name: string }
+// customerShipping: what the customer paid at checkout, shown read-only and never copied into the courier cost.
+type DispatchTarget = { subscriptionId: string; invoiceId: string; name: string; customerShipping?: CustomerShipping | null }
+
+// The freight already charged at checkout, kept apart from what Eden Bowls pays the courier.
+function CustomerShippingSummary({ shipping }: { shipping: CustomerShipping | null }) {
+  return (
+    <section className="courier-customer-shipping" aria-label="Frete cobrado do cliente">
+      <strong>Frete cobrado do cliente</strong>
+      <div className="courier-customer-shipping-value">
+        <span>{shipping ? formatCustomerShipping(shipping) : 'Não registrado no checkout'}</span>
+        {shipping?.distance_km !== null && shipping?.distance_km !== undefined ? <span className="muted">{formatDistanceKm(shipping.distance_km)}</span> : null}
+      </div>
+      {shipping?.label ? <span className="muted">{shipping.label}</span> : null}
+      <p className="muted">Este valor já foi cobrado no checkout. Despachar não altera o que o cliente paga.</p>
+    </section>
+  )
+}
 
 type DispatchDialogProps = {
   token: string | null
@@ -103,33 +123,37 @@ function DispatchDialogBody({ token, target, editing = null, onClose, onDone }: 
     void send(false)
   }
 
-  // simplify-brazil-dispatch: a new Uber dispatch asks only for the method and the cost; the courier, the link
-  // and the note wait behind "Detalhes". Another method, and every edit, show the whole form.
-  const shortForm = !editing && method === 'uber'
+  // simplify-brazil-dispatch: a new dispatch, whatever the method, asks only for the method and the cost; the
+  // courier, the link and the note wait behind "Detalhes". An edit shows the whole form with what was saved.
+  const shortForm = !editing
   const courierField = (
     <label>
-      Entregador
+      Entregador (Opcional)
       <input value={courierName} maxLength={120} onChange={(event) => setCourierName(event.target.value)} />
     </label>
   )
+  // The help sits behind an "i" beside the label, outside it, so the label text stays the field's name.
   const linkField = (
-    <>
-      <label>
-        Link de acompanhamento
-        <input type="url" inputMode="url" placeholder="https://" value={trackingUrl} maxLength={500} aria-describedby="courier-link-hint" onChange={(event) => setTrackingUrl(event.target.value)} />
-      </label>
-      <p id="courier-link-hint" className="muted">O link de acompanhamento que o app (Uber ou outro) gera para compartilhar a viagem.</p>
-    </>
+    <div className="field-with-hint">
+      <div className="field-label-row">
+        <label htmlFor="courier-link">Link de acompanhamento (Opcional)</label>
+        <InfoHint id="courier-link-hint" topic="o link de acompanhamento" text="O link de acompanhamento que o app (Uber ou outro) gera para compartilhar a viagem." />
+      </div>
+      <input id="courier-link" type="url" inputMode="url" placeholder="https://" value={trackingUrl} maxLength={500} aria-describedby="courier-link-hint" onChange={(event) => setTrackingUrl(event.target.value)} />
+    </div>
   )
   const costField = (
-    <label>
-      Custo (R$)
-      <input inputMode="decimal" placeholder="18,50" value={cost} onChange={(event) => setCost(event.target.value)} />
-    </label>
+    <div className="field-with-hint">
+      <div className="field-label-row">
+        <label htmlFor="courier-cost">Custo do entregador (R$) (Opcional)</label>
+        <InfoHint id="courier-cost-hint" topic="o custo do entregador" text="O que a Eden Bowls paga nesta viagem (Uber, motoboy ou entregador). Opcional. Não entra na cobrança do cliente." />
+      </div>
+      <input id="courier-cost" inputMode="decimal" value={cost} aria-describedby="courier-cost-hint" onChange={(event) => setCost(event.target.value)} />
+    </div>
   )
   const noteField = (
     <label>
-      Observação
+      Observação (Opcional)
       <textarea value={note} maxLength={500} onChange={(event) => setNote(event.target.value)} />
     </label>
   )
@@ -154,44 +178,47 @@ function DispatchDialogBody({ token, target, editing = null, onClose, onDone }: 
         <button type="submit" form="courier-dispatch-form" className="primary-button" disabled={saving}>{editing ? 'Salvar alterações' : 'Registrar saída'}</button>
       )}
     >
-      {error ? <div className="alert" role="alert">{error}</div> : null}
-      {reasons ? (
-        <div className="warning" role="alert" aria-label="Confirmação de despacho">
-          <strong>Confirme antes de despachar:</strong>
-          <ul>
-            {reasons.map((reason) => <li key={reason.code}>{readinessText(reason)}</li>)}
-          </ul>
-        </div>
-      ) : (
-        <form id="courier-dispatch-form" className="stack" onSubmit={submit}>
-          <label>
-            Meio de entrega
-            <select value={method} onChange={(event) => setMethod(event.target.value as CourierMethod)}>
-              {COURIER_METHODS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select>
-          </label>
-          {shortForm ? (
-            <>
-              {costField}
-              <details className="courier-details">
-                <summary>Detalhes</summary>
-                <div className="stack">
-                  {courierField}
-                  {linkField}
-                  {noteField}
-                </div>
-              </details>
-            </>
-          ) : (
-            <>
-              {courierField}
-              {linkField}
-              {costField}
-              {noteField}
-            </>
-          )}
-        </form>
-      )}
+      <div className="courier-dispatch">
+        {error ? <div className="alert" role="alert">{error}</div> : null}
+        <CustomerShippingSummary shipping={target.customerShipping ?? null} />
+        {reasons ? (
+          <div className="warning" role="alert" aria-label="Confirmação de despacho">
+            <strong>Confirme antes de despachar:</strong>
+            <ul>
+              {reasons.map((reason) => <li key={reason.code}>{readinessText(reason)}</li>)}
+            </ul>
+          </div>
+        ) : (
+          <form id="courier-dispatch-form" className="stack" onSubmit={submit}>
+            <label>
+              Meio de entrega
+              <select value={method} onChange={(event) => setMethod(event.target.value as CourierMethod)}>
+                {COURIER_METHODS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </label>
+            {shortForm ? (
+              <>
+                {costField}
+                <details className="courier-details">
+                  <summary>Detalhes</summary>
+                  <div className="stack">
+                    {courierField}
+                    {linkField}
+                    {noteField}
+                  </div>
+                </details>
+              </>
+            ) : (
+              <>
+                {courierField}
+                {linkField}
+                {costField}
+                {noteField}
+              </>
+            )}
+          </form>
+        )}
+      </div>
     </Dialog>
   )
 }
@@ -268,7 +295,7 @@ export function CourierRowActions({ token, delivery, canWrite, onDone, onError, 
         footer={<button type="submit" form={`courier-fail-${delivery.id}`} className="primary-button" disabled={busy || !reason.trim() || !kind}>Registrar falha</button>}
       >
         <form id={`courier-fail-${delivery.id}`} className="stack" onSubmit={submitFailure}>
-          <fieldset>
+          <fieldset className="radio-group">
             <legend>Tipo da falha</legend>
             {FAILURE_KINDS.map((option) => (
               <label key={option.value} className="radio-line">

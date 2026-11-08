@@ -18,7 +18,7 @@ import { formatNfeAmount, formatNfeDate, formatNfeNumber, nfeStatusLabel, nfeSta
 import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
 import { CourierDispatchDialog, CourierRowActions, CourierStatusBadge, CourierSummary } from '../components/shipping/CourierDelivery'
-import { holdTitle, productionLabel, readinessText, type CourierDelivery, type ReadinessReason } from '../lib/courierDeliveries'
+import { customerShippingFrom, holdTitle, productionLabel, readinessText, type CourierDelivery, type ReadinessReason } from '../lib/courierDeliveries'
 import { lastContactText, outcomeLabel, reasonLabel, contactsPath, type CustomerContact as Contact } from '../lib/customerContacts'
 import { paidCyclesPath, type PaidCycle } from '../lib/paidCycles'
 
@@ -748,7 +748,7 @@ export function SubscriptionDetailPage() {
           </div>
           <CourierDispatchDialog
             token={token}
-            target={dispatchInvoice && data ? { subscriptionId: data.id, invoiceId: dispatchInvoice, name: courierRecipient || data.user.email } : null}
+            target={dispatchInvoice && data ? { subscriptionId: data.id, invoiceId: dispatchInvoice, name: courierRecipient || data.user.email, customerShipping: customerShippingFrom(data.shipping) } : null}
             onClose={() => setDispatchInvoice(null)}
             onDone={courierDone}
           />

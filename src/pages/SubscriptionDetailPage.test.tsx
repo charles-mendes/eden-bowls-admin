@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SubscriptionDetailPage } from './SubscriptionDetailPage'
-import { addressIssue, adminUser, checkoutDetail, customerContact, operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { addressIssue, adminUser, checkoutDetail, customerContact, operatorUsWriteUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { customerInvoice, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -514,10 +514,34 @@ describe('SubscriptionDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Enviar ao cliente' })).not.toBeInTheDocument()
   })
 
+  // The raw JSON is for the admin: Brazil and US operators see only the readable sections.
+  it.each([
+    ['Brazil', 'BR', operatorWriteUser],
+    ['US', 'US', operatorUsWriteUser],
+  ])('a %s operator sees the readable snapshot without the technical JSON', async (_market, subscriptionMarket, profile) => {
+    seedAuth()
+    installAdminFetchMock(profile, {
+      subscriptionMarket,
+      subscriptionSnapshot: {
+        petsSnapshot: { pets: [{ id: 'pet-1', name: 'Luna' }] },
+        planSelection: checkoutDetail.planSelection,
+        address: checkoutDetail.address,
+        shipping: checkoutDetail.shipping,
+      },
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    expect(await screen.findByRole('heading', { name: 'Detalhes do produto' })).toBeInTheDocument()
+    expect(screen.getByText('Entrega Eden Bowl')).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'JSON técnico' })).not.toBeInTheDocument()
+    expect(screen.queryByText('JSON de recorrência')).not.toBeInTheDocument()
+    expect(document.querySelector('.json-details')).toBeNull()
+  })
+
   it('shows catalog line items and keeps raw JSON collapsed', async () => {
     const user = userEvent.setup()
     seedAuth()
-    installAdminFetchMock(operatorWriteUser, {
+    installAdminFetchMock(adminUser, {
       subscriptionSnapshot: {
         petsSnapshot: { pets: [{ id: 'pet-1', name: 'Luna' }] },
         planSelection: checkoutDetail.planSelection,
@@ -536,6 +560,11 @@ describe('SubscriptionDetailPage', () => {
     expect(screen.getByText(/45,00/)).toBeInTheDocument()
     expect(screen.getByText('Rua Aristeu de Castro Fernandes, 941')).toBeInTheDocument()
     expect(screen.getByText('Entrega Eden Bowl')).toBeInTheDocument()
+    // The end of the page adds the products and the freight saved at checkout.
+    const total = screen.getByRole('heading', { name: 'Total' }).closest('section') as HTMLElement
+    expect(within(total).getByText('Produtos').nextElementSibling).toHaveTextContent(/R\$\s550,00/)
+    expect(within(total).getByText('Frete').nextElementSibling).toHaveTextContent(/R\$\s7,00/)
+    expect(within(total).getByText('Total (produtos + frete)').nextElementSibling).toHaveTextContent(/R\$\s557,00/)
     expect(screen.queryByRole('heading', { name: 'Desconto 1ª compra' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Pagamento' })).not.toBeInTheDocument()
     expect(screen.queryByText(/selected_flavors/)).not.toBeInTheDocument()
@@ -550,7 +579,7 @@ describe('SubscriptionDetailPage', () => {
   it('shows the flavor mix without a line-item table', async () => {
     const user = userEvent.setup()
     seedAuth()
-    installAdminFetchMock(operatorWriteUser, {
+    installAdminFetchMock(adminUser, {
       subscriptionSnapshot: {
         petsSnapshot: {
           pets: [{ id: 'pet-1', name: 'luna' }],
@@ -590,7 +619,7 @@ describe('SubscriptionDetailPage', () => {
   it('stays readable when the address has no lines and freight is absent', async () => {
     const user = userEvent.setup()
     seedAuth()
-    installAdminFetchMock(operatorWriteUser, {
+    installAdminFetchMock(adminUser, {
       subscriptionSnapshot: {
         petsSnapshot: { pets: [{ id: 'pet-1', name: 'luna' }] },
         planSelection: {
@@ -687,6 +716,26 @@ describe('SubscriptionDetailPage courier section', () => {
     expect(within(section).getByRole('button', { name: 'Despachar' })).toBeInTheDocument()
   })
 
+  it('dispatching from the subscription shows the checkout freight and leaves the courier cost empty', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'BR',
+      paidCycles: [cycle('in_br_2')],
+      subscriptionSnapshot: { shipping: { label: 'Entrega Eden Bowl', cost: 18.5, distance: 12.4, quote_token: 'tok' } },
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const section = (await screen.findByRole('heading', { name: 'Entrega Brasil' })).closest('section') as HTMLElement
+    await user.click(await within(section).findByRole('button', { name: 'Despachar' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
+    const summary = dialog.getByRole('region', { name: 'Frete cobrado do cliente' })
+    expect(summary).toHaveTextContent(/R\$\s18,50/)
+    expect(summary).toHaveTextContent('12,4 km')
+    expect(summary).toHaveTextContent('Despachar não altera o que o cliente paga.')
+    expect(dialog.getByLabelText('Custo do entregador (R$) (Opcional)')).toHaveValue('')
+  })
+
   // simplify-brazil-dispatch: the subscription opens the same dialog, so a new Uber dispatch is the short form.
   it('dispatches from the subscription with the short Uber form, sending only the method', async () => {
     const user = userEvent.setup()
@@ -704,7 +753,7 @@ describe('SubscriptionDetailPage courier section', () => {
     await user.click(await within(section).findByRole('button', { name: 'Despachar' }))
     const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
     expect((dialog.getByText('Detalhes').closest('details') as HTMLDetailsElement).open).toBe(false)
-    expect(dialog.getByLabelText('Custo (R$)')).toBeVisible()
+    expect(dialog.getByLabelText('Custo do entregador (R$) (Opcional)')).toBeVisible()
     await user.click(dialog.getByRole('button', { name: 'Registrar saída' }))
 
     await waitFor(() => expect(calls.find((call) => call.method === 'POST' && call.path.endsWith('/sub-row-1/courier-deliveries'))?.body).toEqual({ invoice_id: 'in_br_2', method: 'uber' }))

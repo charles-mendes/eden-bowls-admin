@@ -95,7 +95,7 @@ export function CustomerContact({ subscriptionId, name, phone, reason: suggested
             </>
           ) : <span className="muted">Sem telefone</span>}
         </div>
-        <form id={formId} className="stack" onSubmit={(event) => void submit(event)}>
+        <form id={formId} className="stack contact-form" onSubmit={(event) => void submit(event)}>
           <label>
             Motivo
             <select value={reason} required onChange={(event) => setReason(event.target.value as ContactReason)}>
@@ -103,7 +103,7 @@ export function CustomerContact({ subscriptionId, name, phone, reason: suggested
               {CONTACT_REASONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
-          <fieldset>
+          <fieldset className="radio-group">
             <legend>Resultado</legend>
             {CONTACT_OUTCOMES.map((option) => (
               <label key={option.value} className="radio-line">

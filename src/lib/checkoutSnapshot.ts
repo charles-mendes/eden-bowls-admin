@@ -59,6 +59,10 @@ export type CheckoutSnapshots = {
   shipping: {
     items: MetaItem[]
   }
+  // Products plus freight, from the values saved at checkout. Empty without a product total.
+  total: {
+    items: MetaItem[]
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -305,6 +309,14 @@ export function parseCheckoutSnapshots(input: {
     || input?.discount?.promotionCodeId
     || ''
   const billingName = [readString(billing, 'first_name'), readString(billing, 'last_name')].filter(Boolean).join(' ')
+  // The product total is the plan subtotal, or the sum of its lines when the copy has no subtotal; the freight is
+  // the same value the Frete section shows. Summed in cents so 1327.5 + 2.47 is 1329.97, not a float tail.
+  const lineTotals = rawLineItems.map((row) => readNumber(asRecord(row), 'line_total', 'lineTotal'))
+  const productTotal = readNumber(catalog, 'subtotal')
+    ?? (lineTotals.length && lineTotals.every((value) => value !== null)
+      ? lineTotals.reduce<number>((sum, value) => sum + Math.round((value as number) * 100), 0) / 100
+      : null)
+  const shippingAmount = readNumber(shipping, 'total', 'cost')
   const deliveryDays = readNumber(shipping, 'delivery_days', 'transit_business_days')
   const estimateLabel = deliveryDays !== null
     ? formatDeliveryDays(deliveryDays)
@@ -376,6 +388,16 @@ export function parseCheckoutSnapshots(input: {
         { label: 'Origem da rota', value: formatDistanceSource(readString(shipping, 'distance_source')), hideIfEmpty: true },
         { label: 'Cotado em', value: formatDate(readString(shipping, 'quoted_at', 'selected_at')), hideIfEmpty: true },
       ]),
+    },
+    total: {
+      items: productTotal === null ? [] : [
+        { label: 'Produtos', value: formatCurrency(productTotal, currency) },
+        { label: 'Frete', value: shippingAmount === null ? 'Não registrado' : formatCurrency(shippingAmount, currency) },
+        ...(shippingAmount === null ? [] : [{
+          label: 'Total (produtos + frete)',
+          value: formatCurrency((Math.round(productTotal * 100) + Math.round(shippingAmount * 100)) / 100, currency),
+        }]),
+      ],
     },
   }
 }

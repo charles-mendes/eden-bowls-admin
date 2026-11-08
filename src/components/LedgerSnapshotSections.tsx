@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { JsonDetails } from './JsonDetails'
+import { useShowsTechnicalJson } from '../hooks/useShowsTechnicalJson'
 import { MetaGrid } from './MetaGrid'
 import { Section } from './Section'
 import type { CheckoutSnapshots } from '../lib/checkoutSnapshot'
@@ -14,7 +15,7 @@ export function LedgerSnapshotSections({
   planDescription = DEFAULT_PLAN_DESCRIPTION,
   children,
 }: {
-  snapshots: Pick<CheckoutSnapshots, 'plan' | 'address' | 'shipping'>
+  snapshots: Pick<CheckoutSnapshots, 'plan' | 'address' | 'shipping'> & Partial<Pick<CheckoutSnapshots, 'total'>>
   raw: {
     petsSnapshot?: unknown
     planSelection?: unknown
@@ -29,6 +30,7 @@ export function LedgerSnapshotSections({
   planDescription?: string
   children?: ReactNode
 }) {
+  const showsJson = useShowsTechnicalJson()
   return (
     <>
       <Section title={planTitle} description={planDescription}>
@@ -109,18 +111,26 @@ export function LedgerSnapshotSections({
         </Section>
       </div>
 
-      <Section title="JSON técnico" description="Dados gravados, recolhidos para conferência.">
-        <div className="stack">
-          <JsonDetails title="Pets" value={raw.petsSnapshot} />
-          <JsonDetails title="Plano" value={raw.planSelection} />
-          <JsonDetails title="Itens" value={raw.lineItems} />
-          <JsonDetails title="Checkout" value={raw.checkoutReference} />
-          <JsonDetails title="Pagamento" value={raw.paymentReference} />
-          <JsonDetails title="Endereço" value={raw.address} />
-          <JsonDetails title="Frete" value={raw.shipping} />
-          <JsonDetails title="JSON de recorrência" value={raw.recurrence} />
-        </div>
-      </Section>
+      {snapshots.total?.items.length ? (
+        <Section title="Total" description="Produtos mais frete, pelos valores gravados no checkout. Sem recalcular.">
+          <MetaGrid items={snapshots.total.items} />
+        </Section>
+      ) : null}
+
+      {showsJson ? (
+        <Section title="JSON técnico" description="Dados gravados, recolhidos para conferência.">
+          <div className="stack">
+            <JsonDetails title="Pets" value={raw.petsSnapshot} />
+            <JsonDetails title="Plano" value={raw.planSelection} />
+            <JsonDetails title="Itens" value={raw.lineItems} />
+            <JsonDetails title="Checkout" value={raw.checkoutReference} />
+            <JsonDetails title="Pagamento" value={raw.paymentReference} />
+            <JsonDetails title="Endereço" value={raw.address} />
+            <JsonDetails title="Frete" value={raw.shipping} />
+            <JsonDetails title="JSON de recorrência" value={raw.recurrence} />
+          </div>
+        </Section>
+      ) : null}
     </>
   )
 }

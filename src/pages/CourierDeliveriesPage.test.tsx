@@ -81,13 +81,86 @@ describe('CourierDeliveriesPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Despachar' }))
     const dialog = await screen.findByRole('dialog', { name: 'Despachar entrega' })
     await user.selectOptions(within(dialog).getByLabelText('Meio de entrega'), 'motoboy')
-    await user.type(within(dialog).getByLabelText('Link de acompanhamento'), 'https://trip.uber.com/xyz')
-    await user.type(within(dialog).getByLabelText('Custo (R$)'), '18,50')
+    await user.click(within(dialog).getByText('Detalhes'))
+    await user.type(within(dialog).getByLabelText('Link de acompanhamento (Opcional)'), 'https://trip.uber.com/xyz')
+    await user.type(within(dialog).getByLabelText('Custo do entregador (R$) (Opcional)'), '18,50')
     await user.click(screen.getByRole('button', { name: 'Registrar saída' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent('Entrega de Cliente 1 registrada como em rota.')
     const [call] = posts(calls, '/1/courier-deliveries')
     expect(call.body).toEqual({ invoice_id: 'in_1', method: 'motoboy', tracking_url: 'https://trip.uber.com/xyz', cost: '18.50' })
+  })
+
+  it('shows the freight the customer paid apart from the empty courier cost', async () => {
+    const user = userEvent.setup()
+    install(operatorWriteUser, {
+      queue: {
+        to_dispatch: [item(1, { customer_shipping: { label: 'Entrega Eden Bowl', amount: 18.5, currency: 'BRL', distance_km: 12.4 } })],
+        out_for_delivery: [],
+        failed: [],
+        delivered: [],
+        truncated: false,
+      },
+    })
+    render()
+
+    await user.click(await screen.findByRole('button', { name: 'Despachar' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
+    const summary = dialog.getByRole('region', { name: 'Frete cobrado do cliente' })
+    expect(summary).toHaveTextContent(/R\$\s18,50/)
+    expect(summary).toHaveTextContent('12,4 km')
+    expect(summary).toHaveTextContent('Entrega Eden Bowl')
+    expect(summary).toHaveTextContent('Este valor já foi cobrado no checkout. Despachar não altera o que o cliente paga.')
+    const cost = dialog.getByLabelText('Custo do entregador (R$) (Opcional)')
+    expect(cost).toHaveValue('')
+    expect(cost).not.toHaveAttribute('placeholder')
+    expect(cost).toHaveAccessibleDescription('O que a Eden Bowls paga nesta viagem (Uber, motoboy ou entregador). Opcional. Não entra na cobrança do cliente.')
+  })
+
+  it('marks the courier and the link as optional, and dispatches with neither', async () => {
+    const user = userEvent.setup()
+    const { calls } = install()
+    render()
+
+    await user.click(await screen.findByRole('button', { name: 'Despachar' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
+    await user.selectOptions(dialog.getByLabelText('Meio de entrega'), 'motoboy')
+    expect(dialog.getByLabelText('Entregador (Opcional)')).toHaveValue('')
+    expect(dialog.getByLabelText('Link de acompanhamento (Opcional)')).toHaveValue('')
+    await user.click(dialog.getByRole('button', { name: 'Registrar saída' }))
+
+    await waitFor(() => expect(posts(calls, '/1/courier-deliveries')[0]?.body).toEqual({ invoice_id: 'in_1', method: 'motoboy' }))
+  })
+
+  it('shows the cost and link help behind an info icon, and Escape closes only the tip', async () => {
+    const user = userEvent.setup()
+    install()
+    render()
+
+    await user.click(await screen.findByRole('button', { name: 'Despachar' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
+    const costHelp = 'O que a Eden Bowls paga nesta viagem (Uber, motoboy ou entregador). Opcional. Não entra na cobrança do cliente.'
+    expect(dialog.queryByText(costHelp)).not.toBeVisible()
+    await user.click(dialog.getByRole('button', { name: 'Sobre o custo do entregador' }))
+    expect(dialog.getByRole('tooltip')).toHaveTextContent(costHelp)
+    await user.keyboard('{Escape}')
+    expect(dialog.queryByRole('tooltip')).toBeNull()
+    expect(screen.getByRole('dialog', { name: 'Despachar entrega' })).toBeInTheDocument()
+
+    await user.selectOptions(dialog.getByLabelText('Meio de entrega'), 'motoboy')
+    await user.click(dialog.getByRole('button', { name: 'Sobre o link de acompanhamento' }))
+    expect(dialog.getByRole('tooltip')).toHaveTextContent('O link de acompanhamento que o app (Uber ou outro) gera para compartilhar a viagem.')
+  })
+
+  it('says the freight was not recorded when the queue row has no snapshot', async () => {
+    const user = userEvent.setup()
+    install()
+    render()
+
+    await user.click(await screen.findByRole('button', { name: 'Despachar' }))
+    const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
+    expect(dialog.getByRole('region', { name: 'Frete cobrado do cliente' })).toHaveTextContent('Não registrado no checkout')
+    expect(dialog.getByLabelText('Custo do entregador (R$) (Opcional)')).toHaveValue('')
   })
 
   it('asks again when the order is not ready, naming the reason, then sends the confirmation', async () => {
@@ -105,6 +178,9 @@ describe('CourierDeliveriesPage', () => {
 
     const warning = await screen.findByRole('alert', { name: 'Confirmação de despacho' })
     expect(warning).toHaveTextContent('Preparo:')
+    // The customer freight stays on screen above the reasons.
+    const summary = screen.getByRole('region', { name: 'Frete cobrado do cliente' })
+    expect(summary.compareDocumentPosition(warning) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Despachar mesmo assim' }))
 
     await waitFor(() => expect(posts(calls, '/1/courier-deliveries')).toHaveLength(2))
@@ -266,7 +342,7 @@ describe('CourierDeliveriesPage', () => {
     const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
     expect(dialog.getByLabelText('Meio de entrega')).toHaveValue('uber')
     await user.click(dialog.getByText('Detalhes'))
-    expect(dialog.getByLabelText('Link de acompanhamento')).toHaveAccessibleDescription(/link de acompanhamento que o app/)
+    expect(dialog.getByLabelText('Link de acompanhamento (Opcional)')).toHaveAccessibleDescription(/link de acompanhamento que o app/)
   })
 
   // simplify-brazil-dispatch: the short Uber form.
@@ -279,26 +355,31 @@ describe('CourierDeliveriesPage', () => {
     const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
     const details = dialog.getByText('Detalhes').closest('details') as HTMLDetailsElement
     expect(details.open).toBe(false)
-    expect(details).not.toContainElement(dialog.getByLabelText('Custo (R$)'))
-    for (const label of ['Entregador', 'Link de acompanhamento', 'Observação']) expect(details).toContainElement(dialog.getByLabelText(label))
+    expect(details).not.toContainElement(dialog.getByLabelText('Custo do entregador (R$) (Opcional)'))
+    for (const label of ['Entregador (Opcional)', 'Link de acompanhamento (Opcional)', 'Observação (Opcional)']) expect(details).toContainElement(dialog.getByLabelText(label))
 
-    await user.type(dialog.getByLabelText('Custo (R$)'), '21,90')
+    await user.type(dialog.getByLabelText('Custo do entregador (R$) (Opcional)'), '21,90')
     await user.click(screen.getByRole('button', { name: 'Registrar saída' }))
 
     await screen.findByRole('status')
     expect(posts(calls, '/1/courier-deliveries')[0].body).toEqual({ invoice_id: 'in_1', method: 'uber', cost: '21.90' })
   })
 
-  it('shows every field for another method', async () => {
+  it('keeps the short form for every method: the cost in sight, the rest behind "Detalhes"', async () => {
     const user = userEvent.setup()
     install()
     render()
 
     await user.click(await screen.findByRole('button', { name: 'Despachar' }))
     const dialog = within(await screen.findByRole('dialog', { name: 'Despachar entrega' }))
-    await user.selectOptions(dialog.getByLabelText('Meio de entrega'), 'motoboy')
-    expect(dialog.queryByText('Detalhes')).not.toBeInTheDocument()
-    for (const label of ['Entregador', 'Link de acompanhamento', 'Custo (R$)', 'Observação']) expect(dialog.getByLabelText(label)).toBeVisible()
+    for (const method of ['uber', 'motoboy', 'own_driver', 'other']) {
+      await user.selectOptions(dialog.getByLabelText('Meio de entrega'), method)
+      const details = dialog.getByText('Detalhes').closest('details') as HTMLDetailsElement
+      expect(details.open).toBe(false)
+      expect(dialog.getByLabelText('Custo do entregador (R$) (Opcional)')).toBeVisible()
+      expect(details).not.toContainElement(dialog.getByLabelText('Custo do entregador (R$) (Opcional)'))
+      for (const label of ['Entregador (Opcional)', 'Link de acompanhamento (Opcional)', 'Observação (Opcional)']) expect(details).toContainElement(dialog.getByLabelText(label))
+    }
   })
 
   it('edits a delivery on the road with its saved details, one delivery at a time', async () => {
@@ -332,22 +413,22 @@ describe('CourierDeliveriesPage', () => {
     expect(dialog.getByLabelText('Meio de entrega')).toHaveValue('uber')
     // An edit never uses the short form, Uber included.
     expect(dialog.queryByText('Detalhes')).not.toBeInTheDocument()
-    expect(dialog.getByLabelText('Link de acompanhamento')).toHaveValue('https://trip.uber.com/abc')
-    expect(dialog.getByLabelText('Custo (R$)')).toHaveValue('18,50')
-    expect(dialog.getByLabelText('Observação')).toHaveValue('Portão azul')
+    expect(dialog.getByLabelText('Link de acompanhamento (Opcional)')).toHaveValue('https://trip.uber.com/abc')
+    expect(dialog.getByLabelText('Custo do entregador (R$) (Opcional)')).toHaveValue('18,50')
+    expect(dialog.getByLabelText('Observação (Opcional)')).toHaveValue('Portão azul')
     await user.click(dialog.getByRole('button', { name: 'Fechar' }))
 
     await user.click(rows[1])
     dialog = within(await screen.findByRole('dialog', { name: 'Editar entrega' }))
     expect(dialog.getByLabelText('Meio de entrega')).toHaveValue('motoboy')
-    expect(dialog.getByLabelText('Entregador')).toHaveValue('Zé')
-    expect(dialog.getByLabelText('Link de acompanhamento')).toHaveValue('')
-    expect(dialog.getByLabelText('Custo (R$)')).toHaveValue('12,00')
+    expect(dialog.getByLabelText('Entregador (Opcional)')).toHaveValue('Zé')
+    expect(dialog.getByLabelText('Link de acompanhamento (Opcional)')).toHaveValue('')
+    expect(dialog.getByLabelText('Custo do entregador (R$) (Opcional)')).toHaveValue('12,00')
     await user.click(dialog.getByRole('button', { name: 'Fechar' }))
 
     await user.click(rows[0])
     dialog = within(await screen.findByRole('dialog', { name: 'Editar entrega' }))
-    const link = dialog.getByLabelText('Link de acompanhamento')
+    const link = dialog.getByLabelText('Link de acompanhamento (Opcional)')
     await user.clear(link)
     await user.type(link, 'https://trip.uber.com/certo')
     await user.click(screen.getByRole('button', { name: 'Salvar alterações' }))

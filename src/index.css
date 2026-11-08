@@ -755,6 +755,7 @@ textarea:disabled {
 .form-grid input[type="checkbox"],
 .editor-card input[type="checkbox"],
 .stack input[type="checkbox"],
+.stack input[type="radio"],
 .checkbox-field input,
 .boolean-control input {
   width: auto;
@@ -4967,10 +4968,58 @@ label.ghost-button {
   margin-bottom: var(--space-3);
 }
 
-.radio-line {
+.radio-line,
+.stack label.radio-line {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+}
+
+/* A choice among a few options (contact outcome, failure kind): each option a full-width row, 40px to tap. */
+/* A dialog opened from a table row renders inside .table-shell, whose inputs get a min-width: not a radio. */
+.radio-line input[type="radio"] {
+  width: 16px;
+  min-width: 0;
+}
+
+.radio-group {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-1) var(--space-3) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.radio-group legend {
+  padding: 0 var(--space-1);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.radio-group .radio-line {
+  min-height: 40px;
+  color: var(--text-strong);
+  cursor: pointer;
+}
+
+/* "Registrar contato": room between fields; on a phone the fields are 16px so the keyboard does not zoom. */
+.contact-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.contact-phone {
+  flex-wrap: wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 420px) {
+  .contact-form select,
+  .contact-form textarea {
+    min-height: 42px;
+    font-size: 16px;
+  }
 }
 
 .contact-history {
@@ -5002,4 +5051,163 @@ label.ghost-button {
   display: grid;
   gap: 0.35rem;
   width: 100%;
+}
+
+/* The dispatch dialog: the customer's checkout freight apart from the courier cost, on any width. */
+.dialog-header > div {
+  min-width: 0;
+}
+
+.dialog-header p {
+  overflow-wrap: anywhere;
+}
+
+.courier-dispatch {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* .stack has no gap of its own: the fields of this form get room between a box and the next label. */
+.courier-dispatch form.stack,
+.courier-details > .stack {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.courier-dispatch p,
+.courier-dispatch span,
+.courier-dispatch li {
+  overflow-wrap: anywhere;
+}
+
+.courier-customer-shipping {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.courier-customer-shipping-value {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.courier-customer-shipping-value .muted {
+  font-size: var(--text-sm);
+  font-weight: 400;
+}
+
+.courier-customer-shipping p {
+  margin: 0;
+}
+
+.courier-details {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.courier-details summary {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.courier-details > .stack {
+  padding: 0 12px 12px;
+}
+
+/* A field whose help text sits behind an "i" beside its label (InfoHint). */
+/* The same size a field inside its label inherits, so these match the other fields. */
+.field-with-hint {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+
+/* The tip spans the field's width under the label, wherever the icon falls on the line. */
+.field-label-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.field-label-row label {
+  min-width: 0;
+}
+
+.info-hint {
+  display: inline-flex;
+}
+
+.info-hint-button {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -8px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.info-hint-button:hover,
+.info-hint-button[aria-expanded="true"] {
+  color: var(--text-strong);
+  background: var(--surface-muted);
+}
+
+.info-hint-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.info-hint-text {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 5;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: 0 6px 16px rgba(24, 24, 27, 0.12);
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.info-hint-text[hidden] {
+  display: none;
+}
+
+@media (max-width: 420px) {
+  .courier-dispatch input,
+  .courier-dispatch select {
+    min-height: 42px;
+    font-size: 16px;
+  }
 }

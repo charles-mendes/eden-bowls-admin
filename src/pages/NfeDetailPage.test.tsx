@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NfeDetailPage } from './NfeDetailPage'
-import { addressIssue, operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { addressIssue, adminUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { findCall, installAdminFetchMock, nfeDetailState } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -83,6 +83,18 @@ describe('NfeDetailPage', () => {
     expect(await screen.findByText('in_nfe_1')).toBeInTheDocument()
     expect(screen.getByText('9001')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Abrir DANFE' })).toHaveAttribute('href', 'https://bling.example/danfe')
+    // The ids stay under "Dados técnicos"; the Bling JSON is for the admin.
+    expect(screen.getByText('Dados técnicos')).toBeInTheDocument()
+    expect(screen.queryByText('Enviado ao Bling')).not.toBeInTheDocument()
+    expect(screen.queryByText('Resposta do Bling')).not.toBeInTheDocument()
+  })
+
+  it('shows the admin the JSON sent to and received from Bling', async () => {
+    seedAuth()
+    installAdminFetchMock(adminUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    expect(await screen.findByText('in_nfe_1')).toBeInTheDocument()
     expect(screen.getByText('Enviado ao Bling')).toBeInTheDocument()
   })
 

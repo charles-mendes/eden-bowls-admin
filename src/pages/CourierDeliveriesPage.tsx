@@ -108,11 +108,11 @@ function RecipientCell({ item, details }: { item: CourierQueueItem; details: boo
         <>
           {item.phone ? (
             <span className="contact-inline">{item.phone}<CopyButton value={item.phone} label={`Copiar telefone de ${itemName(item)}`} /></span>
-          ) : <span className="muted">Sem telefone</span>}
-          <span className="muted">
+          ) : <div className="muted">Sem telefone</div>}
+          <div className="muted">
             {item.delivery_instructions ? `Instruções (do perfil): ${item.delivery_instructions}` : 'Sem instruções'}
-          </span>
-          {lines ? <span>{lines}</span> : null}
+          </div>
+          {lines ? <div>{lines}</div> : null}
         </>
       ) : null}
     </div>
@@ -493,13 +493,13 @@ export function CourierDeliveriesPage() {
       </Dialog>
       <CourierDispatchDialog
         token={token}
-        target={dispatching ? { subscriptionId: dispatching.subscription_id, invoiceId: dispatching.invoice_id, name: itemName(dispatching) } : null}
+        target={dispatching ? { subscriptionId: dispatching.subscription_id, invoiceId: dispatching.invoice_id, name: itemName(dispatching), customerShipping: dispatching.customer_shipping ?? null } : null}
         onClose={() => setDispatching(null)}
         onDone={done}
       />
       <CourierDispatchDialog
         token={token}
-        target={editing ? { subscriptionId: editing.item.subscription_id, invoiceId: editing.item.invoice_id, name: itemName(editing.item) } : null}
+        target={editing ? { subscriptionId: editing.item.subscription_id, invoiceId: editing.item.invoice_id, name: itemName(editing.item), customerShipping: editing.item.customer_shipping ?? null } : null}
         editing={editing?.delivery ?? null}
         onClose={() => setEditing(null)}
         onDone={done}

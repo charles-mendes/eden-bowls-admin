@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { useShowsTechnicalJson } from '../hooks/useShowsTechnicalJson'
 import { formatJson } from '../lib/format'
 
 export function JsonDetails({ title, value }: { title: string; value: unknown }) {
   const [open, setOpen] = useState(false)
-  if (value == null) return null
+  const showsJson = useShowsTechnicalJson()
+  if (value == null || !showsJson) return null
 
   return (
     <details

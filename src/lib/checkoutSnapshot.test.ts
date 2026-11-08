@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { mergeReadablePets, parseCheckoutSnapshots } from './checkoutSnapshot'
 import { checkoutDetail } from '../test/fixtures'
+import { formatCurrency } from './format'
 
 describe('parseCheckoutSnapshots', () => {
   it('turns persisted checkout JSON into operator-facing labels', () => {
@@ -126,5 +127,43 @@ describe('parseCheckoutSnapshots recipient', () => {
   it('shows no recipient row for a subscription from before the field', () => {
     const snapshots = parseCheckoutSnapshots({ address: { street: 'Rua A', city: 'São Paulo' } })
     expect(snapshots.address.items.some((item) => item.label === 'Quem recebe')).toBe(false)
+  })
+  describe('total: products plus freight', () => {
+    const brl = (value: number) => formatCurrency(value, 'BRL')
+    const lines = [
+      { quantity: 15, unit_price: 45, line_total: 675 },
+      { quantity: 9, unit_price: 42.5, line_total: 382.5 },
+      { quantity: 6, unit_price: 45, line_total: 270 },
+    ]
+
+    it('adds the plan subtotal and the saved freight, without a float tail', () => {
+      const snapshots = parseCheckoutSnapshots({
+        planSelection: { catalog_pricing: { currency: 'BRL', subtotal: 1327.5, line_items: lines } },
+        shipping: { label: 'Entrega Eden Bowl', cost: 2.47, total: 2.47 },
+      })
+      expect(snapshots.total.items).toEqual([
+        { label: 'Produtos', value: brl(1327.5) },
+        { label: 'Frete', value: brl(2.47) },
+        { label: 'Total (produtos + frete)', value: brl(1329.97) },
+      ])
+    })
+
+    it('sums the lines when the copy has no subtotal', () => {
+      const snapshots = parseCheckoutSnapshots({
+        planSelection: { catalog_pricing: { currency: 'BRL', line_items: lines } },
+        shipping: { cost: 2.47 },
+      })
+      expect(snapshots.total.items[0]).toEqual({ label: 'Produtos', value: brl(1327.5) })
+      expect(snapshots.total.items[2]).toEqual({ label: 'Total (produtos + frete)', value: brl(1329.97) })
+    })
+
+    it('shows no total without the freight, and nothing without a product value', () => {
+      const noFreight = parseCheckoutSnapshots({ planSelection: { catalog_pricing: { subtotal: 550 } }, shipping: null })
+      expect(noFreight.total.items).toEqual([
+        { label: 'Produtos', value: brl(550) },
+        { label: 'Frete', value: 'Não registrado' },
+      ])
+      expect(parseCheckoutSnapshots({ shipping: { cost: 7 } }).total.items).toEqual([])
+    })
   })
 })

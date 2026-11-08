@@ -54,7 +54,12 @@ export type CourierQueueItem = {
   address_issue?: AddressIssue | null
   // PM-25: the invoice's NF-e under "A despachar" and "Falhas"; absent from an API without the fiscal lock.
   nfe?: CourierNfe | null
+  // The freight the customer paid at checkout, from the subscription's snapshot. Null without a snapshot.
+  customer_shipping?: CustomerShipping | null
 }
+
+// What the customer already paid for the delivery at checkout. Never the courier cost, and never recalculated.
+export type CustomerShipping = { label: string | null; amount: number | null; currency: string; distance_km: number | null }
 
 export type CourierNfe = { id: number; status: NfeStatus; number: string | null }
 
@@ -138,6 +143,34 @@ export function subscriptionStatusLabel(status: string | null | undefined): stri
 export function formatCost(costMinor: number | null | undefined): string {
   if (costMinor === null || costMinor === undefined) return '—'
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(costMinor / 100)
+}
+
+// The subscription's checkout snapshot read the way the queue reads it: amount from cost, else total.
+export function customerShippingFrom(snapshot: unknown): CustomerShipping | null {
+  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return null
+  const shipping = snapshot as Record<string, unknown>
+  const numberOf = (raw: unknown) => {
+    if (raw === null || raw === undefined || raw === '') return null
+    const value = Number(raw)
+    return Number.isFinite(value) ? value : null
+  }
+  const label = String(shipping.label ?? '').trim()
+  const cost = numberOf(shipping.cost)
+  return {
+    label: label || null,
+    amount: cost ?? numberOf(shipping.total),
+    currency: String(shipping.currency || 'BRL').toUpperCase(),
+    distance_km: numberOf(shipping.distance),
+  }
+}
+
+export function formatCustomerShipping(shipping: CustomerShipping): string {
+  if (shipping.amount === null) return 'Não registrado no checkout'
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: shipping.currency || 'BRL' }).format(shipping.amount)
+}
+
+export function formatDistanceKm(distanceKm: number): string {
+  return `${new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 }).format(distanceKm)} km`
 }
 
 // "18,50" or "18.50" in the form; the API takes a decimal string with a dot.
