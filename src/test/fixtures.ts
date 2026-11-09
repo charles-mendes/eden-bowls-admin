@@ -353,6 +353,32 @@ export const usersList = {
   items: [userItem, staffAccessItem],
 }
 
+// One subscription as an operator reads it on the customer detail (backend: admin-customer-subscriptions).
+export const customerSubscription = {
+  id: 'sub-row-1',
+  stripeSubscriptionId: 'sub_123',
+  stripeAccount: 'br',
+  status: 'active',
+  currentPeriodEnd: '2026-09-01T12:00:00.000Z',
+  cancelAtPeriodEnd: false,
+  planLabel: 'Adult 1m',
+  createdAt: '2026-03-01T12:00:00.000Z',
+  subscriptionTermMonths: 6,
+  chargedDeliveries: 2,
+  autoRenew: true,
+  paymentMethod: { brand: 'visa', last4: '4242' },
+  checkoutShipping: { label: 'Entrega local', amount: 25, currency: 'BRL' },
+  latestCycle: {
+    invoiceId: 'in_123',
+    paidAt: '2026-08-01T12:00:00.000Z',
+    preparationDay: '2026-08-08',
+    deliveryDate: '2026-08-10',
+    production: { status: 'ready', note: 'sem frango' },
+    delivery: { kind: 'courier', id: 5, status: 'delivered', outForDeliveryAt: '2026-08-10T12:00:00.000Z', deliveredAt: '2026-08-10T15:00:00.000Z', failedAt: null },
+    nfe: { id: 31, number: '123', series: '1', status: 'authorized', lastError: null, emailStatus: 'sent' },
+  },
+}
+
 export const userDetail = {
   ...userItem,
   lockedByAllowlist: false,
@@ -369,7 +395,7 @@ export const userDetail = {
     deliveryInstructions: 'Deixar na portaria',
   },
   subscriptions: [
-    { id: 'sub-row-1', stripeSubscriptionId: 'sub_123', stripeAccount: 'br', status: 'active', currentPeriodEnd: '2026-09-01T12:00:00.000Z', cancelAtPeriodEnd: false, planLabel: 'Adult 1m' },
+    customerSubscription,
   ],
 }
 

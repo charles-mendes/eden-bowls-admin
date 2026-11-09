@@ -13,7 +13,7 @@ import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
 import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
 import { formatDate, formatStripeStatus } from '../lib/format'
 import { printLabel } from '../lib/printLabel'
-import { labelIssueText, labelRefusalText, type LabelIssue } from '../lib/upsLabels'
+import { labelIssueText, labelRefusalText, UPS_SHIPMENT_STATUS, type LabelIssue } from '../lib/upsLabels'
 import { formatNfeAmount, formatNfeDate, formatNfeNumber, nfeStatusLabel, nfeStatusTone, type NfeSummary } from '../lib/nfe'
 import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
@@ -110,14 +110,6 @@ function addressPhone(address: unknown): string | null {
   if (!address || typeof address !== 'object') return null
   const value = (address as Record<string, unknown>).phone
   return typeof value === 'string' && value.trim() ? value.trim() : null
-}
-
-const SHIPMENT_STATUS: Record<string, { label: string; badge: string }> = {
-  created: { label: 'Etiqueta criada', badge: 'badge-success' },
-  pending: { label: 'Gerando', badge: 'badge-info' },
-  unknown: { label: 'Verificar na UPS', badge: 'badge-warning' },
-  voided: { label: 'Anulada', badge: 'badge-error' },
-  delivered: { label: 'Entregue', badge: 'badge-success' },
 }
 
 export function SubscriptionDetailPage() {
@@ -628,7 +620,7 @@ export function SubscriptionDetailPage() {
                   shipments.map((item) => (
                     <tr key={item.id}>
                       <td>{item.stripe_invoice_id}</td>
-                      <td><span className={SHIPMENT_STATUS[item.status]?.badge ?? 'badge-info'}>{SHIPMENT_STATUS[item.status]?.label ?? item.status}</span></td>
+                      <td><span className={UPS_SHIPMENT_STATUS[item.status]?.badge ?? 'badge-info'}>{UPS_SHIPMENT_STATUS[item.status]?.label ?? item.status}</span></td>
                       <td>
                         {item.tracking_url ? (
                           <a href={item.tracking_url} target="_blank" rel="noreferrer">{item.tracking_number}</a>

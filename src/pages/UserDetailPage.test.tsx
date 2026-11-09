@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { UserDetailPage } from './UserDetailPage'
-import { adminUser, checkoutDetail, jsonResponse, operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { adminUser, checkoutDetail, customerSubscription, jsonResponse, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -11,6 +11,11 @@ async function confirmDelivery(user: ReturnType<typeof userEvent.setup>, reason 
   const dialog = await screen.findByRole('dialog', { name: 'Salvar a cópia do endereço?' })
   await user.type(within(dialog).getByLabelText('Motivo'), reason)
   await user.click(within(dialog).getByRole('button', { name: 'Salvar endereço' }))
+}
+
+// A subscription as a role that does not read some screen gets it: those keys are absent from the payload.
+function without(item: Record<string, unknown>, ...keys: string[]) {
+  return Object.fromEntries(Object.entries(item).filter(([key]) => !keys.includes(key)))
 }
 
 describe('UserDetailPage', () => {
@@ -160,6 +165,107 @@ describe('UserDetailPage', () => {
 
       expect(await screen.findByRole('link', { name: 'sub_123' })).toHaveAttribute('href', '/billing/subscriptions/sub-row-1')
       expect(onboardingCalls(calls)).toHaveLength(0)
+    })
+
+    it('shows the contract, payment and checkout freight of each subscription', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const card = await screen.findByRole('listitem', { name: 'Assinatura sub_123' })
+      expect(within(card).getByText('6 meses · 2 entregas cobradas · renova automaticamente')).toBeInTheDocument()
+      expect(within(card).getByText('Visa •••• 4242')).toBeInTheDocument()
+      expect(within(card).getByText(/R\$\s25,00 · Entrega local/)).toBeInTheDocument()
+      expect(within(card).getByText(/Adult 1m · Brasil/)).toBeInTheDocument()
+    })
+
+    it('hides payment and freight when the payload has no billing data', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { customerSubscriptions: [without(customerSubscription, 'paymentMethod', 'checkoutShipping')] })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const card = await screen.findByRole('listitem', { name: 'Assinatura sub_123' })
+      expect(within(card).queryByText('Pagamento')).not.toBeInTheDocument()
+      expect(within(card).queryByText('Frete do checkout')).not.toBeInTheDocument()
+    })
+
+    it('shows the latest cycle with production, courier delivery and NF-e linked to their screens', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const cycle = await screen.findByRole('region', { name: 'Último ciclo' })
+      expect(within(cycle).getByText('08/08/2026')).toBeInTheDocument()
+      expect(within(cycle).getByText('10/08/2026')).toBeInTheDocument()
+      expect(within(cycle).getByText('Pronto').closest('a')).toHaveAttribute('href', '/operations/production?busca=sub_123&mercado=br')
+      expect(within(cycle).getByText('sem frango')).toBeInTheDocument()
+      expect(within(cycle).getByText('Entregue').closest('a')).toHaveAttribute('href', '/operations/courier?aba=entregues')
+      expect(within(cycle).getByRole('link', { name: 'NF-e 123' })).toHaveAttribute('href', '/operations/nfe/31')
+      expect(within(cycle).getByText('Autorizada')).toBeInTheDocument()
+      expect(within(cycle).getByText(/E-mail: Enviado/)).toBeInTheDocument()
+    })
+
+    it('shows a rejected note with its error and a UPS label with its tracking', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        customerSubscriptions: [{
+          ...customerSubscription,
+          latestCycle: {
+            ...customerSubscription.latestCycle,
+            delivery: { kind: 'ups', id: 2, status: 'created', trackingNumber: '1Z999' },
+            nfe: { id: 32, number: null, series: null, status: 'rejected', lastError: 'CPF inválido', emailStatus: null },
+          },
+        }],
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const cycle = await screen.findByRole('region', { name: 'Último ciclo' })
+      expect(within(cycle).getByText('Rejeitada')).toBeInTheDocument()
+      expect(within(cycle).getByText('CPF inválido')).toBeInTheDocument()
+      expect(within(cycle).getByRole('link', { name: 'Nota 32' })).toHaveAttribute('href', '/operations/nfe/32')
+      expect(within(cycle).getByText('UPS · Etiqueta criada').closest('a')).toHaveAttribute('href', '/billing/subscriptions/sub-row-1')
+      expect(within(cycle).getByText('1Z999')).toBeInTheDocument()
+    })
+
+    it('says when there is no delivery and no NF-e yet', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        customerSubscriptions: [{ ...customerSubscription, latestCycle: { ...customerSubscription.latestCycle, delivery: null, nfe: null } }],
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const cycle = await screen.findByRole('region', { name: 'Último ciclo' })
+      expect(within(cycle).getByText('Não despachado')).toBeInTheDocument()
+      expect(within(cycle).getByText('Sem NF-e')).toBeInTheDocument()
+    })
+
+    it('says when the subscription has no paid cycle', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { customerSubscriptions: [{ ...customerSubscription, latestCycle: null }] })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const cycle = await screen.findByRole('region', { name: 'Último ciclo' })
+      expect(within(cycle).getByText('Nenhum ciclo pago.')).toBeInTheDocument()
+    })
+
+    it('warns when the latest cycle could not be loaded and keeps the contract', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { customerSubscriptions: [{ ...without(customerSubscription, 'latestCycle'), latestCycleUnavailable: true }] })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const card = await screen.findByRole('listitem', { name: 'Assinatura sub_123' })
+      expect(within(card).getByText(/Não foi possível carregar o último ciclo/)).toBeInTheDocument()
+      expect(within(card).queryByRole('region', { name: 'Último ciclo' })).not.toBeInTheDocument()
+      expect(within(card).getByText('6 meses · 2 entregas cobradas · renova automaticamente')).toBeInTheDocument()
+    })
+
+    it('shows no latest cycle block when the payload has none', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { customerSubscriptions: [without(customerSubscription, 'latestCycle')] })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      await screen.findByRole('listitem', { name: 'Assinatura sub_123' })
+      expect(screen.queryByRole('region', { name: 'Último ciclo' })).not.toBeInTheDocument()
     })
 
     it('loads pets once and reuses them in the Checkout tab', async () => {

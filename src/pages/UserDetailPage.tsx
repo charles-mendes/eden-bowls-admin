@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AccessFields } from '../components/AccessFields'
 import { accessFormError, accessFormFrom, accessRoleBody, emptyAccessForm, inviteNeedsResend, type AccessForm } from '../lib/accessForm'
 import { CheckoutSnapshotPanels } from '../components/CheckoutSnapshotPanels'
+import { CustomerSubscriptionCard } from '../components/CustomerSubscriptionCard'
 import { Dialog } from '../components/Dialog'
 import { MetaGrid } from '../components/MetaGrid'
 import { PageFrame } from '../components/PageFrame'
@@ -10,7 +11,8 @@ import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
-import { formatDate, formatStripeStatus } from '../lib/format'
+import type { CustomerSubscription } from '../lib/customerSubscriptions'
+import { formatDate } from '../lib/format'
 import {
   accountStatusBadgeClass,
   accountStatusLabel,
@@ -50,7 +52,7 @@ type UserDetail = {
     deliveryInstructions: string
     recipientName?: string
   } | null
-  subscriptions?: Array<{ id: string; stripeSubscriptionId: string; status: string; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean; planLabel: string | null }>
+  subscriptions?: CustomerSubscription[]
 }
 
 // Pets and checkout come from the onboarding record; it is fetched only when one of those tabs opens.
@@ -76,13 +78,6 @@ type OnboardingState =
 type CustomerTab = 'cadastro' | 'pets' | 'assinaturas' | 'checkout'
 
 // Stripe status → semantic badge; anything unknown stays neutral.
-function subscriptionBadgeClass(status: string) {
-  if (status === 'active' || status === 'trialing') return 'badge-success'
-  if (status === 'past_due' || status === 'unpaid' || status === 'incomplete') return 'badge-warning'
-  if (status === 'canceled' || status === 'incomplete_expired') return 'badge-neutral'
-  return 'badge-info'
-}
-
 function formatPetAge(years: number, months: number) {
   if (!years && !months) return '-'
   const parts = []
@@ -669,32 +664,11 @@ export function UserDetailPage() {
 
       {tab === 'assinaturas' ? (
         <div id="customer-panel-assinaturas" role="tabpanel" aria-labelledby="customer-tab-assinaturas">
-          <Section title="Assinaturas Stripe" description="Assinaturas deste cliente na Stripe.">
+          <Section title="Assinaturas Stripe" description="Contrato e último ciclo pago de cada assinatura, com produção, entrega e NF-e.">
             {data && !subscriptions.length ? <p className="empty-note">Nenhuma assinatura.</p> : (
-              <div className="table-shell">
-                <table className="stack-table">
-                  <thead>
-                    <tr>
-                      <th>Assinatura</th>
-                      <th>Status</th>
-                      <th>Plano</th>
-                      <th>Fim do período</th>
-                      <th>Cancelando</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {subscriptions.map((item) => (
-                      <tr key={item.id}>
-                        <td className="stack-table-title"><Link className="table-link" to={`/billing/subscriptions/${item.id}`}>{item.stripeSubscriptionId}</Link></td>
-                        <td data-label="Status"><span className={subscriptionBadgeClass(item.status)}>{formatStripeStatus(item.status)}</span></td>
-                        <td data-label="Plano">{item.planLabel ?? '-'}</td>
-                        <td data-label="Fim do período" className="nowrap">{formatDate(item.currentPeriodEnd)}</td>
-                        <td data-label="Cancelando">{item.cancelAtPeriodEnd ? 'Sim' : 'Não'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="subscription-cards">
+                {subscriptions.map((item) => <CustomerSubscriptionCard key={item.id} item={item} />)}
+              </ul>
             )}
           </Section>
         </div>

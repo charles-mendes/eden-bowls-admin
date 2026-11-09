@@ -111,3 +111,12 @@ export function pickupErrorText(code: string, fallback: string, missing: string[
       return fallback
   }
 }
+
+// The status of a UPS label, shown on the subscription detail and on the customer's subscriptions.
+export const UPS_SHIPMENT_STATUS: Record<string, { label: string; badge: string }> = {
+  created: { label: 'Etiqueta criada', badge: 'badge-success' },
+  pending: { label: 'Gerando', badge: 'badge-info' },
+  unknown: { label: 'Verificar na UPS', badge: 'badge-warning' },
+  voided: { label: 'Anulada', badge: 'badge-error' },
+  delivered: { label: 'Entregue', badge: 'badge-success' },
+}

@@ -153,6 +153,8 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     courier_issues?: string[] | null
     account_name?: string | null
   }
+  // customer-subscriptions-operational-links: the subscriptions of GET /admin/users/:userId.
+  customerSubscriptions?: Array<Record<string, unknown>>
   products?: typeof productsList.items
   product?: typeof productDetail
   catalogDelete?: 'in_use' | 'archive'
@@ -311,7 +313,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (/^\/api\/v1\/admin\/users\/[^/]+$/.test(path) && method === 'GET') {
-      return jsonResponse(userDetail)
+      return jsonResponse(options.customerSubscriptions ? { ...userDetail, subscriptions: options.customerSubscriptions } : userDetail)
     }
 
     if (path === '/api/v1/admin/onboarding/metrics') {
