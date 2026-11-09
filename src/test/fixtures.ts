@@ -376,7 +376,7 @@ export const customerSubscription = {
     production: { status: 'ready', note: 'sem frango' },
     delivery: { kind: 'courier', id: 5, status: 'delivered', outForDeliveryAt: '2026-08-10T12:00:00.000Z', deliveredAt: '2026-08-10T15:00:00.000Z', failedAt: null },
     nfe: { id: 31, number: '123', series: '1', status: 'authorized', lastError: null, emailStatus: 'sent' },
-  },
+  },  alerts: [] as Array<Record<string, unknown>>,
 }
 
 export const userDetail = {

@@ -315,6 +315,65 @@ describe('UserDetailPage', () => {
       expect(screen.queryByRole('region', { name: 'Último ciclo' })).not.toBeInTheDocument()
     })
 
+    it('shows a rejected NF-e alert linking to the note, with the error in its title', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        customerSubscriptions: [{ ...customerSubscription, alerts: [{ code: 'nfe_problem', nfeId: 32, status: 'rejected', lastError: 'CPF inválido' }] }],
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const alerts = await screen.findByRole('list', { name: 'Alertas' })
+      const badge = within(alerts).getByRole('link', { name: 'NF-e rejeitada' })
+      expect(badge).toHaveAttribute('href', '/operations/nfe/32')
+      expect(badge).toHaveAttribute('title', 'CPF inválido')
+    })
+
+    it('links a Brazil ready-not-dispatched alert to the Entrega Brasil section', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        customerSubscriptions: [{ ...customerSubscription, alerts: [{ code: 'ready_not_dispatched', deliveryDate: '2026-08-10' }] }],
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const alerts = await screen.findByRole('list', { name: 'Alertas' })
+      expect(within(alerts).getByRole('link', { name: 'Pronto sem despacho' })).toHaveAttribute('href', '/billing/subscriptions/sub-row-1#entrega-brasil')
+    })
+
+    it('shows no alert badge for a subscription without alerts', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      await screen.findByRole('listitem', { name: 'Assinatura sub_123' })
+      expect(screen.queryByRole('list', { name: 'Alertas' })).not.toBeInTheDocument()
+      expect(screen.queryByText(/com alerta/)).not.toBeInTheDocument()
+    })
+
+    it('shows an unknown alert code as a neutral badge', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { customerSubscriptions: [{ ...customerSubscription, alerts: [{ code: 'something_new' }] }] })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const alerts = await screen.findByRole('list', { name: 'Alertas' })
+      expect(within(alerts).getByText('something_new')).toHaveClass('badge-neutral')
+    })
+
+    it('counts the subscriptions with alerts on the tab', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        customerSubscriptions: [
+          { ...customerSubscription, alerts: [{ code: 'pending_change', kinds: ['edit'] }, { code: 'delivery_failed', courierDeliveryId: 8, failedAt: null }] },
+          { ...customerSubscription, id: 'sub-row-2', stripeSubscriptionId: 'sub_456', alerts: [] },
+        ],
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      await screen.findByRole('listitem', { name: 'Assinatura sub_456' })
+      const tab = screen.getByRole('tab', { name: /Assinaturas/ })
+      expect(tab).toHaveTextContent('2')
+      expect(within(tab).getByText('1 com alerta')).toBeInTheDocument()
+    })
+
     it('loads pets once and reuses them in the Checkout tab', async () => {
       const user = userEvent.setup()
       seedAuth()

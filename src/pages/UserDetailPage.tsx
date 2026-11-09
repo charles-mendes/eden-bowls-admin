@@ -349,6 +349,7 @@ export function UserDetailPage() {
 
   const subscriptions = data?.subscriptions ?? []
   const activeSubscriptions = subscriptions.filter((item) => item.status === 'active' || item.status === 'trialing').length
+  const withAlerts = subscriptions.filter((item) => item.alerts?.length).length
   const roleLabel = data?.roles?.filter((role) => role !== 'customer').join(', ') || 'Cliente'
 
   return (
@@ -413,6 +414,7 @@ export function UserDetailPage() {
           >
             {option.label}
             {option.id === 'assinaturas' && data ? <span className="page-tab-count">{subscriptions.length}</span> : null}
+            {option.id === 'assinaturas' && withAlerts ? <span className="warning-text page-tab-alerts">{withAlerts} com alerta</span> : null}
           </button>
         ))}
       </div>

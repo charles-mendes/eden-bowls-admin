@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { apiRequest } from '../lib/api'
 import { COURIER_STATUS, courierHref, productionLabel } from '../lib/courierDeliveries'
 import {
+  alertPresentation,
   courierMoment,
   courierTabFor,
   formatCalendarDay,
@@ -49,6 +50,20 @@ export function CustomerSubscriptionCard({ item }: { item: CustomerSubscription 
         <Link className="table-link" to={`/billing/subscriptions/${item.id}`}>{item.stripeSubscriptionId}</Link>
         <span className={subscriptionBadgeClass(item.status)}>{formatStripeStatus(item.status)}</span>
         <span className="muted">{item.planLabel ?? '-'} · {marketLabel(item.stripeAccount)}</span>
+        {item.alerts?.length ? (
+          <ul className="subscription-card-alerts" aria-label="Alertas">
+            {item.alerts.map((alert) => {
+              const view = alertPresentation(alert, item)
+              return (
+                <li key={alert.code}>
+                  {view.href
+                    ? <Link className={view.badge} to={view.href} title={view.title}>{view.text}</Link>
+                    : <span className={view.badge} title={view.title}>{view.text}</span>}
+                </li>
+              )
+            })}
+          </ul>
+        ) : null}
       </div>
 
       <dl className="meta-grid">
