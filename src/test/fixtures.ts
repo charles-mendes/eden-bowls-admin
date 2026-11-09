@@ -251,7 +251,10 @@ export const checkoutDetail = {
   subscriptions: [
     { id: 'sub-row-1', stripeSubscriptionId: 'sub_123', status: 'active', currentPeriodEnd: '2026-09-01T12:00:00.000Z', cancelAtPeriodEnd: false, planLabel: 'Adult 1m' },
   ],
-  pets: [{ id: 'pet-1', name: 'Luna', breed: 'Vira-lata', ageYears: 4, ageMonths: 0, weightInput: 12, weightUnit: 'kg', activityLevel: 'BAIXO', petCondition: 'ADEQUADO', neutered: true }],
+  pets: [{
+    id: 'pet-1', name: 'Luna', breed: 'Vira-lata', ageYears: 4, ageMonths: 0, weightInput: 12, weightUnit: 'kg', activityLevel: 'BAIXO', petCondition: 'ADEQUADO', neutered: true,
+    subscriptions: [{ id: 'sub-row-1', stripeSubscriptionId: 'sub_123', status: 'active', planLabel: 'Adult 1m' }] as Array<Record<string, unknown>>,
+  }],
   recurrence: { frequency: 'every_4_weeks' },
   planSelection: {
     pets: [{ pet_id: 'pet-1', enabled: true, pet_name: 'Luna', flavor_weights: [5, 5], selected_flavors: ['beef', 'fish'] }],
@@ -376,7 +379,9 @@ export const customerSubscription = {
     production: { status: 'ready', note: 'sem frango' },
     delivery: { kind: 'courier', id: 5, status: 'delivered', outForDeliveryAt: '2026-08-10T12:00:00.000Z', deliveredAt: '2026-08-10T15:00:00.000Z', failedAt: null },
     nfe: { id: 31, number: '123', series: '1', status: 'authorized', lastError: null, emailStatus: 'sent' },
-  },  alerts: [] as Array<Record<string, unknown>>,
+  },
+  alerts: [] as Array<Record<string, unknown>>,
+  pets: [{ id: 'pet-1', name: 'Luna' }] as Array<{ id: string; name: string }>,
 }
 
 export const userDetail = {

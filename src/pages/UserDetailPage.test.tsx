@@ -374,6 +374,99 @@ describe('UserDetailPage', () => {
       expect(within(tab).getByText('1 com alerta')).toBeInTheDocument()
     })
 
+    it('lists the pets of each subscription card', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        customerSubscriptions: [{ ...customerSubscription, pets: [{ id: 'rex', name: 'Rex' }, { id: 'luna', name: 'Luna' }] }],
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const card = await screen.findByRole('listitem', { name: 'Assinatura sub_123' })
+      expect(within(card).getByText('Pets')).toBeInTheDocument()
+      expect(within(card).getByText('Rex, Luna')).toBeInTheDocument()
+    })
+
+    it('names a pet without a name and shows "-" for no pet', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        customerSubscriptions: [
+          { ...customerSubscription, pets: [{ id: 'rex', name: '' }] },
+          { ...customerSubscription, id: 'sub-row-2', stripeSubscriptionId: 'sub_456', status: 'canceled', pets: [] },
+        ],
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const named = await screen.findByRole('listitem', { name: 'Assinatura sub_123' })
+      expect(within(named).getByText('Pet sem nome')).toBeInTheDocument()
+      const empty = screen.getByRole('listitem', { name: 'Assinatura sub_456' })
+      expect(within(within(empty).getByText('Pets').closest('div') as HTMLElement).getByText('-')).toBeInTheDocument()
+    })
+
+    it('hides the Pets item when the API sends no pets key', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { customerSubscriptions: [without(customerSubscription, 'pets')] })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const card = await screen.findByRole('listitem', { name: 'Assinatura sub_123' })
+      expect(within(card).queryByText('Pets')).not.toBeInTheDocument()
+    })
+
+    it('shows the subscription that owns each pet, linked to its detail', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=pets', '/users/:userId')
+
+      const list = await screen.findByRole('list', { name: 'Assinaturas do pet' })
+      expect(within(list).getByRole('link', { name: 'sub_123' })).toHaveAttribute('href', '/billing/subscriptions/sub-row-1')
+      expect(within(list).getByText('Ativo')).toHaveClass('badge-success')
+    })
+
+    it('lists every owning subscription of a pet in the API order', async () => {
+      seedAuth()
+      const pet = {
+        ...checkoutDetail.pets[0],
+        subscriptions: [
+          { id: 'sub-row-2', stripeSubscriptionId: 'sub_new', status: 'active', planLabel: null },
+          { id: 'sub-row-1', stripeSubscriptionId: 'sub_old', status: 'paused', planLabel: null },
+        ],
+      }
+      installAdminFetchMock(operatorWriteUser, {
+        routes: ({ path }) => (path === '/api/v1/admin/onboarding/checkouts/u-ana' ? jsonResponse({ ...checkoutDetail, pets: [pet] }) : undefined),
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=pets', '/users/:userId')
+
+      const list = await screen.findByRole('list', { name: 'Assinaturas do pet' })
+      const rows = within(list).getAllByRole('listitem')
+      expect(rows.map((row) => row.textContent)).toEqual(['sub_newAtivo', 'sub_oldPausado'])
+    })
+
+    it('says when a pet has no subscription', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        routes: ({ path }) => (path === '/api/v1/admin/onboarding/checkouts/u-ana'
+          ? jsonResponse({ ...checkoutDetail, pets: [{ ...checkoutDetail.pets[0], subscriptions: [] }] })
+          : undefined),
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=pets', '/users/:userId')
+
+      expect(await screen.findByText('Sem assinatura')).toBeInTheDocument()
+      expect(screen.queryByRole('list', { name: 'Assinaturas do pet' })).not.toBeInTheDocument()
+    })
+
+    it('shows no subscription line on a pet when the API sends no subscriptions key', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        routes: ({ path }) => (path === '/api/v1/admin/onboarding/checkouts/u-ana'
+          ? jsonResponse({ ...checkoutDetail, pets: [without(checkoutDetail.pets[0], 'subscriptions')] })
+          : undefined),
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=pets', '/users/:userId')
+
+      expect(await screen.findByText('Luna')).toBeInTheDocument()
+      expect(screen.queryByText('Sem assinatura')).not.toBeInTheDocument()
+      expect(screen.queryByRole('list', { name: 'Assinaturas do pet' })).not.toBeInTheDocument()
+    })
+
     it('loads pets once and reuses them in the Checkout tab', async () => {
       const user = userEvent.setup()
       seedAuth()

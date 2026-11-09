@@ -21,6 +21,8 @@ export type CustomerSubscription = {
   latestCycle?: LatestCycle | null
   latestCycleUnavailable?: boolean
   alerts?: SubscriptionAlert[]
+  // Pets the subscription owns (backend: customer-pets-subscription-link).
+  pets?: Array<{ id: string; name: string }>
 }
 
 // Computed by the API from what the operator already reads (backend: customer-subscriptions-alerts).
@@ -60,6 +62,12 @@ export function subscriptionBadgeClass(status: string) {
   if (status === 'past_due' || status === 'unpaid' || status === 'incomplete') return 'badge-warning'
   if (status === 'canceled' || status === 'incomplete_expired') return 'badge-neutral'
   return 'badge-info'
+}
+
+// Pet names of a subscription, in the API order; an empty name reads as "Pet sem nome".
+export function formatSubscriptionPets(pets: Array<{ name: string }>) {
+  if (!pets.length) return '-'
+  return pets.map((pet) => pet.name.trim() || 'Pet sem nome').join(', ')
 }
 
 // A date-only value (YYYY-MM-DD) read as the calendar day, never shifted by the browser time zone.

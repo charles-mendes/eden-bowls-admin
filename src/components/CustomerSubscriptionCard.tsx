@@ -11,6 +11,7 @@ import {
   formatCheckoutShipping,
   formatContract,
   formatPaymentMethod,
+  formatSubscriptionPets,
   subscriptionBadgeClass,
   type CustomerSubscription,
   type LatestCycle,
@@ -71,6 +72,7 @@ export function CustomerSubscriptionCard({ item }: { item: CustomerSubscription 
         <Item label="Fim do período">{formatDate(item.currentPeriodEnd)}</Item>
         <Item label="Cancelando">{item.cancelAtPeriodEnd ? 'Sim' : 'Não'}</Item>
         <Item label="Contrato">{formatContract(item)}</Item>
+        {item.pets !== undefined ? <Item label="Pets">{formatSubscriptionPets(item.pets)}</Item> : null}
         {item.paymentMethod !== undefined ? <Item label="Pagamento">{formatPaymentMethod(item.paymentMethod)}</Item> : null}
         {item.checkoutShipping !== undefined ? <Item label="Frete do checkout">{formatCheckoutShipping(item.checkoutShipping)}</Item> : null}
       </dl>

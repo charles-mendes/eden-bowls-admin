@@ -11,8 +11,8 @@ import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
-import type { CustomerSubscription } from '../lib/customerSubscriptions'
-import { formatDate } from '../lib/format'
+import { subscriptionBadgeClass, type CustomerSubscription } from '../lib/customerSubscriptions'
+import { formatDate, formatStripeStatus } from '../lib/format'
 import {
   accountStatusBadgeClass,
   accountStatusLabel,
@@ -55,11 +55,14 @@ type UserDetail = {
   subscriptions?: CustomerSubscription[]
 }
 
+// A subscription that still owns the pet, newest first (backend: customer-pets-subscription-link).
+type PetSubscription = { id: string; stripeSubscriptionId: string; status: string; planLabel: string | null }
+
 // Pets and checkout come from the onboarding record; it is fetched only when one of those tabs opens.
 type OnboardingDetail = {
   empty: boolean
   updatedAt: string | null
-  pets: Array<{ id: string; name: string; breed: string; ageYears: number; ageMonths: number; weightInput: number; weightUnit: string; activityLevel: string; neutered?: boolean; simplified?: { daily?: { formatted?: string } } | null }>
+  pets: Array<{ id: string; name: string; breed: string; ageYears: number; ageMonths: number; weightInput: number; weightUnit: string; activityLevel: string; neutered?: boolean; simplified?: { daily?: { formatted?: string } } | null; subscriptions?: PetSubscription[] }>
   recurrence: unknown
   planSelection: unknown
   address: unknown
@@ -708,6 +711,20 @@ function OnboardingPanel({ tab, state }: { tab: CustomerTab; state: OnboardingSt
                   <h4>{item.name}</h4>
                   <span className="muted">{item.breed || 'Raça não informada'}</span>
                 </div>
+                {item.subscriptions !== undefined ? (
+                  item.subscriptions.length ? (
+                    <ul className="pet-card-subscriptions" aria-label="Assinaturas do pet">
+                      {item.subscriptions.map((subscription) => (
+                        <li key={subscription.id}>
+                          <Link className="table-link" to={`/billing/subscriptions/${subscription.id}`} title={subscription.planLabel ?? undefined}>
+                            {subscription.stripeSubscriptionId}
+                          </Link>
+                          <span className={subscriptionBadgeClass(subscription.status)}>{formatStripeStatus(subscription.status)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="pet-card-subscriptions muted">Sem assinatura</p>
+                ) : null}
                 <dl className="pet-card-meta">
                   <div><dt>Idade</dt><dd>{formatPetAge(item.ageYears, item.ageMonths)}</dd></div>
                   <div><dt>Peso</dt><dd>{item.weightInput} {item.weightUnit}</dd></div>

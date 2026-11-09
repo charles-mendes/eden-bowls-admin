@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { alertPresentation, type SubscriptionAlert } from './customerSubscriptions'
+import { alertPresentation, formatSubscriptionPets, type SubscriptionAlert } from './customerSubscriptions'
 
 const br = { id: 'sub-row-1', stripeAccount: 'br' }
 const us = { id: 'sub-row-2', stripeAccount: 'us' }
@@ -43,5 +43,19 @@ describe('alertPresentation', () => {
 
   it('an unknown code stays visible as a neutral badge', () => {
     expect(alertPresentation({ code: 'something_new' }, br)).toEqual({ text: 'something_new', badge: 'badge-neutral', href: null, title: 'something_new' })
+  })
+})
+
+describe('formatSubscriptionPets', () => {
+  it('joins the names in the API order', () => {
+    expect(formatSubscriptionPets([{ name: 'Rex' }, { name: 'Luna' }])).toBe('Rex, Luna')
+  })
+
+  it('reads an empty name as "Pet sem nome"', () => {
+    expect(formatSubscriptionPets([{ name: '' }, { name: 'Luna' }])).toBe('Pet sem nome, Luna')
+  })
+
+  it('shows "-" for no pet', () => {
+    expect(formatSubscriptionPets([])).toBe('-')
   })
 })

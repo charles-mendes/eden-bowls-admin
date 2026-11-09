@@ -3710,6 +3710,27 @@ button.table-link {
   font-size: var(--text-sm);
 }
 
+.pet-card-subscriptions {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-sm);
+}
+
+.pet-card-subscriptions li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pet-card-subscriptions .table-link {
+  overflow-wrap: anywhere;
+}
+
 .pet-card-meta {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
