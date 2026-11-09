@@ -48,10 +48,15 @@ test.describe('Admin users', () => {
     await page.getByRole('textbox', { name: 'Endereço' }).fill('Rua Oscar Freire 200')
     await page.getByRole('button', { name: 'Salvar endereço' }).click()
 
+    // Saving the account's address copy asks for a reason in a dialog before anything is sent.
+    const dialog = page.getByRole('dialog', { name: 'Salvar a cópia do endereço?' })
+    await dialog.getByLabel('Motivo').fill('Cliente pediu por telefone')
+    await dialog.getByRole('button', { name: 'Salvar endereço' }).click()
+
     await expect(page.getByText('Endereço salvo.')).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'PATCH' && item.path.endsWith('/delivery') && !item.path.endsWith('/delivery-instructions'))).toMatchObject({
       authorization: 'Bearer e2e-access-token',
-      body: expect.objectContaining({ address: 'Rua Oscar Freire 200' }),
+      body: expect.objectContaining({ address: 'Rua Oscar Freire 200', reason: 'Cliente pediu por telefone' }),
     })
   })
 
