@@ -865,4 +865,23 @@ describe('SubscriptionDetailPage courier section', () => {
     const pdf = calls.find((call) => call.path === '/api/v1/admin/billing/invoices/in_test_1/pdf')
     expect(pdf?.search).toMatch(/^\?account=(br|us)$/)
   })
+
+  it('scrolls to the section named in the link hash once the subscription loads', async () => {
+    seedAuth()
+    const scrolled: string[] = []
+    // jsdom has no scrollIntoView: define it for this test only.
+    Object.defineProperty(Element.prototype, 'scrollIntoView', {
+      configurable: true,
+      value: function (this: Element) { scrolled.push(this.id) },
+    })
+    try {
+      installAdminFetchMock(adminUser)
+      renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1#faturas-stripe', '/billing/subscriptions/:id')
+
+      await waitFor(() => expect(scrolled).toContain('faturas-stripe'))
+      expect(document.getElementById('faturas-stripe')).toHaveTextContent('Faturas Stripe')
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
+    }
+  })
 })

@@ -223,8 +223,55 @@ describe('UserDetailPage', () => {
       expect(within(cycle).getByText('Rejeitada')).toBeInTheDocument()
       expect(within(cycle).getByText('CPF inválido')).toBeInTheDocument()
       expect(within(cycle).getByRole('link', { name: 'Nota 32' })).toHaveAttribute('href', '/operations/nfe/32')
-      expect(within(cycle).getByText('UPS · Etiqueta criada').closest('a')).toHaveAttribute('href', '/billing/subscriptions/sub-row-1')
+      expect(within(cycle).getByText('UPS · Etiqueta criada').closest('a')).toHaveAttribute('href', '/billing/subscriptions/sub-row-1#envio-ups')
       expect(within(cycle).getByText('1Z999')).toBeInTheDocument()
+    })
+
+    it('links the paid invoice to the subscription and opens its Stripe PDF', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const open = vi.fn()
+      vi.stubGlobal('open', open)
+      const { calls } = installAdminFetchMock(operatorWriteUser, {
+        routes: ({ path, method }) => (/\/admin\/billing\/invoices\/[^/]+\/pdf$/.test(path) && method === 'GET'
+          ? jsonResponse({ url: 'https://pay.stripe.com/invoice/pdf' })
+          : undefined),
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const cycle = await screen.findByRole('region', { name: 'Último ciclo' })
+      expect(within(cycle).getByRole('link', { name: 'in_123' })).toHaveAttribute('href', '/billing/subscriptions/sub-row-1#faturas-stripe')
+      await user.click(within(cycle).getByRole('button', { name: 'PDF Stripe' }))
+
+      await waitFor(() => expect(open).toHaveBeenCalledWith('https://pay.stripe.com/invoice/pdf', '_blank', 'noopener,noreferrer'))
+      const pdf = calls.find((call) => call.path === '/api/v1/admin/billing/invoices/in_123/pdf')
+      expect(pdf?.search).toBe('?account=br')
+    })
+
+    it('says when the Stripe PDF cannot be opened', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      vi.stubGlobal('open', vi.fn())
+      installAdminFetchMock(operatorWriteUser, {
+        routes: ({ path, method }) => (/\/admin\/billing\/invoices\/[^/]+\/pdf$/.test(path) && method === 'GET'
+          ? jsonResponse({ message: 'Stripe indisponível' }, 502)
+          : undefined),
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const cycle = await screen.findByRole('region', { name: 'Último ciclo' })
+      await user.click(within(cycle).getByRole('button', { name: 'PDF Stripe' }))
+      expect(await within(cycle).findByText('Não foi possível abrir o PDF agora.')).toBeInTheDocument()
+    })
+
+    it('hides the Stripe PDF button without billing access', async () => {
+      seedAuth()
+      installAdminFetchMock({ ...operatorWriteUser, permissions: operatorWriteUser.permissions.filter((item) => item !== 'billing.subscribers.read') })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=assinaturas', '/users/:userId')
+
+      const cycle = await screen.findByRole('region', { name: 'Último ciclo' })
+      expect(within(cycle).getByRole('link', { name: 'in_123' })).toBeInTheDocument()
+      expect(within(cycle).queryByRole('button', { name: 'PDF Stripe' })).not.toBeInTheDocument()
     })
 
     it('says when there is no delivery and no NF-e yet', async () => {

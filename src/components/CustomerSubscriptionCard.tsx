@@ -1,5 +1,7 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { useAuth } from '../contexts/AuthContext'
+import { apiRequest } from '../lib/api'
 import { COURIER_STATUS, courierHref, productionLabel } from '../lib/courierDeliveries'
 import {
   courierMoment,
@@ -78,6 +80,7 @@ function LatestCycleGrid({ cycle, subscription, market }: { cycle: LatestCycle; 
   return (
     <dl className="meta-grid">
       <Item label="Pago em">{formatDate(cycle.paidAt)}</Item>
+      <Item label="Fatura"><InvoicePdf invoiceId={cycle.invoiceId} subscription={subscription} /></Item>
       <Item label="Preparo">{formatCalendarDay(cycle.preparationDay)}</Item>
       <Item label="Entrega prevista">{formatCalendarDay(cycle.deliveryDate)}</Item>
 
@@ -104,7 +107,7 @@ function LatestCycleGrid({ cycle, subscription, market }: { cycle: LatestCycle; 
             </>
           ) : (
             <>
-              <Link className="table-link" to={`/billing/subscriptions/${subscription.id}`}>
+              <Link className="table-link" to={`/billing/subscriptions/${subscription.id}#envio-ups`}>
                 <span className={UPS_SHIPMENT_STATUS[delivery.status]?.badge ?? 'badge-info'}>UPS · {UPS_SHIPMENT_STATUS[delivery.status]?.label ?? delivery.status}</span>
               </Link>
               {delivery.trackingNumber ? <span className="muted"> {delivery.trackingNumber}</span> : null}
@@ -126,5 +129,34 @@ function LatestCycleGrid({ cycle, subscription, market }: { cycle: LatestCycle; 
         </Item>
       ) : null}
     </dl>
+  )
+}
+
+// The paid invoice of the cycle: its id, and the Stripe PDF for who reads billing (same route as the subscription
+// detail). The API asks Stripe for the link, so it opens on click and never on page load.
+function InvoicePdf({ invoiceId, subscription }: { invoiceId: string; subscription: CustomerSubscription }) {
+  const { token, hasPermission } = useAuth()
+  const [failed, setFailed] = useState(false)
+  const canOpen = hasPermission('billing.subscribers.read')
+
+  const open = async () => {
+    if (!token) return
+    setFailed(false)
+    try {
+      // The account tells the API which Stripe holds the invoice; without it an admin of both markets gets 404.
+      const account = subscription.stripeAccount ? `?account=${encodeURIComponent(subscription.stripeAccount)}` : ''
+      const response = await apiRequest<{ url: string }>(`/admin/billing/invoices/${encodeURIComponent(invoiceId)}/pdf${account}`, { token })
+      if (response.url) window.open(response.url, '_blank', 'noopener,noreferrer')
+    } catch {
+      setFailed(true)
+    }
+  }
+
+  return (
+    <>
+      <Link className="table-link" to={`/billing/subscriptions/${subscription.id}#faturas-stripe`}>{invoiceId}</Link>
+      {canOpen ? <> <button className="ghost-button" type="button" onClick={() => void open()}>PDF Stripe</button></> : null}
+      {failed ? <span className="subscription-card-error">Não foi possível abrir o PDF agora.</span> : null}
+    </>
   )
 }

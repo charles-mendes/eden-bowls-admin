@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { LedgerSnapshotSections } from '../components/LedgerSnapshotSections'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
@@ -116,6 +116,7 @@ export function SubscriptionDetailPage() {
   const { token, hasPermission } = useAuth()
   const { id } = useParams()
   const [data, setData] = useState<SubscriptionDetail | null>(null)
+  const location = useLocation()
   const [invoices, setInvoices] = useState<InvoiceItem[]>([])
   const [shipments, setShipments] = useState<UpsShipment[]>([])
   const [labelIssues, setLabelIssues] = useState<LabelIssue[]>([])
@@ -267,6 +268,13 @@ export function SubscriptionDetailPage() {
   useEffect(() => {
     void load()
   }, [token, id])
+
+  // A link from another screen can point at a section (#envio-ups, #entrega-brasil, #faturas-stripe). The sections
+  // render after the subscription loads, so the scroll waits for it.
+  useEffect(() => {
+    if (!data || !location.hash) return
+    document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView?.({ block: 'start' })
+  }, [data, location.hash])
 
   const syncInvoices = async () => {
     if (!token || !id) return
@@ -569,7 +577,7 @@ export function SubscriptionDetailPage() {
       ) : null}
 
       {canReadShipping && shipsWithUps ? (
-        <Section title="Envio UPS" description="Uma etiqueta por fatura paga. Compare o frete cobrado no checkout com o custo da UPS.">
+        <Section id="envio-ups" title="Envio UPS" description="Uma etiqueta por fatura paga. Compare o frete cobrado no checkout com o custo da UPS.">
           {labelIssues.length > 0 ? (
             <div className="warning" role="alert" aria-label="Etiqueta bloqueada">
               <strong>Não é possível gerar a etiqueta. Corrija antes:</strong>
@@ -675,7 +683,7 @@ export function SubscriptionDetailPage() {
       ) : null}
 
       {canReadShipping && shipsByCourier ? (
-        <Section title="Entrega Brasil" description="Entrega por Uber, motoboy ou entregador próprio, registrada à mão. Cada tentativa fica no histórico.">
+        <Section id="entrega-brasil" title="Entrega Brasil" description="Entrega por Uber, motoboy ou entregador próprio, registrada à mão. Cada tentativa fica no histórico.">
           <p>Quem recebe: <strong>{courierRecipient || '—'}</strong></p>
           {/* A lock, as on Entregas Brasil: no dialog opens and there is no way to dispatch anyway. */}
           {courierLock.length && awaitingCourier.length ? (
@@ -866,7 +874,7 @@ export function SubscriptionDetailPage() {
         </Section>
       ) : null}
 
-      <Section title="Faturas Stripe">
+      <Section id="faturas-stripe" title="Faturas Stripe">
         {canSyncBilling ? (
           <button className="primary-button" type="button" onClick={() => void syncInvoices()}>Sincronizar faturas</button>
         ) : null}
