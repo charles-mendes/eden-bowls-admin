@@ -49,7 +49,8 @@ export type ShippingSettings = {
     quote_mode: 'fixed' | 'ups'
     fallback_enabled: boolean
     ship_from: UsShipFrom
-    package: { weight_lb: number; length_in: number; width_in: number; height_in: number }
+    // dry_ice_kg: dry ice in each box, declared to UPS as UN1845 (ups-dry-ice-declaration).
+    package: { weight_lb: number; length_in: number; width_in: number; height_in: number; dry_ice_kg: number }
     allowed_service_codes: string[]
     // Business days of UPS transit the insulated box accepts; a longer quote makes the address unavailable.
     max_transit_days: number
@@ -119,7 +120,7 @@ export const emptySettings = (): ShippingSettings => ({
     quote_mode: 'fixed',
     fallback_enabled: true,
     ship_from: { name: '', street: '', street2: '', city: '', state: '', zipcode: '', country: 'US', phone: '' },
-    package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12 },
+    package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12, dry_ice_kg: 0.5 },
     allowed_service_codes: ['03'],
     max_transit_days: 1,
   },

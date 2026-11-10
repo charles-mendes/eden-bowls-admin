@@ -172,6 +172,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   addressIssue?: Record<string, unknown> | null
   // ups-pickup: the pickups GET /admin/shipments/pickups returns.
   upsPickups?: Array<Record<string, unknown>>
+  // ups-dry-ice-declaration: the GET and PUT /admin/shipping/settings answer, and a refused PUT.
+  shippingSettings?: typeof shippingSettings
+  shippingSettingsSaveError?: { status: number; code: string; message: string }
   // Answered before the fixed routes; return undefined to fall through.
   routes?: (call: FetchCall) => Response | undefined
 } = {}) {
@@ -942,11 +945,15 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (path === '/api/v1/admin/shipping/settings' && method === 'GET') {
-      return jsonResponse(shippingSettings)
+      return jsonResponse(options.shippingSettings ?? shippingSettings)
     }
 
     if (path === '/api/v1/admin/shipping/settings' && method === 'PUT') {
-      return jsonResponse(shippingSettings)
+      if (options.shippingSettingsSaveError) {
+        const { status, code, message } = options.shippingSettingsSaveError
+        return jsonResponse({ code, message, details: { code } }, status)
+      }
+      return jsonResponse(options.shippingSettings ?? shippingSettings)
     }
 
     if (path === '/api/v1/admin/shipping/test' && method === 'POST') {

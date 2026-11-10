@@ -99,6 +99,14 @@ function Toggle({ checked, onChange, label, description, disabled }: { checked: 
   )
 }
 
+// The API owns the dry ice rule (ups-dry-ice-declaration); its 422 is shown in Portuguese.
+function saveRulesError(error: unknown) {
+  if (error instanceof ApiRequestError && error.code === 'invalid_dry_ice_kg') {
+    return 'Gelo seco por caixa deve ficar entre 0,1 e 2,5 kg, com uma casa decimal, e não pode passar do peso da caixa.'
+  }
+  return error instanceof Error ? error.message : 'Falha ao salvar'
+}
+
 function brQuoteError(error: unknown) {
   if (error instanceof ApiRequestError) {
     if (error.code === 'out_of_coverage') {
@@ -265,7 +273,7 @@ export function ShippingPage() {
       setMessage(market === 'BR' ? 'Regras do Brasil salvas.' : 'Regras dos Estados Unidos salvas.')
       return true
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar')
+      setError(saveRulesError(requestError))
       return false
     } finally {
       setSaving(false)
@@ -407,6 +415,17 @@ export function ShippingPage() {
                       <NumberField label="Comprimento" suffix="in" step="0.1" disabled={!canWrite} value={us.package.length_in} onChange={(value) => updatePackage({ length_in: value ?? 0 })} />
                       <NumberField label="Largura" suffix="in" step="0.1" disabled={!canWrite} value={us.package.width_in} onChange={(value) => updatePackage({ width_in: value ?? 0 })} />
                       <NumberField label="Altura" suffix="in" step="0.1" disabled={!canWrite} value={us.package.height_in} onChange={(value) => updatePackage({ height_in: value ?? 0 })} />
+                    </div>
+                    <div className="ship-fields">
+                      <NumberField
+                        label="Gelo seco por caixa"
+                        suffix="kg"
+                        step="0.1"
+                        disabled={!canWrite}
+                        value={us.package.dry_ice_kg}
+                        onChange={(value) => updatePackage({ dry_ice_kg: value ?? 0 })}
+                        hint="Declarado à UPS como UN1845 na etiqueta e na cotação. De 0,1 a 2,5 kg, nunca mais que o peso da caixa."
+                      />
                     </div>
                   </fieldset>
                   <fieldset className="ship-fieldset">

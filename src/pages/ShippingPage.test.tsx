@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ShippingPage } from './ShippingPage'
-import { adminUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { adminUser, operatorUsUser, operatorWriteUser, readonlyUser, shippingSettings } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -210,6 +210,64 @@ describe('ShippingPage', () => {
     await screen.findByText('Regras dos Estados Unidos salvas.')
     const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
     expect(put?.body).toMatchObject({ us: { quote_mode: 'ups', max_transit_days: 2 } })
+  })
+
+  describe('US dry ice per box', () => {
+    const upsSettings = {
+      ...shippingSettings,
+      data: { settings: { ...shippingSettings.data.settings, us: { ...shippingSettings.data.settings.us, quote_mode: 'ups' } } },
+    }
+
+    it('Value from the API and Save a new weight: starts at 0.5 and sends 1.2 with the package', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(adminUser)
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      await user.click(await screen.findByRole('button', { name: 'EUA' }))
+      await user.click(await screen.findByRole('radio', { name: /UPS/ }))
+      // The settings response has no dry_ice_kg, so the field shows the value the API sets on deploy.
+      const dryIce = screen.getByRole('spinbutton', { name: /Gelo seco por caixa/ })
+      expect(dryIce).toHaveValue(0.5)
+      expect(screen.getByText(/Declarado à UPS como UN1845/)).toBeInTheDocument()
+
+      await user.clear(dryIce)
+      await user.type(dryIce, '1.2')
+      await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+      await screen.findByText('Regras dos Estados Unidos salvas.')
+      const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
+      expect(put?.body).toMatchObject({
+        us: { package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12, dry_ice_kg: 1.2 } },
+      })
+    })
+
+    it('Refused by the API: shows the reason in Portuguese and keeps the typed value', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(adminUser, {
+        shippingSettings: upsSettings,
+        shippingSettingsSaveError: { status: 422, code: 'invalid_dry_ice_kg', message: 'US dry ice per box must be from 0.1 to 2.5 kg.' },
+      })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      await user.click(await screen.findByRole('button', { name: 'EUA' }))
+      const dryIce = await screen.findByRole('spinbutton', { name: /Gelo seco por caixa/ })
+      await user.clear(dryIce)
+      await user.type(dryIce, '3')
+      await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+
+      expect(await screen.findByText('Gelo seco por caixa deve ficar entre 0,1 e 2,5 kg, com uma casa decimal, e não pode passar do peso da caixa.')).toBeInTheDocument()
+      expect(screen.queryByText(/US dry ice per box/)).not.toBeInTheDocument()
+      expect(dryIce).toHaveValue(3)
+    })
+
+    it('Read-only operator: the field is disabled without shipping.write', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorUsUser, { shippingSettings: upsSettings })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      expect(await screen.findByRole('spinbutton', { name: /Gelo seco por caixa/ })).toBeDisabled()
+    })
   })
 
   it('simulates a Brazil CEP as same-day delivery', async () => {
