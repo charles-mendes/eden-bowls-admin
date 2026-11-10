@@ -92,11 +92,12 @@ test.describe('Admin readonly', () => {
   test('opens the shipping simulator and reads the rules without save controls', async ({ page }) => {
     await openAuthed(page, '/config/shipping', e2eProfiles.readonly)
 
-    await expect(page.getByRole('tab', { name: 'Simulador de frete' })).toHaveAttribute('aria-selected', 'true')
-    await expect(page.getByRole('heading', { name: 'Simular frete por CEP' })).toBeVisible()
-    await page.getByRole('tab', { name: /Regras de entrega/ }).click()
+    // The page opens on Regras for every role; readonly reads the rules without save controls.
+    await expect(page.getByRole('tab', { name: /Regras de entrega/ })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('heading', { name: 'Entrega local' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Salvar regras/ })).toHaveCount(0)
+    await page.getByRole('tab', { name: 'Simulador de frete' }).click()
+    await expect(page.getByRole('heading', { name: 'Simular frete por CEP' })).toBeVisible()
     await page.getByRole('tab', { name: /Sede/ }).click()
     await expect(page.getByRole('button', { name: /Salvar sede|Validar endereço/ })).toHaveCount(0)
   })
