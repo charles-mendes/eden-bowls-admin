@@ -44,6 +44,8 @@ export type CourierQueueItem = {
   delivery_instructions?: string | null
   delivery_instructions_source?: 'profile'
   items?: Array<{ flavor: string; quantity: number; pack_size: string | null }>
+  // shipping-boxes: the boxes the delivery carries; absent on an older API.
+  boxes?: Array<{ key: string; label: string; pack_count: number; weight_kg: number }>
   delivery_date: string | null
   production_status: string | null
   subscription_status: string | null

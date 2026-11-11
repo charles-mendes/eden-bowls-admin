@@ -72,6 +72,32 @@ describe('ProductionQueuePage', () => {
     expect(screen.queryByText(/senior-beef/)).not.toBeInTheDocument()
   })
 
+  it('Order with two boxes: the item shows both boxes with their pack counts', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{
+        ...productionQueueItem,
+        packCount: 45,
+        boxes: [
+          { key: 'monthly', label: 'Caixa mensal', pack_count: 30, weight_kg: 16.5 },
+          { key: 'monthly', label: 'Caixa mensal', pack_count: 15, weight_kg: 9 },
+        ],
+      }],
+    })
+    renderAuthedPage(<ProductionQueuePage />, '/operations/production', '/operations/production')
+
+    expect(await screen.findByTestId('boxes-42')).toHaveTextContent('Caixa mensal · 30 pacotes + Caixa mensal · 15 pacotes')
+  })
+
+  it('an item without boxes shows nothing extra', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { productionQueue: [{ ...productionQueueItem, boxes: undefined }] })
+    renderAuthedPage(<ProductionQueuePage />, '/operations/production', '/operations/production')
+
+    expect(await screen.findByText('Bovino × 2, Frango × 1')).toBeInTheDocument()
+    expect(screen.queryByTestId('boxes-42')).not.toBeInTheDocument()
+  })
+
   it('opens filtered from the URL and sends the filters to the API', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser)

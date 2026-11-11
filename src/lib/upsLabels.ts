@@ -39,6 +39,31 @@ export function labelIssueText(issue: LabelIssue): string {
   }
 }
 
+// shipping-boxes: one UPS package per box of a label; a label bought before boxes has none.
+export type ShipmentPackage = {
+  sequence: number
+  box_key: string | null
+  pack_count: number
+  weight_lb: number | null
+  tracking_number: string | null
+  has_label: boolean
+}
+
+const BOX_SHORT_NAMES: Record<string, string> = { starter: 'Starter', monthly: 'mensal' }
+
+// How many boxes a label carries: its packages, or one for a label bought before boxes.
+export function packageCountOf(shipment: { packages?: ShipmentPackage[] } | null | undefined): number {
+  return shipment?.packages?.length || 1
+}
+
+// "2 caixas: mensal 30 · mensal 15"; empty for a label without packages.
+export function boxesSummary(packages: ShipmentPackage[] | undefined): string {
+  if (!packages?.length) return ''
+  const count = packages.length === 1 ? '1 caixa' : `${packages.length} caixas`
+  const parts = packages.map((pkg) => `${BOX_SHORT_NAMES[pkg.box_key ?? ''] ?? pkg.box_key ?? 'caixa'} ${pkg.pack_count}`)
+  return `${count}: ${parts.join(' · ')}`
+}
+
 // ups-pickup: the pickup a created label belongs to, as the label queue returns it.
 export type QueuePickup = { id: number; pickup_date: string; status: 'pending' | 'requested' | 'unknown'; prn: string | null }
 

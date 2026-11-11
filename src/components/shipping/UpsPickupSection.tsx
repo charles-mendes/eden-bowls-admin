@@ -7,7 +7,9 @@ import {
   PICKUP_STATUS_LABELS,
   pickupDay,
   pickupErrorText,
+  packageCountOf,
   type QueuePickup,
+  type ShipmentPackage,
   type UpsPickup,
 } from '../../lib/upsLabels'
 
@@ -16,7 +18,7 @@ export type PickupLabel = {
   invoice_id: string
   customer_name: string | null
   stripe_subscription_id: string
-  shipment: { id: string | number; tracking_number: string | null; in_transit_at?: string | null; out_for_delivery_at?: string | null } | null
+  shipment: { id: string | number; tracking_number: string | null; in_transit_at?: string | null; out_for_delivery_at?: string | null; packages?: ShipmentPackage[] } | null
   pickup?: QueuePickup | null
 }
 
@@ -93,8 +95,12 @@ export function UpsPickupSection({
     setNotice({ kind: 'error', text: requestError instanceof Error ? requestError.message : 'Falha ao falar com a UPS' })
   }
 
-  // The count follows the selection until the operator types it: one box may carry two labels, or the opposite.
-  const boxes = count ?? String(selected.size)
+  // The count follows the boxes of the selected labels (shipping-boxes: one per package, one for a label bought
+  // before boxes) until the operator types it.
+  const selectedBoxes = free
+    .filter((label) => selected.has(String(label.shipment?.id)))
+    .reduce((sum, label) => sum + packageCountOf(label.shipment), 0)
+  const boxes = count ?? String(selectedBoxes)
 
   const toggle = (id: string) => {
     setExcluded((current) => {

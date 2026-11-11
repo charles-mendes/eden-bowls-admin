@@ -325,6 +325,19 @@ describe('CourierDeliveriesPage', () => {
     expect(await screen.findByText('Copiado')).toBeInTheDocument()
   })
 
+  it('Two-box delivery: the row shows "2 caixas", and a row without boxes shows nothing extra', async () => {
+    const boxes = [
+      { key: 'monthly', label: 'Caixa mensal', pack_count: 30, weight_kg: 16.5 },
+      { key: 'starter', label: 'Starter Box', pack_count: 4, weight_kg: 3 },
+    ]
+    install(operatorWriteUser, { queue: { to_dispatch: [fullItem(1, { boxes }), fullItem(2)], out_for_delivery: [], failed: [], delivered: [], truncated: false } })
+    render()
+
+    expect(await screen.findByText('2 caixas')).toBeInTheDocument()
+    expect(screen.queryByText(/^\d+ caixas?$/, { selector: 'span' })).toHaveTextContent('2 caixas')
+    expect(screen.queryAllByText(/^\d+ caixas?$/)).toHaveLength(1)
+  })
+
   it('says when the phone and the instructions are missing', async () => {
     install(operatorWriteUser, { queue: { to_dispatch: [fullItem(1, { phone: null, delivery_instructions: null })], out_for_delivery: [], failed: [], delivered: [], truncated: false } })
     render()

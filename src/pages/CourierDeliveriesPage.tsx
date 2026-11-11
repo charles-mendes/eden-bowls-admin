@@ -40,6 +40,7 @@ import {
   type CourierQueue,
   type CourierQueueItem,
 } from '../lib/courierDeliveries'
+import { boxCountText } from '../lib/productionQueue'
 
 type TabId = 'to_dispatch' | 'out_for_delivery' | 'failed' | 'delivered'
 
@@ -98,12 +99,14 @@ function AddressCell({ item }: { item: CourierQueueItem }) {
 // Who receives, the account phone and what goes in the box: what the courier app and WhatsApp need.
 function RecipientCell({ item, details }: { item: CourierQueueItem; details: boolean }) {
   const lines = itemsText(item)
+  const boxes = boxCountText(item.boxes)
   return (
     <div className="stack">
       <strong>
         {itemName(item)}
         {item.name_source === 'account' ? <span className="muted name-source"> (conta)</span> : null}
       </strong>
+      {boxes ? <span className="muted">{boxes}</span> : null}
       {details ? (
         <>
           {item.phone ? (

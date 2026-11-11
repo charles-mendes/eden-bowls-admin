@@ -8,12 +8,15 @@ import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import {
+  SHIPPING_BOX_KEYS,
   UPS_SERVICES,
   brHeadquartersReady,
   emptySettings,
   formatMoney,
   mergeSettings,
   usHeadquartersReady,
+  type ShippingBox,
+  type ShippingBoxKey,
   type ShippingSettings,
   type UpsSimulation,
 } from '../lib/shippingSettings'
@@ -104,6 +107,9 @@ function saveRulesError(error: unknown) {
   if (error instanceof ApiRequestError && error.code === 'invalid_dry_ice_kg') {
     return 'Gelo seco por caixa deve ficar entre 0,1 e 2,5 kg, com uma casa decimal, e não pode passar do peso da caixa.'
   }
+  if (error instanceof ApiRequestError && error.code === 'invalid_shipping_box') {
+    return 'Confira as caixas: medidas acima de 0, peso vazio de 0,1 a 10 kg e a Starter com menos pacotes que a mensal.'
+  }
   return error instanceof Error ? error.message : 'Falha ao salvar'
 }
 
@@ -146,6 +152,7 @@ function rulesOf(settings: ShippingSettings, market: 'BR' | 'US') {
     quote_mode: us.quote_mode,
     fallback_enabled: us.fallback_enabled,
     package: us.package,
+    boxes: us.boxes,
     allowed_service_codes: us.allowed_service_codes,
     max_transit_days: us.max_transit_days,
   }
@@ -204,6 +211,10 @@ export function ShippingPage() {
   const updateBr = (patch: Partial<ShippingSettings['br']>) => setSettings((current) => ({ ...current, br: { ...current.br, ...patch } }))
   const updateBrRule = (patch: Partial<ShippingSettings['br']['rule']>) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, ...patch } } }))
   const updateUs = (patch: Partial<ShippingSettings['us']>) => setSettings((current) => ({ ...current, us: { ...current.us, ...patch } }))
+  const updateBox = (key: ShippingBoxKey, patch: Partial<ShippingBox>) => setSettings((current) => ({
+    ...current,
+    us: { ...current.us, boxes: { ...current.us.boxes, [key]: { ...current.us.boxes[key], ...patch } } },
+  }))
   const updatePackage = (patch: Partial<ShippingSettings['us']['package']>) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, ...patch } } }))
 
   const toggleService = (code: string, on: boolean) => {
@@ -409,7 +420,8 @@ export function ShippingPage() {
                     <small className="ship-hint">O checkout usa UPS Ground quando aceito; senão, o serviço aceito mais barato.</small>
                   </fieldset>
                   <fieldset className="ship-fieldset">
-                    <legend>Caixa padrão</legend>
+                    <legend>Caixa da cotação do checkout</legend>
+                    <small className="ship-hint">Só calcula o frete do checkout e do simulador. As etiquetas usam as caixas de envio.</small>
                     <div className="ship-fields ship-fields-4">
                       <NumberField label="Peso" suffix="lb" step="0.1" disabled={!canWrite} value={us.package.weight_lb} onChange={(value) => updatePackage({ weight_lb: value ?? 0 })} />
                       <NumberField label="Comprimento" suffix="in" step="0.1" disabled={!canWrite} value={us.package.length_in} onChange={(value) => updatePackage({ length_in: value ?? 0 })} />
@@ -459,6 +471,28 @@ export function ShippingPage() {
                   </div>
                 </Section>
               ) : null}
+
+              {/* shipping-boxes: labels use these boxes in either quote mode, so they show outside the UPS block. */}
+              <Section title="Caixas de envio" description="A API divide cada pedido nestas caixas pela quantidade de pacotes. A etiqueta UPS leva uma embalagem por caixa.">
+                {SHIPPING_BOX_KEYS.map((key) => {
+                  const box = us.boxes[key]
+                  return (
+                    <fieldset key={key} className="ship-fieldset">
+                      <legend>{box.label}</legend>
+                      <div className="ship-fields ship-fields-4">
+                        <NumberField label="Comprimento" suffix="in" step="0.1" disabled={!canWrite} value={box.length_in} onChange={(value) => updateBox(key, { length_in: value ?? 0 })} />
+                        <NumberField label="Largura" suffix="in" step="0.1" disabled={!canWrite} value={box.width_in} onChange={(value) => updateBox(key, { width_in: value ?? 0 })} />
+                        <NumberField label="Altura" suffix="in" step="0.1" disabled={!canWrite} value={box.height_in} onChange={(value) => updateBox(key, { height_in: value ?? 0 })} />
+                        <NumberField label="Peso vazio" suffix="kg" step="0.1" disabled={!canWrite} value={box.empty_weight_kg} onChange={(value) => updateBox(key, { empty_weight_kg: value ?? 0 })} />
+                      </div>
+                      <div className="ship-fields">
+                        <NumberField label="Máximo de pacotes" step="1" disabled={!canWrite} value={box.max_packs} onChange={(value) => updateBox(key, { max_packs: value ?? 0 })} hint="Pacotes de 300 g ou 500 g contam igual." />
+                      </div>
+                    </fieldset>
+                  )
+                })}
+                <small className="ship-hint">Peso vazio inclui o isolamento. O gelo seco é somado só nas caixas dos EUA.</small>
+              </Section>
             </>
           )}
           {canWrite ? (

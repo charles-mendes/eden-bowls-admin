@@ -246,6 +246,45 @@ describe('LabelQueuePage', () => {
     expect(confirm).not.toHaveBeenCalled()
   })
 
+  it('Shipment with two boxes: fetches packages 1 and 2 and prints two pages, and the row shows its boxes', async () => {
+    const user = userEvent.setup()
+    const twoBoxes = order(7, {
+      issues: undefined,
+      shipment: {
+        id: 107, status: 'created', tracking_number: '1Z7', has_label: true,
+        packages: [
+          { sequence: 1, box_key: 'monthly', pack_count: 30, weight_lb: 37.5, tracking_number: '1Z7A', has_label: true },
+          { sequence: 2, box_key: 'monthly', pack_count: 15, weight_lb: 21, tracking_number: '1Z7B', has_label: true },
+        ],
+      },
+    })
+    const { calls } = install(operatorUsWriteUser, { queue: { ready: [], unresolved: [], created: [twoBoxes], truncated: false } })
+    render()
+
+    expect(await screen.findByText('2 caixas: mensal 30 · mensal 15')).toBeInTheDocument()
+    await select(user, 'Cliente 7')
+    await user.click(screen.getByRole('button', { name: 'Imprimir' }))
+
+    await waitFor(() => expect(printLabels).toHaveBeenCalledTimes(1))
+    expect(printLabels.mock.calls[0][0]).toHaveLength(2)
+    const fetched = calls.filter((call) => call.path === '/api/v1/admin/shipments/107/label').map((call) => call.search)
+    expect(fetched).toEqual(['?package=1', '?package=2'])
+  })
+
+  it('Label bought before boxes: fetches the label once, without package', async () => {
+    const user = userEvent.setup()
+    const { calls } = install(operatorUsWriteUser, { queue: { ready: [], unresolved: [], created: [created(8)], truncated: false } })
+    render()
+
+    await select(user, 'Cliente 8')
+    await user.click(screen.getByRole('button', { name: 'Imprimir' }))
+
+    await waitFor(() => expect(printLabels).toHaveBeenCalledTimes(1))
+    expect(printLabels.mock.calls[0][0]).toHaveLength(1)
+    expect(calls.filter((call) => call.path === '/api/v1/admin/shipments/108/label').map((call) => call.search)).toEqual([''])
+    expect(screen.queryByText(/caixas:/)).not.toBeInTheDocument()
+  })
+
   it('a ready row shows its address problem and the email state', async () => {
     install(operatorUsWriteUser, {
       queue: {
@@ -419,6 +458,24 @@ describe('LabelQueuePage pickup', () => {
       package_count: 2,
       shipment_ids: [101, 102],
     })
+  })
+
+  it('Two labels, three boxes: the count is 3 and the confirmation names boxes and labels', async () => {
+    const user = userEvent.setup()
+    const confirm = vi.fn().mockReturnValue(true)
+    vi.stubGlobal('confirm', confirm)
+    const pkg = (sequence: number) => ({ sequence, box_key: 'monthly', pack_count: 15, weight_lb: 21, tracking_number: `1Z${sequence}`, has_label: true })
+    const twoBoxes = { ...created(1), pickup: null, shipment: { id: 101, status: 'created', tracking_number: '1Z1', has_label: true, packages: [pkg(1), pkg(2)] } }
+    const { calls } = installPickup(operatorUsWriteUser, { createdItems: [twoBoxes, withPickup(2, null)] })
+    render()
+
+    const coleta = await section()
+    await waitFor(() => expect(coleta.getByRole('spinbutton', { name: 'Caixas' })).toHaveValue(3))
+    await user.click(coleta.getByRole('button', { name: 'Pedir coleta à UPS' }))
+
+    expect(await coleta.findByText('Coleta pedida. PRN 2929602E9CP.')).toBeInTheDocument()
+    expect(confirm.mock.calls[0][0]).toMatch(/com 3 caixas \(2 etiquetas\)\?$/)
+    expect(pickupPosts(calls)[0].body).toMatchObject({ package_count: 3, shipment_ids: [101, 102] })
   })
 
   it('a count the operator typed does not follow the selection', async () => {

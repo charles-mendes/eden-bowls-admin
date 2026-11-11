@@ -22,6 +22,7 @@ import {
   chargeDayMonth,
   formatSeparationShortage,
   formatStockShortages,
+  boxesText,
   isProductionStatus,
   isQueueDue,
   plural,
@@ -30,6 +31,7 @@ import {
   type DueBucket,
   type ProductionStatus,
   type ProductionStockResult,
+  type QueueBox,
   type QueueDue,
   type StockCoverage,
   type StockShortage,
@@ -82,6 +84,8 @@ type QueueItem = {
   dense: boolean
   customerProfileInScope?: boolean
   lineItems: LineItem[]
+  // shipping-boxes: the boxes the kitchen packs; absent on an older API.
+  boxes?: QueueBox[]
   stockCoverage?: StockCoverage | null
   stockShortages?: StockShortage[]
   stock?: ProductionStockResult
@@ -702,6 +706,7 @@ export function ProductionQueuePage() {
                           <span className="muted">
                             {plural(item.packCount, 'pacote', 'pacotes')}{item.packSizeLabel ? ` · ${item.packSizeLabel}` : ''}
                           </span>
+                          {boxesText(item.boxes) ? <span className="muted" data-testid={`boxes-${item.id}`}>{boxesText(item.boxes)}</span> : null}
                           {item.dense ? (
                             <button className="link-button" type="button" onClick={() => setDenseItem(item)}>Ver mix</button>
                           ) : null}

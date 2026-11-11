@@ -145,6 +145,8 @@ export const productionQueueItem = {
     { flavor: 'Bovino', flavorKey: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
     { flavor: 'Frango', flavorKey: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
   ],
+  // shipping-boxes: 3 packs of 500 g in one Starter box, no dry ice in Brazil.
+  boxes: [{ key: 'starter', label: 'Starter Box', pack_count: 3, weight_kg: 2.5 }],
 }
 
 export const productionQueueList = {

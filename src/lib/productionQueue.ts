@@ -114,3 +114,18 @@ export function chargeDayMonth(instant: string, stripeAccount: string) {
   const timeZone = String(stripeAccount).toLowerCase() === 'br' ? 'America/Sao_Paulo' : 'America/New_York'
   return new Intl.DateTimeFormat('pt-BR', { timeZone, day: '2-digit', month: '2-digit' }).format(new Date(instant))
 }
+
+// shipping-boxes: the boxes the API splits a cycle into, in plan order.
+export type QueueBox = { key: string; label: string; pack_count: number; weight_kg: number }
+
+// "Caixa mensal · 30 pacotes + Caixa mensal · 15 pacotes"; empty without boxes.
+export function boxesText(boxes: QueueBox[] | undefined): string {
+  return (boxes ?? []).map((box) => `${box.label} · ${box.pack_count === 1 ? '1 pacote' : `${box.pack_count} pacotes`}`).join(' + ')
+}
+
+// "2 caixas"; empty without boxes.
+export function boxCountText(boxes: QueueBox[] | undefined): string {
+  const count = boxes?.length ?? 0
+  if (!count) return ''
+  return count === 1 ? '1 caixa' : `${count} caixas`
+}

@@ -9,7 +9,7 @@ import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
 import { printLabels } from '../lib/printLabel'
 import { PRODUCTION_STATUS_LABELS, isProductionStatus } from '../lib/productionQueue'
 import { readinessText, type ReadinessReason } from '../lib/courierDeliveries'
-import { labelIssueText, labelRefusalText, pickupLabel, type LabelIssue, type QueuePickup } from '../lib/upsLabels'
+import { boxesSummary, labelIssueText, labelRefusalText, pickupLabel, type LabelIssue, type QueuePickup, type ShipmentPackage } from '../lib/upsLabels'
 import { UpsPickupSection } from '../components/shipping/UpsPickupSection'
 import { AddressIssueStatus } from '../components/AddressIssueStatus'
 import { type AddressIssue } from '../lib/addressIssues'
@@ -25,7 +25,7 @@ import {
   type DeliveryRangeInfo,
 } from '../lib/deliveryRange'
 
-type QueueShipment = { id: string | number; status: string; tracking_number: string | null; has_label: boolean; in_transit_at?: string | null; out_for_delivery_at?: string | null }
+type QueueShipment = { id: string | number; status: string; tracking_number: string | null; has_label: boolean; in_transit_at?: string | null; out_for_delivery_at?: string | null; packages?: ShipmentPackage[] }
 
 type QueueItem = {
   subscription_id: string
@@ -48,14 +48,17 @@ type QueueItem = {
 type QueueData = { ready: QueueItem[]; unresolved: QueueItem[]; created: QueueItem[]; truncated: boolean } & DeliveryRangeInfo
 
 type Outcome =
-  | { kind: 'created'; shipmentId: string }
-  | { kind: 'existing'; shipmentId: string }
+  | { kind: 'created'; shipmentId: string; packages: number }
+  | { kind: 'existing'; shipmentId: string; packages: number }
   | { kind: 'in_progress'; shipmentId: string | null }
   | { kind: 'failed'; reason: string }
   | { kind: 'missing_file' }
   | { kind: 'needs_confirmation'; reasons: ReadinessReason[] }
 
-type CreateResponse = { data?: { reused?: boolean; shipment?: { id: string | number; has_label?: boolean } } }
+type CreateResponse = { data?: { reused?: boolean; shipment?: { id: string | number; has_label?: boolean; packages?: ShipmentPackage[] } } }
+
+// One page per box: a shipment with packages prints each `?package=N`; one bought before boxes prints once.
+type PrintableLabel = { invoiceId: string; shipmentId: string; packages: number }
 
 // UPS may already have bought these labels, so they are never retried from the queue.
 const IN_PROGRESS_CODES = new Set(['ups_shipment_unknown', 'ups_shipment_unresolved', 'ups_shipment_in_progress'])
@@ -164,8 +167,9 @@ export function LabelQueuePage() {
     })
   }
 
-  const fetchLabel = async (shipmentId: string): Promise<Blob | null> => {
-    const response = await fetch(`${getApiBaseUrl()}/admin/shipments/${shipmentId}/label`, {
+  const fetchLabel = async (shipmentId: string, packageNumber?: number): Promise<Blob | null> => {
+    const query = packageNumber ? `?package=${packageNumber}` : ''
+    const response = await fetch(`${getApiBaseUrl()}/admin/shipments/${shipmentId}/label${query}`, {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (response.status === 404) return null
@@ -182,7 +186,8 @@ export function LabelQueuePage() {
         body: { invoice_id: item.invoice_id, ...(confirmNotReady ? { confirm_not_ready: true } : {}) },
       })
       const shipmentId = String(response?.data?.shipment?.id ?? '')
-      return response?.data?.reused ? { kind: 'existing', shipmentId } : { kind: 'created', shipmentId }
+      const packages = response?.data?.shipment?.packages?.length ?? 0
+      return response?.data?.reused ? { kind: 'existing', shipmentId, packages } : { kind: 'created', shipmentId, packages }
     } catch (requestError) {
       if (requestError instanceof ApiRequestError && IN_PROGRESS_CODES.has(requestError.code)) {
         const id = requestError.details?.shipment_id
@@ -224,7 +229,7 @@ export function LabelQueuePage() {
     setRunning(true)
     setError('')
     const next: Record<string, Outcome> = {}
-    const printable: Array<{ invoiceId: string; shipmentId: string }> = []
+    const printable: PrintableLabel[] = []
     try {
       for (const [index, item] of toBuy.entries()) {
         setProgress(`Comprando ${index + 1} de ${toBuy.length}…`)
@@ -232,19 +237,22 @@ export function LabelQueuePage() {
         next[item.invoice_id] = outcome
         setOutcomes({ ...next })
         if ((outcome.kind === 'created' || outcome.kind === 'existing') && outcome.shipmentId) {
-          printable.push({ invoiceId: item.invoice_id, shipmentId: outcome.shipmentId })
+          printable.push({ invoiceId: item.invoice_id, shipmentId: outcome.shipmentId, packages: outcome.packages })
         }
       }
       for (const item of toPrint) {
-        if (item.shipment) printable.push({ invoiceId: item.invoice_id, shipmentId: String(item.shipment.id) })
+        if (item.shipment) printable.push({ invoiceId: item.invoice_id, shipmentId: String(item.shipment.id), packages: item.shipment.packages?.length ?? 0 })
       }
 
       setProgress('Preparando a impressão…')
       const blobs: Blob[] = []
       for (const label of printable) {
-        const blob = await fetchLabel(label.shipmentId)
-        if (blob) blobs.push(blob)
-        else next[label.invoiceId] = { kind: 'missing_file' }
+        const numbers = label.packages > 0 ? Array.from({ length: label.packages }, (_, index) => index + 1) : [undefined]
+        for (const packageNumber of numbers) {
+          const blob = await fetchLabel(label.shipmentId, packageNumber)
+          if (blob) blobs.push(blob)
+          else next[label.invoiceId] = { kind: 'missing_file' }
+        }
       }
       setOutcomes({ ...next })
       if (blobs.length) await printLabels(blobs)
@@ -284,6 +292,7 @@ export function LabelQueuePage() {
         <td>
           {blocked.map((issue) => <div key={issue.code} className="muted" role="note">{labelIssueText(issue)}</div>)}
           <AddressIssueStatus issue={item.address_issue} />
+          {withPickup && boxesSummary(item.shipment?.packages) ? <div className="muted">{boxesSummary(item.shipment?.packages)}</div> : null}
           {withPickup ? <div className="muted">{pickupLabel(item.pickup)}</div> : null}
           {outcome ? <div data-testid={`outcome-${item.invoice_id}`}>{outcomeText(outcome)}</div> : null}
         </td>

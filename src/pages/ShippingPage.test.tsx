@@ -270,6 +270,80 @@ describe('ShippingPage', () => {
     })
   })
 
+  describe('US shipping boxes', () => {
+    it('Save the weighed monthly box: sends us.boxes with the monthly empty weight 1.7', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(adminUser)
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      await user.click(await screen.findByRole('button', { name: 'EUA' }))
+      // Fixed quote mode: the boxes still show, because labels use them in either mode.
+      expect(screen.getByRole('radio', { name: /Valor fixo/ })).toBeChecked()
+      const monthly = screen.getByRole('group', { name: 'Caixa mensal' })
+      const starter = screen.getByRole('group', { name: 'Starter Box' })
+      expect(within(starter).getByRole('spinbutton', { name: /Altura/ })).toHaveValue(8)
+      expect(within(starter).getByRole('spinbutton', { name: /Máximo de pacotes/ })).toHaveValue(10)
+      const emptyWeight = within(monthly).getByRole('spinbutton', { name: /Peso vazio/ })
+      expect(emptyWeight).toHaveValue(1.5)
+
+      await user.clear(emptyWeight)
+      await user.type(emptyWeight, '1.7')
+      await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+      await screen.findByText('Regras dos Estados Unidos salvas.')
+      const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
+      expect(put?.body).toMatchObject({
+        us: {
+          boxes: {
+            starter: { label: 'Starter Box', length_in: 14, width_in: 12, height_in: 8, empty_weight_kg: 1, max_packs: 10 },
+            monthly: { label: 'Caixa mensal', length_in: 18, width_in: 14, height_in: 12, empty_weight_kg: 1.7, max_packs: 30 },
+          },
+        },
+      })
+    })
+
+    it('Refused by the API: shows the box message and keeps the typed values', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(adminUser, {
+        shippingSettingsSaveError: { status: 422, code: 'invalid_shipping_box', message: 'Shipping boxes need sides above 0.' },
+      })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      await user.click(await screen.findByRole('button', { name: 'EUA' }))
+      const maxPacks = within(screen.getByRole('group', { name: 'Starter Box' })).getByRole('spinbutton', { name: /Máximo de pacotes/ })
+      await user.clear(maxPacks)
+      await user.type(maxPacks, '30')
+      await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+
+      expect(await screen.findByText('Confira as caixas: medidas acima de 0, peso vazio de 0,1 a 10 kg e a Starter com menos pacotes que a mensal.')).toBeInTheDocument()
+      expect(screen.queryByText(/Shipping boxes need/)).not.toBeInTheDocument()
+      expect(maxPacks).toHaveValue(30)
+    })
+
+    it('Read-only operator: the box fields are disabled without shipping.write', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorUsUser)
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      const monthly = await screen.findByRole('group', { name: 'Caixa mensal' })
+      for (const field of within(monthly).getAllByRole('spinbutton')) expect(field).toBeDisabled()
+    })
+
+    it('names the UPS package as the checkout quote box', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(adminUser)
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      await user.click(await screen.findByRole('button', { name: 'EUA' }))
+      await user.click(await screen.findByRole('radio', { name: /UPS/ }))
+      expect(screen.getByRole('group', { name: 'Caixa da cotação do checkout' })).toBeInTheDocument()
+      expect(screen.getByText(/Só calcula o frete do checkout e do simulador/)).toBeInTheDocument()
+      expect(screen.queryByText('Caixa padrão')).not.toBeInTheDocument()
+    })
+  })
+
   it('simulates a Brazil CEP as same-day delivery', async () => {
     const user = userEvent.setup()
     seedAuth()
