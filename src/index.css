@@ -3676,6 +3676,101 @@ button.table-link {
   font-size: var(--text-sm);
 }
 
+/* .stack carries no layout of its own: the list and each entry set their rhythm here. */
+.checkout-history {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+/* One purchase per subscription; same collapsible card as .day-health. */
+.checkout-history-item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  min-width: 0;
+}
+
+.checkout-history-item > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--text-strong);
+  list-style: none;
+}
+
+.checkout-history-item > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Chevron: points right when closed, down when open. */
+.checkout-history-item > summary::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-right: var(--space-1);
+  border-right: 1.5px solid var(--text-soft);
+  border-bottom: 1.5px solid var(--text-soft);
+  transform: rotate(-45deg);
+  transition: transform 150ms ease;
+}
+
+.checkout-history-item[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.checkout-history-item > summary:hover {
+  background: var(--surface-muted);
+}
+
+.checkout-history-item > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.checkout-history-item[open] > summary {
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.checkout-history-date {
+  margin-left: auto;
+  font-size: var(--text-sm);
+}
+
+.checkout-history-body {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  min-width: 0;
+}
+
+.checkout-history-body .checkout-updated {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .checkout-history-item > summary {
+    padding: var(--space-3);
+  }
+
+  /* The date drops to its own line under the badges instead of floating right. */
+  .checkout-history-date {
+    flex-basis: 100%;
+    margin-left: calc(6px + var(--space-1) + var(--space-2));
+  }
+
+  /* Cards inside cards: give the nested sections the width back on a phone. */
+  .checkout-history-body {
+    padding: var(--space-2);
+  }
+}
+
 .pet-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr));

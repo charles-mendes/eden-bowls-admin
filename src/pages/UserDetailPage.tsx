@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AccessFields } from '../components/AccessFields'
 import { accessFormError, accessFormFrom, accessRoleBody, emptyAccessForm, inviteNeedsResend, type AccessForm } from '../lib/accessForm'
+import { CheckoutHistory, type CheckoutHistoryEntry } from '../components/CheckoutHistory'
 import { CheckoutSnapshotPanels } from '../components/CheckoutSnapshotPanels'
 import { CustomerSubscriptionCard } from '../components/CustomerSubscriptionCard'
 import { Dialog } from '../components/Dialog'
@@ -71,6 +72,7 @@ type OnboardingDetail = {
   lineItems: unknown[]
   checkoutReference: unknown
   paymentReference: unknown
+  checkouts?: CheckoutHistoryEntry[]
 }
 
 type OnboardingState =
@@ -741,6 +743,11 @@ function OnboardingPanel({ tab, state }: { tab: CustomerTab; state: OnboardingSt
         ) : <p className="empty-note">Nenhum pet cadastrado.</p>}
       </Section>
     )
+  }
+
+  const history = data.checkouts ?? []
+  if (history.length) {
+    return <CheckoutHistory entries={history} />
   }
 
   if (data.empty) {

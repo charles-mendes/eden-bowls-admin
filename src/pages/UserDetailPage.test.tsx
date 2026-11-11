@@ -484,6 +484,41 @@ describe('UserDetailPage', () => {
       expect(onboardingCalls(calls)[0]).toMatchObject({ authorization: 'Bearer access-token' })
     })
 
+    it('lists one checkout per subscription, newest first, complete or partial', async () => {
+      seedAuth()
+      const complete = {
+        subscriptionId: 'sub-row-2', stripeSubscriptionId: 'sub_new', status: 'active', planLabel: 'Plan #2',
+        createdAt: '2026-11-01T12:00:00.000Z', completeness: 'complete', source: 'checkout', capturedAt: '2026-11-01T12:00:00.000Z',
+        planSelection: checkoutDetail.planSelection, petsSnapshot: { pet_ids: ['pet-1'] }, address: checkoutDetail.address,
+        shipping: checkoutDetail.shipping, recurrence: checkoutDetail.recurrence, subscriptionTermMonths: 1,
+        lineItems: checkoutDetail.lineItems, discount: checkoutDetail.discount, checkoutReference: checkoutDetail.checkoutReference,
+      }
+      const partial = {
+        ...complete, subscriptionId: 'sub-row-1', stripeSubscriptionId: 'sub_123', planLabel: 'Plan #1', status: 'canceled',
+        createdAt: '2026-08-01T12:00:00.000Z', completeness: 'partial', source: 'ledger', capturedAt: null,
+        address: { ...checkoutDetail.address, street: 'Rua Antiga' }, recurrence: null, discount: null, checkoutReference: null,
+      }
+      installAdminFetchMock(operatorWriteUser, {
+        routes: ({ path }) => (path === '/api/v1/admin/onboarding/checkouts/u-ana'
+          ? jsonResponse({ ...checkoutDetail, checkouts: [complete, partial] })
+          : undefined),
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=checkout', '/users/:userId')
+
+      expect(await screen.findByText(/2 checkouts, um por assinatura/)).toBeInTheDocument()
+      const items = document.querySelectorAll('details.checkout-history-item')
+      expect(items).toHaveLength(2)
+      expect(within(items[0] as HTMLElement).getByText('Plan #2')).toBeInTheDocument()
+      expect(within(items[0] as HTMLElement).getByText('Completo')).toBeInTheDocument()
+      expect(within(items[0] as HTMLElement).getByRole('link', { name: 'sub_new' })).toHaveAttribute('href', '/billing/subscriptions/sub-row-2')
+      expect(within(items[0] as HTMLElement).getByText('Desconto 1ª compra')).toBeInTheDocument()
+      expect(within(items[1] as HTMLElement).getByText('Parcial')).toBeInTheDocument()
+      expect(within(items[1] as HTMLElement).getByText(/Registro parcial/)).toBeInTheDocument()
+      expect(within(items[1] as HTMLElement).queryByText('Desconto 1ª compra')).toBeNull()
+      expect((items[0] as HTMLDetailsElement).open).toBe(true)
+      expect((items[1] as HTMLDetailsElement).open).toBe(false)
+    })
+
     it('says when the customer has pets but never reached checkout', async () => {
       seedAuth()
       installAdminFetchMock(operatorWriteUser, {
