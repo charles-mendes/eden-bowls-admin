@@ -323,3 +323,12 @@ With two or more reasons, with no reasons, or with a code the panel does not kno
 
 - **WHEN** the API answers 409 with `production_not_ready` and `subscription_not_active`
 - **THEN** the dialog is titled "Confirme antes de despachar" and lists both reasons
+
+### Requirement: Deliveries show the box count
+
+Each courier delivery MUST show how many boxes it carries, from its `boxes`, for example "2 caixas". A delivery without `boxes` MUST show nothing extra.
+
+#### Scenario: Two-box delivery
+
+- **WHEN** a delivery has two boxes
+- **THEN** it shows "2 caixas"
