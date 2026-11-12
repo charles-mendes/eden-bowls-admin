@@ -54,6 +54,23 @@ describe('addressIssueState', () => {
       .toEqual({ email: 'Cliente corrigiu em 05/11', waiting: null, tone: 'success' })
   })
 
+  it('fixed by an operator', () => {
+    expect(addressIssueState(issue({ open: false, resolved_by: 'operator', resolved_at: '2026-11-05T13:00:00Z' }), NOW))
+      .toEqual({ email: 'Operador corrigiu em 05/11', waiting: null, tone: 'success' })
+  })
+
+  it('closed because the subscription ended', () => {
+    expect(addressIssueState(issue({ open: false, resolved_by: 'ended', resolved_at: '2026-11-05T13:00:00Z' }), NOW))
+      .toEqual({ email: 'Assinatura encerrada em 05/11', waiting: null, tone: 'muted' })
+  })
+
+  it('superseded, or a value the panel does not know', () => {
+    for (const resolvedBy of ['superseded', 'something_new']) {
+      expect(addressIssueState(issue({ open: false, resolved_by: resolvedBy, resolved_at: '2026-11-05T13:00:00Z' }), NOW))
+        .toEqual({ email: 'Substituído em 05/11', waiting: null, tone: 'muted' })
+    }
+  })
+
   it('waits only after more than 2 days', () => {
     expect(addressIssueState(issue({ opened_at: '2026-11-05T12:00:00Z' }), NOW).waiting).toBeNull()
     expect(addressIssueState(issue({ opened_at: '2026-11-04T12:00:00Z' }), NOW).waiting).toBe('Sem correção há 3 dias')

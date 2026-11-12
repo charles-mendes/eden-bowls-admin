@@ -57,6 +57,25 @@ describe('SubscriptionDetailPage', () => {
     expect(screen.queryByText('Falta o bairro')).not.toBeInTheDocument()
   })
 
+  // close-address-issues-when-subscription-ends
+  it('shows a problem closed because the subscription ended', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { addressIssue: { ...addressIssue, open: false, resolved_by: 'ended', resolved_at: '2026-11-05T13:00:00.000Z' } })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    expect(await screen.findByText('Assinatura encerrada em 05/11')).toBeInTheDocument()
+    expect(screen.queryByText(/Substituído/)).not.toBeInTheDocument()
+  })
+
+  it('shows a problem an operator fixed', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { addressIssue: { ...addressIssue, open: false, resolved_by: 'operator', resolved_at: '2026-11-05T13:00:00.000Z' } })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    expect(await screen.findByText('Operador corrigiu em 05/11')).toBeInTheDocument()
+    expect(screen.queryByText(/Substituído/)).not.toBeInTheDocument()
+  })
+
   it('has no address problem section without a problem', async () => {
     seedAuth()
     installAdminFetchMock(operatorWriteUser)

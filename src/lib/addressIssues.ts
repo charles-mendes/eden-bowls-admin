@@ -10,7 +10,7 @@ export type AddressIssue = {
   opened_at: string | null
   email_sent_at: string | null
   resolved_at: string | null
-  resolved_by: 'customer' | 'superseded' | string | null
+  resolved_by: 'customer' | 'operator' | 'ended' | 'superseded' | string | null
 }
 
 const CODE_TEXT: Record<string, string> = {
@@ -57,7 +57,8 @@ function dayMonth(value: string | null): string {
 }
 
 export type AddressIssueState = {
-  // "E-mail enviado em dd/mm", "E-mail não enviado" or "Cliente corrigiu em dd/mm".
+  // Open: "E-mail enviado em dd/mm" or "E-mail não enviado". Resolved, per `resolved_by`: "Cliente corrigiu em
+  // dd/mm", "Operador corrigiu em dd/mm", "Assinatura encerrada em dd/mm" or "Substituído em dd/mm".
   email: string
   // "Sem correção há N dias" while open for more than 2 days, otherwise null.
   waiting: string | null
@@ -68,6 +69,13 @@ export function addressIssueState(issue: AddressIssue, now: Date = new Date()): 
   if (!issue.open) {
     if (issue.resolved_by === 'customer') {
       return { email: `Cliente corrigiu em ${dayMonth(issue.resolved_at)}`, waiting: null, tone: 'success' }
+    }
+    if (issue.resolved_by === 'operator') {
+      return { email: `Operador corrigiu em ${dayMonth(issue.resolved_at)}`, waiting: null, tone: 'success' }
+    }
+    // close-address-issues-when-subscription-ends: the subscription ended with no box left to ship.
+    if (issue.resolved_by === 'ended') {
+      return { email: `Assinatura encerrada em ${dayMonth(issue.resolved_at)}`, waiting: null, tone: 'muted' }
     }
     return { email: `Substituído em ${dayMonth(issue.resolved_at)}`, waiting: null, tone: 'muted' }
   }

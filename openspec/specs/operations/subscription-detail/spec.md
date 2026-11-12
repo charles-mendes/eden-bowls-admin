@@ -122,6 +122,16 @@ When the subscription detail has `address_issue`, the page MUST show its codes i
 - **WHEN** an operator opens a subscription whose problem lists a missing neighborhood and whose email went out
 - **THEN** the detail says the neighborhood is missing, shows "E-mail enviado em" with the date, and offers "Registrar contato"
 
+#### Scenario: Problem closed because the subscription ended
+
+- **WHEN** an operator opens a canceled subscription whose problem was closed on 5 November with `resolved_by: ended`
+- **THEN** the detail shows "Assinatura encerrada em 05/11"
+
+#### Scenario: Problem closed by an operator
+
+- **WHEN** an operator opens a subscription whose problem was closed on 5 November with `resolved_by: operator`
+- **THEN** the detail shows "Operador corrigiu em 05/11"
+
 ### Requirement: Dispatch here is held by the address
 
 In "Entrega Brasil", when the subscription detail's `courier_issues` is not empty, each "Despachar" MUST be disabled and the section MUST say what is missing, in the same words as Entregas Brasil, before any dialog opens. The detail MUST NOT offer any way to dispatch anyway.
