@@ -2,6 +2,7 @@ import { OtherMarketNotice } from '../components/OtherMarketNotice'
 import { isOutsideMarket } from '../lib/markets'
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Dialog } from '../components/Dialog'
+import { BrDateInput, BrTimeInput } from '../components/BrDateInput'
 import { Link, useSearchParams } from 'react-router-dom'
 import { CopyButton } from '../components/CopyButton'
 import { CustomerContact } from '../components/CustomerContact'
@@ -171,6 +172,8 @@ export function CourierDeliveriesPage() {
   // simplify-brazil-dispatch: deliveries on the road picked one by one and closed together at one time.
   const [selected, setSelected] = useState<Set<number>>(() => new Set())
   const [batchAt, setBatchAt] = useState<string | null>(null)
+  const [batchDay = '', batchTime = ''] = (batchAt ?? '').split('T')
+  const batchAtIso = batchAt ? zonedInputToIso(batchAt, COURIER_TIMEZONE) : null
   const [batchBusy, setBatchBusy] = useState(false)
   const [batchErrors, setBatchErrors] = useState<Map<number, string>>(() => new Map())
 
@@ -252,7 +255,7 @@ export function CourierDeliveriesPage() {
   // it stays on the tab, selected, with its error, and the operator picks another time for it.
   const closeTogether = async (event: FormEvent) => {
     event.preventDefault()
-    const at = batchAt ? zonedInputToIso(batchAt, COURIER_TIMEZONE) : null
+    const at = batchAtIso
     if (!at || batchBusy) return
     setBatchBusy(true)
     const ids = picked
@@ -485,13 +488,20 @@ export function CourierDeliveriesPage() {
         onClose={() => setBatchAt(null)}
         title="Marcar entregues"
         description={`${picked.length === 1 ? '1 entrega' : `${picked.length} entregas`} · o cliente de cada uma recebe o e-mail de entrega`}
-        footer={<button type="submit" form="courier-batch-delivered" className="primary-button" disabled={batchBusy || !batchAt}>Marcar entregues</button>}
+        footer={<button type="submit" form="courier-batch-delivered" className="primary-button" disabled={batchBusy || !batchAtIso}>Marcar entregues</button>}
       >
         <form id="courier-batch-delivered" className="stack" onSubmit={(event) => void closeTogether(event)}>
-          <label>
-            Entregue em (horário de Brasília)
-            <input type="datetime-local" required value={batchAt ?? ''} onChange={(event) => setBatchAt(event.target.value)} />
-          </label>
+          <fieldset className="date-time-field">
+            <legend>Entregue em (horário de Brasília)</legend>
+            <label>
+              Data
+              <BrDateInput required value={batchDay} onChange={(day) => setBatchAt(`${day}T${batchTime}`)} />
+            </label>
+            <label>
+              Hora
+              <BrTimeInput required value={batchTime} onChange={(time) => setBatchAt(`${batchDay}T${time}`)} />
+            </label>
+          </fieldset>
         </form>
       </Dialog>
       <CourierDispatchDialog

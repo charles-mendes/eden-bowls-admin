@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { BrDateInput } from '../BrDateInput'
 import {
   dayMonth,
   laterRange,
@@ -29,13 +30,20 @@ export function DeliveryRangeFilter({
   onChange: (range: DeliveryRange | null) => void
 }) {
   const preset = presetOf(range, timeZone)
-  const shown = range ?? (info?.range ? { from: info.range.from, to: info.range.to } : null)
+  // Without a range in the URL the fields show the API's default, never a range left over from the last answer.
+  const shown = range ?? (info?.range?.default ? { from: info.range.from, to: info.range.to } : null)
   // The free range is a draft until both dates are filled; the key below resets it when the URL changes.
   const [draft, setDraft] = useState<DeliveryRange>(shown ?? { from: '', to: '' })
 
   const applyDraft = (next: DeliveryRange) => {
     setDraft(next)
     if (ISO_DATE.test(next.from) && ISO_DATE.test(next.to)) onChange(next)
+  }
+
+  // Empties De and Até and goes back to the default period.
+  const clearDates = () => {
+    setDraft({ from: '', to: '' })
+    if (range) onChange(null)
   }
 
   const answeredTo = info?.range?.to ?? range?.to ?? null
@@ -57,12 +65,17 @@ export function DeliveryRangeFilter({
         </div>
         <label className="queue-field">
           De
-          <input type="date" value={draft.from} onChange={(event) => applyDraft({ ...draft, from: event.target.value })} />
+          <BrDateInput value={draft.from} onChange={(from) => applyDraft({ ...draft, from })} />
         </label>
         <label className="queue-field">
           Até
-          <input type="date" value={draft.to} onChange={(event) => applyDraft({ ...draft, to: event.target.value })} />
+          <BrDateInput value={draft.to} onChange={(to) => applyDraft({ ...draft, to })} />
         </label>
+        {draft.from || draft.to || range ? (
+          <button type="button" className="ghost-button queue-filter-clear" onClick={clearDates}>
+            Limpar datas
+          </button>
+        ) : null}
       </div>
       <p className="muted" aria-live="polite">
         Período: {rangeLabel(range, timeZone)}

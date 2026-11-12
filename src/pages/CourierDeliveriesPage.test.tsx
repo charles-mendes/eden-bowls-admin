@@ -659,10 +659,15 @@ describe('CourierDeliveriesPage', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Selecionar entrega de Cliente 10' }))
     await user.click(screen.getByRole('button', { name: 'Marcar entregues (2)' }))
     const dialog = within(await screen.findByRole('dialog', { name: 'Marcar entregues' }))
-    const when = dialog.getByLabelText('Entregue em (horário de Brasília)')
-    expect((when as HTMLInputElement).value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
-    await user.clear(when)
-    await user.type(when, '2026-11-08T15:40')
+    expect(dialog.getByRole('group', { name: 'Entregue em (horário de Brasília)' })).toBeInTheDocument()
+    const day = dialog.getByLabelText('Data')
+    const time = dialog.getByLabelText('Hora')
+    expect((day as HTMLInputElement).value).toMatch(/^\d{2}\/\d{2}\/\d{4}$/)
+    expect((time as HTMLInputElement).value).toMatch(/^\d{2}:\d{2}$/)
+    await user.clear(day)
+    await user.type(day, '08112026')
+    await user.clear(time)
+    await user.type(time, '1540')
     await user.click(dialog.getByRole('button', { name: 'Marcar entregues' }))
 
     expect(await screen.findByRole('status')).toHaveTextContent('2 entregas marcadas como entregues.')
@@ -742,6 +747,21 @@ describe('CourierDeliveriesPage', () => {
     const seven = nextSevenDays(COURIER_TIMEZONE)
     await waitFor(() => expect(calls.filter((call) => call.path.endsWith('/courier-deliveries/queue')).at(-1)?.search).toBe(`?from=${seven.from}&to=${seven.to}`))
     expect(screen.getByRole('tab', { name: /Falhas/ })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('clears De and Até and goes back to the default range', async () => {
+    const { calls } = install()
+    render('/operations/courier?de=2026-11-01&ate=2026-11-03')
+
+    expect(await screen.findByText('Período: 01/11 a 03/11')).toBeInTheDocument()
+    expect(screen.getByLabelText('De')).toHaveValue('01/11/2026')
+    expect(screen.getByLabelText('Até')).toHaveValue('03/11/2026')
+    await userEvent.click(screen.getByRole('button', { name: 'Limpar datas' }))
+
+    await waitFor(() => expect(calls.filter((call) => call.path.endsWith('/courier-deliveries/queue')).at(-1)?.search).toBe(''))
+    expect(screen.getByRole('button', { name: 'Até amanhã' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByLabelText('De')).toHaveValue('')
+    expect(screen.getByLabelText('Até')).toHaveValue('')
   })
 
   it('offers the next cut when the list is truncated', async () => {
