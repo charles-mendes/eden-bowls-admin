@@ -100,7 +100,6 @@ describe('ProductsPage', () => {
     expect(create?.body).toEqual({
       name: 'Plano novo',
       planCountry: 'BR',
-      planDays: 30,
     })
   })
 

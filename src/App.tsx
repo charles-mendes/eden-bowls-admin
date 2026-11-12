@@ -9,6 +9,7 @@ import { InsightsRoute } from './pages/BusinessOverviewPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
+import { PlanSettingsPage } from './pages/PlanSettingsPage'
 import { RecipeContentPage } from './pages/RecipeContentPage'
 import { RecipesPage } from './pages/RecipesPage'
 import { OnboardingPage } from './pages/OnboardingPage'
@@ -69,6 +70,7 @@ function App() {
           <Route path="/nutrition/settings" element={<NutritionSettingsPage />} />
           <Route path="/catalog/products" element={<ProductsPage />} />
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
+          <Route path="/catalog/plan" element={<PlanSettingsPage />} />
           <Route path="/catalog/recipes" element={<RecipesPage />} />
           <Route path="/catalog/recipes/:market/:recipeKey" element={<RecipeContentPage />} />
           <Route path="/onboarding/sessions" element={<OnboardingPage />} />

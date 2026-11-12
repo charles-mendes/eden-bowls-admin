@@ -57,13 +57,27 @@ test.describe('Admin catalog', () => {
       body: {
         name: 'Plano novo',
         planCountry: 'BR',
-        planDays: 30,
       },
     })
     await expect(page.getByRole('button', { name: 'Adicionar variação' })).toBeVisible()
   })
 
-  test('saves product plan fields', async ({ page }) => {
+  test('saves the market plan settings on the Plano screen', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/catalog/plan?market=BR', e2eProfiles.operatorWrite)
+
+    const limit = page.getByRole('spinbutton', { name: 'Limite do pacote pequeno' })
+    await expect(limit).toHaveValue('8')
+    await limit.fill('6')
+    await page.getByRole('button', { name: 'Salvar' }).click()
+    await expect(page.getByText('Plano salvo.')).toBeVisible()
+    await expect.poll(() => captured.find((item) => item.method === 'PUT' && item.path === '/api/v1/admin/catalog/plan-settings')).toMatchObject({
+      authorization: 'Bearer e2e-access-token',
+      search: '?market=BR',
+      body: { planDays: 30, largePackLimit: 6 },
+    })
+  })
+
+  test('saves the product plan country', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
 
     await expect(page.getByText('BOWL-1')).toBeVisible()
@@ -73,7 +87,6 @@ test.describe('Admin catalog', () => {
       authorization: 'Bearer e2e-access-token',
       body: {
         planCountry: 'BR',
-        planDays: 28,
       },
     })
   })
@@ -112,7 +125,6 @@ test.describe('Admin catalog', () => {
         authorization: 'Bearer e2e-access-token',
         body: {
           planCountry: 'BR',
-          planDays: 28,
           active: true,
         },
       }),

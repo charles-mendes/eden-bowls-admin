@@ -433,7 +433,6 @@ export const productDetail = {
   nameEn: 'Adult Bowl',
   active: false,
   planCountry: 'BR',
-  planDays: 28,
   publishBlocked: false,
   gaps: [],
   variants: [

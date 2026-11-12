@@ -36,7 +36,6 @@ type CreatedProduct = {
   namePt: string
   slug: string
   planCountry: string | null
-  planDays: number | null
   stripeProductId?: string | null
   variants: Array<{ id: string }>
 }
@@ -58,7 +57,6 @@ function deleteFailure(error: unknown, fallback: string) {
 const emptyCreateForm = {
   name: '',
   planCountry: 'BR',
-  planDays: 30,
   variantName: '',
   variantSku: '',
   variantFlavor: '',
@@ -156,7 +154,6 @@ export function ProductsPage() {
         body: {
           name,
           planCountry: form.planCountry,
-          planDays: form.planDays,
           ...(variants ? { variants } : {}),
         },
       })
@@ -355,10 +352,6 @@ export function ProductsPage() {
                     <option key={country} value={country}>{country === 'US' ? 'US / USD' : 'BR / BRL'}</option>
                   ))}
                 </select>
-              </label>
-              <label>
-                Duração (dias)
-                <input type="number" min={1} value={form.planDays} onChange={(event) => setForm((current) => ({ ...current, planDays: Number(event.target.value) }))} />
               </label>
             </div>
             <p className="muted">Variação inicial (opcional). Depois você cria as demais no detalhe do produto.</p>

@@ -67,7 +67,7 @@ describe('ProductDetailPage', () => {
     vi.restoreAllMocks()
   })
 
-  it('loads product detail and PATCHes plan fields', async () => {
+  it('Product save omits variations', async () => {
     const user = userEvent.setup()
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser)
@@ -86,9 +86,9 @@ describe('ProductDetailPage', () => {
     const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
     expect(patch?.body).toEqual({
       planCountry: 'BR',
-      planDays: 28,
     })
     expect(patch?.body).not.toHaveProperty('variants')
+    expect(patch?.body).not.toHaveProperty('planDays')
     expect(patch?.authorization).toBe('Bearer access-token')
   })
 
@@ -247,65 +247,15 @@ describe('ProductDetailPage', () => {
     expect(screen.queryByText(/na página da receita/)).not.toBeInTheDocument()
   })
 
-  describe('large-pack limit', () => {
-    const published = {
-      ...productDetail,
-      active: true,
-      largePackLimit: 8,
-      variants: [
-        { ...productDetail.variants[0], weight: '300g' },
-        { ...productDetail.variants[0], id: 'var-2', sku: 'BOWL-2', name: 'Frango 500g', weight: '500g' },
-        { ...productDetail.variants[0], id: 'var-3', sku: 'BOWL-3', name: 'Teste 1kg', weight: '1kg', active: false },
-      ],
-    }
+  it('sends plan days and the large-pack limit to the Plano screen', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { product: { ...productDetail, active: true } })
+    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
 
-    it('saves only the limit of a published product and lists the active pack weights', async () => {
-      const user = userEvent.setup()
-      seedAuth()
-      const { calls } = installAdminFetchMock(operatorWriteUser, { product: published })
-      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-      const limit = await screen.findByLabelText(/^Limite do pacote pequeno/)
-      expect(limit).toHaveValue(8)
-      expect(screen.getByLabelText('Duração (dias)')).toBeDisabled()
-      expect(screen.getByText(/Pacotes na recomendação: 300g, 500g \(variações ativas\)/)).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled()
-
-      await user.clear(limit)
-      await user.type(limit, '6')
-      expect(screen.getByText('Limite do pacote pequeno alterado. Salve antes de sair.')).toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'Salvar' }))
-
-      expect(await screen.findByText('Produto atualizado.')).toBeInTheDocument()
-      const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-      expect(patch?.body).toEqual({ largePackLimit: 6 })
-      expect(screen.getByLabelText(/^Limite do pacote pequeno/)).toHaveValue(6)
-    })
-
-    it('refuses a limit out of range without sending it', async () => {
-      const user = userEvent.setup()
-      seedAuth()
-      const { calls } = installAdminFetchMock(operatorWriteUser, { product: published })
-      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-      const limit = await screen.findByLabelText(/^Limite do pacote pequeno/)
-      await user.clear(limit)
-      await user.type(limit, '0')
-      await user.click(screen.getByRole('button', { name: 'Salvar' }))
-
-      // The field's 1 to 60 range stops the submit before the page code runs.
-      expect(limit).toBeInvalid()
-      expect(calls.some((call) => call.method === 'PATCH')).toBe(false)
-    })
-
-    it('shows 8 when the API sends no limit', async () => {
-      seedAuth()
-      installAdminFetchMock(operatorWriteUser)
-      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-      expect(await screen.findByLabelText(/^Limite do pacote pequeno/)).toHaveValue(8)
-      expect(screen.getByText('Sem variação ativa com peso: a recomendação usa 300 g e 500 g.')).toBeInTheDocument()
-    })
+    expect(await screen.findByRole('link', { name: 'Loja › Plano' })).toHaveAttribute('href', '/catalog/plan?market=BR')
+    expect(screen.queryByLabelText('Duração (dias)')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^Limite do pacote pequeno/)).not.toBeInTheDocument()
+    expect(screen.getByLabelText('País do plano')).toBeDisabled()
   })
 
   it('names the active subscriptions when deactivation is refused', async () => {
@@ -465,9 +415,9 @@ describe('ProductDetailPage', () => {
     })
     expect(patches[1]?.body).toEqual({
       planCountry: 'BR',
-      planDays: 28,
       active: true,
     })
+    expect(patches[1]?.body).not.toHaveProperty('planDays')
     expect(patches[1]?.body).not.toHaveProperty('variants')
   })
 
@@ -525,31 +475,6 @@ describe('ProductDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Excluir produto' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Desativar' })).not.toBeInTheDocument()
     expect(calls.some((call) => call.method === 'PATCH')).toBe(false)
-  })
-
-  it('keeps an empty duration when plan days are missing', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { fetchMock, calls } = installAdminFetchMock(operatorWriteUser)
-    rewriteProductGet(fetchMock, (product) => ({ ...product, planDays: null }))
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Duração (dias)')).toHaveValue(null)
-    })
-
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Produto atualizado.')).toBeInTheDocument()
-    })
-
-    const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-    expect(patch?.body).toEqual({
-      planCountry: 'BR',
-    })
-    expect(patch?.body).not.toHaveProperty('variants')
-    expect(patch?.body).not.toHaveProperty('planDays')
   })
 
   it('limits plan country to the session markets', async () => {
@@ -676,22 +601,20 @@ describe('ProductDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Excluir produto' })).toBeInTheDocument()
   })
 
-  it('warns when plan duration differs from the loaded product', async () => {
+  it('Changed field warns before leaving', async () => {
     const user = userEvent.setup()
     seedAuth()
-    installAdminFetchMock(operatorWriteUser)
+    installAdminFetchMock(adminUser)
     renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
 
-    const duration = await screen.findByLabelText('Duração (dias)')
-    await user.clear(duration)
-    await user.type(duration, '14')
+    await user.selectOptions(await screen.findByLabelText('País do plano'), 'US')
 
-    expect(screen.getByText('País e duração alterados. Salve antes de sair.')).toBeInTheDocument()
+    expect(screen.getByText('País alterado. Salve antes de sair.')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Salvar' }))
 
     await waitFor(() => {
-      expect(screen.queryByText('País e duração alterados. Salve antes de sair.')).not.toBeInTheDocument()
+      expect(screen.queryByText('País alterado. Salve antes de sair.')).not.toBeInTheDocument()
     })
   })
 
@@ -1304,13 +1227,11 @@ describe('ProductDetailPage', () => {
       expect(calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/admin/catalog/recipe-content').length).toBeGreaterThan(listsBefore)
     })
 
-    it('keeps a typed and unsaved duration when the panel saves', async () => {
+    it('keeps a typed and unsaved country when the panel saves', async () => {
       const user = userEvent.setup()
-      renderDetail()
+      renderDetail({}, adminUser)
 
-      const duration = await screen.findByLabelText('Duração (dias)')
-      await user.clear(duration)
-      await user.type(duration, '15')
+      await user.selectOptions(await screen.findByLabelText('País do plano'), 'US')
       const panel = await openPanel(user)
       await user.type(within(panel).getByLabelText('Fabricante'), ' Ltda')
       await user.click(within(panel).getByRole('button', { name: 'Salvar rótulo' }))
@@ -1320,28 +1241,8 @@ describe('ProductDetailPage', () => {
       await waitFor(() => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
       })
-      expect(screen.getByLabelText('Duração (dias)')).toHaveValue(15)
-      expect(screen.getByText('País e duração alterados. Salve antes de sair.')).toBeInTheDocument()
-    })
-
-    it('keeps a typed and unsaved limit of a published product when the panel saves', async () => {
-      const user = userEvent.setup()
-      renderDetail({ product: { ...productDetail, active: true } })
-
-      const limit = await screen.findByLabelText(/^Limite do pacote pequeno/)
-      await user.clear(limit)
-      await user.type(limit, '6')
-      const panel = await openPanel(user)
-      await user.type(within(panel).getByLabelText('Fabricante'), ' Ltda')
-      await user.click(within(panel).getByRole('button', { name: 'Salvar rótulo' }))
-      await within(panel).findByText(/Rótulo salvo/)
-      await user.click(within(panel).getByRole('button', { name: 'Fechar' }))
-
-      await waitFor(() => {
-        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
-      })
-      expect(screen.getByLabelText(/^Limite do pacote pequeno/)).toHaveValue(6)
-      expect(screen.getByText('Limite do pacote pequeno alterado. Salve antes de sair.')).toBeInTheDocument()
+      expect(screen.getByLabelText('País do plano')).toHaveValue('US')
+      expect(screen.getByText('País alterado. Salve antes de sair.')).toBeInTheDocument()
     })
 
     it('asks before discarding an unsaved label, and keeps it when declined', async () => {

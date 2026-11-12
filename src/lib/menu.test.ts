@@ -113,6 +113,15 @@ describe('admin menu', () => {
     expect(activeMenuHref('/catalog/recipes/BR/beef', visibleMenuItems(['operator']))).toBe('/catalog/recipes')
   })
 
+  it('shows Plano in Loja for catalog readers', () => {
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      const loja = groupedMenuItems([role], ['catalog.read']).find((group) => group.group === 'Loja')
+      expect(loja?.items.map((item) => item.href)).toContain('/catalog/plan')
+    }
+    expect(visibleMenuItems(['operator'], []).map((item) => item.href)).not.toContain('/catalog/plan')
+    expect(visibleMenuItems(['veterinarian'], ['catalog.read']).map((item) => item.href)).not.toContain('/catalog/plan')
+  })
+
   it('lists Visão do negócio and Relatórios in Negócio, below Loja, only with reports.read', () => {
     const groupsOf = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) => groupedMenuItems(roles, permissions)
     const negocio = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) =>

@@ -188,6 +188,12 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     variants: (options.product ?? productDetail).variants.map((item) => ({ ...item })),
   }
 
+  // plan-settings: plan days and large-pack limit of each market.
+  const planSettings: Record<string, { market: string; planDays: number; largePackLimit: number; updatedAt: string | null }> = {
+    BR: { market: 'BR', planDays: 30, largePackLimit: 8, updatedAt: null },
+    US: { market: 'US', planDays: 30, largePackLimit: 8, updatedAt: null },
+  }
+
   let recipes = (options.recipes ?? recipeList.items).map((item) => ({ ...item, variations: item.variations.map((variation) => ({ ...variation })) }))
   let recipeContent = {
     ...(options.recipeContent ?? recipeContentFixture),
@@ -338,6 +344,15 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(checkoutDetail)
     }
 
+    if (path === '/api/v1/admin/catalog/plan-settings') {
+      const market = (url.searchParams.get('market') || '').toUpperCase()
+      if (!planSettings[market]) return jsonResponse({ message: 'Choose one market.', code: 'market_required' }, 400)
+      if (method === 'PUT') {
+        planSettings[market] = { ...planSettings[market], planDays: Number(body?.planDays), largePackLimit: Number(body?.largePackLimit), updatedAt: '2026-11-12T12:00:00.000Z' }
+      }
+      return jsonResponse(planSettings[market])
+    }
+
     if (path === '/api/v1/admin/catalog/products' && method === 'GET') {
       return jsonResponse({
         ...productsList,
@@ -354,7 +369,6 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         nameEn: body?.name || 'Plano novo',
         active: false,
         planCountry: body?.planCountry || 'BR',
-        planDays: body?.planDays || 30,
         stripeProductId: 'prod_live_301',
         variants: [],
       })

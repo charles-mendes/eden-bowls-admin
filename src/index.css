@@ -708,6 +708,11 @@ h3 {
   gap: var(--space-3);
 }
 
+/* Plano: a field with a hint or an error does not stretch the input of the field beside it. */
+.plan-settings-grid > label {
+  align-content: start;
+}
+
 .form-toolbar .form-grid {
   flex: 1 1 16rem;
   margin-bottom: 0;

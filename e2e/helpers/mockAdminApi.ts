@@ -505,6 +505,11 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
   const captured: CapturedAdminRequest[] = []
   const calendar = calendarState()
   const stock = stockState()
+  // plan-settings: plan days and large-pack limit of each market.
+  const planSettings: Record<string, { market: string; planDays: number; largePackLimit: number; updatedAt: string | null }> = {
+    BR: { market: 'BR', planDays: 30, largePackLimit: 8, updatedAt: null },
+    US: { market: 'US', planDays: 30, largePackLimit: 8, updatedAt: null },
+  }
   const catalog = {
     items: [{
       id: 'prod-1',
@@ -525,7 +530,6 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       nameEn: 'Adult Bowl',
       active: false,
       planCountry: 'BR',
-      planDays: 28,
       canDelete: true,
       variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'synced', requiresSync: false, canDelete: true, recipeKey: 'turkey', recipeImageUrl: null, recipeLabelStatus: 'missing' }],
     },
@@ -678,6 +682,19 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
+    if (path === '/api/v1/admin/catalog/plan-settings') {
+      const market = (url.searchParams.get('market') || '').toUpperCase()
+      if (market !== 'BR' && market !== 'US') {
+        await fulfillJson(route, { message: 'Choose one market.', code: 'market_required' }, 400)
+        return
+      }
+      if (method === 'PUT') {
+        planSettings[market] = { market, planDays: Number(body?.planDays), largePackLimit: Number(body?.largePackLimit), updatedAt: '2026-11-12T12:00:00.000Z' }
+      }
+      await fulfillJson(route, planSettings[market])
+      return
+    }
+
     if (path === '/api/v1/admin/catalog/products' && method === 'GET') {
       await fulfillJson(route, {
         total: catalog.items.length,
@@ -696,7 +713,6 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         nameEn: body?.name || 'Plano novo',
         active: false,
         planCountry: body?.planCountry || 'BR',
-        planDays: body?.planDays || 30,
         stripeProductId: 'prod_live_301',
         variants: [],
       })
@@ -805,7 +821,6 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         nameEn: 'Plano novo',
         active: false,
         planCountry: 'BR',
-        planDays: 30,
         stripeProductId: 'prod_live_301',
         variants: [],
       })
@@ -821,7 +836,6 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         ...catalog.detail,
         active: body?.active ?? catalog.detail.active,
         planCountry: body?.planCountry ?? catalog.detail.planCountry,
-        planDays: body?.planDays ?? catalog.detail.planDays,
         variants,
       }
       await fulfillJson(route, catalog.detail)

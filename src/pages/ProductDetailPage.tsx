@@ -57,8 +57,6 @@ type ProductDetail = {
   nameEn: string
   active: boolean
   planCountry: string | null
-  planDays: number | null
-  largePackLimit?: number
   publishBlocked?: boolean
   gaps?: Array<{ variationId: string; currencies: string[] }>
   variants: ProductVariant[]
@@ -253,18 +251,6 @@ function variationFailure(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
-function planDaysField(value: number | null) {
-  return value != null && value > 0 ? String(value) : ''
-}
-
-// Same default and range as the API (plan-packaging).
-const DEFAULT_LARGE_PACK_LIMIT = 8
-const MAX_LARGE_PACK_LIMIT = 60
-
-function largePackLimitField(value: number | undefined) {
-  return String(value != null && value > 0 ? value : DEFAULT_LARGE_PACK_LIMIT)
-}
-
 function variantPayload(item: VariantDraft, planCountry: string) {
   return {
     ...(item.id ? { id: item.id } : {}),
@@ -289,8 +275,6 @@ export function ProductDetailPage() {
   const navigate = useNavigate()
   const [data, setData] = useState<ProductDetail | null>(null)
   const [planCountry, setPlanCountry] = useState('BR')
-  const [planDays, setPlanDays] = useState('')
-  const [largePackLimit, setLargePackLimit] = useState(String(DEFAULT_LARGE_PACK_LIMIT))
   const [variants, setVariants] = useState<VariantDraft[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -321,14 +305,8 @@ export function ProductDetailPage() {
   const currency = planCountry === 'US' ? 'USD' : 'BRL'
   const countryOptions = sessionMarkets(user)
   const savedCountry = data?.planCountry || 'BR'
-  const savedDays = planDaysField(data?.planDays ?? null)
-  const savedLimit = largePackLimitField(data?.largePackLimit)
-  // The large-pack limit only changes the recommendation, so it stays editable while the product is published.
-  const canEditLimit = Boolean(canWrite && data)
-  const limitDirty = Boolean(canEditLimit && largePackLimit !== savedLimit)
-  const planFieldsDirty = Boolean(canEdit && (planCountry !== savedCountry || planDays !== savedDays))
-  const planDirty = planFieldsDirty || limitDirty
-  const packWeights = [...new Set(variants.filter((item) => item.active && item.weight).map((item) => item.weight))]
+  // Plan days and the large-pack limit are market settings (Loja > Plano); the product keeps only its country.
+  const planDirty = Boolean(canEdit && planCountry !== savedCountry)
 
   useEffect(() => {
     if (!planDirty) return undefined
@@ -373,8 +351,6 @@ export function ProductDetailPage() {
     setData(product)
     if (!keepPlanFields) {
       setPlanCountry(product.planCountry || 'BR')
-      setPlanDays(planDaysField(product.planDays))
-      setLargePackLimit(largePackLimitField(product.largePackLimit))
     }
     setVariants(product.variants.map(toVariantDraft))
   }
@@ -453,38 +429,12 @@ export function ProductDetailPage() {
     document.getElementById(section)?.scrollIntoView?.({ block: 'start' })
   }, [panelContent, contentPanel])
 
-  const parseLimit = () => {
-    const limit = Number(largePackLimit)
-    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_LARGE_PACK_LIMIT) {
-      setError(`O limite do pacote pequeno vai de 1 a ${MAX_LARGE_PACK_LIMIT} pacotes.`)
-      return null
-    }
-    return limit
-  }
-
-  const planPayload = () => {
-    const parsedDays = planDays.trim() === '' ? null : Number(planDays)
-    if (parsedDays != null && (!Number.isFinite(parsedDays) || parsedDays <= 0)) {
-      setError('Duração precisa ser maior que zero.')
-      return null
-    }
-    // The limit goes only when changed, so an untouched product keeps the API default.
-    const limit = limitDirty ? parseLimit() : null
-    if (limitDirty && limit == null) return null
-    return {
-      planCountry,
-      ...(parsedDays == null ? {} : { planDays: parsedDays }),
-      ...(limit == null ? {} : { largePackLimit: limit }),
-    }
-  }
+  const planPayload = () => ({ planCountry })
 
   const save = async (event: FormEvent) => {
     event.preventDefault()
-    if (!token || !productId || !canEditLimit) return
-    // A published product keeps country and days; only the large-pack limit goes.
-    const limit = canEdit ? null : parseLimit()
-    const payload = canEdit ? planPayload() : limit == null ? null : { largePackLimit: limit }
-    if (!payload) return
+    if (!token || !productId || !canEdit) return
+    const payload = planPayload()
     try {
       const response = await apiRequest<ProductDetail>(`/admin/catalog/products/${productId}`, {
         token,
@@ -513,7 +463,6 @@ export function ProductDetailPage() {
     const body = active
       ? planPayload()
       : { active: false as const }
-    if (!body) return
     try {
       const response = await apiRequest<ProductDetail>(`/admin/catalog/products/${productId}`, {
         token,
@@ -841,8 +790,8 @@ export function ProductDetailPage() {
         <Section
           title="Plano"
           description={data?.active
-            ? 'País e duração só mudam em rascunho. O limite do pacote pequeno muda a qualquer momento.'
-            : 'País e duração da assinatura deste produto, e o tamanho de pacote da recomendação.'}
+            ? 'O país só muda em rascunho.'
+            : 'País da assinatura deste produto.'}
         >
           <div className="form-toolbar">
             <div className="form-grid">
@@ -854,39 +803,17 @@ export function ProductDetailPage() {
                   ))}
                 </select>
               </label>
-              <label>
-                Duração (dias)
-                <input type="number" min={1} value={planDays} disabled={!canEdit} onChange={(event) => setPlanDays(event.target.value)} />
-              </label>
-              <label>
-                Limite do pacote pequeno
-                <input
-                  type="number"
-                  min={1}
-                  max={MAX_LARGE_PACK_LIMIT}
-                  step={1}
-                  value={largePackLimit}
-                  disabled={!canEditLimit}
-                  aria-describedby="large-pack-limit-hint"
-                  onChange={(event) => setLargePackLimit(event.target.value)}
-                />
-                <span id="large-pack-limit-hint" className="field-hint">
-                  Acima de {largePackLimit || DEFAULT_LARGE_PACK_LIMIT} pacotes pequenos por mês, a recomendação passa ao pacote grande.
-                </span>
-              </label>
             </div>
             {canWrite && data ? (
               <div className="inline-actions">
-                <button className="primary-button" type="submit" disabled={!canEdit && !limitDirty}>Salvar</button>
+                <button className="primary-button" type="submit" disabled={!canEdit}>Salvar</button>
               </div>
             ) : null}
           </div>
           <p className="field-hint">
-            {packWeights.length
-              ? `Pacotes na recomendação: ${packWeights.join(', ')} (variações ativas). A recomendação usa o primeiro produto publicado do país.`
-              : 'Sem variação ativa com peso: a recomendação usa 300 g e 500 g.'}
+            Duração do plano e limite do pacote pequeno valem para o mercado inteiro: <Link className="link-button" to={`/catalog/plan?market=${encodeURIComponent(savedCountry)}`}>Loja › Plano</Link>.
           </p>
-          {planDirty ? <p className="field-hint warning-text">{planFieldsDirty ? 'País e duração alterados.' : 'Limite do pacote pequeno alterado.'} Salve antes de sair.</p> : null}
+          {planDirty ? <p className="field-hint warning-text">País alterado. Salve antes de sair.</p> : null}
         </Section>
 
         <Section
