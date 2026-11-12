@@ -37,4 +37,4 @@ Cada fase começa depois que a mesma fase do change irmão `add-recipe-image-and
 
 ## 6. Integração
 
-- [ ] 6.1 Em QA, com os três changes da fase entregues, cadastrar imagem e rótulo de um sabor US inativo pelo painel, ativar a variação sem as confirmações manuais e abrir `/recipes/<key>` no domínio US. Verificar que o banner e o rótulo são os cadastrados.
+Verificação manual do usuário em QA, fora das tarefas do change: o QA não é acessível do ambiente local onde o change é implementado. Com os três changes da fase entregues, cadastrar imagem e rótulo de um sabor US inativo pelo painel, ativar a variação sem as confirmações manuais e abrir `/recipes/<key>` no domínio US. Conferir que o banner e o rótulo são os cadastrados.

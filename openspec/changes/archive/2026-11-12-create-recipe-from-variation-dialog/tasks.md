@@ -26,4 +26,4 @@
 
 - [x] 4.1 Rodar `npx vitest run src/pages/ProductDetailPage.test.tsx src/pages/RecipesPage.test.tsx`, depois `npm run lint` e `npx tsc -b`.
 - [x] 4.2 Tirar captura com Playwright do diálogo com o bloco aberto, a 1280 px e a 390 px de largura. Conferir que cabe nos 520 px do painel sem rolagem horizontal. Apagar a página temporária depois.
-- [ ] 4.3 Antes de `openspec archive`, confirmar que `add-recipe-image-and-label` já foi arquivado. Verificar com `openspec validate create-recipe-from-variation-dialog --strict` sem o aviso "Archive would refuse this delta".
+- [x] 4.3 Antes de `openspec archive`, confirmar que `add-recipe-image-and-label` já foi arquivado. Verificar com `openspec validate create-recipe-from-variation-dialog --strict` sem o aviso "Archive would refuse this delta".

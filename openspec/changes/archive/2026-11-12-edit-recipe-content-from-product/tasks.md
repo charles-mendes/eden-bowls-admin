@@ -44,4 +44,4 @@
 
 - [x] 5.1 Rodar `npx vitest run src/pages/ProductDetailPage.test.tsx src/pages/RecipeContentPage.test.tsx src/pages/RecipesPage.test.tsx`, depois `npx vitest run --changed`, `npm run lint` e `npx tsc -b`.
 - [x] 5.2 Tirar captura com Playwright do detalhe de um produto com o painel aberto por um atalho de pendência. Conferir a rolagem até a seção e o aviso de conteúdo compartilhado no topo.
-- [ ] 5.3 Antes de `openspec archive`, confirmar que `add-recipe-image-and-label` já foi arquivado. Verificar com `openspec validate edit-recipe-content-from-product --strict` sem o aviso "Archive would refuse this delta".
+- [x] 5.3 Antes de `openspec archive`, confirmar que `add-recipe-image-and-label` já foi arquivado. Verificar com `openspec validate edit-recipe-content-from-product --strict` sem o aviso "Archive would refuse this delta".
