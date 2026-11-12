@@ -3738,6 +3738,13 @@ button.table-link {
   border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
 
+/* The purchase the operator came for (?assinatura=). */
+.checkout-history-item-focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  scroll-margin-top: var(--space-4);
+}
+
 .checkout-history-date {
   margin-left: auto;
   font-size: var(--text-sm);

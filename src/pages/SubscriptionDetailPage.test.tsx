@@ -135,7 +135,7 @@ describe('SubscriptionDetailPage', () => {
     })
 
     expect(screen.getByRole('link', { name: 'Cliente' })).toHaveAttribute('href', '/users/u-ana')
-    expect(screen.getByRole('link', { name: 'Checkout' })).toHaveAttribute('href', '/users/u-ana?aba=checkout')
+    expect(screen.getByRole('link', { name: 'Checkout' })).toHaveAttribute('href', '/users/u-ana?aba=checkout&assinatura=sub-row-1')
   })
 
   it('keeps ledger identity as text when the profile is out of scope', async () => {
@@ -150,7 +150,7 @@ describe('SubscriptionDetailPage', () => {
     expect(screen.queryByRole('link', { name: 'Cliente' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Checkout' })).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/users/u-ana"]')).toBeNull()
-    expect(document.querySelector('a[href="/users/u-ana?aba=checkout"]')).toBeNull()
+    expect(document.querySelector('a[href="/users/u-ana?aba=checkout&assinatura=sub-row-1"]')).toBeNull()
     expect(screen.getAllByText('Cliente').length).toBeGreaterThan(0)
   })
 

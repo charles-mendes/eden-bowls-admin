@@ -511,7 +511,7 @@ export function ProductionQueuePage() {
       ? [
         { label: 'Cliente', to: `/users/${item.userId}` },
         { label: 'Assinatura', to: `/billing/subscriptions/${item.id}` },
-        { label: 'Checkout', to: `/users/${item.userId}?aba=checkout` },
+        { label: 'Checkout', to: `/users/${item.userId}?aba=checkout&assinatura=${item.id}` },
       ]
       : [{ label: 'Perfil fora do seu mercado', disabled: true }]
     if (canWrite && item.productionStatus === 'ready') {

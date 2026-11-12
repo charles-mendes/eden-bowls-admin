@@ -519,6 +519,52 @@ describe('UserDetailPage', () => {
       expect((items[1] as HTMLDetailsElement).open).toBe(false)
     })
 
+    it('opens the checkout of the subscription named in the link, not the newest one', async () => {
+      seedAuth()
+      const newer = {
+        subscriptionId: 'sub-row-2', stripeSubscriptionId: 'sub_new', status: 'active', planLabel: 'Plan #2',
+        createdAt: '2026-11-01T12:00:00.000Z', completeness: 'complete', source: 'checkout', capturedAt: '2026-11-01T12:00:00.000Z',
+        planSelection: checkoutDetail.planSelection, petsSnapshot: { pet_ids: ['pet-1'] }, address: checkoutDetail.address,
+        shipping: checkoutDetail.shipping, recurrence: checkoutDetail.recurrence, subscriptionTermMonths: 1,
+        lineItems: checkoutDetail.lineItems, discount: checkoutDetail.discount, checkoutReference: checkoutDetail.checkoutReference,
+      }
+      const older = { ...newer, subscriptionId: 'sub-row-1', stripeSubscriptionId: 'sub_123', planLabel: 'Plan #1', createdAt: '2026-08-01T12:00:00.000Z' }
+      installAdminFetchMock(operatorWriteUser, {
+        routes: ({ path }) => (path === '/api/v1/admin/onboarding/checkouts/u-ana'
+          ? jsonResponse({ ...checkoutDetail, checkouts: [newer, older] })
+          : undefined),
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=checkout&assinatura=sub-row-1', '/users/:userId')
+
+      await screen.findByText(/2 checkouts, um por assinatura/)
+      const items = document.querySelectorAll('details.checkout-history-item')
+      expect((items[0] as HTMLDetailsElement).open).toBe(false)
+      expect((items[1] as HTMLDetailsElement).open).toBe(true)
+      expect(items[1]).toHaveAttribute('aria-current', 'true')
+      expect(screen.queryByText(/não está neste cliente/)).toBeNull()
+    })
+
+    it('falls back to the newest checkout when the linked subscription is not this customer', async () => {
+      seedAuth()
+      const only = {
+        subscriptionId: 'sub-row-2', stripeSubscriptionId: 'sub_new', status: 'active', planLabel: 'Plan #2',
+        createdAt: '2026-11-01T12:00:00.000Z', completeness: 'complete', source: 'checkout', capturedAt: '2026-11-01T12:00:00.000Z',
+        planSelection: checkoutDetail.planSelection, petsSnapshot: { pet_ids: ['pet-1'] }, address: checkoutDetail.address,
+        shipping: checkoutDetail.shipping, recurrence: checkoutDetail.recurrence, subscriptionTermMonths: 1,
+        lineItems: checkoutDetail.lineItems, discount: checkoutDetail.discount, checkoutReference: checkoutDetail.checkoutReference,
+      }
+      installAdminFetchMock(operatorWriteUser, {
+        routes: ({ path }) => (path === '/api/v1/admin/onboarding/checkouts/u-ana'
+          ? jsonResponse({ ...checkoutDetail, checkouts: [only] })
+          : undefined),
+      })
+      renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=checkout&assinatura=sub-row-9', '/users/:userId')
+
+      expect(await screen.findByText(/não está neste cliente/)).toBeInTheDocument()
+      const items = document.querySelectorAll('details.checkout-history-item')
+      expect((items[0] as HTMLDetailsElement).open).toBe(true)
+    })
+
     it('says when the customer has pets but never reached checkout', async () => {
       seedAuth()
       installAdminFetchMock(operatorWriteUser, {

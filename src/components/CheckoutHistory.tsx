@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { CheckoutSnapshotPanels } from './CheckoutSnapshotPanels'
 import { LedgerSnapshotSections } from './LedgerSnapshotSections'
@@ -42,7 +43,12 @@ function readableSnapshots(entry: CheckoutHistoryEntry) {
   }
 }
 
-function CheckoutHistoryItem({ entry, open }: { entry: CheckoutHistoryEntry; open: boolean }) {
+function CheckoutHistoryItem({ entry, open, focused }: { entry: CheckoutHistoryEntry; open: boolean; focused: boolean }) {
+  const ref = useRef<HTMLDetailsElement>(null)
+  // Arriving from an order (?assinatura=), the operator lands on that purchase, not on the newest one.
+  useEffect(() => {
+    if (focused) ref.current?.scrollIntoView?.({ block: 'start' })
+  }, [focused])
   const complete = entry.completeness === 'complete'
   const snapshots = readableSnapshots(entry)
   const raw = {
@@ -56,7 +62,7 @@ function CheckoutHistoryItem({ entry, open }: { entry: CheckoutHistoryEntry; ope
   }
 
   return (
-    <details className="checkout-history-item" open={open}>
+    <details ref={ref} className={focused ? 'checkout-history-item checkout-history-item-focus' : 'checkout-history-item'} open={open} aria-current={focused ? 'true' : undefined}>
       <summary>
         <strong>{entry.planLabel || 'Assinatura'}</strong>
         <span className={subscriptionBadgeClass(entry.status)}>{formatStripeStatus(entry.status)}</span>
@@ -81,15 +87,20 @@ function CheckoutHistoryItem({ entry, open }: { entry: CheckoutHistoryEntry; ope
   )
 }
 
-export function CheckoutHistory({ entries }: { entries: CheckoutHistoryEntry[] }) {
+export function CheckoutHistory({ entries, focusSubscriptionId = null }: { entries: CheckoutHistoryEntry[]; focusSubscriptionId?: string | null }) {
+  const focusFound = Boolean(focusSubscriptionId && entries.some((entry) => entry.subscriptionId === focusSubscriptionId))
   return (
     <div className="stack checkout-history">
       <p className="muted checkout-updated">
         {entries.length === 1 ? '1 checkout' : `${entries.length} checkouts`}, um por assinatura, da compra mais recente para a mais antiga.
       </p>
-      {entries.map((entry, index) => (
-        <CheckoutHistoryItem key={entry.subscriptionId} entry={entry} open={index === 0} />
-      ))}
+      {focusSubscriptionId && !focusFound
+        ? <p className="muted checkout-updated">O checkout da assinatura pedida não está neste cliente. Abrimos o mais recente.</p>
+        : null}
+      {entries.map((entry, index) => {
+        const focused = focusFound && entry.subscriptionId === focusSubscriptionId
+        return <CheckoutHistoryItem key={entry.subscriptionId} entry={entry} open={focusFound ? focused : index === 0} focused={focused} />
+      })}
     </div>
   )
 }

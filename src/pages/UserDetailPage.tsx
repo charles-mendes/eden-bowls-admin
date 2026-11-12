@@ -211,6 +211,7 @@ export function UserDetailPage() {
     setSearchParams((params) => {
       if (next === 'cadastro') params.delete('aba')
       else params.set('aba', next)
+      if (next !== 'checkout') params.delete('assinatura')
       return params
     })
   }
@@ -683,14 +684,14 @@ export function UserDetailPage() {
 
       {needsOnboarding ? (
         <div id={`customer-panel-${tab}`} role="tabpanel" aria-labelledby={`customer-tab-${tab}`} className="page-stack">
-          <OnboardingPanel tab={tab} state={onboarding} />
+          <OnboardingPanel tab={tab} state={onboarding} focusSubscriptionId={searchParams.get('assinatura')} />
         </div>
       ) : null}
     </PageFrame>
   )
 }
 
-function OnboardingPanel({ tab, state }: { tab: CustomerTab; state: OnboardingState }) {
+function OnboardingPanel({ tab, state, focusSubscriptionId }: { tab: CustomerTab; state: OnboardingState; focusSubscriptionId: string | null }) {
   if (state.status === 'forbidden') {
     return <div className="warning">Seu papel não tem acesso aos dados de onboarding deste cliente.</div>
   }
@@ -747,7 +748,7 @@ function OnboardingPanel({ tab, state }: { tab: CustomerTab; state: OnboardingSt
 
   const history = data.checkouts ?? []
   if (history.length) {
-    return <CheckoutHistory entries={history} />
+    return <CheckoutHistory entries={history} focusSubscriptionId={focusSubscriptionId} />
   }
 
   if (data.empty) {
