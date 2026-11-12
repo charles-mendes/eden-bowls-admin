@@ -23,7 +23,8 @@ type FieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChang
 }
 
 // A day typed as dd/mm/aaaa. `value` and `onChange` speak ISO (yyyy-mm-dd), '' while the day is incomplete.
-export function BrDateInput({ value, onChange, ...rest }: FieldProps) {
+// `min` and `max` (ISO) limit the days the calendar offers; a typed day outside them is the page's to refuse.
+export function BrDateInput({ value, onChange, min, max, ...rest }: FieldProps & { min?: string; max?: string }) {
   const [text, setText] = useState(() => isoToBrDate(value))
   const [seen, setSeen] = useState(value)
 
@@ -90,19 +91,22 @@ export function BrDateInput({ value, onChange, ...rest }: FieldProps) {
           <path d="M3 10h18M8 3v4M16 3v4" />
         </svg>
       </button>
-      {open ? <CalendarPopover anchor={wrapper} selected={value} onPick={pick} onClose={close} /> : null}
+      {open ? <CalendarPopover anchor={wrapper} selected={value} min={min} max={max} onPick={pick} onClose={close} /> : null}
     </span>
   )
 }
 
 // A month in Portuguese, Sunday first. Arrows move the day, PageUp/PageDown the month, Enter picks, Escape closes.
-function CalendarPopover({ anchor, selected, onPick, onClose }: {
+function CalendarPopover({ anchor, selected, min, max, onPick, onClose }: {
   anchor: RefObject<HTMLSpanElement | null>
+  min?: string
+  max?: string
   selected: string
   onPick: (iso: string) => void
   onClose: () => void
 }) {
   const today = localToday()
+  const outside = (day: string) => Boolean((min && day < min) || (max && day > max))
   const [focused, setFocused] = useState(selected || today)
   const [year, month] = focused.split('-').map(Number)
   const grid = useRef<HTMLTableElement>(null)
@@ -117,7 +121,11 @@ function CalendarPopover({ anchor, selected, onPick, onClose }: {
       const width = panel.current?.offsetWidth ?? 0
       if (!field) return
       const below = field.bottom + 4
-      const top = below + height > window.innerHeight - 8 && field.top - height - 4 >= 8 ? field.top - height - 4 : below
+      const above = field.top - height - 4
+      const fitsBelow = below + height <= window.innerHeight - 8
+      // Below when it fits, else above when that fits, else wherever there is more room, kept on the screen.
+      const wanted = fitsBelow ? below : above >= 8 ? above : window.innerHeight - field.bottom >= field.top ? below : above
+      const top = Math.max(8, Math.min(wanted, window.innerHeight - height - 8))
       const left = Math.max(8, Math.min(field.left, window.innerWidth - width - 8))
       setPlace({ top, left })
     }
@@ -187,6 +195,7 @@ function CalendarPopover({ anchor, selected, onPick, onClose }: {
                       aria-pressed={day === selected}
                       aria-current={day === today ? 'date' : undefined}
                       className={['br-calendar-day', day === selected ? 'selected' : '', day === today ? 'today' : ''].filter(Boolean).join(' ')}
+                      disabled={outside(day)}
                       onClick={() => onPick(day)}
                     >
                       {Number(day.slice(8, 10))}
@@ -199,7 +208,7 @@ function CalendarPopover({ anchor, selected, onPick, onClose }: {
         </tbody>
       </table>
       <div className="br-calendar-foot">
-        <button type="button" className="link-button" onClick={() => onPick(today)}>Hoje</button>
+        <button type="button" className="link-button" disabled={outside(today)} onClick={() => onPick(today)}>Hoje</button>
       </div>
     </div>
   )

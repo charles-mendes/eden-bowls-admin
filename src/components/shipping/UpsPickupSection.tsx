@@ -12,6 +12,7 @@ import {
   type ShipmentPackage,
   type UpsPickup,
 } from '../../lib/upsLabels'
+import { BrDateInput, BrTimeInput } from '../BrDateInput'
 
 // A created label of the queue, as much of it as the pickup needs.
 export type PickupLabel = {
@@ -212,15 +213,15 @@ export function UpsPickupSection({
             <div className="ship-fields">
               <label className="ship-field">
                 <span>Data da coleta</span>
-                <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+                <BrDateInput value={date} onChange={setDate} />
               </label>
               <label className="ship-field">
                 <span>Pronto a partir de</span>
-                <input type="time" value={readyTime} onChange={(event) => setReadyTime(event.target.value)} />
+                <BrTimeInput value={readyTime} onChange={setReadyTime} />
               </label>
               <label className="ship-field">
                 <span>Fecha às</span>
-                <input type="time" value={closeTime} onChange={(event) => setCloseTime(event.target.value)} />
+                <BrTimeInput value={closeTime} onChange={setCloseTime} />
               </label>
               <label className="ship-field">
                 <span>Caixas</span>

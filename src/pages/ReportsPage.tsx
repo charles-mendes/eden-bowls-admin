@@ -41,6 +41,7 @@ import {
   type SummaryKpis,
   type SummaryReport,
 } from '../lib/reports'
+import { BrDateInput } from '../components/BrDateInput'
 
 type Loaded = { path: string; data: unknown; error: string | null }
 
@@ -235,11 +236,11 @@ export function ReportsPage() {
                 <>
                   <label>
                     De
-                    <input type="date" value={draft.from} max={today} onChange={(event) => applyCustom(event.target.value, draft.to)} />
+                    <BrDateInput value={draft.from} max={today} onChange={(from) => applyCustom(from, draft.to)} />
                   </label>
                   <label>
                     Até
-                    <input type="date" value={draft.to} max={today} onChange={(event) => applyCustom(draft.from, event.target.value)} />
+                    <BrDateInput value={draft.to} max={today} onChange={(to) => applyCustom(draft.from, to)} />
                   </label>
                 </>
               ) : null}

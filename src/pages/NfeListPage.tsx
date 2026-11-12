@@ -25,6 +25,7 @@ import {
   type NfeListFilters,
   type NfeListResponse,
 } from '../lib/nfe'
+import { BrDateInput } from '../components/BrDateInput'
 
 const OAUTH_MESSAGES: Record<string, string> = {
   connected: 'Bling autorizado.',
@@ -154,11 +155,11 @@ export function NfeListPage() {
         </label>
         <label>
           De
-          <input type="date" value={from} onChange={(event) => setFilters({ de: event.target.value, pagina: 1 })} />
+          <BrDateInput value={from} onChange={(de) => setFilters({ de, pagina: 1 })} />
         </label>
         <label>
           Até
-          <input type="date" value={to} onChange={(event) => setFilters({ ate: event.target.value, pagina: 1 })} />
+          <BrDateInput value={to} onChange={(ate) => setFilters({ ate, pagina: 1 })} />
         </label>
         <form className="nfe-search" onSubmit={submitSearch}>
           <label>

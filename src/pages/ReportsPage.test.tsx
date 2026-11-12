@@ -109,7 +109,7 @@ describe('ReportsPage', () => {
     expect(screen.getByRole('tab', { name: 'Assinaturas' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('button', { name: 'Estados Unidos' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText(/Estados Unidos · 01\/07\/2026 a 30\/09\/2026/)).toBeInTheDocument()
-    expect(screen.getByLabelText('De')).toHaveValue('2026-07-01')
+    expect(screen.getByLabelText('De')).toHaveValue('01/07/2026')
     expect(screen.getByText(/3 cancelamentos têm data aproximada/)).toBeInTheDocument()
     expect(reportCalls(calls).map((call) => call.path + call.search)).toEqual([
       '/api/v1/admin/reports/subscriptions?market=US&from=2026-07-01&to=2026-09-30',
@@ -166,7 +166,7 @@ describe('ReportsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Personalizado' }))
     const from = screen.getByLabelText('De')
     await user.clear(from)
-    await user.type(from, '2025-01-01')
+    await user.type(from, '01012025')
 
     expect(await screen.findByText(/no máximo 366 dias/)).toBeInTheDocument()
     expect(reportCalls(calls).length).toBe(before)

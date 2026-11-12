@@ -5562,3 +5562,21 @@ label.ghost-button {
   justify-content: flex-end;
   padding-top: var(--space-1);
 }
+
+.br-calendar-day:disabled {
+  color: var(--text-soft);
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: none;
+}
+
+/* Relatórios: the De / Até days in the toolbar, drawn like the queue filters. */
+.report-toolbar .br-date input {
+  min-height: 36px;
+  padding: 8px 38px 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+}
