@@ -6,19 +6,19 @@ Lets staff register the recipes of each market and edit, in the market language,
 
 ## Requirements
 
-### Requirement: Recipe page edits the store presentation
+### Requirement: Product page edits the store presentation
 
-The recipe page MUST show a section "Apresentação na loja" with the stored presentation of the recipe in its market: short name (`tag`, 1 to 40 characters, the store tab and plan chip label), title, tagline, resume, highlights (one input each, 1 to 8) and the five colors (`color`, `accentColor`, `pillBg`, `pillText`, `pillBorder`). An operator with `catalog.write` MUST be able to save the whole presentation with `PUT /api/v1/admin/catalog/recipe-content/:key/presentation?market=`; without it the fields MUST be read-only and there MUST be no save button. When the API refuses with `recipe_presentation_invalid`, the page MUST mark each listed field as invalid, keep the typed values and name the fields in the message.
+The **Apresentação** tab of the product page MUST show the stored presentation of the product in its market: short name (`tag`, 1 to 40 characters, the store tab and plan chip label), title, tagline, resume, highlights (one input each, 1 to 8) and the five colors (`color`, `accentColor`, `pillBg`, `pillText`, `pillBorder`). An operator with `catalog.write` MUST be able to save the whole presentation with `PUT /api/v1/admin/catalog/products/:productId/content/presentation`; without it the fields MUST be read-only and there MUST be no save button. When the API refuses with `recipe_presentation_invalid`, the page MUST mark each listed field as invalid, keep the typed values and name the fields in the message.
 
 #### Scenario: Seeded presentation
 
-- **WHEN** an operator opens the BR `beef` recipe and the API returns its presentation
-- **THEN** the section shows its short name, title, tagline, resume, one input per highlight and the five colors
+- **WHEN** an operator opens the BR `beef` product and the API returns its presentation
+- **THEN** the tab shows its short name, title, tagline, resume, one input per highlight and the five colors
 
 #### Scenario: Save a presentation
 
 - **WHEN** an operator edits the tagline and saves
-- **THEN** the page sends the whole presentation to the presentation route of that market and shows a success message
+- **THEN** the page sends the whole presentation to the presentation route of that product and shows a success message
 
 #### Scenario: Invalid color refused
 
@@ -27,93 +27,8 @@ The recipe page MUST show a section "Apresentação na loja" with the stored pre
 
 #### Scenario: Recipe without presentation
 
-- **WHEN** the recipe has no stored presentation
-- **THEN** the section starts empty and says the variations of the recipe cannot be activated until it is saved
-
-### Requirement: Recipes menu lists the recipes of a market
-
-The panel MUST show a **Receitas** item in the Loja group of the menu for admin, operator and readonly, opening `/catalog/recipes`. The list MUST use the same market filter as Produtos, limited to the session's markets, and show for each registered recipe its name and key, its active and total variations, whether it has an image and its label status. It MUST offer the quick filters **Sem imagem** and **Rótulo incompleto**, the latter also matching recipes without a label.
-
-#### Scenario: Recipes of BR
-
-- **WHEN** a readonly session opens **Receitas** with BR recipes `beef` (2 of 3 variations active, with image) and `senior-lamb` (no variations, no image)
-- **THEN** the list shows both recipes with their names and keys, "2/3" and "0/0" variations, and the image and label states
-
-#### Scenario: Quick filter
-
-- **WHEN** an operator turns on **Sem imagem**
-- **THEN** only `senior-lamb` stays on the list
-
-### Requirement: Operator registers a recipe
-
-A session with `catalog.write` MUST see **Nova receita**, which opens a dialog with **Nome** and **Chave**. The key MUST be filled from the name as a lowercase slug until the operator edits it, and the dialog MUST say the key cannot change later. API refusals (`recipe_key_taken`, `recipe_key_invalid`, `recipe_name_invalid`) MUST appear in Portuguese inside the dialog, keeping what was typed. After registering, the panel MUST open the recipe page. Readonly MUST NOT see **Nova receita**.
-
-#### Scenario: Register Sênior Cordeiro
-
-- **WHEN** an operator types the name "Sênior Cordeiro" and saves
-- **THEN** the panel sends the key `senior-cordeiro` with that name for the selected market and opens `/catalog/recipes/BR/senior-cordeiro`
-
-#### Scenario: Key taken
-
-- **WHEN** the API answers 409 `recipe_key_taken`
-- **THEN** the dialog says a recipe with that key already exists in the market and keeps the name and key
-
-### Requirement: Recipe page stands on its own
-
-The recipe page MUST live at `/catalog/recipes/:market/:recipeKey`, independent of any product. It MUST show the recipe name, key and market, and list every variation that uses the key with its name or SKU, its product and a link to the product. Without variations, it MUST explain that a variation is linked through its **Receita (conteúdo)** field. A session with `catalog.write` MUST see **Renomear** and, only when no variation uses the recipe, **Excluir receita**, which asks for confirmation and returns to the list.
-
-#### Scenario: Content page names the sharing variations
-
-- **WHEN** an operator opens the page of `beef` in BR, used by "Beef 300g" and "Beef 500g" of Flavors BR and by "Bovino" of another product
-- **THEN** the page says the market is BR and the recipe is `beef`, and lists the three variations with their product names and links
-
-#### Scenario: Unused recipe can be deleted
-
-- **WHEN** an operator opens `senior-lamb`, which no variation uses, and confirms **Excluir receita**
-- **THEN** the panel sends the delete and returns to the list without `senior-lamb`
-
-#### Scenario: Recipe in use has no delete
-
-- **WHEN** an operator opens `beef`, which variations use
-- **THEN** the page shows **Renomear** and no **Excluir receita**
-
-### Requirement: Variation opens its recipe content page
-
-The variation table MUST show each variation's recipe key. For a saved variation that has one, the row MUST offer "Conteúdo", which opens the recipe content of the product's market in the product side panel; the panel MUST link to `/catalog/recipes/:market/:recipeKey`. A variation without a recipe key MUST say it has no linked recipe and MUST NOT offer content.
-
-#### Scenario: Link to the recipe page
-
-- **WHEN** a BR product detail loads a variation with the recipe key `turkey` and the operator clicks "Conteúdo"
-- **THEN** the side panel opens with the BR recipe `turkey` and links to `/catalog/recipes/BR/turkey`
-
-#### Scenario: Variation without a recipe
-
-- **WHEN** a product detail loads a variation whose recipe key is null
-- **THEN** its row says it has no linked recipe and has no content action
-
-### Requirement: Variation dialog sets the recipe key
-
-The variation dialog MUST have a **Receita (conteúdo)** select listing the recipes registered in the product's market as name and key, plus **Sem receita**. It MUST explain that variations with the same recipe share image and label, and it MUST offer to register a missing recipe inside the dialog instead of linking to **Receitas**. A new variation MUST start on the recipe whose key equals its suggested flavor slug when one is registered, otherwise on **Sem receita**. The saved value MUST be sent as `recipeKey`, **Sem receita** as `null`. A 422 `recipe_not_registered` MUST appear in the dialog.
-
-#### Scenario: Unlinking a variation
-
-- **WHEN** an operator picks **Sem receita** for the inactive variation SKU 3000 and saves
-- **THEN** the PATCH sends `recipeKey` null and the row says it has no linked recipe
-
-#### Scenario: Registered recipes only
-
-- **WHEN** an operator opens the dialog in a BR product and BR has the recipes `beef` and `senior-beef`
-- **THEN** the select offers "Sem receita", `beef` and `senior-beef` with their names, and no free text
-
-#### Scenario: Recipe removed meanwhile
-
-- **WHEN** the API refuses the save with 422 `recipe_not_registered`
-- **THEN** the dialog says the recipe is no longer registered in the market and keeps the other fields
-
-#### Scenario: No link that leaves the dialog
-
-- **WHEN** an operator opens the dialog in a BR product
-- **THEN** the field hint has no link to **Receitas**, so registering a recipe never discards the dialog
+- **WHEN** the product has no stored presentation
+- **THEN** the tab starts empty and says the variations of the product cannot be activated until it is saved
 
 ### Requirement: Panel checks the image before sending
 
@@ -131,12 +46,12 @@ The panel MUST read the chosen file's type and pixel size before uploading. When
 
 ### Requirement: Content errors appear on the content page
 
-The panel MUST show the API refusals (`recipe_image_invalid`, `recipe_content_in_use`) in Portuguese inside the card that triggered them, keep the stored content on screen and keep the form values the operator typed.
+The panel MUST show the API refusals (`recipe_image_invalid`, `recipe_content_in_use`) in Portuguese inside the tab that triggered them, keep the stored content on screen and keep the form values the operator typed.
 
 #### Scenario: Removing the image of an active recipe
 
 - **WHEN** an operator confirms **Remover imagem** and the API answers 409 `recipe_content_in_use`
-- **THEN** the Imagem card says the image cannot be removed while a variation of that flavor is active, and the image stays on screen
+- **THEN** the **Imagens** tab says the image cannot be removed while a variation of this product is active, and the image stays on screen
 
 ### Requirement: Label form edits every label field
 
@@ -181,14 +96,14 @@ A session without `catalog.write` MUST see the image, the label and their status
 
 ### Requirement: Recipe content sections are addressable
 
-The life stage, store presentation, home image, plan thumbnail and label sections MUST carry the stable anchors `fase`, `apresentacao`, `imagem`, `miniatura` and `rotulo`, on the recipe page and in the product side panel. Opening the recipe page with one of these anchors in the URL MUST scroll to that section once the content loads.
+The life stage, store presentation, home image, plan thumbnail and label sections MUST carry the stable anchors `fase`, `apresentacao`, `imagem`, `miniatura` and `rotulo` on the product page. Opening the product page with one of these anchors in the URL MUST open the tab that holds the section and scroll to it once the product loads.
 
 #### Scenario: Link to the label
 
-- **WHEN** an operator opens `/catalog/recipes/US/beef#rotulo`
-- **THEN** the page scrolls to the label section after the recipe loads
+- **WHEN** an operator opens `/catalog/products/42#rotulo`
+- **THEN** the page opens the **Rótulo** tab after the product loads
 
 #### Scenario: Unknown anchor
 
 - **WHEN** the URL carries `#outra-coisa`
-- **THEN** the page opens at the top as without an anchor
+- **THEN** the page opens on **Dados gerais** as without an anchor

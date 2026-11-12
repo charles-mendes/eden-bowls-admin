@@ -47,7 +47,7 @@ The list and the product detail MUST describe the same `active` flag, which is t
 
 ### Requirement: Detail mutations wait until the product loads
 
-On product detail, **Salvar**, **Publicar**, **Desativar**, **Sincronizar Stripe**, and **Excluir produto** MUST NOT be rendered until the product GET has resolved. A session without `catalog.write` MUST NOT see save, publish, deactivate, or delete. A session without `catalog.sync` MUST NOT see **Sincronizar Stripe**. After the product has loaded, a publish of that loaded draft MUST send that product's plan country and `active` true, and MUST NOT include `variants` or plan days. **Salvar** MUST stay disabled while the loaded product is published. **Desativar** is the control that unpublishes a loaded published product (`PATCH` with `active` false). **Excluir produto** MUST appear only when the loaded product has `canDelete` true.
+On product detail, **Salvar**, **Publicar**, **Desativar**, **Sincronizar Stripe**, and **Excluir produto** MUST NOT be rendered until the product GET has resolved. A session without `catalog.write` MUST NOT see save, publish, deactivate, or delete. A session without `catalog.sync` MUST NOT see **Sincronizar Stripe**. After the product has loaded, a publish of that loaded draft MUST send `active` true and MUST NOT include `variants`, plan country, code or plan days. **Desativar** is the control that unpublishes a loaded published product (`PATCH` with `active` false). **Excluir produto** MUST appear only when the loaded product has `canDelete` true.
 
 #### Scenario: Publish is absent while the product is loading
 
@@ -62,8 +62,8 @@ On product detail, **Salvar**, **Publicar**, **Desativar**, **Sincronizar Stripe
 #### Scenario: Publish uses the loaded product
 
 - **WHEN** a session with `catalog.write` publishes a loaded draft
-- **THEN** the PATCH body includes that product's plan country and `active` true
-- **AND** the PATCH body does not include `variants` or `planDays`
+- **THEN** the PATCH body is `active` true
+- **AND** the PATCH body does not include `variants`, `planCountry` or `planDays`
 
 #### Scenario: Published linked product deactivates instead of deleting
 
@@ -127,36 +127,6 @@ On a loaded product detail, each saved variation MUST be shown as text, not as a
 - **WHEN** a session with only `catalog.read` opens a loaded product detail that has a saved variation
 - **THEN** the row does not show **Editar**
 
-### Requirement: Variation dialog saves one variation
-
-**Editar** MUST open a dialog filled with that variation’s SKU, name, flavor, slug, aliases, and price. **Adicionar variação** MUST open the same dialog empty. Confirming an existing variation MUST send `PATCH` with `variants` containing only that item, including its id, and MUST omit `planCountry` and `planDays`. Confirming a new variation MUST send `PATCH` with `variants` containing only that item and without an id, and MUST omit `planCountry` and `planDays`. A new variation MUST be rejected in the dialog when both name and SKU are empty, without a request. Cancel MUST close the dialog without a product `PATCH` and without deleting a recipe created from the dialog; a recipe `POST` already confirmed in the dialog stays. After a successful save the dialog MUST close and the table MUST show the saved variation. The slug field MUST stay locked when the variation already has an id and a slug.
-
-#### Scenario: Edit sends one existing variation
-
-- **WHEN** a session with `catalog.write` edits the price of a saved variation on a draft and confirms the dialog
-- **THEN** the PATCH body is `variants` with that single variation, including its id and the new price
-- **AND** the body does not include `planCountry` or `planDays`
-
-#### Scenario: Add sends one variation without an id
-
-- **WHEN** a session with `catalog.write` adds a variation with a name or SKU and confirms the dialog
-- **THEN** the PATCH body is `variants` with that single variation and without an id
-
-#### Scenario: Empty new variation does not send a request
-
-- **WHEN** a session with `catalog.write` confirms a new variation that has neither name nor SKU
-- **THEN** no PATCH is sent and the dialog stays open
-
-#### Scenario: Cancel discards the dialog
-
-- **WHEN** a session with `catalog.write` opens **Editar** and cancels
-- **THEN** no PATCH is sent and the table still shows the variation as it was loaded
-
-#### Scenario: Cancel after creating a recipe
-
-- **WHEN** a writer creates the recipe `turkey` in the dialog and then cancels the dialog
-- **THEN** no product PATCH and no recipe DELETE are sent, and the recipe `turkey` remains in the market recipe list with 0 variations
-
 ### Requirement: Variation dialog stays open when save fails
 
 When the variation PATCH fails, the dialog MUST stay open, the fields MUST keep what the operator typed, and the error MUST be shown in the dialog.
@@ -210,194 +180,130 @@ The system MUST keep at most the 50 most recent runs per market. Storing a new r
 
 ### Requirement: Missing presentation blocks activation in the product page
 
-An inactive variation whose recipe has no stored presentation (`recipePresentationReady: false`) MUST list "apresentação" among its pending items, and a refused activation with `presentation` in `missing` MUST name the missing store presentation.
+An inactive variation of a product without a stored presentation MUST list "apresentação" among its pending items, and a refused activation with `presentation` in `missing` MUST name the missing store presentation and offer to open the "Apresentação" tab.
 
 #### Scenario: Activation refused without presentation
 
 - **WHEN** the API refuses an activation with `missing: ['presentation']`
 - **THEN** the page says the recipe's store presentation is missing
 
-### Requirement: Variation dialog offers to create the missing recipe
+### Requirement: Unsaved product fields are visible
 
-The field "Receita (conteúdo)" MUST offer "Criar receita <chave>" when the candidate key is not a recipe of the market saved on the product. The candidate is the recipe key recorded on the variation when it is no longer registered, otherwise the flavor slug, otherwise the key derived from the flavor. The offer MUST NOT appear when the candidate is empty or registered, or when a registered recipe is selected.
+**Salvar** in the "Dados gerais" tab MUST send name, aliases, short label and life stage, and MUST NOT send `variants`, plan country or code. It MUST stay available while the product is published, since these fields apply to every variation. When a field on screen differs from the loaded product, the page MUST say so and that it must be saved before leaving, and closing the browser tab MUST warn. Saving the product or reloading it MUST clear that warning, except the reload after a save in another tab, which MUST keep the typed fields and their warning.
 
-#### Scenario: Registered recipe selected
+#### Scenario: Product save omits variations
 
-- **WHEN** a writer selects `beef` for a variation whose flavor slug is `pato`
-- **THEN** there is no offer to create a recipe
+- **WHEN** a session with `catalog.write` renames a loaded product and saves
+- **THEN** the PATCH body includes the name and does not include `variants`, `planCountry` or the code
 
-#### Scenario: New flavor without a recipe
+#### Scenario: Changed field warns before leaving
 
-- **WHEN** a writer types the flavor "Turkey" in a new variation of a BR product and the BR market has no recipe `turkey`
-- **THEN** the field "Receita (conteúdo)" stays on "Sem receita" and offers "Criar receita turkey"
+- **WHEN** a session with `catalog.write` changes the short label of a loaded product and has not saved
+- **THEN** the page says the general data is changed and must be saved before leaving
 
-#### Scenario: Flavor with a registered recipe
+### Requirement: Operator creates a recipe product
 
-- **WHEN** the suggested key is `beef` and the BR market has the recipe `beef`
-- **THEN** the field selects `beef` and there is no offer to create a recipe
+A session with `catalog.write` MUST create a product with **Nome**, **Mercado**, **Código** and **Fase de vida**. The code MUST be filled from the name as a lowercase slug until the operator edits it, and the dialog MUST say code and market cannot change later. API refusals (`product_code_taken`, `recipe_key_invalid`) MUST appear in Portuguese inside the dialog, keeping what was typed. After creating, the panel MUST open the new product's detail.
 
-#### Scenario: Existing variation without a recipe
+#### Scenario: Create Receita de Cordeiro
 
-- **WHEN** a writer edits a saved variation with flavor slug `lamb`, no recipe linked and no recipe `lamb` in the market
-- **THEN** the field offers "Criar receita lamb"
+- **WHEN** a writer types "Receita de Cordeiro" for BR with stage Adulto and saves
+- **THEN** the panel sends name, `planCountry` BR, code `receita-de-cordeiro` and `lifeStage` adult, and opens the product detail
 
-#### Scenario: Recorded recipe no longer registered
+#### Scenario: Code taken
 
-- **WHEN** a writer edits a saved variation with flavor slug `lamb` and the recorded recipe key `lamb-classic`, which the market no longer has
-- **THEN** the field offers "Criar receita lamb-classic", not `lamb`
+- **WHEN** the API answers 409 `product_code_taken`
+- **THEN** the dialog says the market already has a product with that code and keeps the typed values
 
-### Requirement: Recipe created from the dialog is selected in the variation
+### Requirement: Code and market are read-only after creation
 
-The create form MUST start with the name from the flavor, the key from the candidate and the life stage of the variation, all editable. It MUST say the recipe is registered at once and stays if the variation is not saved. "Cadastrar e vincular", or Enter in its fields, MUST send `POST /api/v1/admin/catalog/recipe-content?market=<saved plan country>` with key, name and life stage, then select the recipe without saving the variation.
+The product detail MUST show the code and the market as text, never as inputs, for every session.
 
-#### Scenario: Create and select
+#### Scenario: Writer opens a draft
 
-- **WHEN** a writer confirms "Cadastrar e vincular" with name "Turkey", key `turkey` and stage Adulto on a BR product
-- **THEN** the page sends `{ key: 'turkey', name: 'Turkey', lifeStage: 'adult' }` to the BR recipe route, the field shows "Turkey · turkey" selected and no product PATCH is sent
+- **WHEN** a writer opens a loaded draft product
+- **THEN** code and market are shown as text and no request can change them
 
-#### Scenario: Enter in the create form
+### Requirement: Product page groups the recipe in tabs
 
-- **WHEN** a writer presses Enter in the recipe name field of the create form
-- **THEN** the page sends the recipe POST and no product PATCH
+The product detail MUST have the tabs **Dados gerais** (name, code, market, status, aliases, short label, life stage), **Apresentação**, **Imagens** (home image and plan thumbnail), **Rótulo** and **Variações**. Each content tab MUST behave as the content sections of `operations/catalog-recipe-content` and save to the product's content routes. Changing the life stage MUST say it applies to every variation of the product.
 
-#### Scenario: Saving the variation links the recipe
+#### Scenario: Open the label tab
 
-- **WHEN** the writer then saves the variation dialog
-- **THEN** the variation PATCH carries `recipeKey: 'turkey'`
+- **WHEN** a writer opens **Rótulo** on the BR `beef` product
+- **THEN** the tab shows the BR label of the product with its status and missing items
 
-#### Scenario: Created recipe drives the life stage
+#### Scenario: Readonly tabs
 
-- **WHEN** the created recipe has the stage Filhote
-- **THEN** the life stage field of the variation shows Filhote and is locked, as for any linked recipe
+- **WHEN** a `readonly` user opens any tab
+- **THEN** the content is shown without save, upload or remove controls
 
-#### Scenario: Unsaved plan country
+### Requirement: Pending recipe items open their tab
 
-- **WHEN** a draft saved as BR has the plan country changed to US on screen and not saved, and a writer creates a recipe from the dialog
-- **THEN** the recipe POST goes to the BR market
-
-### Requirement: Recipe creation failures stay inside the dialog
-
-A refused creation MUST keep the variation dialog and the typed variation fields open and MUST show the message in Portuguese. When the API answers `recipe_key_taken`, the page MUST reload the market recipes and select the existing recipe of that key.
-
-#### Scenario: Invalid key
-
-- **WHEN** the API answers 422 `recipe_key_invalid`
-- **THEN** the dialog stays open with the variation fields kept and says the key uses only lowercase letters, numbers and hyphens
-
-#### Scenario: Key registered meanwhile
-
-- **WHEN** the API answers 409 `recipe_key_taken` for `turkey` and the reloaded market list has `turkey`
-- **THEN** the field selects `turkey` and the dialog says the recipe already existed and was selected
-
-### Requirement: Product page opens the recipe content in a side panel
-
-For a saved variation linked to a recipe, the "Conteúdo" action MUST open a side panel over the product page with the life stage, store presentation, home image, plan thumbnail and label sections of that recipe in the market saved on the product, never an unsaved plan country. The sections MUST behave as on the recipe page and be read-only without `catalog.write`. The panel MUST link to the recipe page, MUST NOT offer rename or delete, and MUST keep keyboard focus inside it while open.
-
-#### Scenario: Writer opens the content of a variation
-
-- **WHEN** a writer clicks "Conteúdo" on a BR variation linked to `beef`
-- **THEN** a side panel opens with the five content sections of the BR recipe `beef`, a link to `/catalog/recipes/BR/beef` and no rename or delete action
-
-#### Scenario: Readonly opens the content
-
-- **WHEN** a `readonly` user opens the panel
-- **THEN** every section is shown without save, upload or remove controls
-
-#### Scenario: Variation without a recipe
-
-- **WHEN** a variation has no recipe linked
-- **THEN** its row has no "Conteúdo" action
-
-#### Scenario: Unsaved plan country
-
-- **WHEN** a draft saved as BR has the plan country changed to US on screen and a writer opens "Conteúdo" of a variation linked to `beef`
-- **THEN** the panel loads and saves the BR recipe `beef`
-
-#### Scenario: Focus stays in the panel
-
-- **WHEN** the panel is open and the writer presses Tab on its last control
-- **THEN** focus moves to the first control of the panel, not to the product page behind it
-
-### Requirement: Recipe hints of the product page point to the side panel
-
-Texts of the product page that send the operator to edit recipe content MUST point to the side panel instead of the recipe page. This covers the life stage hint of a linked variation, the note after creating a recipe in the variation dialog, and the activation refusal for missing label data or presentation. The life stage hint MUST offer to open the panel on the life stage section.
-
-#### Scenario: Life stage locked by the recipe
-
-- **WHEN** a writer opens the dialog of a variation linked to `beef`
-- **THEN** the life stage hint says the stage comes from the recipe and offers "Editar fase", which closes the dialog and opens the panel on the life stage section
-
-#### Scenario: Activation refused for missing presentation
-
-- **WHEN** the API refuses an activation with `missing: ['presentation']`
-- **THEN** the message names the store presentation in the recipe content and does not say "na página da receita"
-
-### Requirement: Side panel says the content is shared
-
-The top of the panel MUST state that the content applies to every variation of the market linked to the recipe key, and that changing the life stage changes all of them. It MUST list those variations with their product, including variations of other products.
-
-#### Scenario: Recipe shared by two products
-
-- **WHEN** the recipe `beef` is linked to "Beef 300g" of product A and "Beef 600g" of product B
-- **THEN** the panel lists both variations with their product names and says the content applies to 2 variations
-
-### Requirement: Product page reflects what the side panel saved
-
-After each save in the panel and when the panel closes, the product page MUST reload the product. The content badges, the life stage of linked variations and the pending items MUST then show the saved content.
-
-#### Scenario: Image saved from the panel
-
-- **WHEN** a writer saves the home image of `beef` in the panel and closes it
-- **THEN** the row of each variation linked to `beef` shows "Imagem cadastrada" and no longer lists "foto" as pending
-
-#### Scenario: Life stage changed from the panel
-
-- **WHEN** a writer saves the stage Filhote in the panel
-- **THEN** the variations linked to the recipe show the line Filhote after the reload
-
-### Requirement: Closing the panel with unsaved content asks first
-
-Closing the panel by the close button, Escape or a click outside MUST ask for confirmation when the presentation or label form holds changes that were not saved, or a chosen home image or plan thumbnail was not saved. Declining MUST keep the panel and the typed values.
-
-#### Scenario: Unsaved label
-
-- **WHEN** a writer types an ingredient in the label and presses Escape
-- **THEN** the page asks to discard the changes, and declining keeps the panel open with the ingredient
-
-#### Scenario: Nothing changed
-
-- **WHEN** a writer opens the panel and closes it without editing
-- **THEN** the panel closes without asking
-
-#### Scenario: Life stage picked and not saved
-
-- **WHEN** a writer picks Filhote in the life stage select without "Salvar fase" and closes the panel
-- **THEN** the panel closes without asking and the stage stays as saved, as on the recipe page
-
-### Requirement: Recipe pending items open the missing section
-
-For an inactive variation linked to a recipe, the pending items "foto", "rótulo" and "apresentação" MUST be actions that open the side panel scrolled to the home image, label and store presentation sections. The items "preço", "Stripe" and "NCM", and the recipe items of a variation without a recipe, MUST stay plain text.
+For an inactive variation, the pending items "foto", "rótulo" and "apresentação" MUST be actions that open the **Imagens**, **Rótulo** and **Apresentação** tabs. The items "preço", "Stripe" and "NCM" MUST stay plain text.
 
 #### Scenario: Missing presentation
 
-- **WHEN** a writer clicks "apresentação" in the pending items of a variation linked to `beef`
-- **THEN** the panel opens on the store presentation section of `beef`
+- **WHEN** a writer clicks "apresentação" in the pending items of a variation
+- **THEN** the **Apresentação** tab opens
 
 #### Scenario: Missing price
 
 - **WHEN** a variation lists "preço" as pending
 - **THEN** "preço" is plain text and opens nothing
 
-### Requirement: Unsaved product fields are visible
+### Requirement: Leaving a content tab with unsaved changes asks first
 
-**Salvar** on product detail MUST send the plan country and MUST NOT send `variants`, plan days or large-pack limit. When the country on screen differs from the loaded product, the page MUST say so and that it must be saved before leaving, and closing the browser tab MUST warn. Saving the product or reloading it MUST clear that warning, except the reload after a save in the recipe side panel, which MUST keep the typed country and its warning.
+Switching tabs or leaving the page MUST ask for confirmation when the presentation or label form holds unsaved changes, or a chosen home image or plan thumbnail was not saved. Declining MUST keep the tab and the typed values.
 
-#### Scenario: Product save omits variations
+#### Scenario: Unsaved label
 
-- **WHEN** a session with `catalog.write` saves the plan country on a loaded draft
-- **THEN** the PATCH body includes the plan country and does not include `variants` or `planDays`
+- **WHEN** a writer types an ingredient in **Rótulo** and clicks **Variações**
+- **THEN** the page asks to discard the changes, and declining keeps **Rótulo** open with the ingredient
 
-#### Scenario: Changed field warns before leaving
+#### Scenario: Nothing changed
 
-- **WHEN** a session with `catalog.write` changes the country of a loaded draft and has not saved
-- **THEN** the page says the country is changed and must be saved before leaving
+- **WHEN** a writer opens **Rótulo** and switches tab without editing
+- **THEN** the tab changes without asking
+
+### Requirement: Variation dialog saves one pack
+
+**Editar** MUST open a dialog filled with that variation's SKU, name, weight, price, NCM, origin and readiness confirmations, and show the product's flavor, code and life stage as text. **Adicionar variação** MUST open the same dialog empty. Confirming MUST send `PATCH` with `variants` containing only that item (with its id when it exists) and MUST NOT send `recipeKey`, flavor, slug, aliases, life stage, short label or plan country. A new variation MUST be rejected in the dialog when both name and SKU are empty, without a request. A 422 `variation_weight_taken` MUST appear in the dialog. Cancel MUST close the dialog without a request. After a successful save the dialog MUST close and the table MUST show the saved variation.
+
+#### Scenario: Edit sends one existing variation
+
+- **WHEN** a session with `catalog.write` edits the price of a saved variation on a draft and confirms the dialog
+- **THEN** the PATCH body is `variants` with that single variation, its id and the new price, and no flavor or recipe field
+
+#### Scenario: Weight already on the product
+
+- **WHEN** the API refuses a new 300 g variation with 422 `variation_weight_taken`
+- **THEN** the dialog stays open with the typed fields and says the product already has a 300 g variation
+
+#### Scenario: Cancel discards the dialog
+
+- **WHEN** a session with `catalog.write` opens **Editar** and cancels
+- **THEN** no PATCH is sent and the table still shows the variation as it was loaded
+
+### Requirement: Product list shows the recipe state
+
+The product list MUST show, for each product, its code, life stage, active and total variations, whether it has a home image and its label status. It MUST offer the quick filters **Sem imagem** and **Rótulo incompleto**, the latter also matching products without a label.
+
+#### Scenario: Products of BR
+
+- **WHEN** a readonly session opens Produtos with BR `beef` (2 of 2 variations active, with image) and `senior-lamb` (draft, no variations, no image)
+- **THEN** the list shows both with their codes, "2/2" and "0/0" variations, and the image and label states
+
+#### Scenario: Quick filter
+
+- **WHEN** an operator turns on **Sem imagem**
+- **THEN** only `senior-lamb` stays on the list
+
+### Requirement: Old recipe links open the product
+
+Opening `/catalog/recipes/:market/:recipeKey` MUST look up the product of that market and code and redirect to its detail, keeping a section anchor. Opening `/catalog/recipes` MUST redirect to Produtos. An unknown code MUST say the recipe no longer exists and link to Produtos.
+
+#### Scenario: Bookmark of a recipe page
+
+- **WHEN** an operator opens `/catalog/recipes/BR/beef#rotulo`
+- **THEN** the panel opens the BR `beef` product on the **Rótulo** tab
