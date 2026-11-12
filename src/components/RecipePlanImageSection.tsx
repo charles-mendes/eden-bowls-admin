@@ -12,13 +12,14 @@ const SIZES_TEXT = RECIPE_PLAN_IMAGE_SIZES.map((side) => `${side} × ${side} px`
 
 // Package thumbnail of the plan flavor picker, apart from the home banner. Optional: without it the plan
 // shows the banner image.
-export function RecipePlanImageSection({ token, market, recipeKey, content, canWrite, onSaved }: {
+export function RecipePlanImageSection({ token, market, recipeKey, content, canWrite, onSaved, onDirtyChange }: {
   token: string | null
   market: string
   recipeKey: string
   content: RecipeContent
   canWrite: boolean
   onSaved: (content: RecipeContent) => void
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
@@ -28,6 +29,12 @@ export function RecipePlanImageSection({ token, market, recipeKey, content, canW
   useEffect(() => () => {
     if (pendingImage) URL.revokeObjectURL(pendingImage.previewUrl)
   }, [pendingImage])
+
+  // A chosen thumbnail that is not saved yet is an unsaved change.
+  const dirty = pendingImage != null
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
 
   const clearPending = () => {
     setPendingImage(null)
@@ -91,6 +98,7 @@ export function RecipePlanImageSection({ token, market, recipeKey, content, canW
 
   return (
     <Section
+      id="miniatura"
       title="Miniatura do plano"
       description={`Embalagem no seletor de sabores da tela Plano. PNG, JPEG ou WebP quadrado com ${SIZES_TEXT} e até 5 MB. Opcional: sem ela, o plano usa a imagem da tela inicial.`}
     >

@@ -122,6 +122,11 @@ export function listToParagraphs(items: string[]) {
   return items.join('\n\n')
 }
 
+// Anchors of the recipe content sections, the same on the recipe page and in the product side panel.
+export const RECIPE_SECTION_ANCHORS = ['fase', 'apresentacao', 'imagem', 'miniatura', 'rotulo'] as const
+
+export type RecipeSectionAnchor = typeof RECIPE_SECTION_ANCHORS[number]
+
 export function recipePagePath(market: string, recipeKey: string) {
   return `/catalog/recipes/${encodeURIComponent(market)}/${encodeURIComponent(recipeKey)}`
 }

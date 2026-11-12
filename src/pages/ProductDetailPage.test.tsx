@@ -1,10 +1,27 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ProductDetailPage } from './ProductDetailPage'
-import { adminUser, jsonResponse, operatorWriteUser, productDetail, readonlyUser, recipeImageUrl } from '../test/fixtures'
+import { adminUser, jsonResponse, operatorWriteUser, productDetail, readonlyUser, recipeContent, recipeImageUrl, recipeList } from '../test/fixtures'
 import { findCall, installAdminFetchMock, type FetchCall } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
+
+// jsdom does not decode images, so each test file name maps to a pixel size.
+const imageSizes = new Map<string, { width: number; height: number }>()
+
+vi.mock('../lib/imageUpload', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/imageUpload')>()
+  const size = (file: File) => {
+    const found = imageSizes.get(file.name)
+    if (!found) throw new Error('unknown test image')
+    return found
+  }
+  return {
+    ...actual,
+    checkRecipeImage: (file: File) => actual.checkRecipeImage(file, async () => size(file)),
+    checkRecipePlanImage: (file: File) => actual.checkRecipePlanImage(file, async () => size(file)),
+  }
+})
 
 function hangProductGet(calls: FetchCall[], fetchMock: ReturnType<typeof installAdminFetchMock>['fetchMock']) {
   const impl = fetchMock.getMockImplementation()
@@ -207,7 +224,7 @@ describe('ProductDetailPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Ativar variação Frango 1kg' }))
 
-    expect(await screen.findByText('Ativação recusada. Falta: preço no Stripe, foto definitiva na loja, dados de rótulo na página da receita.')).toBeInTheDocument()
+    expect(await screen.findByText('Ativação recusada. Falta: preço no Stripe, foto definitiva na loja, dados de rótulo no conteúdo da receita.')).toBeInTheDocument()
   })
 
   it('names the missing store presentation when activation is refused', async () => {
@@ -223,10 +240,11 @@ describe('ProductDetailPage', () => {
     })
     renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
 
-    expect(await screen.findByText(/Pendente: .*apresentação/)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Abrir apresentação de Frango 1kg' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Ativar variação Frango 1kg' }))
 
-    expect(await screen.findByText('Ativação recusada. Falta: apresentação na loja na página da receita.')).toBeInTheDocument()
+    expect(await screen.findByText('Ativação recusada. Falta: apresentação na loja no conteúdo da receita.')).toBeInTheDocument()
+    expect(screen.queryByText(/na página da receita/)).not.toBeInTheDocument()
   })
 
   describe('large-pack limit', () => {
@@ -760,7 +778,8 @@ describe('ProductDetailPage', () => {
     expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
   })
 
-  it('shows the stored image state and links each variation to its recipe content', async () => {
+  it('shows the stored image state and opens the recipe content of each variation', async () => {
+    const user = userEvent.setup()
     seedAuth()
     installAdminFetchMock(readonlyUser, {
       product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeImageUrl }] },
@@ -768,7 +787,9 @@ describe('ProductDetailPage', () => {
     renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
 
     expect(await screen.findByText('Imagem cadastrada')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Conteúdo da receita de Frango 1kg' })).toHaveAttribute('href', '/catalog/recipes/BR/turkey')
+    await user.click(screen.getByRole('button', { name: 'Conteúdo da receita de Frango 1kg' }))
+    const panel = await screen.findByRole('dialog', { name: 'Conteúdo da receita Frango' })
+    expect(within(panel).getByRole('link', { name: 'Abrir página da receita' })).toHaveAttribute('href', '/catalog/recipes/BR/turkey')
   })
 
   it('hides the image confirmation when the flavor has a stored image', async () => {
@@ -847,12 +868,12 @@ describe('ProductDetailPage', () => {
       await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
 
       expect(await screen.findByText('Sem receita vinculada')).toBeInTheDocument()
-      expect(screen.queryByRole('link', { name: /Conteúdo da receita/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Conteúdo da receita/ })).not.toBeInTheDocument()
       const patch = calls.find((call) => call.method === 'PATCH')
       expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0].recipeKey).toBeNull()
     })
 
-    it('offers only the recipes registered in the market, with a link to register more', async () => {
+    it('offers only the recipes registered in the market, without a link that leaves the dialog', async () => {
       const user = userEvent.setup()
       seedAuth()
       const { calls } = installAdminFetchMock(operatorWriteUser)
@@ -868,7 +889,8 @@ describe('ProductDetailPage', () => {
         'Sênior Cordeiro · senior-lamb',
         'Frango · turkey',
       ])
-      expect(screen.getByRole('link', { name: 'Cadastre em Receitas' })).toHaveAttribute('href', '/catalog/recipes?market=BR')
+      expect(screen.queryByRole('link', { name: 'Cadastre em Receitas' })).not.toBeInTheDocument()
+      expect(within(screen.getByRole('dialog')).queryByRole('link')).not.toBeInTheDocument()
       expect(calls.some((call) => call.path === '/api/v1/admin/catalog/recipe-content' && call.search === '?market=BR')).toBe(true)
     })
 
@@ -918,7 +940,490 @@ describe('ProductDetailPage', () => {
       renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
 
       expect(await screen.findByText('Sem receita vinculada')).toBeInTheDocument()
-      expect(screen.queryByRole('link', { name: /Conteúdo da receita/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Conteúdo da receita/ })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('recipe created from the dialog', () => {
+    const variant = productDetail.variants[0]
+    // The fixture type has no flavor slug; spreading a patch keeps it out of the excess-property check.
+    const productWith = (patch: Record<string, unknown>) => ({ ...productDetail, variants: [{ ...variant, ...patch }] })
+
+    function renderDetail(options: Parameters<typeof installAdminFetchMock>[1] = {}, user = operatorWriteUser) {
+      seedAuth()
+      const mock = installAdminFetchMock(user, options)
+      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+      return mock
+    }
+
+    async function addVariation(user: ReturnType<typeof userEvent.setup>, flavor: string) {
+      await user.click(await screen.findByRole('button', { name: 'Adicionar variação' }))
+      await screen.findByRole('option', { name: 'Carne · beef' })
+      await user.type(screen.getByLabelText('SKU'), 'PT-300')
+      await user.type(screen.getByLabelText('Sabor'), flavor)
+    }
+
+    const recipePosts = (calls: FetchCall[]) => calls.filter((call) => call.method === 'POST' && call.path === '/api/v1/admin/catalog/recipe-content')
+    const productPatches = (calls: FetchCall[]) => calls.filter((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
+
+    it('offers to create the recipe of a new flavor, and not of a registered one', async () => {
+      const user = userEvent.setup()
+      renderDetail()
+
+      await addVariation(user, 'Pato')
+      expect(screen.getByLabelText('Receita (conteúdo)')).toHaveValue('')
+      expect(screen.getByRole('button', { name: 'Criar receita pato' })).toBeInTheDocument()
+
+      await user.clear(screen.getByLabelText('Sabor'))
+      await user.type(screen.getByLabelText('Sabor'), 'Beef')
+      expect(screen.getByLabelText('Receita (conteúdo)')).toHaveValue('beef')
+      expect(screen.queryByRole('button', { name: /^Criar receita/ })).not.toBeInTheDocument()
+    })
+
+    it('offers no recipe while a registered recipe is selected', async () => {
+      const user = userEvent.setup()
+      renderDetail({ product: productWith({ flavorSlug: 'pato', recipeKey: null }) })
+
+      await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+      await screen.findByRole('option', { name: 'Carne · beef' })
+      expect(screen.getByRole('button', { name: 'Criar receita pato' })).toBeInTheDocument()
+      await user.selectOptions(screen.getByLabelText('Receita (conteúdo)'), 'beef')
+      expect(screen.queryByRole('button', { name: /^Criar receita/ })).not.toBeInTheDocument()
+    })
+
+    it('offers the flavor slug of a saved variation without a recipe', async () => {
+      const user = userEvent.setup()
+      renderDetail({ product: productWith({ flavorSlug: 'lamb', recipeKey: null }) })
+
+      await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+      expect(await screen.findByRole('button', { name: 'Criar receita lamb' })).toBeInTheDocument()
+    })
+
+    it('offers the recorded key that the market no longer has, not the flavor slug', async () => {
+      const user = userEvent.setup()
+      renderDetail({ product: productWith({ flavorSlug: 'lamb', recipeKey: 'lamb-classic' }) })
+
+      await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+      expect(await screen.findByRole('button', { name: 'Criar receita lamb-classic' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Criar receita lamb' })).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Criar receita lamb-classic' }))
+      expect(screen.getByLabelText('Chave da receita')).toHaveValue('lamb-classic')
+    })
+
+    it('registers the recipe in the market, selects it and links it only when the variation is saved', async () => {
+      const user = userEvent.setup()
+      const { calls } = renderDetail()
+
+      await addVariation(user, 'Pato')
+      await user.click(screen.getByRole('button', { name: 'Criar receita pato' }))
+      expect(screen.getByLabelText('Nome da receita')).toHaveValue('Pato')
+      expect(screen.getByLabelText('Chave da receita')).toHaveValue('pato')
+      expect(screen.getByLabelText('Fase da receita')).toHaveValue('adult')
+      expect(screen.getByText(/continua em Receitas mesmo que você não salve a variação/)).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Cadastrar e vincular' }))
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Receita (conteúdo)')).toHaveValue('pato')
+      })
+      expect(screen.getByRole('option', { name: 'Pato · pato' })).toBeInTheDocument()
+      expect(screen.getByRole('status')).toHaveTextContent('Receita cadastrada. Salve a variação para vincular.')
+      expect(recipePosts(calls)).toHaveLength(1)
+      expect(recipePosts(calls)[0].search).toBe('?market=BR')
+      expect(recipePosts(calls)[0].body).toEqual({ key: 'pato', name: 'Pato', lifeStage: 'adult' })
+      expect(productPatches(calls)).toHaveLength(0)
+      expect(screen.queryByRole('button', { name: /^Criar receita/ })).not.toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+      await screen.findByText('Variação adicionada.')
+      const patch = productPatches(calls)[0]
+      expect((patch.body as { variants: Array<Record<string, unknown>> }).variants[0]).toMatchObject({ recipeKey: 'pato' })
+    })
+
+    it('registers the recipe on Enter without saving the variation', async () => {
+      const user = userEvent.setup()
+      const { calls } = renderDetail()
+
+      await addVariation(user, 'Pato')
+      await user.click(screen.getByRole('button', { name: 'Criar receita pato' }))
+      await user.type(screen.getByLabelText('Nome da receita'), '{Enter}')
+
+      await waitFor(() => {
+        expect(recipePosts(calls)).toHaveLength(1)
+      })
+      expect(productPatches(calls)).toHaveLength(0)
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+    })
+
+    it('locks the line of the variation on the stage of the created recipe', async () => {
+      const user = userEvent.setup()
+      renderDetail()
+
+      await addVariation(user, 'Pato')
+      await user.click(screen.getByRole('button', { name: 'Criar receita pato' }))
+      await user.selectOptions(screen.getByLabelText('Fase da receita'), 'puppy')
+      await user.click(screen.getByRole('button', { name: 'Cadastrar e vincular' }))
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Linha')).toHaveValue('puppy')
+      })
+      expect(screen.getByLabelText('Linha')).toBeDisabled()
+    })
+
+    it('registers the recipe in the saved market while the plan country is changed and not saved', async () => {
+      const user = userEvent.setup()
+      const { calls } = renderDetail({}, adminUser)
+
+      await screen.findByText('BOWL-1')
+      await user.selectOptions(screen.getByLabelText('País do plano'), 'US')
+      await addVariation(user, 'Pato')
+      await user.click(screen.getByRole('button', { name: 'Criar receita pato' }))
+      expect(screen.getByText(/cadastrada agora no mercado BR/)).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Cadastrar e vincular' }))
+
+      await waitFor(() => {
+        expect(recipePosts(calls)).toHaveLength(1)
+      })
+      expect(recipePosts(calls)[0].search).toBe('?market=BR')
+    })
+
+    it('keeps the created recipe when the variation dialog is cancelled', async () => {
+      const user = userEvent.setup()
+      const { calls } = renderDetail()
+
+      await addVariation(user, 'Pato')
+      await user.click(screen.getByRole('button', { name: 'Criar receita pato' }))
+      await user.click(screen.getByRole('button', { name: 'Cadastrar e vincular' }))
+      await screen.findByRole('option', { name: 'Pato · pato' })
+      await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(productPatches(calls)).toHaveLength(0)
+      expect(calls.some((call) => call.method === 'DELETE' && call.path.includes('/recipe-content'))).toBe(false)
+    })
+
+    it('shows a refused key inside the dialog and keeps the variation fields', async () => {
+      const user = userEvent.setup()
+      renderDetail()
+
+      await addVariation(user, 'Pato')
+      await user.click(screen.getByRole('button', { name: 'Criar receita pato' }))
+      await user.clear(screen.getByLabelText('Chave da receita'))
+      await user.type(screen.getByLabelText('Chave da receita'), 'Pato X')
+      await user.click(screen.getByRole('button', { name: 'Cadastrar e vincular' }))
+
+      expect(await screen.findByText('A chave usa só letras minúsculas, números e hífens, por exemplo senior-cordeiro.')).toBeInTheDocument()
+      expect(screen.getByRole('dialog')).toBeInTheDocument()
+      expect(screen.getByLabelText('SKU')).toHaveValue('PT-300')
+      expect(screen.getByLabelText('Sabor')).toHaveValue('Pato')
+    })
+
+    it('selects the recipe registered meanwhile when the key is taken', async () => {
+      const user = userEvent.setup()
+      let registered = false
+      const { calls } = renderDetail({
+        routes: (call) => {
+          if (call.path !== '/api/v1/admin/catalog/recipe-content') return undefined
+          if (call.method === 'POST') {
+            registered = true
+            return jsonResponse({ message: 'A recipe with this key already exists in the market.', details: { code: 'recipe_key_taken' } }, 409)
+          }
+          if (call.method === 'GET' && registered) {
+            return jsonResponse({
+              market: 'BR',
+              items: [...recipeList.items, { key: 'pato', name: 'Pato', lifeStage: 'senior', imageUrl: null, labelStatus: 'missing', variations: [] }],
+            })
+          }
+          return undefined
+        },
+      })
+
+      await addVariation(user, 'Pato')
+      await user.click(screen.getByRole('button', { name: 'Criar receita pato' }))
+      await user.click(screen.getByRole('button', { name: 'Cadastrar e vincular' }))
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Receita (conteúdo)')).toHaveValue('pato')
+      })
+      expect(screen.getByRole('status')).toHaveTextContent('A receita já existia e foi selecionada.')
+      expect(screen.getByLabelText('Linha')).toHaveValue('senior')
+      expect(productPatches(calls)).toHaveLength(0)
+    })
+  })
+
+  describe('recipe content side panel', () => {
+    const variant = productDetail.variants[0]
+    const inactive = { ...productDetail, variants: [{ ...variant, active: false }] }
+
+    // jsdom has no scrollIntoView; each test records the ids it scrolls to.
+    function captureScrolls() {
+      const scrolled: string[] = []
+      Object.defineProperty(Element.prototype, 'scrollIntoView', {
+        configurable: true,
+        writable: true,
+        value(this: Element) {
+          scrolled.push(this.id)
+        },
+      })
+      return scrolled
+    }
+
+    beforeEach(() => {
+      vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() }))
+    })
+
+    afterEach(() => {
+      imageSizes.clear()
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    })
+
+    function renderDetail(options: Parameters<typeof installAdminFetchMock>[1] = {}, user = operatorWriteUser) {
+      seedAuth()
+      const mock = installAdminFetchMock(user, options)
+      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+      return mock
+    }
+
+    async function openPanel(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(await screen.findByRole('button', { name: 'Conteúdo da receita de Frango 1kg' }))
+      const panel = await screen.findByRole('dialog', { name: 'Conteúdo da receita Frango' })
+      await within(panel).findByRole('heading', { name: 'Rótulo' })
+      return panel
+    }
+
+    it('shows the five content sections of the recipe, without rename or delete', async () => {
+      const user = userEvent.setup()
+      const { calls } = renderDetail()
+
+      const panel = await openPanel(user)
+      for (const heading of ['Fase da vida', 'Apresentação na loja', 'Imagem da tela inicial', 'Miniatura do plano', 'Rótulo']) {
+        expect(within(panel).getByRole('heading', { name: heading })).toBeInTheDocument()
+      }
+      expect(within(panel).getByRole('button', { name: 'Salvar rótulo' })).toBeInTheDocument()
+      expect(within(panel).queryByRole('button', { name: 'Renomear' })).not.toBeInTheDocument()
+      expect(within(panel).queryByRole('button', { name: 'Excluir receita' })).not.toBeInTheDocument()
+      expect(within(panel).getByRole('link', { name: 'Abrir página da receita' })).toHaveAttribute('href', '/catalog/recipes/BR/turkey')
+      expect(within(panel).getByRole('note')).not.toHaveTextContent('inclusive de outros produtos')
+      expect(calls.some((call) => call.method === 'GET' && call.path === '/api/v1/admin/catalog/recipe-content/turkey' && call.search === '?market=BR')).toBe(true)
+    })
+
+    it('shows the content read-only to a reader', async () => {
+      const user = userEvent.setup()
+      renderDetail({}, readonlyUser)
+
+      const panel = await openPanel(user)
+      expect(within(panel).queryByRole('button', { name: 'Salvar rótulo' })).not.toBeInTheDocument()
+      expect(within(panel).queryByRole('button', { name: 'Salvar apresentação' })).not.toBeInTheDocument()
+      expect(within(panel).queryByText('Escolher imagem')).not.toBeInTheDocument()
+      expect(within(panel).getByLabelText('Fabricante')).toBeDisabled()
+    })
+
+    it('loads the recipe of the saved market while the plan country is changed and not saved', async () => {
+      const user = userEvent.setup()
+      const { calls } = renderDetail({}, adminUser)
+
+      await screen.findByText('BOWL-1')
+      await user.selectOptions(screen.getByLabelText('País do plano'), 'US')
+      const panel = await openPanel(user)
+
+      const get = calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/admin/catalog/recipe-content/turkey')
+      expect(get.map((call) => call.search)).toEqual(['?market=BR'])
+      expect(within(panel).getByText('Receita turkey · mercado BR')).toBeInTheDocument()
+    })
+
+    it('says the content is shared with the variations of other products', async () => {
+      const user = userEvent.setup()
+      renderDetail({
+        recipeContent: {
+          ...recipeContent,
+          variations: [
+            { id: 'var-1', name: 'Frango 1kg', sku: 'BOWL-1', active: true, productId: 'prod-1', productName: 'Bowl Adulto' },
+            { id: 'var-9', name: 'Frango 600g', sku: 'BOWL-9', active: true, productId: 'prod-2', productName: 'Bowl Filhote' },
+          ],
+        },
+      })
+
+      const panel = await openPanel(user)
+      const note = within(panel).getByRole('note')
+      expect(note).toHaveTextContent('Este conteúdo vale para 2 variações do mercado BR com a receita turkey')
+      expect(note).toHaveTextContent('Mudar a fase muda a linha de todas.')
+      expect(note).toHaveTextContent('Frango 1kg · Bowl Adulto (este produto)')
+      expect(note).toHaveTextContent('Frango 600g · Bowl Filhote')
+      expect(note).toHaveTextContent('inclusive de outros produtos')
+    })
+
+    it('reloads the product after an image is saved, so foto is no longer pending', async () => {
+      const user = userEvent.setup()
+      let imageSaved = false
+      const { fetchMock } = renderDetail({
+        product: inactive,
+        routes: (call) => {
+          if (call.method === 'PUT' && call.path.endsWith('/image')) imageSaved = true
+          return undefined
+        },
+      })
+      rewriteProductGet(fetchMock, (product) => (imageSaved
+        ? { ...product, variants: (product.variants as Array<Record<string, unknown>>).map((item) => ({ ...item, recipeImageUrl })) }
+        : product))
+
+      expect(await screen.findByRole('button', { name: 'Abrir foto de Frango 1kg' })).toBeInTheDocument()
+      const panel = await openPanel(user)
+      imageSizes.set('banner.png', { width: 1024, height: 636 })
+      await user.upload(within(panel).getByLabelText('Escolher imagem'), new File(['png-bytes'], 'banner.png', { type: 'image/png' }))
+      await user.click(await within(panel).findByRole('button', { name: 'Salvar imagem' }))
+
+      await waitFor(() => {
+        expect(screen.queryByRole('button', { name: 'Abrir foto de Frango 1kg' })).not.toBeInTheDocument()
+      })
+      expect(screen.getAllByText('Imagem cadastrada').length).toBeGreaterThan(0)
+    })
+
+    it('shows the new line of linked variations after the life stage is saved', async () => {
+      const user = userEvent.setup()
+      let stageSaved = false
+      const { calls, fetchMock } = renderDetail({
+        routes: (call) => {
+          if (call.method === 'PATCH' && call.path.endsWith('/recipe-content/turkey')) stageSaved = true
+          return undefined
+        },
+      })
+      rewriteProductGet(fetchMock, (product) => (stageSaved
+        ? { ...product, variants: (product.variants as Array<Record<string, unknown>>).map((item) => ({ ...item, lifeStage: 'puppy' })) }
+        : product))
+
+      const panel = await openPanel(user)
+      const listsBefore = calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/admin/catalog/recipe-content').length
+      await user.selectOptions(within(panel).getByLabelText('Fase da vida'), 'puppy')
+      await user.click(within(panel).getByRole('button', { name: 'Salvar fase' }))
+
+      expect(await within(panel).findByText('Fase salva: Filhote.')).toBeInTheDocument()
+      await waitFor(() => {
+        expect(within(screen.getByRole('table')).getByText('Filhote')).toBeInTheDocument()
+      })
+      expect(calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/admin/catalog/recipe-content').length).toBeGreaterThan(listsBefore)
+    })
+
+    it('keeps a typed and unsaved duration when the panel saves', async () => {
+      const user = userEvent.setup()
+      renderDetail()
+
+      const duration = await screen.findByLabelText('Duração (dias)')
+      await user.clear(duration)
+      await user.type(duration, '15')
+      const panel = await openPanel(user)
+      await user.type(within(panel).getByLabelText('Fabricante'), ' Ltda')
+      await user.click(within(panel).getByRole('button', { name: 'Salvar rótulo' }))
+      await within(panel).findByText(/Rótulo salvo/)
+      await user.click(within(panel).getByRole('button', { name: 'Fechar' }))
+
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      })
+      expect(screen.getByLabelText('Duração (dias)')).toHaveValue(15)
+      expect(screen.getByText('País e duração alterados. Salve antes de sair.')).toBeInTheDocument()
+    })
+
+    it('keeps a typed and unsaved limit of a published product when the panel saves', async () => {
+      const user = userEvent.setup()
+      renderDetail({ product: { ...productDetail, active: true } })
+
+      const limit = await screen.findByLabelText(/^Limite do pacote pequeno/)
+      await user.clear(limit)
+      await user.type(limit, '6')
+      const panel = await openPanel(user)
+      await user.type(within(panel).getByLabelText('Fabricante'), ' Ltda')
+      await user.click(within(panel).getByRole('button', { name: 'Salvar rótulo' }))
+      await within(panel).findByText(/Rótulo salvo/)
+      await user.click(within(panel).getByRole('button', { name: 'Fechar' }))
+
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      })
+      expect(screen.getByLabelText(/^Limite do pacote pequeno/)).toHaveValue(6)
+      expect(screen.getByText('Limite do pacote pequeno alterado. Salve antes de sair.')).toBeInTheDocument()
+    })
+
+    it('asks before discarding an unsaved label, and keeps it when declined', async () => {
+      const user = userEvent.setup()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      renderDetail()
+
+      const panel = await openPanel(user)
+      await user.type(within(panel).getByLabelText('Fabricante'), ' Ltda')
+      await user.keyboard('{Escape}')
+
+      expect(confirm).toHaveBeenCalledWith('Descartar as alterações não salvas do conteúdo da receita?')
+      expect(screen.getByRole('dialog', { name: 'Conteúdo da receita Frango' })).toBeInTheDocument()
+      expect(within(panel).getByLabelText('Fabricante')).toHaveValue(`${recipeContent.label?.manufacturer ?? ''} Ltda`)
+
+      confirm.mockReturnValue(true)
+      await user.click(within(panel).getByRole('button', { name: 'Fechar' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('closes without asking when nothing changed or only the life stage was picked', async () => {
+      const user = userEvent.setup()
+      const confirm = vi.spyOn(window, 'confirm')
+      renderDetail()
+
+      let panel = await openPanel(user)
+      await user.click(within(panel).getByRole('button', { name: 'Fechar' }))
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+
+      panel = await openPanel(user)
+      await user.selectOptions(within(panel).getByLabelText('Fase da vida'), 'puppy')
+      await user.keyboard('{Escape}')
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+      expect(confirm).not.toHaveBeenCalled()
+    })
+
+    it('opens the panel on the missing section from a pending item', async () => {
+      const user = userEvent.setup()
+      const scrolled = captureScrolls()
+      renderDetail({ product: { ...productDetail, variants: [{ ...variant, active: false, recipePresentationReady: false }] } })
+
+      await user.click(await screen.findByRole('button', { name: 'Abrir apresentação de Frango 1kg' }))
+      const panel = await screen.findByRole('dialog', { name: 'Conteúdo da receita Frango' })
+      await within(panel).findByRole('heading', { name: 'Apresentação na loja' })
+      await waitFor(() => {
+        expect(scrolled).toContain('apresentacao')
+      })
+    })
+
+    it('keeps price and the recipe items of a variation without a recipe as text', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        product: {
+          ...productDetail,
+          variants: [
+            { ...variant, active: false, regularPrice: null as unknown as number, recipePresentationReady: false },
+            { ...variant, id: 'var-2', sku: 'BOWL-2', name: 'Pato 1kg', active: false, recipeKey: null, recipePresentationReady: false },
+          ],
+        },
+      })
+      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+
+      expect(await screen.findByRole('button', { name: 'Abrir apresentação de Frango 1kg' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /^Abrir preço/ })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /de Pato 1kg$/ })).not.toBeInTheDocument()
+    })
+
+    it('opens the life stage of the linked recipe from the variation dialog', async () => {
+      const user = userEvent.setup()
+      const scrolled = captureScrolls()
+      renderDetail()
+
+      await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+      await screen.findByRole('option', { name: 'Carne · beef' })
+      await user.click(screen.getByRole('button', { name: 'Editar fase' }))
+
+      const panel = await screen.findByRole('dialog', { name: 'Conteúdo da receita Frango' })
+      expect(screen.queryByRole('dialog', { name: 'Editar variação' })).not.toBeInTheDocument()
+      await within(panel).findByRole('heading', { name: 'Fase da vida' })
+      await waitFor(() => {
+        expect(scrolled).toContain('fase')
+      })
     })
   })
 })

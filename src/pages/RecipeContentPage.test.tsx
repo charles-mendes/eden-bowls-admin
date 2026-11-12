@@ -489,4 +489,48 @@ describe('RecipeContentPage', () => {
       expect(screen.queryByRole('button', { name: /Adicionar|Remover/ })).not.toBeInTheDocument()
     })
   })
+
+  describe('section anchors', () => {
+    // jsdom has no scrollIntoView; each test records the ids it scrolls to.
+    function captureScrolls() {
+      const scrolled: string[] = []
+      Object.defineProperty(Element.prototype, 'scrollIntoView', {
+        configurable: true,
+        writable: true,
+        value(this: Element) {
+          scrolled.push(this.id)
+        },
+      })
+      return scrolled
+    }
+
+    afterEach(() => {
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    })
+
+    it('scrolls to the section named in the URL once the recipe loads', async () => {
+      const scrolled = captureScrolls()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<RecipeContentPage />, `${route}#rotulo`, pattern)
+
+      await screen.findByRole('heading', { name: 'Rótulo' })
+      await waitFor(() => {
+        expect(scrolled).toEqual(['rotulo'])
+      })
+      for (const anchor of ['fase', 'apresentacao', 'imagem', 'miniatura', 'rotulo']) {
+        expect(document.getElementById(anchor)).not.toBeNull()
+      }
+    })
+
+    it('opens at the top for an unknown anchor', async () => {
+      const scrolled = captureScrolls()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<RecipeContentPage />, `${route}#outra-coisa`, pattern)
+
+      await screen.findByRole('heading', { name: 'Rótulo' })
+      expect(scrolled).toEqual([])
+    })
+  })
 })

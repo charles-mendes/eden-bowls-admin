@@ -3505,6 +3505,101 @@ button.table-link {
   grid-column: 1 / -1;
 }
 
+/* Side panel over the page (Drawer), for the recipe content of a variation. */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  justify-content: flex-end;
+  background: rgba(24, 24, 27, 0.4);
+}
+
+.drawer-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(960px, 100%);
+  height: 100dvh;
+  min-width: 0;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 32px rgba(24, 24, 27, 0.16);
+}
+
+.drawer-header {
+  flex: 0 0 auto;
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.drawer-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.drawer-heading h3 {
+  margin: 0;
+}
+
+.drawer-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.drawer-body .section-card {
+  scroll-margin-top: var(--space-4);
+}
+
+.drawer-shared {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.drawer-shared p {
+  margin: 0;
+}
+
+.drawer-shared-list {
+  margin: 0;
+  padding-left: var(--space-5);
+  max-height: 6.5em;
+  overflow-y: auto;
+}
+
+.inline-link-button {
+  display: inline;
+  padding: 0;
+  font: inherit;
+}
+
+.drawer-header .warning,
+.drawer-header .alert {
+  margin: 0;
+}
+
+/* Recipe registered from inside the variation dialog. */
+.recipe-create {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+}
+
+.access-fields .success {
+  margin: 0;
+}
+
 .access-fields input,
 .access-fields select {
   width: 100%;

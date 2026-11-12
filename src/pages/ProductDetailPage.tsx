@@ -1,14 +1,27 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
+import { Drawer } from '../components/Drawer'
 import { PageFrame } from '../components/PageFrame'
+import { RecipeContentSections } from '../components/RecipeContentSections'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { formatCurrency } from '../lib/format'
 import { GOODS_ORIGINS } from '../lib/nfe'
 import { sessionMarkets } from '../lib/markets'
-import { LABEL_STATUS_TEXT, LIFE_STAGE_LABELS, recipePagePath, type LifeStage, type RecipeLabelStatus } from '../lib/recipeContent'
+import {
+  LABEL_STATUS_TEXT,
+  LIFE_STAGE_LABELS,
+  recipeContentFailure,
+  recipeContentPath,
+  recipeKeyFromName,
+  recipePagePath,
+  type LifeStage,
+  type RecipeContent,
+  type RecipeLabelStatus,
+  type RecipeSectionAnchor,
+} from '../lib/recipeContent'
 
 type ProductVariant = {
   id: string
@@ -89,6 +102,18 @@ type VariationDialogState = {
 }
 
 type MarketRecipe = { key: string; name: string; lifeStage?: LifeStage; variations: Array<{ id: string }> }
+
+// Recipe registered from the variation dialog; the key follows the name until it is edited.
+type RecipeCreateForm = { name: string; key: string; keyTouched: boolean; lifeStage: LifeStage }
+
+// Key a missing recipe would take: the recorded key when the market lost it, else the flavor slug,
+// else the key of the flavor. Empty while a registered recipe is selected.
+function recipeCandidate(draft: VariantDraft, recipes: MarketRecipe[]) {
+  const registered = (key: string) => recipes.some((recipe) => recipe.key === key)
+  if (draft.recipeKey) return registered(draft.recipeKey) ? '' : draft.recipeKey
+  const key = draft.flavorSlug.trim() || recipeKeyFromName(draft.flavor)
+  return registered(key) ? '' : key
+}
 
 let newVariantSeq = 0
 
@@ -182,15 +207,18 @@ function syncStatusLabel(status: string) {
   return labels[status] ?? status
 }
 
-// What an inactive variation still lacks before activation; mirrors the backend refusal list.
+type PendingItem = { text: string; section?: RecipeSectionAnchor }
+
+// What an inactive variation still lacks before activation; mirrors the backend refusal list. Items solved
+// in the recipe content carry the section that solves them.
 function pendingItems(item: VariantDraft, planCountry: string) {
-  const pending: string[] = []
-  if (item.regularPrice === '') pending.push('preço')
-  if (!item.stripePriceId) pending.push('Stripe')
-  if (!item.finalImageReady && !item.recipeImageUrl) pending.push('foto')
-  if (planCountry === 'US' && !item.labelDataReady && item.recipeLabelStatus !== 'complete') pending.push('rótulo')
-  if (item.recipePresentationReady === false) pending.push('apresentação')
-  if (planCountry === 'BR' && !item.ncm.trim()) pending.push('NCM')
+  const pending: PendingItem[] = []
+  if (item.regularPrice === '') pending.push({ text: 'preço' })
+  if (!item.stripePriceId) pending.push({ text: 'Stripe' })
+  if (!item.finalImageReady && !item.recipeImageUrl) pending.push({ text: 'foto', section: 'imagem' })
+  if (planCountry === 'US' && !item.labelDataReady && item.recipeLabelStatus !== 'complete') pending.push({ text: 'rótulo', section: 'rotulo' })
+  if (item.recipePresentationReady === false) pending.push({ text: 'apresentação', section: 'apresentacao' })
+  if (planCountry === 'BR' && !item.ncm.trim()) pending.push({ text: 'NCM' })
   return pending
 }
 
@@ -198,8 +226,8 @@ const MISSING_LABELS: Record<string, string> = {
   price: 'preço',
   stripe_price: 'preço no Stripe',
   final_image: 'foto definitiva na loja',
-  label_data: 'dados de rótulo na página da receita',
-  presentation: 'apresentação na loja na página da receita',
+  label_data: 'dados de rótulo no conteúdo da receita',
+  presentation: 'apresentação na loja no conteúdo da receita',
   ncm: 'NCM da variação',
 }
 
@@ -273,6 +301,16 @@ export function ProductDetailPage() {
   const [dialogError, setDialogError] = useState('')
   const [savingVariation, setSavingVariation] = useState(false)
   const [togglingKey, setTogglingKey] = useState('')
+  const [recipeCreate, setRecipeCreate] = useState<RecipeCreateForm | null>(null)
+  const [creatingRecipe, setCreatingRecipe] = useState(false)
+  const [recipeNotice, setRecipeNotice] = useState('')
+  // Recipe content side panel of a variation, opened on a section when a pending item asks for it.
+  const [contentPanel, setContentPanel] = useState<{ recipeKey: string; section: RecipeSectionAnchor | null } | null>(null)
+  const [panelContent, setPanelContent] = useState<RecipeContent | null>(null)
+  const [panelError, setPanelError] = useState('')
+  const panelDirty = useRef(false)
+  const panelRequest = useRef(0)
+  const panelScrolled = useRef('')
 
   const canWrite = hasPermission('catalog.write')
   const canSync = hasPermission('catalog.sync')
@@ -311,16 +349,18 @@ export function ProductDetailPage() {
   const [marketRecipes, setMarketRecipes] = useState<MarketRecipe[]>([])
 
   // Recipe keys already used in the market, offered in the variation dialog; the field works without them.
-  const loadMarketRecipes = async (market: string | null) => {
-    if (!token || !market) return
+  const loadMarketRecipes = async (market: string | null): Promise<MarketRecipe[]> => {
+    if (!token || !market) return []
     try {
       const response = await apiRequest<{ items: MarketRecipe[] }>(
         `/admin/catalog/recipe-content?market=${encodeURIComponent(market)}`,
         { token },
       )
       setMarketRecipes(response.items)
+      return response.items
     } catch {
       setMarketRecipes([])
+      return []
     }
   }
 
@@ -328,11 +368,14 @@ export function ProductDetailPage() {
     if (canWrite) void loadMarketRecipes(data?.planCountry ?? null)
   }, [token, canWrite, data?.planCountry])
 
-  const applyProduct = (product: ProductDetail) => {
+  // keepPlanFields leaves typed and unsaved plan fields on screen, for a reload that did not save them.
+  const applyProduct = (product: ProductDetail, { keepPlanFields = false }: { keepPlanFields?: boolean } = {}) => {
     setData(product)
-    setPlanCountry(product.planCountry || 'BR')
-    setPlanDays(planDaysField(product.planDays))
-    setLargePackLimit(largePackLimitField(product.largePackLimit))
+    if (!keepPlanFields) {
+      setPlanCountry(product.planCountry || 'BR')
+      setPlanDays(planDaysField(product.planDays))
+      setLargePackLimit(largePackLimitField(product.largePackLimit))
+    }
     setVariants(product.variants.map(toVariantDraft))
   }
 
@@ -349,6 +392,66 @@ export function ProductDetailPage() {
   useEffect(() => {
     void load()
   }, [token, productId])
+
+  // After the side panel saves recipe content: badges, life stage and pending items follow, the plan fields
+  // typed and not saved stay.
+  const refreshProduct = async () => {
+    if (!token || !productId) return
+    try {
+      const response = await apiRequest<ProductDetail>(`/admin/catalog/products/${productId}`, { token })
+      applyProduct(response, { keepPlanFields: planDirty })
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar produto')
+    }
+  }
+
+  // The panel always works on the market saved on the product, never on an unsaved plan country.
+  const openContentPanel = (recipeKey: string, section: RecipeSectionAnchor | null = null) => {
+    if (!token) return
+    const request = ++panelRequest.current
+    panelDirty.current = false
+    panelScrolled.current = ''
+    setPanelContent(null)
+    setPanelError('')
+    setContentPanel({ recipeKey, section })
+    apiRequest<RecipeContent>(recipeContentPath(recipeKey, savedCountry), { token })
+      .then((content) => { if (panelRequest.current === request) setPanelContent(content) })
+      .catch((requestError) => {
+        if (panelRequest.current === request) setPanelError(recipeContentFailure(requestError, 'Falha ao carregar o conteúdo da receita.'))
+      })
+  }
+
+  const closeContentPanel = () => {
+    if (panelDirty.current && !window.confirm('Descartar as alterações não salvas do conteúdo da receita?')) return
+    panelRequest.current += 1
+    panelDirty.current = false
+    setContentPanel(null)
+    setPanelContent(null)
+    setPanelError('')
+    void refreshProduct()
+  }
+
+  const onPanelDirty = useCallback((dirty: boolean) => {
+    panelDirty.current = dirty
+  }, [])
+
+  const onPanelSaved = (content: RecipeContent) => {
+    setPanelContent(content)
+    void refreshProduct()
+  }
+
+  // The life stage of the dialog comes from the market recipes, so they reload with the product.
+  const onPanelLifeStageSaved = (content: RecipeContent) => {
+    onPanelSaved(content)
+    void loadMarketRecipes(savedCountry)
+  }
+
+  useEffect(() => {
+    const section = contentPanel?.section
+    if (!panelContent || !section || panelScrolled.current === section) return
+    panelScrolled.current = section
+    document.getElementById(section)?.scrollIntoView?.({ block: 'start' })
+  }, [panelContent, contentPanel])
 
   const parseLimit = () => {
     const limit = Number(largePackLimit)
@@ -448,6 +551,8 @@ export function ProductDetailPage() {
 
   const openVariationDialog = (draft: VariantDraft) => {
     setDialogError('')
+    setRecipeCreate(null)
+    setRecipeNotice('')
     setVariationDialog({
       draft,
       slugLocked: Boolean(draft.id && draft.flavorSlug),
@@ -494,9 +599,61 @@ export function ProductDetailPage() {
     })
   }
 
+  const openRecipeCreate = (draft: VariantDraft, key: string) => {
+    setRecipeNotice('')
+    setRecipeCreate({
+      name: draft.flavor.trim() || draft.name.trim(),
+      key,
+      // A recorded key is kept as is; a suggested one follows the name.
+      keyTouched: Boolean(draft.recipeKey),
+      lifeStage: draft.lifeStage,
+    })
+  }
+
+  const selectRecipe = (recipe: MarketRecipe, notice: string) => {
+    // The list update lands after this patch, so the life stage of the recipe goes in the patch itself.
+    updateDialogDraft({ recipeKey: recipe.key, ...(recipe.lifeStage ? { lifeStage: recipe.lifeStage } : {}) })
+    setRecipeCreate(null)
+    setDialogError('')
+    setRecipeNotice(notice)
+  }
+
+  // Registers the recipe in the market saved on the product, never in an unsaved plan country.
+  const createRecipe = async () => {
+    const market = data?.planCountry
+    if (!token || !market || !recipeCreate || creatingRecipe) return
+    const key = recipeCreate.key.trim()
+    try {
+      setCreatingRecipe(true)
+      const created = await apiRequest<RecipeContent>(`/admin/catalog/recipe-content?market=${encodeURIComponent(market)}`, {
+        token,
+        method: 'POST',
+        body: { key, name: recipeCreate.name.trim(), lifeStage: recipeCreate.lifeStage },
+      })
+      const recipe: MarketRecipe = { key: created.flavorSlug, name: created.name, lifeStage: created.lifeStage, variations: [] }
+      setMarketRecipes((current) => [...current.filter((item) => item.key !== recipe.key), recipe])
+      selectRecipe(recipe, 'Receita cadastrada. Salve a variação para vincular. Imagem, rótulo e apresentação ficam em Conteúdo, na tabela de variações.')
+    } catch (requestError) {
+      if (requestError instanceof ApiRequestError && requestError.code === 'recipe_key_taken') {
+        const existing = (await loadMarketRecipes(market)).find((item) => item.key === key)
+        if (existing) {
+          selectRecipe(existing, 'A receita já existia e foi selecionada. Salve a variação para vincular.')
+          return
+        }
+      }
+      setRecipeNotice('')
+      setDialogError(recipeContentFailure(requestError, 'Falha ao cadastrar a receita.'))
+    } finally {
+      setCreatingRecipe(false)
+    }
+  }
+
   const closeVariationDialog = () => {
-    if (savingVariation) return
+    if (savingVariation || creatingRecipe) return
+    // A recipe registered in the dialog stays in the market even when the variation is not saved.
     setVariationDialog(null)
+    setRecipeCreate(null)
+    setRecipeNotice('')
     setDialogError('')
   }
 
@@ -610,6 +767,13 @@ export function ProductDetailPage() {
   const pendingSyncCount = variants.filter((item) => item.requiresSync).length
   const draft = variationDialog?.draft ?? null
   const linkedRecipe = draft?.recipeKey ? marketRecipes.find((recipe) => recipe.key === draft.recipeKey) ?? null : null
+  const recipeKeyCandidate = draft && canWrite && data?.planCountry ? recipeCandidate(draft, marketRecipes) : ''
+  // Enter in the recipe fields registers the recipe instead of submitting the variation form.
+  const createOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return
+    event.preventDefault()
+    void createRecipe()
+  }
 
   return (
     <PageFrame
@@ -768,6 +932,7 @@ export function ProductDetailPage() {
                   const label = item.name || item.sku || item.id || 'nova'
                   const editable = canEditVariation(item)
                   const pending = item.active ? [] : pendingItems(item, planCountry)
+                  const recipeKey = item.recipeKey
                   return (
                     <tr
                       key={item.key}
@@ -815,14 +980,15 @@ export function ProductDetailPage() {
                             <span className={item.recipeLabelStatus === 'complete' ? 'badge-success' : item.recipeLabelStatus === 'incomplete' ? 'badge-warning' : 'badge-neutral'}>
                               {LABEL_STATUS_TEXT[item.recipeLabelStatus]}
                             </span>
-                            {item.id ? (
-                              <Link
+                            {item.id && recipeKey ? (
+                              <button
                                 className="link-button"
-                                to={recipePagePath(planCountry, item.recipeKey)}
+                                type="button"
                                 aria-label={`Conteúdo da receita de ${label}`}
+                                onClick={() => openContentPanel(recipeKey)}
                               >
                                 Conteúdo
-                              </Link>
+                              </button>
                             ) : null}
                           </div>
                         ) : (
@@ -832,7 +998,29 @@ export function ProductDetailPage() {
                       <td>
                         <div className="cell-stack">
                           <span className={item.active ? 'badge-success' : 'badge-neutral'}>{item.active ? 'Ativa' : 'Inativa'}</span>
-                          {pending.length ? <span className="cell-meta">Pendente: {pending.join(', ')}</span> : null}
+                          {pending.length ? (
+                            <span className="cell-meta">
+                              Pendente:{' '}
+                              {pending.map((entry, index) => {
+                                const section = entry.section
+                                return (
+                                  <Fragment key={entry.text}>
+                                    {index ? ', ' : ''}
+                                    {section && item.id && recipeKey ? (
+                                      <button
+                                        className="link-button inline-link-button"
+                                        type="button"
+                                        aria-label={`Abrir ${entry.text} de ${label}`}
+                                        onClick={() => openContentPanel(recipeKey, section)}
+                                      >
+                                        {entry.text}
+                                      </button>
+                                    ) : entry.text}
+                                  </Fragment>
+                                )
+                              })}
+                            </span>
+                          ) : null}
                         </div>
                       </td>
                       {canWrite ? (
@@ -993,7 +1181,21 @@ export function ProductDetailPage() {
                     ))}
                   </select>
                   {linkedRecipe?.lifeStage ? (
-                    <span id="life-stage-hint" className="access-hint">Vem da receita {linkedRecipe.name}. Para mudar, edite a fase na página da receita.</span>
+                    <span id="life-stage-hint" className="access-hint">
+                      Vem da receita {linkedRecipe.name}.{' '}
+                      <button
+                        className="link-button inline-link-button"
+                        type="button"
+                        disabled={savingVariation || creatingRecipe}
+                        onClick={() => {
+                          const key = linkedRecipe.key
+                          closeVariationDialog()
+                          openContentPanel(key, 'fase')
+                        }}
+                      >
+                        Editar fase
+                      </button>
+                    </span>
                   ) : null}
                 </label>
                 <label>
@@ -1033,10 +1235,86 @@ export function ProductDetailPage() {
                     ))}
                   </select>
                   <span id="recipe-key-hint" className="access-hint">
-                    Variações do mercado com a mesma receita usam a mesma imagem e o mesmo rótulo. Não achou?{' '}
-                    <Link to={`/catalog/recipes?market=${encodeURIComponent(planCountry)}`}>Cadastre em Receitas</Link>.
+                    Variações do mercado com a mesma receita usam a mesma imagem e o mesmo rótulo.
                   </span>
                 </label>
+                {recipeNotice ? (
+                  <p className="access-field-wide success" role="status">{recipeNotice}</p>
+                ) : null}
+                {recipeKeyCandidate && !recipeCreate ? (
+                  <div className="access-field-wide">
+                    <button className="link-button" type="button" onClick={() => openRecipeCreate(draft, recipeKeyCandidate)}>
+                      Criar receita {recipeKeyCandidate}
+                    </button>
+                  </div>
+                ) : null}
+                {recipeCreate ? (
+                  <div className="access-field-wide recipe-create" role="group" aria-label="Nova receita">
+                    <p className="access-hint">
+                      A receita é cadastrada agora no mercado {data?.planCountry} e continua em Receitas mesmo que você não salve a variação.
+                    </p>
+                    <div className="access-fields">
+                      <label className="access-field-wide">
+                        Nome da receita
+                        <input
+                          aria-label="Nome da receita"
+                          value={recipeCreate.name}
+                          maxLength={120}
+                          onKeyDown={createOnEnter}
+                          onChange={(event) => {
+                            const name = event.target.value
+                            setRecipeCreate((current) => current && ({ ...current, name, key: current.keyTouched ? current.key : recipeKeyFromName(name) }))
+                          }}
+                        />
+                      </label>
+                      <label>
+                        Chave da receita
+                        <input
+                          className="mono"
+                          aria-label="Chave da receita"
+                          aria-describedby="recipe-create-key-hint"
+                          value={recipeCreate.key}
+                          maxLength={64}
+                          onKeyDown={createOnEnter}
+                          onChange={(event) => {
+                            const key = event.target.value
+                            setRecipeCreate((current) => current && ({ ...current, key, keyTouched: true }))
+                          }}
+                        />
+                        <span id="recipe-create-key-hint" className="access-hint">Letras minúsculas, números e hífens. Não muda depois de cadastrada.</span>
+                      </label>
+                      <label>
+                        Fase da receita
+                        <select
+                          aria-label="Fase da receita"
+                          value={recipeCreate.lifeStage}
+                          onChange={(event) => {
+                            const lifeStage = event.target.value as LifeStage
+                            setRecipeCreate((current) => current && ({ ...current, lifeStage }))
+                          }}
+                        >
+                          {(Object.keys(LIFE_STAGE_LABELS) as LifeStage[]).map((stage) => (
+                            <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="inline-actions">
+                      <button className="primary-button" type="button" disabled={creatingRecipe} onClick={() => void createRecipe()}>
+                        {creatingRecipe ? 'Cadastrando…' : 'Cadastrar e vincular'}
+                      </button>
+                      <button
+                        className="ghost-button"
+                        type="button"
+                        aria-label="Cancelar nova receita"
+                        disabled={creatingRecipe}
+                        onClick={() => setRecipeCreate(null)}
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </fieldset>
 
@@ -1084,6 +1362,53 @@ export function ProductDetailPage() {
           </form>
         ) : null}
       </Dialog>
+
+      <Drawer
+        open={contentPanel != null}
+        title={panelContent ? `Conteúdo da receita ${panelContent.name}` : 'Conteúdo da receita'}
+        description={contentPanel ? `Receita ${contentPanel.recipeKey} · mercado ${savedCountry}` : undefined}
+        onRequestClose={closeContentPanel}
+        notice={panelContent && contentPanel ? (
+          <div className="warning drawer-shared" role="note">
+            <p>
+              Este conteúdo vale para {panelContent.variations.length === 1 ? '1 variação' : `${panelContent.variations.length} variações`} do
+              mercado {savedCountry} com a receita {contentPanel.recipeKey}
+              {panelContent.variations.some((variation) => variation.productId !== data?.id) ? ', inclusive de outros produtos' : ''}.
+              {' '}Mudar a fase muda a linha de todas.
+            </p>
+            {panelContent.variations.length ? (
+              <ul className="drawer-shared-list">
+                {panelContent.variations.map((variation) => (
+                  <li key={variation.id}>
+                    {variation.name || variation.sku}
+                    <span className="cell-meta">
+                      {' · '}{variation.productName || 'Produto'}{variation.productId === data?.id ? ' (este produto)' : ''}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            <Link className="link-button" to={recipePagePath(savedCountry, contentPanel.recipeKey)}>Abrir página da receita</Link>
+          </div>
+        ) : null}
+      >
+        {panelError ? <div className="alert" role="alert">{panelError}</div> : null}
+        {panelContent && contentPanel ? (
+          <div className="stack">
+            <RecipeContentSections
+              key={contentPanel.recipeKey}
+              token={token}
+              market={savedCountry}
+              recipeKey={contentPanel.recipeKey}
+              content={panelContent}
+              canWrite={canWrite}
+              onSaved={onPanelSaved}
+              onLifeStageSaved={onPanelLifeStageSaved}
+              onDirtyChange={onPanelDirty}
+            />
+          </div>
+        ) : !panelError ? <p className="muted">Carregando o conteúdo da receita.</p> : null}
+      </Drawer>
     </PageFrame>
   )
 }
