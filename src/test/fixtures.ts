@@ -406,15 +406,41 @@ export const userDetail = {
   ],
 }
 
+export type ProductContentSummary = {
+  code: string
+  name: string
+  lifeStage: 'adult' | 'puppy' | 'senior'
+  flavorAliases: string
+  shortLabel: string
+  imageUrl: string | null
+  planImageUrl: string | null
+  labelStatus: 'missing' | 'incomplete' | 'complete'
+  labelMissing: string[]
+  presentationReady: boolean
+}
+
 export const productItem = {
   id: 'prod-1',
-  slug: 'bowl-adulto',
+  slug: 'turkey-br',
   namePt: 'Bowl Adulto',
   nameEn: 'Adult Bowl',
   active: true,
+  planCountry: 'BR' as string | null,
   category: { namePt: 'Alimentação', nameEn: 'Food' },
   marketConfigs: [{ marketCountry: 'BR', currency: 'BRL', active: true }],
-  variants: [{ id: 'var-1', sku: 'BOWL-1', variantPrices: [{ id: 'price-1' }], canDelete: true }],
+  variants: [{ id: 'var-1', sku: 'BOWL-1', active: true, variantPrices: [{ id: 'price-1' }], canDelete: true }] as Array<{ id: string; sku: string; active?: boolean; variantPrices?: Array<{ id: string }>; canDelete?: boolean }>,
+  content: {
+    code: 'turkey',
+    name: 'Bowl Adulto',
+    lifeStage: 'adult',
+    flavorAliases: 'peru',
+    shortLabel: 'Peru',
+    imageUrl: null,
+    planImageUrl: null,
+    labelStatus: 'missing',
+    labelMissing: ['ingredients', 'analysis', 'energyKg', 'energyPackage'],
+    presentationReady: true,
+  } as ProductContentSummary | null,
   createdAt: '2026-08-01T12:00:00.000Z',
   canDelete: true,
 }
@@ -428,13 +454,13 @@ export const productsList = {
 
 export const productDetail = {
   id: 'prod-1',
-  slug: 'bowl-adulto',
+  slug: 'turkey-br',
   namePt: 'Bowl Adulto',
   nameEn: 'Adult Bowl',
   active: false,
   planCountry: 'BR',
   publishBlocked: false,
-  gaps: [],
+  gaps: [] as Array<{ variationId: string; currencies: string[] }>,
   variants: [
     {
       id: 'var-1',
@@ -452,9 +478,11 @@ export const productDetail = {
       recipeImageUrl: null as string | null,
       recipeLabelStatus: 'missing' as 'missing' | 'incomplete' | 'complete',
       recipePresentationReady: true as boolean,
+      weight: '1kg' as string | null,
     },
   ],
   canDelete: true,
+  content: { ...productItem.content!, label: null, presentation: null } as (ProductContentSummary & { label?: unknown; presentation?: unknown }) | null,
 }
 
 export const recipeImageUrl = 'https://api.test/recipe-images/recipe-br-turkey-0123456789abcdef0123456789abcdef.webp'
@@ -508,6 +536,7 @@ export const recipePresentation: RecipePresentationFixture = {
 }
 
 export const recipeContent = {
+  productId: 'prod-1',
   market: 'BR',
   flavorSlug: 'turkey',
   name: 'Frango',
@@ -522,38 +551,11 @@ export const recipeContent = {
   labelMissing: [] as string[],
   presentation: null as RecipePresentationFixture | null,
   presentationUpdatedAt: null as string | null,
+  flavorAliases: 'peru',
+  shortLabel: 'Peru',
   variations: [
     { id: 'var-1', name: 'Frango 1kg', sku: 'BOWL-1', active: true, productId: 'prod-1', productName: 'Bowl Adulto' },
     { id: 'var-2', name: 'Frango 500g', sku: 'BOWL-2', active: false, productId: 'prod-1', productName: 'Bowl Adulto' },
-  ],
-}
-
-export type RecipeListItem = {
-  key: string
-  name: string
-  lifeStage: 'adult' | 'puppy' | 'senior'
-  imageUrl: string | null
-  labelStatus: 'missing' | 'incomplete' | 'complete'
-  variations: Array<{ id: string; name: string; sku: string; active: boolean; productId: string; productName: string }>
-}
-
-export const recipeList: { market: string; items: RecipeListItem[] } = {
-  market: 'BR',
-  items: [
-    {
-      key: 'beef',
-      name: 'Carne',
-      lifeStage: 'adult',
-      imageUrl: recipeImageUrl,
-      labelStatus: 'complete',
-      variations: [
-        { id: '1001', name: 'Beef 300g', sku: '1001', active: false, productId: 'prod-1', productName: 'Bowl Adulto' },
-        { id: '1005', name: 'Beef 500g', sku: '1005', active: true, productId: 'prod-1', productName: 'Bowl Adulto' },
-        { id: '3000', name: 'Bovino', sku: '3000', active: true, productId: 'prod-9', productName: 'Plano antigo' },
-      ],
-    },
-    { key: 'senior-lamb', name: 'Sênior Cordeiro', lifeStage: 'senior', imageUrl: null, labelStatus: 'missing', variations: [] },
-    { key: 'turkey', name: 'Frango', lifeStage: 'adult', imageUrl: null, labelStatus: 'incomplete', variations: recipeContent.variations },
   ],
 }
 
@@ -639,7 +641,7 @@ export const syncHealth = {
   currency: 'BRL',
   totalExpected: 10,
   totalMapped: 10,
-  gaps: [],
+  gaps: [] as Array<{ variationId: string; currencies: string[] }>,
 }
 
 const brSyncRun = {

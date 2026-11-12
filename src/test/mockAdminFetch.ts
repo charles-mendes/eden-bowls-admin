@@ -11,8 +11,6 @@ import {
   productDetail,
   productsList,
   recipeContent as recipeContentFixture,
-  recipeList,
-  type RecipeListItem,
   recipeImageUrl,
   promotionCodesList,
   shippingSettings,
@@ -161,7 +159,6 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   catalogActivation?: 'refused' | 'in_use'
   catalogPatch?: 'locked'
   recipeContent?: typeof recipeContentFixture
-  recipes?: RecipeListItem[]
   recipeImage?: 'invalid'
   contacts?: Array<Record<string, unknown>>
   contactError?: { status: number; code: string; field?: string }
@@ -194,11 +191,26 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     US: { market: 'US', planDays: 30, largePackLimit: 8, updatedAt: null },
   }
 
-  let recipes = (options.recipes ?? recipeList.items).map((item) => ({ ...item, variations: item.variations.map((variation) => ({ ...variation })) }))
   let recipeContent = {
     ...(options.recipeContent ?? recipeContentFixture),
     variations: (options.recipeContent ?? recipeContentFixture).variations.map((item) => ({ ...item })),
   }
+  // The product detail carries its content as the API annotates it; a content save reaches both.
+  const productContent = () => ({
+    code: recipeContent.flavorSlug,
+    name: recipeContent.name,
+    lifeStage: recipeContent.lifeStage,
+    flavorAliases: recipeContent.flavorAliases ?? '',
+    shortLabel: recipeContent.shortLabel ?? '',
+    imageUrl: recipeContent.imageUrl,
+    planImageUrl: recipeContent.planImageUrl ?? null,
+    labelStatus: recipeContent.labelStatus,
+    labelMissing: recipeContent.labelMissing,
+    presentationReady: Boolean(recipeContent.presentation),
+    label: recipeContent.label,
+    presentation: recipeContent.presentation,
+  })
+  const detailWithContent = () => (catalogDetail.content === null ? catalogDetail : { ...catalogDetail, content: productContent() })
 
   const queueItems = (options.productionQueue ?? [{
     ...productionQueueItem,
@@ -354,23 +366,36 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (path === '/api/v1/admin/catalog/products' && method === 'GET') {
+      const code = url.searchParams.get('code')
+      const listMarket = url.searchParams.get('market')
+      const items = catalogItems
+        .filter((item) => !code || item.content?.code === code)
+        .filter((item) => !listMarket || item.planCountry === listMarket)
       return jsonResponse({
         ...productsList,
-        total: catalogItems.length,
-        items: catalogItems,
+        total: items.length,
+        items,
       })
     }
 
     if (path === '/api/v1/admin/catalog/products' && method === 'POST') {
+      const code = String(body?.code ?? '')
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(code)) {
+        return jsonResponse({ message: 'Product code must use lowercase letters, digits and single hyphens.', details: { code: 'recipe_key_invalid' } }, 422)
+      }
+      if (catalogItems.some((item) => item.planCountry === body?.planCountry && item.content?.code === code)) {
+        return jsonResponse({ message: 'A product with this code already exists in the market.', details: { code: 'product_code_taken' } }, 409)
+      }
       return jsonResponse({
         id: '301',
-        slug: 'plano-novo',
+        slug: `${code}-${String(body?.planCountry || 'BR').toLowerCase()}`,
         namePt: body?.name || 'Plano novo',
         nameEn: body?.name || 'Plano novo',
         active: false,
         planCountry: body?.planCountry || 'BR',
         stripeProductId: 'prod_live_301',
         variants: [],
+        content: { code, name: body?.name, lifeStage: body?.lifeStage ?? 'adult', flavorAliases: '', shortLabel: '', imageUrl: null, planImageUrl: null, labelStatus: 'missing', labelMissing: [], presentationReady: false },
       })
     }
 
@@ -396,7 +421,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
             }
           : item
       ))
-      return jsonResponse(catalogDetail)
+      return jsonResponse(detailWithContent())
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'DELETE') {
@@ -420,62 +445,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'GET') {
-      return jsonResponse(catalogDetail)
+      return jsonResponse(detailWithContent())
     }
 
-    if (path === '/api/v1/admin/catalog/recipe-content' && method === 'GET') {
-      return jsonResponse({ market: url.searchParams.get('market') || 'BR', items: recipes })
-    }
-
-    if (path === '/api/v1/admin/catalog/recipe-content' && method === 'POST') {
-      const key = String(body?.key ?? '')
-      const name = String(body?.name ?? '').trim()
-      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(key)) {
-        return jsonResponse({ message: 'Recipe key must use lowercase letters, digits and single hyphens.', details: { code: 'recipe_key_invalid' } }, 422)
-      }
-      if (!name) {
-        return jsonResponse({ message: 'Recipe name must have 1 to 120 characters.', details: { code: 'recipe_name_invalid' } }, 422)
-      }
-      if (recipes.some((item) => item.key === key)) {
-        return jsonResponse({ message: 'A recipe with this key already exists in the market.', details: { code: 'recipe_key_taken' } }, 409)
-      }
-      const lifeStage = body?.lifeStage ?? 'adult'
-      recipes = [...recipes, { key, name, lifeStage, imageUrl: null, labelStatus: 'missing', variations: [] }]
-      return jsonResponse({ ...recipeContentFixture, flavorSlug: key, name, lifeStage, imageUrl: null, label: null, labelStatus: 'missing', labelMissing: [], variations: [] })
-    }
-
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+$/.test(path) && ['GET', 'PATCH', 'DELETE'].includes(method)) {
-      const key = decodeURIComponent(path.split('/').pop() || '')
-      const listed = recipes.find((item) => item.key === key)
-      const current = key === recipeContent.flavorSlug
-        ? recipeContent
-        : listed
-          ? { ...recipeContentFixture, flavorSlug: key, name: listed.name, lifeStage: listed.lifeStage, imageUrl: listed.imageUrl, label: null, labelStatus: listed.labelStatus, labelMissing: [], variations: listed.variations }
-          : null
-      if (!current) {
-        return jsonResponse({ message: 'Recipe not found.', details: { code: 'recipe_not_found' } }, 404)
-      }
-      if (method === 'PATCH') {
-        const name = body?.name === undefined ? current.name : String(body.name).trim()
-        const lifeStage = body?.lifeStage ?? current.lifeStage
-        recipes = recipes.map((item) => (item.key === key ? { ...item, name, lifeStage } : item))
-        if (key === recipeContent.flavorSlug) recipeContent = { ...recipeContent, name, lifeStage }
-        return jsonResponse({ ...current, name, lifeStage })
-      }
-      if (method === 'DELETE') {
-        if (current.variations.length) {
-          return jsonResponse({
-            message: 'A recipe used by variations cannot be deleted.',
-            details: { code: 'recipe_in_use', variations: current.variations.map((item) => ({ id: item.id, sku: item.sku, name: item.name })) },
-          }, 409)
-        }
-        recipes = recipes.filter((item) => item.key !== key)
-        return jsonResponse({ deleted: true, market: 'BR', flavorSlug: key })
-      }
-      return jsonResponse(current)
-    }
-
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'PUT') {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/image$/.test(path) && method === 'PUT') {
       if (options.recipeImage === 'invalid') {
         return jsonResponse({
           message: 'Image must be 1024 x 636 pixels.',
@@ -486,11 +459,11 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(recipeContent)
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'DELETE') {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/image$/.test(path) && method === 'DELETE') {
       const active = recipeContent.variations.filter((item) => item.active)
       if (active.length) {
         return jsonResponse({
-          message: 'The image of a recipe with an active variation cannot be removed.',
+          message: 'The image of a product with an active variation cannot be removed.',
           details: { code: 'recipe_content_in_use', activeVariations: active.map((item) => item.id) },
         }, 409)
       }
@@ -498,19 +471,19 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(recipeContent)
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/plan-image$/.test(path) && ['PUT', 'DELETE'].includes(method)) {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/plan-image$/.test(path) && ['PUT', 'DELETE'].includes(method)) {
       recipeContent = method === 'PUT'
         ? { ...recipeContent, planImageUrl: '/recipe-images/recipe-br-turkey-plan-1.webp', planImageUpdatedAt: '2026-10-27T12:00:00.000Z' }
         : { ...recipeContent, planImageUrl: null }
       return jsonResponse(recipeContent)
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/presentation$/.test(path) && method === 'PUT') {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/presentation$/.test(path) && method === 'PUT') {
       recipeContent = { ...recipeContent, presentation: body?.presentation ?? null, presentationUpdatedAt: '2026-10-27T12:00:00.000Z' }
       return jsonResponse(recipeContent)
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/label$/.test(path) && method === 'PUT') {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/label$/.test(path) && method === 'PUT') {
       const label = body?.label ?? {}
       const missing = [
         ...(label.ingredients?.length ? [] : ['ingredients']),
@@ -553,7 +526,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         ...catalogDetail,
         variants: catalogDetail.variants.map((item) => (item.id === variationId ? { ...item, active: Boolean(body?.active) } : item)),
       }
-      return jsonResponse(catalogDetail)
+      return jsonResponse(detailWithContent())
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'PATCH' && options.catalogPatch === 'locked' && Array.isArray(body?.variants)) {
@@ -564,10 +537,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'PATCH' && Array.isArray(body?.variants)
-      && body.variants.some((item: { recipeKey?: unknown }) => typeof item.recipeKey === 'string' && !recipes.some((recipe) => recipe.key === item.recipeKey))) {
+      && body.variants.some((item: { id?: string; weight?: string }) => item.weight && catalogDetail.variants.some((row) => row.id !== item.id && (row as { weight?: string | null }).weight === item.weight))) {
       return jsonResponse({
-        message: 'Recipe is not registered in the product market.',
-        details: { code: 'recipe_not_registered' },
+        message: 'Another variation of this product already has this weight.',
+        details: { code: 'variation_weight_taken', weight: body.variants[0].weight },
       }, 422)
     }
 
@@ -583,9 +556,18 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
             return { ...current, ...item }
           })
         : catalogDetail.variants
+      const { name, lifeStage, flavorAliases, shortLabel, ...rest } = body ?? {}
+      recipeContent = {
+        ...recipeContent,
+        ...(name !== undefined ? { name } : {}),
+        ...(lifeStage !== undefined ? { lifeStage } : {}),
+        ...(flavorAliases !== undefined ? { flavorAliases } : {}),
+        ...(shortLabel !== undefined ? { shortLabel } : {}),
+      }
       catalogDetail = {
         ...catalogDetail,
-        ...body,
+        ...rest,
+        ...(name !== undefined ? { namePt: name, nameEn: name } : {}),
         active: body.active ?? catalogDetail.active,
         variants,
       }
@@ -594,7 +576,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
           item.id === catalogDetail.id ? { ...item, active: Boolean(body.active) } : item
         ))
       }
-      return jsonResponse(catalogDetail)
+      return jsonResponse(detailWithContent())
     }
 
     if (path === '/api/v1/admin/catalog/sync' && method === 'POST') {

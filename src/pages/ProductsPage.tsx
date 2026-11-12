@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { Dialog } from '../components/Dialog'
 import { Link, useNavigate } from 'react-router-dom'
 import { CatalogPricesSection } from '../components/CatalogPricesSection'
 import { PageFrame } from '../components/PageFrame'
@@ -7,9 +8,15 @@ import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest, buildQueryString } from '../lib/api'
-import { formatDate } from '../lib/format'
 import { defaultMarket, hasBothMarkets, sessionMarkets, type MarketCode } from '../lib/markets'
 import { MarketSelect } from '../components/MarketSelect'
+import {
+  LABEL_STATUS_TEXT,
+  LIFE_STAGE_LABELS,
+  productCodeFromName,
+  type LifeStage,
+  type RecipeLabelStatus,
+} from '../lib/recipeContent'
 
 type ProductItem = {
   id: string
@@ -18,10 +25,13 @@ type ProductItem = {
   nameEn: string
   active: boolean
   category: { namePt: string; nameEn: string }
+  planCountry?: string | null
   marketConfigs: Array<{ marketCountry: string; currency: string; active: boolean }>
-  variants: Array<{ id: string; sku: string; variantPrices?: Array<{ id: string }> }>
+  variants: Array<{ id: string; sku: string; active?: boolean; variantPrices?: Array<{ id: string }> }>
   createdAt: string
   canDelete?: boolean
+  // Recipe of the product (product-is-recipe); null for a product without content.
+  content?: { code: string; lifeStage: LifeStage; imageUrl: string | null; labelStatus: RecipeLabelStatus } | null
 }
 
 type ProductsResponse = {
@@ -54,13 +64,19 @@ function deleteFailure(error: unknown, fallback: string) {
   return { inUse: false, message: error instanceof Error ? error.message : fallback }
 }
 
-const emptyCreateForm = {
-  name: '',
-  planCountry: 'BR',
-  variantName: '',
-  variantSku: '',
-  variantFlavor: '',
-  variantPrice: '',
+type CreateForm = { name: string; planCountry: string; code: string; codeTouched: boolean; lifeStage: LifeStage }
+
+const emptyCreateForm: CreateForm = { name: '', planCountry: 'BR', code: '', codeTouched: false, lifeStage: 'adult' }
+
+function createFailure(error: unknown) {
+  if (error instanceof ApiRequestError) {
+    if (error.code === 'product_code_taken') return 'Este mercado já tem um produto com esse código. Escolha outro código.'
+    if (error.code === 'recipe_key_invalid' || error.code === 'product_code_invalid') {
+      return 'O código usa só letras minúsculas, números e hífens, por exemplo senior-cordeiro.'
+    }
+    if (error.code === 'product_name_invalid') return 'Informe um nome de até 120 caracteres.'
+  }
+  return error instanceof Error ? error.message : 'Falha ao criar produto'
 }
 
 function FilterClearButton({ label, onClear }: { label: string; onClear: () => void }) {
@@ -84,7 +100,11 @@ export function ProductsPage() {
   const [message, setMessage] = useState('')
   const [creating, setCreating] = useState(false)
   const [deletingId, setDeletingId] = useState('')
-  const [form, setForm] = useState(emptyCreateForm)
+  const [form, setForm] = useState<CreateForm>(emptyCreateForm)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createError, setCreateError] = useState('')
+  const [noImage, setNoImage] = useState(false)
+  const [labelIncomplete, setLabelIncomplete] = useState(false)
   const canWrite = hasPermission('catalog.write')
   const scopedMarket = bothMarkets ? market : (defaultMarket(user) ?? '')
   const planCountries = sessionMarkets(user)
@@ -119,51 +139,45 @@ export function ProductsPage() {
     void load()
   }, [token, user, search, scopedMarket, page, perPage])
 
-  const createProduct = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!token || !canWrite) return
+  const openCreate = () => {
+    setCreateError('')
+    setForm((current) => ({ ...emptyCreateForm, planCountry: current.planCountry }))
+    setCreateOpen(true)
+  }
+
+  const closeCreate = () => {
+    if (creating) return
+    setCreateOpen(false)
+    setCreateError('')
+  }
+
+  const createProduct = async (event?: FormEvent) => {
+    event?.preventDefault()
+    if (!token || !canWrite || creating) return
     const name = form.name.trim()
+    const code = form.code.trim()
     if (!name) {
-      setError('Nome do produto é obrigatório.')
+      setCreateError('Informe o nome do produto.')
       return
     }
-
-    const variantName = form.variantName.trim()
-    const variantSku = form.variantSku.trim()
-    const variantFlavor = form.variantFlavor.trim()
-    const variants = variantName || variantSku || variantFlavor || form.variantPrice
-      ? [{
-          name: variantName,
-          sku: variantSku,
-          flavor: variantFlavor,
-          regularPrice: form.variantPrice === '' ? null : Number(form.variantPrice),
-        }]
-      : undefined
-
-    if (variants && !variantName && !variantSku) {
-      setError('A variação inicial precisa de nome ou SKU.')
+    if (!code) {
+      setCreateError('Informe o código do produto.')
       return
     }
 
     try {
       setCreating(true)
-      setError('')
+      setCreateError('')
       const created = await apiRequest<CreatedProduct>('/admin/catalog/products', {
         token,
         method: 'POST',
-        body: {
-          name,
-          planCountry: form.planCountry,
-          ...(variants ? { variants } : {}),
-        },
+        body: { name, planCountry: form.planCountry, code, lifeStage: form.lifeStage },
       })
-      setForm(emptyCreateForm)
-      setMessage(created.stripeProductId
-        ? 'Produto criado e vinculado no Stripe. Adicione variações no detalhe.'
-        : 'Produto criado. Adicione variações no detalhe e sincronize o Stripe.')
+      setCreateOpen(false)
+      setForm((current) => ({ ...emptyCreateForm, planCountry: current.planCountry }))
       navigate(`/catalog/products/${created.id}`)
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao criar produto')
+      setCreateError(createFailure(requestError))
     } finally {
       setCreating(false)
     }
@@ -219,10 +233,18 @@ export function ProductsPage() {
     }
   }
 
+  // Quick filters work on the loaded page; "Rótulo incompleto" also takes products without a label.
+  const visibleItems = (data?.items ?? [])
+    .filter((item) => !noImage || !item.content?.imageUrl)
+    .filter((item) => !labelIncomplete || item.content?.labelStatus !== 'complete')
+
   return (
     <PageFrame
       title="Produtos"
-      description="Planos à venda na loja, suas variações (sabor e peso) e os preços na Stripe."
+      description="Cada produto é uma receita de um mercado. As variações são os tamanhos de pack, com preço na Stripe."
+      actions={canWrite ? (
+        <button className="primary-button" type="button" onClick={openCreate}>Novo produto</button>
+      ) : null}
     >
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
@@ -251,6 +273,14 @@ export function ProductsPage() {
             allLabel="Selecionar"
             onChange={(value) => { setMarket(value); setPage(1) }}
           />
+          <label className="checkbox-field">
+            <input type="checkbox" checked={noImage} onChange={(event) => setNoImage(event.target.checked)} />
+            Sem imagem
+          </label>
+          <label className="checkbox-field">
+            <input type="checkbox" checked={labelIncomplete} onChange={(event) => setLabelIncomplete(event.target.checked)} />
+            Rótulo incompleto
+          </label>
           <label>
             Por página
             <input type="number" min={1} max={100} value={perPage} onChange={(event) => { setPerPage(Number(event.target.value)); setPage(1) }} />
@@ -264,32 +294,47 @@ export function ProductsPage() {
             <thead>
               <tr>
                 <th>Produto</th>
-                <th>Categoria</th>
-                <th>Slug</th>
-                <th>Mercados</th>
-                <th>Variantes</th>
+                <th>Mercado</th>
+                <th>Fase</th>
+                <th>Variações</th>
+                <th>Imagem</th>
+                <th>Rótulo</th>
                 <th>Status</th>
-                <th>Criado em</th>
                 <th>Ações</th>
               </tr>
             </thead>
             <tbody>
-              {data?.items.map((item) => (
+              {visibleItems.length === 0 ? (
+                <tr><td colSpan={8} className="muted">{data ? 'Nenhum produto com esses filtros.' : 'Carregando.'}</td></tr>
+              ) : null}
+              {visibleItems.map((item) => (
                 <tr key={item.id}>
                   <td>
                     <Link className="table-link" to={`/catalog/products/${item.id}`}>{item.namePt}</Link>
-                    <div className="muted">{item.nameEn}</div>
+                    <div className="muted mono">{item.content?.code ?? item.slug}</div>
                   </td>
-                  <td>{item.category?.namePt ?? '-'}<div className="muted">{item.category?.nameEn ?? '-'}</div></td>
-                  <td>{item.slug}</td>
-                  <td>{item.marketConfigs.map((config) => `${config.marketCountry}/${config.currency}`).join(', ') || '-'}</td>
-                  <td>{item.variants.length}</td>
+                  <td>{item.planCountry ?? (item.marketConfigs.map((config) => config.marketCountry).join(', ') || '-')}</td>
+                  <td>{item.content ? LIFE_STAGE_LABELS[item.content.lifeStage] : '-'}</td>
+                  <td aria-label={`${item.variants.filter((variant) => variant.active).length} de ${item.variants.length} variações ativas`}>
+                    {item.variants.filter((variant) => variant.active).length}/{item.variants.length}
+                  </td>
+                  <td>
+                    <span className={item.content?.imageUrl ? 'badge-success' : 'badge-neutral'}>
+                      {item.content?.imageUrl ? 'Com imagem' : 'Sem imagem'}
+                    </span>
+                  </td>
+                  <td>
+                    {item.content ? (
+                      <span className={item.content.labelStatus === 'complete' ? 'badge-success' : item.content.labelStatus === 'incomplete' ? 'badge-warning' : 'badge-neutral'}>
+                        {LABEL_STATUS_TEXT[item.content.labelStatus]}
+                      </span>
+                    ) : '-'}
+                  </td>
                   <td>
                     <span className={item.active ? 'badge-success' : 'badge-warning'}>
                       {item.active ? 'Publicado' : 'Rascunho'}
                     </span>
                   </td>
-                  <td>{formatDate(item.createdAt)}</td>
                   <td>
                     <div className="table-actions">
                       <Link className="ghost-button" to={`/catalog/products/${item.id}`}>Detalhes</Link>
@@ -329,56 +374,81 @@ export function ProductsPage() {
         <Pager page={data?.page ?? page} totalPages={Math.max(1, Math.ceil((data?.total ?? 0) / (data?.perPage ?? perPage)))} onPrev={() => setPage((current) => Math.max(1, current - 1))} onNext={() => setPage((current) => current + 1)} />
       </Section>
 
-      {canWrite ? (
-        <details className="section-card create-panel">
-          <summary>
-            <strong>Novo produto</strong>
-            <span className="muted">Nasce como rascunho e já ganha um produto na Stripe. As variações são adicionadas no detalhe.</span>
-          </summary>
-          <form className="stack" onSubmit={createProduct}>
-            <div className="form-grid">
-              <label>
-                Nome
-                <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} placeholder="Ex.: Plano Adulto BR" required />
-              </label>
-              <label>
-                País do plano
-                <select
-                  value={form.planCountry}
-                  disabled={!bothMarkets}
-                  onChange={(event) => setForm((current) => ({ ...current, planCountry: event.target.value }))}
-                >
-                  {(planCountries.length ? planCountries : ['BR']).map((country) => (
-                    <option key={country} value={country}>{country === 'US' ? 'US / USD' : 'BR / BRL'}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <p className="muted">Variação inicial (opcional). Depois você cria as demais no detalhe do produto.</p>
-            <div className="form-grid">
-              <label>
-                SKU da variação
-                <input value={form.variantSku} onChange={(event) => setForm((current) => ({ ...current, variantSku: event.target.value }))} placeholder="ADULTO-300" />
-              </label>
-              <label>
-                Nome da variação
-                <input value={form.variantName} onChange={(event) => setForm((current) => ({ ...current, variantName: event.target.value }))} placeholder="Frango 300g" />
-              </label>
-              <label>
-                Sabor
-                <input value={form.variantFlavor} onChange={(event) => setForm((current) => ({ ...current, variantFlavor: event.target.value }))} placeholder="Ex.: Beef" />
-              </label>
-              <label>
-                Preço
-                <input type="number" min={0} step="0.01" value={form.variantPrice} onChange={(event) => setForm((current) => ({ ...current, variantPrice: event.target.value }))} placeholder="0.00" />
-              </label>
-            </div>
-            <div className="inline-actions">
-              <button className="primary-button" type="submit" disabled={creating}>{creating ? 'Criando…' : 'Criar produto'}</button>
-            </div>
-          </form>
-        </details>
-      ) : null}
+      <Dialog
+        open={createOpen}
+        title="Novo produto"
+        description="Cada produto é uma receita. Código e mercado não mudam depois de criados."
+        onClose={closeCreate}
+        footer={(
+          <>
+            <button className="ghost-button" type="button" onClick={closeCreate} disabled={creating}>Cancelar</button>
+            <button className="primary-button" type="button" onClick={() => void createProduct()} disabled={creating}>
+              {creating ? 'Criando…' : 'Criar produto'}
+            </button>
+          </>
+        )}
+      >
+        <form className="access-form" onSubmit={createProduct}>
+          {createError ? <div className="alert" role="alert">{createError}</div> : null}
+          <div className="access-fields">
+            <label className="access-field-wide">
+              Nome
+              <input
+                aria-label="Nome"
+                value={form.name}
+                maxLength={120}
+                placeholder="Ex.: Receita de Cordeiro"
+                onChange={(event) => {
+                  const name = event.target.value
+                  setForm((current) => ({ ...current, name, code: current.codeTouched ? current.code : productCodeFromName(name) }))
+                }}
+              />
+            </label>
+            <label>
+              Mercado
+              <select
+                aria-label="Mercado do produto"
+                value={form.planCountry}
+                disabled={!bothMarkets}
+                onChange={(event) => setForm((current) => ({ ...current, planCountry: event.target.value }))}
+              >
+                {(planCountries.length ? planCountries : ['BR']).map((country) => (
+                  <option key={country} value={country}>{country === 'US' ? 'US / USD' : 'BR / BRL'}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Fase de vida
+              <select
+                aria-label="Fase de vida"
+                value={form.lifeStage}
+                onChange={(event) => setForm((current) => ({ ...current, lifeStage: event.target.value as LifeStage }))}
+              >
+                {(Object.keys(LIFE_STAGE_LABELS) as LifeStage[]).map((stage) => (
+                  <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="access-field-wide">
+              Código
+              <input
+                className="mono"
+                aria-label="Código"
+                aria-describedby="product-code-hint"
+                value={form.code}
+                maxLength={64}
+                onChange={(event) => {
+                  const code = event.target.value
+                  setForm((current) => ({ ...current, code, codeTouched: true }))
+                }}
+              />
+              <span id="product-code-hint" className="access-hint">
+                Letras minúsculas, números e hífens. Identifica a receita na loja e no Stripe; não muda depois.
+              </span>
+            </label>
+          </div>
+        </form>
+      </Dialog>
     </PageFrame>
   )
 }

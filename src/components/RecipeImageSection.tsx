@@ -8,17 +8,17 @@ import {
   fileToImagePayload,
   type ImagePayload,
 } from '../lib/imageUpload'
-import { recipeContentFailure, recipeContentPath, type RecipeContent } from '../lib/recipeContent'
+import { recipeContentFailure, productContentPath, type RecipeContent } from '../lib/recipeContent'
 
 type Notice = { tone: 'success' | 'error'; text: string } | null
 
 type PendingImage = { payload: ImagePayload; previewUrl: string; fileName: string }
 
 // Home banner of the recipe. A chosen file that is not saved yet is an unsaved change.
-export function RecipeImageSection({ token, market, recipeKey, content, canWrite, onSaved, onDirtyChange }: {
+export function RecipeImageSection({ token, productId, market, content, canWrite, onSaved, onDirtyChange }: {
   token: string | null
+  productId: string
   market: string
-  recipeKey: string
   content: RecipeContent
   canWrite: boolean
   onSaved: (content: RecipeContent) => void
@@ -65,7 +65,7 @@ export function RecipeImageSection({ token, market, recipeKey, content, canWrite
     if (!token || !pendingImage || !market || saving) return
     try {
       setSaving(true)
-      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/image'), {
+      const saved = await apiRequest<RecipeContent>(productContentPath(productId, '/image'), {
         token,
         method: 'PUT',
         body: pendingImage.payload,
@@ -86,7 +86,7 @@ export function RecipeImageSection({ token, market, recipeKey, content, canWrite
     if (!confirmed) return
     try {
       setSaving(true)
-      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/image'), { token, method: 'DELETE' })
+      const saved = await apiRequest<RecipeContent>(productContentPath(productId, '/image'), { token, method: 'DELETE' })
       onSaved(saved)
       setNotice({ tone: 'success', text: 'Imagem removida. A loja volta a usar a imagem do código.' })
     } catch (requestError) {

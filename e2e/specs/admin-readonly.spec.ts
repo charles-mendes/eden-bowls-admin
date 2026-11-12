@@ -70,28 +70,21 @@ test.describe('Admin readonly', () => {
     await expect(page.getByRole('option', { name: 'Estados Unidos' })).toHaveCount(0)
 
     await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.readonly)
+    await expect(page.getByLabel('Nome do produto')).toHaveAttribute('readonly', '')
+    await page.getByRole('tab', { name: 'Variações' }).click()
     await expect(page.getByText('BOWL-1')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Salvar' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Publicar' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Excluir produto' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /Excluir variação/ })).toHaveCount(0)
 
-    await page.getByRole('button', { name: 'Conteúdo da receita de Frango 1kg' }).click()
-    const panel = page.getByRole('dialog', { name: 'Conteúdo da receita Frango' })
-    await expect(panel.getByRole('heading', { name: 'Imagem' })).toBeVisible()
-    await expect(panel.getByText('Escolher imagem')).toHaveCount(0)
-    await expect(panel.getByRole('button', { name: /Salvar imagem|Remover imagem/ })).toHaveCount(0)
-    await expect(panel.getByRole('heading', { name: 'Rótulo' })).toBeVisible()
-    await expect(panel.getByRole('button', { name: /Salvar rótulo|Adicionar/ })).toHaveCount(0)
-    await expect(panel.getByRole('button', { name: /Renomear|Excluir receita/ })).toHaveCount(0)
-
-    await openAuthed(page, '/catalog/recipes/BR/turkey', e2eProfiles.readonly)
+    await page.getByRole('tab', { name: 'Imagens' }).click()
+    await expect(page.getByRole('heading', { name: 'Imagem da tela inicial' })).toBeVisible()
+    await expect(page.getByText('Escolher imagem')).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Salvar imagem|Remover imagem/ })).toHaveCount(0)
+    await page.getByRole('tab', { name: 'Rótulo' }).click()
     await expect(page.getByRole('heading', { name: 'Rótulo' })).toBeVisible()
-    await expect(page.getByRole('button', { name: /Salvar rótulo|Renomear|Excluir receita/ })).toHaveCount(0)
-
-    await openAuthed(page, '/catalog/recipes', e2eProfiles.readonly)
-    await expect(page.getByRole('link', { name: 'Carne' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Nova receita' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Salvar rótulo|Adicionar/ })).toHaveCount(0)
   })
 
   test('opens the shipping simulator and reads the rules without save controls', async ({ page }) => {

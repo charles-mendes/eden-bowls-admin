@@ -6,7 +6,7 @@ import {
   LABEL_STATUS_TEXT,
   labelMissingText,
   recipeContentFailure,
-  recipeContentPath,
+  productContentPath,
   type RecipeContent,
   type RecipeLabel,
 } from '../lib/recipeContent'
@@ -65,10 +65,10 @@ function labelPayload(form: RecipeLabel): RecipeLabel {
 }
 
 // Label of the recipe in the market language. The form differing from the saved label is an unsaved change.
-export function RecipeLabelSection({ token, market, recipeKey, content, canWrite, onSaved, onDirtyChange }: {
+export function RecipeLabelSection({ token, productId, market, content, canWrite, onSaved, onDirtyChange }: {
   token: string | null
+  productId: string
   market: string
-  recipeKey: string
   content: RecipeContent
   canWrite: boolean
   onSaved: (content: RecipeContent) => void
@@ -91,7 +91,7 @@ export function RecipeLabelSection({ token, market, recipeKey, content, canWrite
     if (!token || !market || !canWrite || saving) return
     try {
       setSaving(true)
-      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/label'), {
+      const saved = await apiRequest<RecipeContent>(productContentPath(productId, '/label'), {
         token,
         method: 'PUT',
         body: { label: labelPayload(label) },

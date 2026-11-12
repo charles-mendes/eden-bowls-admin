@@ -5,7 +5,7 @@ import {
   PRESENTATION_COLOR_FIELDS,
   PRESENTATION_LIMITS,
   recipeContentFailure,
-  recipeContentPath,
+  productContentPath,
   type PresentationColor,
   type RecipeContent,
   type RecipePresentation,
@@ -30,10 +30,10 @@ function presentationForm(presentation: RecipePresentation | null | undefined): 
 
 // Store page of the recipe (title, tagline, resume, highlights and colors), in the market language and saved
 // whole. The store has no other source, so activation waits for it.
-export function RecipePresentationSection({ token, market, recipeKey, content, canWrite, onSaved, onDirtyChange }: {
+export function RecipePresentationSection({ token, productId, market, content, canWrite, onSaved, onDirtyChange }: {
   token: string | null
+  productId: string
   market: string
-  recipeKey: string
   content: RecipeContent
   canWrite: boolean
   onSaved: (content: RecipeContent) => void
@@ -62,7 +62,7 @@ export function RecipePresentationSection({ token, market, recipeKey, content, c
     if (!token || !canWrite || saving) return
     try {
       setSaving(true)
-      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/presentation'), {
+      const saved = await apiRequest<RecipeContent>(productContentPath(productId, '/presentation'), {
         token,
         method: 'PUT',
         body: { presentation: { ...form, highlights: form.highlights.filter((item) => item.trim()) } },

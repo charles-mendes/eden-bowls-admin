@@ -31,7 +31,6 @@ export const adminMenu: MenuItem[] = [
   { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
   { label: 'Assinantes', href: '/billing', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
   { label: 'Produtos', href: '/catalog/products', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
-  { label: 'Receitas', href: '/catalog/recipes', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
   { label: 'Plano', href: '/catalog/plan', roles: ['admin', 'operator', 'readonly'], group: 'Loja', permission: 'catalog.read' },
   { label: 'Cupons 1ª compra', href: '/billing/coupons', roles: ['admin', 'operator'], group: 'Loja' },
   { label: 'Feedbacks', href: '/feedbacks', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },

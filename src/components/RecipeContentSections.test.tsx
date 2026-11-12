@@ -27,14 +27,14 @@ function png(name: string, width: number, height: number) {
   return new File(['png-bytes'], name, { type: 'image/png' })
 }
 
-// Keeps the saved content in state, as the recipe page and the side panel do.
+// Keeps the saved content in state, as the product page does.
 function Host({ canWrite, onDirtyChange }: { canWrite: boolean; onDirtyChange: (dirty: boolean) => void }) {
   const [content, setContent] = useState(recipeContent)
   return (
     <RecipeContentSections
       token="access-token"
       market="BR"
-      recipeKey="turkey"
+      productId="100"
       content={content}
       canWrite={canWrite}
       onSaved={(saved) => setContent(saved as typeof recipeContent)}
@@ -114,15 +114,6 @@ describe('RecipeContentSections unsaved state', () => {
     await user.upload(screen.getByLabelText('Escolher miniatura'), png('pack.png', 400, 400))
     await screen.findByRole('img', { name: 'Prévia da nova miniatura' })
     expect(lastDirty()).toBe(true)
-  })
-
-  it('does not count a life stage picked and not saved', async () => {
-    const user = userEvent.setup()
-    installAdminFetchMock(operatorWriteUser)
-    const { onDirtyChange } = renderSections()
-
-    await user.selectOptions(screen.getByLabelText('Fase da vida'), 'puppy')
-    expect(onDirtyChange).not.toHaveBeenCalledWith(true)
   })
 
   it('is never dirty read-only', () => {

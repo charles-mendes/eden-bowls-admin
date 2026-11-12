@@ -100,7 +100,7 @@ describe('PlanSettingsPage', () => {
     installAdminFetchMock(operatorWriteUser, {
       routes: ({ path, method }) => (path === '/api/v1/admin/catalog/plan-settings' && method === 'PUT'
         ? new Response(JSON.stringify({ message: 'Plan days must be a whole number greater than zero.', details: { code: 'plan_days_invalid' } }), { status: 422, headers: { 'Content-Type': 'application/json' } })
-        : null),
+        : undefined),
     })
     renderPlan()
 

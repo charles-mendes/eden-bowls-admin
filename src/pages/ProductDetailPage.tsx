@@ -1,25 +1,21 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
-import { Drawer } from '../components/Drawer'
 import { PageFrame } from '../components/PageFrame'
-import { RecipeContentSections } from '../components/RecipeContentSections'
+import { RecipeContentSections, type ContentSection } from '../components/RecipeContentSections'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { formatCurrency } from '../lib/format'
 import { GOODS_ORIGINS } from '../lib/nfe'
-import { sessionMarkets } from '../lib/markets'
 import {
-  LABEL_STATUS_TEXT,
   LIFE_STAGE_LABELS,
-  recipeContentFailure,
-  recipeContentPath,
-  recipeKeyFromName,
-  recipePagePath,
+  RECIPE_SECTION_ANCHORS,
   type LifeStage,
   type RecipeContent,
+  type RecipeLabel,
   type RecipeLabelStatus,
+  type RecipePresentation,
   type RecipeSectionAnchor,
 } from '../lib/recipeContent'
 
@@ -27,11 +23,6 @@ type ProductVariant = {
   id: string
   sku: string
   name: string
-  flavor: string | null
-  flavorSlug: string | null
-  flavorAliases: string | null
-  lifeStage?: LifeStage
-  shortLabel?: string | null
   ncm?: string | null
   origin?: number | null
   active?: boolean
@@ -43,11 +34,30 @@ type ProductVariant = {
   syncStatus: string
   requiresSync: boolean
   canDelete?: boolean
-  recipeKey?: string | null
   recipeImageUrl?: string | null
   recipeLabelStatus?: RecipeLabelStatus
   recipePresentationReady?: boolean
   weight?: string | null
+}
+
+// The product's recipe content as the product detail carries it (product-is-recipe).
+type ProductContent = {
+  code: string
+  name: string
+  lifeStage: LifeStage
+  flavorAliases: string
+  shortLabel: string
+  imageUrl: string | null
+  imageUpdatedAt?: string | null
+  planImageUrl: string | null
+  planImageUpdatedAt?: string | null
+  labelStatus: RecipeLabelStatus
+  labelMissing: string[]
+  presentationReady: boolean
+  label?: Partial<RecipeLabel> | null
+  labelUpdatedAt?: string | null
+  presentation?: RecipePresentation | null
+  presentationUpdatedAt?: string | null
 }
 
 type ProductDetail = {
@@ -61,6 +71,7 @@ type ProductDetail = {
   gaps?: Array<{ variationId: string; currencies: string[] }>
   variants: ProductVariant[]
   canDelete?: boolean
+  content?: ProductContent | null
 }
 
 type VariantDraft = {
@@ -68,11 +79,7 @@ type VariantDraft = {
   id: string | null
   sku: string
   name: string
-  flavor: string
-  flavorSlug: string
-  flavorAliases: string
-  lifeStage: LifeStage
-  shortLabel: string
+  weight: string
   ncm: string
   origin: string
   active: boolean
@@ -84,34 +91,46 @@ type VariantDraft = {
   syncStatus: string
   requiresSync: boolean
   canDelete: boolean
-  recipeKey: string | null
   recipeImageUrl: string | null
   recipeLabelStatus: RecipeLabelStatus
   // null while unknown, as for a variation not saved yet.
   recipePresentationReady: boolean | null
-  weight: string
 }
 
-type VariationDialogState = {
-  draft: VariantDraft
-  slugLocked: boolean
-  // A new variation's recipe follows its flavor slug until the operator edits the recipe field.
-  recipeKeyTouched: boolean
+type GeneralForm = { name: string; flavorAliases: string; shortLabel: string; lifeStage: LifeStage }
+
+type TabId = 'geral' | 'apresentacao' | 'imagens' | 'rotulo' | 'variacoes'
+
+const TABS: Array<{ id: TabId; label: string }> = [
+  { id: 'geral', label: 'Dados gerais' },
+  { id: 'apresentacao', label: 'Apresentação' },
+  { id: 'imagens', label: 'Imagens' },
+  { id: 'rotulo', label: 'Rótulo' },
+  { id: 'variacoes', label: 'Variações' },
+]
+
+// Content sections each tab holds; Dados gerais and Variações have none.
+const TAB_SECTIONS: Partial<Record<TabId, ContentSection[]>> = {
+  apresentacao: ['presentation'],
+  imagens: ['image', 'planImage'],
+  rotulo: ['label'],
 }
 
-type MarketRecipe = { key: string; name: string; lifeStage?: LifeStage; variations: Array<{ id: string }> }
-
-// Recipe registered from the variation dialog; the key follows the name until it is edited.
-type RecipeCreateForm = { name: string; key: string; keyTouched: boolean; lifeStage: LifeStage }
-
-// Key a missing recipe would take: the recorded key when the market lost it, else the flavor slug,
-// else the key of the flavor. Empty while a registered recipe is selected.
-function recipeCandidate(draft: VariantDraft, recipes: MarketRecipe[]) {
-  const registered = (key: string) => recipes.some((recipe) => recipe.key === key)
-  if (draft.recipeKey) return registered(draft.recipeKey) ? '' : draft.recipeKey
-  const key = draft.flavorSlug.trim() || recipeKeyFromName(draft.flavor)
-  return registered(key) ? '' : key
+// Tab that holds each section anchor (operations/catalog-recipe-content).
+const ANCHOR_TAB: Record<RecipeSectionAnchor, TabId> = {
+  fase: 'geral',
+  apresentacao: 'apresentacao',
+  imagem: 'imagens',
+  miniatura: 'imagens',
+  rotulo: 'rotulo',
 }
+
+function anchorOf(hash: string): RecipeSectionAnchor | null {
+  const value = decodeURIComponent(hash.replace(/^#/, ''))
+  return (RECIPE_SECTION_ANCHORS as readonly string[]).includes(value) ? value as RecipeSectionAnchor : null
+}
+
+const DISCARD_CONFIRM = 'Descartar as alterações não salvas do conteúdo?'
 
 let newVariantSeq = 0
 
@@ -125,27 +144,13 @@ function catalogDeleteFailure(error: unknown, fallback: string) {
   return { inUse: false, message: error instanceof Error ? error.message : fallback }
 }
 
-function suggestFlavorSlug(label: string) {
-  return String(label || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-}
-
 function toVariantDraft(item: ProductVariant): VariantDraft {
   return {
     key: item.id,
     id: item.id,
     sku: item.sku || '',
     name: item.name || '',
-    flavor: item.flavor || '',
-    flavorSlug: item.flavorSlug || '',
-    flavorAliases: item.flavorAliases || '',
-    lifeStage: item.lifeStage ?? 'adult',
-    shortLabel: item.shortLabel || '',
+    weight: item.weight || '',
     ncm: item.ncm || '',
     origin: String(item.origin ?? 0),
     active: item.active === true,
@@ -157,11 +162,9 @@ function toVariantDraft(item: ProductVariant): VariantDraft {
     syncStatus: item.syncStatus,
     requiresSync: item.requiresSync,
     canDelete: item.canDelete === true,
-    recipeKey: item.recipeKey ?? null,
     recipeImageUrl: item.recipeImageUrl ?? null,
     recipeLabelStatus: item.recipeLabelStatus ?? 'missing',
     recipePresentationReady: item.recipePresentationReady ?? null,
-    weight: item.weight || '',
   }
 }
 
@@ -172,11 +175,7 @@ function emptyVariantDraft(): VariantDraft {
     id: null,
     sku: '',
     name: '',
-    flavor: '',
-    flavorSlug: '',
-    flavorAliases: '',
-    lifeStage: 'adult',
-    shortLabel: '',
+    weight: '',
     ncm: '',
     origin: '0',
     active: false,
@@ -188,11 +187,61 @@ function emptyVariantDraft(): VariantDraft {
     syncStatus: 'not_synced',
     requiresSync: true,
     canDelete: true,
-    recipeKey: null,
     recipeImageUrl: null,
     recipeLabelStatus: 'missing',
     recipePresentationReady: null,
-    weight: '',
+  }
+}
+
+function generalFormOf(product: ProductDetail): GeneralForm {
+  return {
+    name: product.content?.name ?? product.namePt,
+    flavorAliases: product.content?.flavorAliases ?? '',
+    shortLabel: product.content?.shortLabel ?? '',
+    lifeStage: product.content?.lifeStage ?? 'adult',
+  }
+}
+
+// The content of the product in the shape of the content routes, for the content sections.
+function sectionContent(product: ProductDetail): RecipeContent | null {
+  const content = product.content
+  if (!content) return null
+  return {
+    productId: product.id,
+    market: product.planCountry || 'BR',
+    flavorSlug: content.code,
+    name: content.name,
+    lifeStage: content.lifeStage,
+    flavorAliases: content.flavorAliases,
+    shortLabel: content.shortLabel,
+    imageUrl: content.imageUrl,
+    imageUpdatedAt: content.imageUpdatedAt ?? null,
+    planImageUrl: content.planImageUrl,
+    planImageUpdatedAt: content.planImageUpdatedAt ?? null,
+    label: content.label ?? null,
+    labelUpdatedAt: content.labelUpdatedAt ?? null,
+    labelStatus: content.labelStatus,
+    labelMissing: content.labelMissing,
+    presentation: content.presentation ?? null,
+    presentationUpdatedAt: content.presentationUpdatedAt ?? null,
+  }
+}
+
+// What a content route answered, folded into the product content until the product reloads.
+function withSavedContent(content: ProductContent, saved: RecipeContent): ProductContent {
+  return {
+    ...content,
+    imageUrl: saved.imageUrl,
+    imageUpdatedAt: saved.imageUpdatedAt,
+    planImageUrl: saved.planImageUrl ?? null,
+    planImageUpdatedAt: saved.planImageUpdatedAt ?? null,
+    label: saved.label,
+    labelUpdatedAt: saved.labelUpdatedAt,
+    labelStatus: saved.labelStatus,
+    labelMissing: saved.labelMissing,
+    presentation: saved.presentation ?? null,
+    presentationUpdatedAt: saved.presentationUpdatedAt ?? null,
+    presentationReady: Boolean(saved.presentation),
   }
 }
 
@@ -205,10 +254,16 @@ function syncStatusLabel(status: string) {
   return labels[status] ?? status
 }
 
+// "300g" reads "300 g", "10.6oz" reads "10.6 oz".
+function weightText(weight: string) {
+  const match = /^(\d+(?:[.,]\d+)?)\s*([a-z]+)$/i.exec(weight.trim())
+  return match ? `${match[1]} ${match[2].toLowerCase()}` : weight.trim()
+}
+
 type PendingItem = { text: string; section?: RecipeSectionAnchor }
 
 // What an inactive variation still lacks before activation; mirrors the backend refusal list. Items solved
-// in the recipe content carry the section that solves them.
+// in the product content carry the section (and so the tab) that solves them.
 function pendingItems(item: VariantDraft, planCountry: string) {
   const pending: PendingItem[] = []
   if (item.regularPrice === '') pending.push({ text: 'preço' })
@@ -224,15 +279,19 @@ const MISSING_LABELS: Record<string, string> = {
   price: 'preço',
   stripe_price: 'preço no Stripe',
   final_image: 'foto definitiva na loja',
-  label_data: 'dados de rótulo no conteúdo da receita',
-  presentation: 'apresentação na loja no conteúdo da receita',
+  label_data: 'dados de rótulo (aba Rótulo)',
+  presentation: 'apresentação da receita na loja (aba Apresentação)',
   ncm: 'NCM da variação',
 }
 
-function variationFailure(error: unknown, fallback: string) {
+function variationFailure(error: unknown, fallback: string, weight = '') {
   if (error instanceof ApiRequestError) {
-    if (error.code === 'recipe_not_registered') {
-      return 'Esta receita não está mais cadastrada no mercado. Escolha outra ou cadastre em Receitas.'
+    if (error.code === 'variation_weight_taken') {
+      const taken = String(error.details?.weight ?? weight)
+      return `Este produto já tem uma variação de ${weightText(taken)}. Use outro peso.`
+    }
+    if (error.code === 'variation_weight_invalid') {
+      return 'Informe o peso como 300g ou 10.6oz.'
     }
     if (error.code === 'recipe_publish_refused') {
       const missing = Array.isArray(error.details?.missing) ? error.details.missing as string[] : []
@@ -251,115 +310,102 @@ function variationFailure(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback
 }
 
+function generalFailure(error: unknown) {
+  if (error instanceof ApiRequestError) {
+    if (error.code === 'product_name_invalid') return 'Informe um nome de até 120 caracteres.'
+    if (error.code === 'product_aliases_invalid') return 'Os aliases passam de 512 caracteres.'
+    if (error.code === 'product_short_label_invalid') return 'O nome curto tem no máximo 64 caracteres.'
+    if (error.code === 'product_life_stage_invalid') return 'Escolha a fase de vida.'
+    if (error.code === 'product_identity_locked') return 'Código e mercado não mudam depois de criados.'
+  }
+  return error instanceof Error ? error.message : 'Falha ao salvar'
+}
+
+// Pack fields of one variation; flavor, code, life stage and short name come from the product.
 function variantPayload(item: VariantDraft, planCountry: string) {
   return {
     ...(item.id ? { id: item.id } : {}),
     sku: item.sku,
     name: item.name,
-    flavor: item.flavor.trim(),
-    ...(item.flavorSlug.trim() ? { flavorSlug: item.flavorSlug.trim() } : {}),
-    ...(item.flavorAliases.trim() ? { flavorAliases: item.flavorAliases.trim() } : {}),
-    lifeStage: item.lifeStage,
-    shortLabel: item.shortLabel.trim(),
+    weight: item.weight.trim(),
     ...(planCountry === 'BR' ? { ncm: item.ncm.trim(), origin: Number(item.origin) } : {}),
     finalImageReady: item.finalImageReady,
     labelDataReady: item.labelDataReady,
     regularPrice: item.regularPrice === '' ? null : Number(item.regularPrice),
-    recipeKey: item.recipeKey?.trim() || null,
   }
 }
 
 export function ProductDetailPage() {
-  const { token, user, hasPermission } = useAuth()
+  const { token, hasPermission } = useAuth()
   const { productId } = useParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const [data, setData] = useState<ProductDetail | null>(null)
-  const [planCountry, setPlanCountry] = useState('BR')
+  const [general, setGeneral] = useState<GeneralForm>({ name: '', flavorAliases: '', shortLabel: '', lifeStage: 'adult' })
   const [variants, setVariants] = useState<VariantDraft[]>([])
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
-  // Variation feedback renders inside the Variações card, next to the row that triggered it.
-  const [variationNotice, setVariationNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+  const [generalError, setGeneralError] = useState('')
+  const [savingGeneral, setSavingGeneral] = useState(false)
+  // Variation feedback renders inside the Variações tab; a refusal may point to the tab that solves it.
+  const [variationNotice, setVariationNotice] = useState<{ tone: 'success' | 'error'; text: string; tab?: TabId } | null>(null)
   const [deletingKey, setDeletingKey] = useState('')
-  const [variationDialog, setVariationDialog] = useState<VariationDialogState | null>(null)
+  const [variationDraft, setVariationDraft] = useState<VariantDraft | null>(null)
   const [dialogError, setDialogError] = useState('')
   const [savingVariation, setSavingVariation] = useState(false)
   const [togglingKey, setTogglingKey] = useState('')
-  const [recipeCreate, setRecipeCreate] = useState<RecipeCreateForm | null>(null)
-  const [creatingRecipe, setCreatingRecipe] = useState(false)
-  const [recipeNotice, setRecipeNotice] = useState('')
-  // Recipe content side panel of a variation, opened on a section when a pending item asks for it.
-  const [contentPanel, setContentPanel] = useState<{ recipeKey: string; section: RecipeSectionAnchor | null } | null>(null)
-  const [panelContent, setPanelContent] = useState<RecipeContent | null>(null)
-  const [panelError, setPanelError] = useState('')
-  const panelDirty = useRef(false)
-  const panelRequest = useRef(0)
-  const panelScrolled = useRef('')
+  const [tab, setTab] = useState<TabId>(() => {
+    const anchor = anchorOf(location.hash)
+    return anchor ? ANCHOR_TAB[anchor] : 'geral'
+  })
+  // Unsaved content in the open tab (presentation, label, a chosen image), reported by its sections.
+  const contentDirty = useRef(false)
+  const [contentDirtyState, setContentDirtyState] = useState(false)
+  const scrolledAnchor = useRef('')
 
   const canWrite = hasPermission('catalog.write')
   const canSync = hasPermission('catalog.sync')
-  const canEdit = Boolean(canWrite && data && !data.active)
   // A published product keeps active variations locked; inactive ones stay editable.
   const canAddVariation = Boolean(canWrite && data)
   const canEditVariation = (item: VariantDraft) => Boolean(canWrite && data && (!data.active || !item.active))
+  const planCountry = data?.planCountry || 'BR'
   const currency = planCountry === 'US' ? 'USD' : 'BRL'
-  const countryOptions = sessionMarkets(user)
-  const savedCountry = data?.planCountry || 'BR'
-  // Plan days and the large-pack limit are market settings (Loja > Plano); the product keeps only its country.
-  const planDirty = Boolean(canEdit && planCountry !== savedCountry)
+  const savedGeneral = data ? generalFormOf(data) : null
+  const generalDirty = Boolean(canWrite && savedGeneral && JSON.stringify(general) !== JSON.stringify(savedGeneral))
 
   useEffect(() => {
-    if (!planDirty) return undefined
+    if (!generalDirty && !contentDirtyState) return undefined
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       event.preventDefault()
       event.returnValue = ''
     }
     window.addEventListener('beforeunload', onBeforeUnload)
     return () => window.removeEventListener('beforeunload', onBeforeUnload)
-  }, [planDirty])
+  }, [generalDirty, contentDirtyState])
 
-  const notifyVariation = (tone: 'success' | 'error', text: string) => {
+  const onContentDirty = useCallback((dirty: boolean) => {
+    contentDirty.current = dirty
+    setContentDirtyState(dirty)
+  }, [])
+
+  const notifyVariation = (tone: 'success' | 'error', text: string, noticeTab?: TabId) => {
     setMessage('')
     setError('')
-    setVariationNotice({ tone, text })
+    setVariationNotice({ tone, text, tab: noticeTab })
   }
 
-  const [marketRecipes, setMarketRecipes] = useState<MarketRecipe[]>([])
-
-  // Recipe keys already used in the market, offered in the variation dialog; the field works without them.
-  const loadMarketRecipes = async (market: string | null): Promise<MarketRecipe[]> => {
-    if (!token || !market) return []
-    try {
-      const response = await apiRequest<{ items: MarketRecipe[] }>(
-        `/admin/catalog/recipe-content?market=${encodeURIComponent(market)}`,
-        { token },
-      )
-      setMarketRecipes(response.items)
-      return response.items
-    } catch {
-      setMarketRecipes([])
-      return []
-    }
-  }
-
-  useEffect(() => {
-    if (canWrite) void loadMarketRecipes(data?.planCountry ?? null)
-  }, [token, canWrite, data?.planCountry])
-
-  // keepPlanFields leaves typed and unsaved plan fields on screen, for a reload that did not save them.
-  const applyProduct = (product: ProductDetail, { keepPlanFields = false }: { keepPlanFields?: boolean } = {}) => {
+  // keepGeneral leaves typed and unsaved general fields on screen, for a reload that did not save them.
+  const applyProduct = (product: ProductDetail, { keepGeneral = false }: { keepGeneral?: boolean } = {}) => {
     setData(product)
-    if (!keepPlanFields) {
-      setPlanCountry(product.planCountry || 'BR')
-    }
+    if (!keepGeneral) setGeneral(generalFormOf(product))
     setVariants(product.variants.map(toVariantDraft))
   }
 
-  const load = async () => {
+  const load = async ({ keepGeneral = false }: { keepGeneral?: boolean } = {}) => {
     if (!token || !productId) return
     try {
       const response = await apiRequest<ProductDetail>(`/admin/catalog/products/${productId}`, { token })
-      applyProduct(response)
+      applyProduct(response, { keepGeneral })
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar produto')
     }
@@ -369,84 +415,75 @@ export function ProductDetailPage() {
     void load()
   }, [token, productId])
 
-  // After the side panel saves recipe content: badges, life stage and pending items follow, the plan fields
-  // typed and not saved stay.
-  const refreshProduct = async () => {
-    if (!token || !productId) return
-    try {
-      const response = await apiRequest<ProductDetail>(`/admin/catalog/products/${productId}`, { token })
-      applyProduct(response, { keepPlanFields: planDirty })
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar produto')
-    }
-  }
-
-  // The panel always works on the market saved on the product, never on an unsaved plan country.
-  const openContentPanel = (recipeKey: string, section: RecipeSectionAnchor | null = null) => {
-    if (!token) return
-    const request = ++panelRequest.current
-    panelDirty.current = false
-    panelScrolled.current = ''
-    setPanelContent(null)
-    setPanelError('')
-    setContentPanel({ recipeKey, section })
-    apiRequest<RecipeContent>(recipeContentPath(recipeKey, savedCountry), { token })
-      .then((content) => { if (panelRequest.current === request) setPanelContent(content) })
-      .catch((requestError) => {
-        if (panelRequest.current === request) setPanelError(recipeContentFailure(requestError, 'Falha ao carregar o conteúdo da receita.'))
-      })
-  }
-
-  const closeContentPanel = () => {
-    if (panelDirty.current && !window.confirm('Descartar as alterações não salvas do conteúdo da receita?')) return
-    panelRequest.current += 1
-    panelDirty.current = false
-    setContentPanel(null)
-    setPanelContent(null)
-    setPanelError('')
-    void refreshProduct()
-  }
-
-  const onPanelDirty = useCallback((dirty: boolean) => {
-    panelDirty.current = dirty
-  }, [])
-
-  const onPanelSaved = (content: RecipeContent) => {
-    setPanelContent(content)
-    void refreshProduct()
-  }
-
-  // The life stage of the dialog comes from the market recipes, so they reload with the product.
-  const onPanelLifeStageSaved = (content: RecipeContent) => {
-    onPanelSaved(content)
-    void loadMarketRecipes(savedCountry)
-  }
+  // An anchor in the URL opens its tab and scrolls to the section once the product has loaded.
+  useEffect(() => {
+    const anchor = anchorOf(location.hash)
+    if (!anchor) return
+    setTab(ANCHOR_TAB[anchor])
+    scrolledAnchor.current = ''
+  }, [location.hash])
 
   useEffect(() => {
-    const section = contentPanel?.section
-    if (!panelContent || !section || panelScrolled.current === section) return
-    panelScrolled.current = section
-    document.getElementById(section)?.scrollIntoView?.({ block: 'start' })
-  }, [panelContent, contentPanel])
+    const anchor = anchorOf(location.hash)
+    if (!data || !anchor || scrolledAnchor.current === anchor || ANCHOR_TAB[anchor] !== tab) return
+    scrolledAnchor.current = anchor
+    document.getElementById(anchor)?.scrollIntoView?.({ block: 'start' })
+  }, [data, tab, location.hash])
 
-  const planPayload = () => ({ planCountry })
+  const openTab = (next: TabId, anchor?: RecipeSectionAnchor) => {
+    if (next !== tab) {
+      if (contentDirty.current && !window.confirm(DISCARD_CONFIRM)) return false
+      contentDirty.current = false
+      setContentDirtyState(false)
+      setTab(next)
+    }
+    if (anchor) {
+      requestAnimationFrame(() => document.getElementById(anchor)?.scrollIntoView?.({ block: 'start' }))
+    }
+    return true
+  }
 
-  const save = async (event: FormEvent) => {
+  const moveTabFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
+    const index = TABS.findIndex((option) => option.id === tab)
+    const next = TABS[(index + (event.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length]
+    if (openTab(next.id)) document.getElementById(`product-tab-${next.id}`)?.focus()
+  }
+
+  const leavePage = (event: MouseEvent<HTMLAnchorElement>) => {
+    if ((generalDirty || contentDirty.current) && !window.confirm('Sair sem salvar as alterações?')) event.preventDefault()
+  }
+
+  // After a content tab saves: badges and pending items follow, the general fields typed and not saved stay.
+  const onContentSaved = (saved: RecipeContent) => {
+    setData((current) => (current?.content ? { ...current, content: withSavedContent(current.content, saved) } : current))
+    void load({ keepGeneral: generalDirty })
+  }
+
+  const saveGeneral = async (event: FormEvent) => {
     event.preventDefault()
-    if (!token || !productId || !canEdit) return
-    const payload = planPayload()
+    if (!token || !productId || !canWrite || !data || savingGeneral) return
     try {
+      setSavingGeneral(true)
       const response = await apiRequest<ProductDetail>(`/admin/catalog/products/${productId}`, {
         token,
         method: 'PATCH',
-        body: payload,
+        body: {
+          name: general.name.trim(),
+          flavorAliases: general.flavorAliases.trim(),
+          shortLabel: general.shortLabel.trim(),
+          lifeStage: general.lifeStage,
+        },
       })
       applyProduct(response)
       setError('')
+      setGeneralError('')
       setVariationNotice(null)
-      setMessage('Produto atualizado.')
+      setMessage('Dados gerais salvos.')
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar')
+      setGeneralError(generalFailure(requestError))
+    } finally {
+      setSavingGeneral(false)
     }
   }
 
@@ -460,16 +497,13 @@ export function ProductDetailPage() {
       )
       if (!confirmed) return
     }
-    const body = active
-      ? planPayload()
-      : { active: false as const }
     try {
       const response = await apiRequest<ProductDetail>(`/admin/catalog/products/${productId}`, {
         token,
         method: 'PATCH',
-        body: active ? { ...body, active: true } : body,
+        body: { active },
       })
-      applyProduct(response)
+      applyProduct(response, { keepGeneral: generalDirty })
       setError('')
       setVariationNotice(null)
       setMessage(response.publishBlocked ? 'Publicação bloqueada: faltam preços na Stripe.' : (active ? 'Publicado.' : 'Voltou para rascunho.'))
@@ -492,7 +526,7 @@ export function ProductDetailPage() {
       const createdLabel = created === 1 ? '1 preço criado' : `${created} preços criados`
       const updatedLabel = updated === 1 ? '1 atualizado' : `${updated} atualizados`
       setMessage(`Stripe sincronizado. ${createdLabel}, ${updatedLabel}.`)
-      await load()
+      await load({ keepGeneral: generalDirty })
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao sincronizar')
     }
@@ -500,16 +534,10 @@ export function ProductDetailPage() {
 
   const openVariationDialog = (draft: VariantDraft) => {
     setDialogError('')
-    setRecipeCreate(null)
-    setRecipeNotice('')
-    setVariationDialog({
-      draft,
-      slugLocked: Boolean(draft.id && draft.flavorSlug),
-      recipeKeyTouched: Boolean(draft.id),
-    })
+    setVariationDraft(draft)
   }
 
-  // ?variation=<id> (from a recipe page) scrolls to that variation, highlights it and opens it when editable.
+  // ?variation=<id> opens the Variações tab on that variation, highlights it and opens it when editable.
   const [searchParams] = useSearchParams()
   const focusVariationId = searchParams.get('variation')
   const focusedVariation = useRef<string | null>(null)
@@ -518,97 +546,24 @@ export function ProductDetailPage() {
     const item = variants.find((row) => row.id === focusVariationId)
     if (!item) return
     focusedVariation.current = focusVariationId
-    document.getElementById(`variation-${focusVariationId}`)?.scrollIntoView?.({ block: 'center' })
+    setTab('variacoes')
+    requestAnimationFrame(() => document.getElementById(`variation-${focusVariationId}`)?.scrollIntoView?.({ block: 'center' }))
     if (canEditVariation(item)) openVariationDialog(item)
   }, [data, variants, focusVariationId])
 
-  const updateDialogDraft = (patch: Partial<VariantDraft>) => {
-    setVariationDialog((current) => {
-      if (!current) return current
-      const next = { ...current.draft, ...patch }
-      if (patch.flavor != null && !current.draft.id && !current.slugLocked && patch.flavorSlug == null) {
-        const sibling = variants.find((row) => (
-          row.key !== current.draft.key
-          && row.flavor.trim().toLowerCase() === patch.flavor!.trim().toLowerCase()
-          && row.flavorSlug
-        ))
-        next.flavorSlug = sibling?.flavorSlug || suggestFlavorSlug(patch.flavor)
-      }
-      const recipeKeyTouched = current.recipeKeyTouched || patch.recipeKey !== undefined
-      // A new variation starts on the registered recipe of its suggested slug, or on no recipe.
-      if (!recipeKeyTouched && (patch.flavor != null || patch.flavorSlug != null)) {
-        const sibling = variants.find((row) => row.key !== current.draft.key && row.flavorSlug && row.flavorSlug === next.flavorSlug)
-        const suggested = sibling?.recipeKey || next.flavorSlug.trim()
-        next.recipeKey = marketRecipes.some((recipe) => recipe.key === suggested) ? suggested : null
-      }
-      // A variation linked to a recipe follows the recipe's life stage.
-      const linked = marketRecipes.find((recipe) => recipe.key === next.recipeKey)
-      if (linked?.lifeStage) next.lifeStage = linked.lifeStage
-      return { ...current, draft: next, recipeKeyTouched }
-    })
-  }
-
-  const openRecipeCreate = (draft: VariantDraft, key: string) => {
-    setRecipeNotice('')
-    setRecipeCreate({
-      name: draft.flavor.trim() || draft.name.trim(),
-      key,
-      // A recorded key is kept as is; a suggested one follows the name.
-      keyTouched: Boolean(draft.recipeKey),
-      lifeStage: draft.lifeStage,
-    })
-  }
-
-  const selectRecipe = (recipe: MarketRecipe, notice: string) => {
-    // The list update lands after this patch, so the life stage of the recipe goes in the patch itself.
-    updateDialogDraft({ recipeKey: recipe.key, ...(recipe.lifeStage ? { lifeStage: recipe.lifeStage } : {}) })
-    setRecipeCreate(null)
-    setDialogError('')
-    setRecipeNotice(notice)
-  }
-
-  // Registers the recipe in the market saved on the product, never in an unsaved plan country.
-  const createRecipe = async () => {
-    const market = data?.planCountry
-    if (!token || !market || !recipeCreate || creatingRecipe) return
-    const key = recipeCreate.key.trim()
-    try {
-      setCreatingRecipe(true)
-      const created = await apiRequest<RecipeContent>(`/admin/catalog/recipe-content?market=${encodeURIComponent(market)}`, {
-        token,
-        method: 'POST',
-        body: { key, name: recipeCreate.name.trim(), lifeStage: recipeCreate.lifeStage },
-      })
-      const recipe: MarketRecipe = { key: created.flavorSlug, name: created.name, lifeStage: created.lifeStage, variations: [] }
-      setMarketRecipes((current) => [...current.filter((item) => item.key !== recipe.key), recipe])
-      selectRecipe(recipe, 'Receita cadastrada. Salve a variação para vincular. Imagem, rótulo e apresentação ficam em Conteúdo, na tabela de variações.')
-    } catch (requestError) {
-      if (requestError instanceof ApiRequestError && requestError.code === 'recipe_key_taken') {
-        const existing = (await loadMarketRecipes(market)).find((item) => item.key === key)
-        if (existing) {
-          selectRecipe(existing, 'A receita já existia e foi selecionada. Salve a variação para vincular.')
-          return
-        }
-      }
-      setRecipeNotice('')
-      setDialogError(recipeContentFailure(requestError, 'Falha ao cadastrar a receita.'))
-    } finally {
-      setCreatingRecipe(false)
-    }
+  const updateDraft = (patch: Partial<VariantDraft>) => {
+    setVariationDraft((current) => (current ? { ...current, ...patch } : current))
   }
 
   const closeVariationDialog = () => {
-    if (savingVariation || creatingRecipe) return
-    // A recipe registered in the dialog stays in the market even when the variation is not saved.
-    setVariationDialog(null)
-    setRecipeCreate(null)
-    setRecipeNotice('')
+    if (savingVariation) return
+    setVariationDraft(null)
     setDialogError('')
   }
 
   const saveVariation = async () => {
-    if (!token || !productId || !variationDialog || savingVariation) return
-    const draft = variationDialog.draft
+    if (!token || !productId || !variationDraft || savingVariation) return
+    const draft = variationDraft
     if (!draft.id && !draft.sku.trim() && !draft.name.trim()) {
       setDialogError('Nova variação precisa de nome ou SKU.')
       return
@@ -620,13 +575,12 @@ export function ProductDetailPage() {
         method: 'PATCH',
         body: { variants: [variantPayload(draft, planCountry)] },
       })
-      applyProduct(response)
-      setVariationDialog(null)
+      applyProduct(response, { keepGeneral: generalDirty })
+      setVariationDraft(null)
       setDialogError('')
       notifyVariation('success', draft.id ? 'Variação atualizada.' : 'Variação adicionada.')
-      void loadMarketRecipes(response.planCountry)
     } catch (requestError) {
-      setDialogError(variationFailure(requestError, 'Falha ao salvar variação'))
+      setDialogError(variationFailure(requestError, 'Falha ao salvar variação', draft.weight))
     } finally {
       setSavingVariation(false)
     }
@@ -643,22 +597,24 @@ export function ProductDetailPage() {
         method: 'POST',
         body: { active },
       })
-      applyProduct(response)
+      applyProduct(response, { keepGeneral: generalDirty })
       notifyVariation('success', active ? `Variação "${label}" ativada.` : `Variação "${label}" desativada.`)
     } catch (requestError) {
-      notifyVariation('error', variationFailure(requestError, active ? 'Falha ao ativar variação' : 'Falha ao desativar variação'))
+      const missing = requestError instanceof ApiRequestError && Array.isArray(requestError.details?.missing)
+        ? requestError.details.missing as string[]
+        : []
+      notifyVariation(
+        'error',
+        variationFailure(requestError, active ? 'Falha ao ativar variação' : 'Falha ao desativar variação'),
+        missing.includes('presentation') ? 'apresentacao' : undefined,
+      )
     } finally {
       setTogglingKey('')
     }
   }
 
   const deleteVariation = async (item: VariantDraft) => {
-    if (!token || !productId || !canWrite) return
-    if (!item.id) {
-      setVariants((current) => current.filter((row) => row.key !== item.key))
-      return
-    }
-
+    if (!token || !productId || !canWrite || !item.id) return
     const label = item.name.trim() || item.sku.trim() || item.id
     const confirmed = window.confirm(`Excluir a variação "${label}"? Isso remove o cadastro local e não pode ser desfeito.`)
     if (!confirmed) return
@@ -669,13 +625,13 @@ export function ProductDetailPage() {
         token,
         method: 'DELETE',
       })
-      applyProduct(response)
+      applyProduct(response, { keepGeneral: generalDirty })
       notifyVariation('success', `Variação "${label}" excluída.`)
     } catch (requestError) {
       const failure = catalogDeleteFailure(requestError, 'Falha ao excluir variação')
       notifyVariation('error', failure.message)
       if (failure.inUse) {
-        await load()
+        await load({ keepGeneral: generalDirty })
       }
     } finally {
       setDeletingKey('')
@@ -686,7 +642,7 @@ export function ProductDetailPage() {
     if (!token || !productId || !canWrite || !data) return
     const count = data.variants.length
     const confirmed = window.confirm(
-      `Excluir o produto "${data.namePt}" e ${count} variação(ões)? Isso remove o cadastro local e não pode ser desfeito.`,
+      `Excluir o produto "${data.namePt}" e ${count} variação(ões)? Isso remove o cadastro local, o conteúdo e as imagens da receita e não pode ser desfeito.`,
     )
     if (!confirmed) return
 
@@ -699,7 +655,7 @@ export function ProductDetailPage() {
       setError(failure.message)
       setDeletingKey('')
       if (failure.inUse) {
-        await load()
+        await load({ keepGeneral: generalDirty })
       }
     }
   }
@@ -714,21 +670,16 @@ export function ProductDetailPage() {
 
   const activeCount = variants.filter((item) => item.active).length
   const pendingSyncCount = variants.filter((item) => item.requiresSync).length
-  const draft = variationDialog?.draft ?? null
-  const linkedRecipe = draft?.recipeKey ? marketRecipes.find((recipe) => recipe.key === draft.recipeKey) ?? null : null
-  const recipeKeyCandidate = draft && canWrite && data?.planCountry ? recipeCandidate(draft, marketRecipes) : ''
-  // Enter in the recipe fields registers the recipe instead of submitting the variation form.
-  const createOnEnter = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== 'Enter') return
-    event.preventDefault()
-    void createRecipe()
-  }
+  const content = data?.content ?? null
+  const contentForSections = data ? sectionContent(data) : null
+  const draft = variationDraft
+  const tabSections = TAB_SECTIONS[tab]
 
   return (
     <PageFrame
       eyebrow="Catálogo · Produto"
       title={data?.namePt ?? 'Produto'}
-      description={data ? `${data.nameEn} · slug ${data.slug}` : 'Carregando o produto.'}
+      description={data ? `${content ? `Código ${content.code}` : `slug ${data.slug}`} · mercado ${planCountry}` : 'Carregando o produto.'}
       actions={(
         <div className="inline-actions">
           {data ? (
@@ -736,7 +687,7 @@ export function ProductDetailPage() {
               {data.active ? 'Publicado' : 'Rascunho'}
             </span>
           ) : null}
-          <Link className="ghost-button" to="/catalog/products">Voltar</Link>
+          <Link className="ghost-button" to="/catalog/products" onClick={leavePage}>Voltar</Link>
         </div>
       )}
     >
@@ -744,277 +695,352 @@ export function ProductDetailPage() {
       {message ? <div className="success">{message}</div> : null}
       {gapText ? <div className="alert">Publicação bloqueada: faltam preços Stripe para {gapText}.</div> : null}
 
-      <form className="stack product-detail" onSubmit={save}>
-        <Section
-          title="Publicação e sincronização"
-          description={data?.active
-            ? 'O produto está na loja. Desativar tira da loja e mantém o cadastro.'
-            : 'Rascunho: não aparece na loja. Publique quando as variações estiverem prontas.'}
-          actions={data && (canWrite || canSync) ? (
-            <div className="inline-actions">
-              {canSync ? (
-                <button className="ghost-button" type="button" onClick={() => void sync()}>Sincronizar Stripe</button>
-              ) : null}
-              {canWrite ? (
-                <button
-                  className={data.active ? 'ghost-button' : 'primary-button'}
-                  type="button"
-                  onClick={() => void togglePublish(!data.active)}
-                >
-                  {data.active ? 'Desativar' : 'Publicar'}
-                </button>
-              ) : null}
-            </div>
-          ) : null}
-        >
-          {data ? (
-            <dl className="meta-grid">
-              <div className="meta-item">
-                <dt>Variações ativas</dt>
-                <dd>{activeCount} de {variants.length}</dd>
-              </div>
-              <div className="meta-item">
-                <dt>Pendentes no Stripe</dt>
-                <dd className={pendingSyncCount ? 'warning-text' : undefined}>
-                  {pendingSyncCount === 0 ? 'Nenhuma' : pendingSyncCount === 1 ? '1 variação' : `${pendingSyncCount} variações`}
-                </dd>
-              </div>
-              <div className="meta-item">
-                <dt>Moeda</dt>
-                <dd>{currency}</dd>
-              </div>
-            </dl>
-          ) : null}
-        </Section>
-
-        <Section
-          title="Plano"
-          description={data?.active
-            ? 'O país só muda em rascunho.'
-            : 'País da assinatura deste produto.'}
-        >
-          <div className="form-toolbar">
-            <div className="form-grid">
-              <label>
-                País do plano
-                <select value={planCountry} disabled={!canEdit} onChange={(event) => setPlanCountry(event.target.value)}>
-                  {countryOptions.map((country) => (
-                    <option key={country} value={country}>{country === 'US' ? 'US / USD' : 'BR / BRL'}</option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            {canWrite && data ? (
-              <div className="inline-actions">
-                <button className="primary-button" type="submit" disabled={!canEdit}>Salvar</button>
-              </div>
+      <Section
+        title="Publicação e sincronização"
+        description={data?.active
+          ? 'O produto está na loja. Desativar tira da loja e mantém o cadastro.'
+          : 'Rascunho: não aparece na loja. Publique quando as variações estiverem prontas.'}
+        actions={data && (canWrite || canSync) ? (
+          <div className="inline-actions">
+            {canSync ? (
+              <button className="ghost-button" type="button" onClick={() => void sync()}>Sincronizar Stripe</button>
+            ) : null}
+            {canWrite ? (
+              <button
+                className={data.active ? 'ghost-button' : 'primary-button'}
+                type="button"
+                onClick={() => void togglePublish(!data.active)}
+              >
+                {data.active ? 'Desativar' : 'Publicar'}
+              </button>
             ) : null}
           </div>
-          <p className="field-hint">
-            Duração do plano e limite do pacote pequeno valem para o mercado inteiro: <Link className="link-button" to={`/catalog/plan?market=${encodeURIComponent(savedCountry)}`}>Loja › Plano</Link>.
-          </p>
-          {planDirty ? <p className="field-hint warning-text">País alterado. Salve antes de sair.</p> : null}
-        </Section>
-
-        <Section
-          title="Variações"
-          description={canWrite && data?.active
-            ? 'Produto publicado. Variações inativas podem ser adicionadas e editadas; ative cada uma quando estiver pronta. Para editar uma variação ativa, desative-a antes.'
-            : 'Variação nova entra inativa. Ative cada uma depois das confirmações. O slug do sabor não muda depois de gravado.'}
-          actions={canAddVariation ? (
-            <button className="primary-button" type="button" onClick={() => openVariationDialog(emptyVariantDraft())}>
-              Adicionar variação
-            </button>
-          ) : null}
-        >
-          {variationNotice ? (
-            <div className={variationNotice.tone === 'error' ? 'alert' : 'success'} role={variationNotice.tone === 'error' ? 'alert' : 'status'}>
-              {variationNotice.text}
+        ) : null}
+      >
+        {data ? (
+          <dl className="meta-grid">
+            <div className="meta-item">
+              <dt>Variações ativas</dt>
+              <dd>{activeCount} de {variants.length}</dd>
             </div>
+            <div className="meta-item">
+              <dt>Pendentes no Stripe</dt>
+              <dd className={pendingSyncCount ? 'warning-text' : undefined}>
+                {pendingSyncCount === 0 ? 'Nenhuma' : pendingSyncCount === 1 ? '1 variação' : `${pendingSyncCount} variações`}
+              </dd>
+            </div>
+            <div className="meta-item">
+              <dt>Moeda</dt>
+              <dd>{currency}</dd>
+            </div>
+          </dl>
+        ) : null}
+      </Section>
+
+      <div className="page-tabs" role="tablist" aria-label="Produto" onKeyDown={moveTabFocus}>
+        {TABS.map((option) => (
+          <button
+            key={option.id}
+            id={`product-tab-${option.id}`}
+            type="button"
+            role="tab"
+            aria-selected={tab === option.id}
+            aria-controls={`product-panel-${option.id}`}
+            tabIndex={tab === option.id ? 0 : -1}
+            className={tab === option.id ? 'page-tab active' : 'page-tab'}
+            onClick={() => openTab(option.id)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'geral' ? (
+        <div id="product-panel-geral" role="tabpanel" aria-labelledby="product-tab-geral" className="stack">
+          <form onSubmit={saveGeneral}>
+            <Section
+              title="Dados gerais"
+              description="Nome, aliases, nome curto e fase valem para todas as variações deste produto."
+              actions={canWrite && data ? (
+                <button className="primary-button" type="submit" disabled={savingGeneral || !generalDirty}>
+                  {savingGeneral ? 'Salvando…' : 'Salvar'}
+                </button>
+              ) : null}
+            >
+              {generalError ? <div className="alert" role="alert">{generalError}</div> : null}
+              {data ? (
+                <>
+                  <dl className="meta-grid">
+                    <div className="meta-item">
+                      <dt>Código</dt>
+                      <dd className="mono">{content?.code ?? '-'}</dd>
+                    </div>
+                    <div className="meta-item">
+                      <dt>Mercado</dt>
+                      <dd>{planCountry === 'US' ? 'US / USD' : 'BR / BRL'}</dd>
+                    </div>
+                    <div className="meta-item">
+                      <dt>Situação</dt>
+                      <dd>{data.active ? 'Publicado' : 'Rascunho'}</dd>
+                    </div>
+                  </dl>
+                  <p className="field-hint">Código e mercado são definidos na criação e não mudam.</p>
+                  <div className="form-grid">
+                    <label>
+                      Nome
+                      <input
+                        aria-label="Nome do produto"
+                        value={general.name}
+                        maxLength={120}
+                        readOnly={!canWrite}
+                        onChange={(event) => setGeneral((current) => ({ ...current, name: event.target.value }))}
+                      />
+                    </label>
+                    <label id="fase">
+                      Fase de vida
+                      <select
+                        aria-label="Fase de vida"
+                        aria-describedby="life-stage-hint"
+                        value={general.lifeStage}
+                        disabled={!canWrite}
+                        onChange={(event) => setGeneral((current) => ({ ...current, lifeStage: event.target.value as LifeStage }))}
+                      >
+                        {(Object.keys(LIFE_STAGE_LABELS) as LifeStage[]).map((stage) => (
+                          <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
+                        ))}
+                      </select>
+                      <span id="life-stage-hint" className="access-hint">Mudar a fase muda a linha de todas as variações deste produto.</span>
+                    </label>
+                    <label>
+                      Aliases
+                      <input
+                        aria-label="Aliases"
+                        value={general.flavorAliases}
+                        maxLength={512}
+                        readOnly={!canWrite}
+                        placeholder="chicken, frango"
+                        onChange={(event) => setGeneral((current) => ({ ...current, flavorAliases: event.target.value }))}
+                      />
+                      <span className="access-hint">Opcional, separados por vírgula.</span>
+                    </label>
+                    <label>
+                      Nome curto
+                      <input
+                        aria-label="Nome curto"
+                        value={general.shortLabel}
+                        maxLength={64}
+                        readOnly={!canWrite}
+                        placeholder="Ex.: Bovino · Sênior"
+                        onChange={(event) => setGeneral((current) => ({ ...current, shortLabel: event.target.value }))}
+                      />
+                      <span className="access-hint">Usado na fila de produção.</span>
+                    </label>
+                  </div>
+                  <p className="field-hint">
+                    Duração do plano e limite do pacote pequeno valem para o mercado inteiro: <Link className="link-button" to={`/catalog/plan?market=${encodeURIComponent(planCountry)}`}>Loja › Plano</Link>.
+                  </p>
+                  {generalDirty ? <p className="field-hint warning-text" role="status">Dados gerais alterados. Salve antes de sair.</p> : null}
+                </>
+              ) : <p className="muted">Carregando o produto.</p>}
+            </Section>
+          </form>
+
+          {canWrite && data?.canDelete === true ? (
+            <Section title="Excluir produto" description="Remove o produto, as variações e o conteúdo da receita do cadastro local. Não pode ser desfeito.">
+              <div className="inline-actions">
+                <button
+                  className="danger-button"
+                  type="button"
+                  disabled={deletingKey === 'product'}
+                  onClick={() => void deleteProduct()}
+                >
+                  {deletingKey === 'product' ? 'Excluindo…' : 'Excluir produto'}
+                </button>
+              </div>
+            </Section>
           ) : null}
-          <div className="table-shell table-scroll variation-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Variação</th>
-                  <th>Sabor</th>
-                  <th>Linha</th>
-                  <th className="numeric">Preço ({currency})</th>
-                  <th>Stripe</th>
-                  <th>Conteúdo</th>
-                  <th>Situação</th>
-                  {canWrite ? <th><span className="sr-only">Ações</span></th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {variants.length === 0 ? (
+        </div>
+      ) : null}
+
+      {tabSections ? (
+        <div id={`product-panel-${tab}`} role="tabpanel" aria-labelledby={`product-tab-${tab}`} className="stack">
+          {!data ? <p className="muted">Carregando o produto.</p> : null}
+          {data && !contentForSections ? (
+            <div className="alert" role="alert">Este produto não tem conteúdo de receita.</div>
+          ) : null}
+          {data && contentForSections ? (
+            <RecipeContentSections
+              key={tab}
+              token={token}
+              productId={data.id}
+              market={planCountry}
+              content={contentForSections}
+              canWrite={canWrite}
+              onSaved={onContentSaved}
+              onDirtyChange={onContentDirty}
+              sections={tabSections}
+            />
+          ) : null}
+        </div>
+      ) : null}
+
+      {tab === 'variacoes' ? (
+        <div id="product-panel-variacoes" role="tabpanel" aria-labelledby="product-tab-variacoes">
+          <Section
+            title="Variações"
+            description={canWrite && data?.active
+              ? 'Produto publicado. Variações inativas podem ser adicionadas e editadas; ative cada uma quando estiver pronta. Para editar uma variação ativa, desative-a antes.'
+              : 'Cada variação é um tamanho de pack desta receita. Variação nova entra inativa; ative cada uma depois das confirmações.'}
+            actions={canAddVariation ? (
+              <button className="primary-button" type="button" onClick={() => openVariationDialog(emptyVariantDraft())}>
+                Adicionar variação
+              </button>
+            ) : null}
+          >
+            {variationNotice ? (
+              <div className={variationNotice.tone === 'error' ? 'alert' : 'success'} role={variationNotice.tone === 'error' ? 'alert' : 'status'}>
+                {variationNotice.text}
+                {variationNotice.tab ? (
+                  <>
+                    {' '}
+                    <button className="link-button inline-link-button" type="button" onClick={() => openTab(variationNotice.tab!)}>
+                      Abrir {TABS.find((option) => option.id === variationNotice.tab)?.label}
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+            <div className="table-shell table-scroll variation-table">
+              <table>
+                <thead>
                   <tr>
-                    <td colSpan={canWrite ? 8 : 7} className="muted">
-                      {canAddVariation
-                        ? 'Nenhuma variação. Use Adicionar variação para criar SKU, nome e preço.'
-                        : 'Nenhuma variação cadastrada.'}
-                    </td>
+                    <th>Variação</th>
+                    <th>Peso</th>
+                    <th className="numeric">Preço ({currency})</th>
+                    <th>Stripe</th>
+                    <th>Situação</th>
+                    {canWrite ? <th><span className="sr-only">Ações</span></th> : null}
                   </tr>
-                ) : variants.map((item) => {
-                  const label = item.name || item.sku || item.id || 'nova'
-                  const editable = canEditVariation(item)
-                  const pending = item.active ? [] : pendingItems(item, planCountry)
-                  const recipeKey = item.recipeKey
-                  return (
-                    <tr
-                      key={item.key}
-                      id={item.id ? `variation-${item.id}` : undefined}
-                      className={item.id && item.id === focusVariationId ? 'row-focused' : undefined}
-                    >
-                      <td>
-                        <div className="cell-stack">
-                          <strong>{item.name || 'Sem nome'}</strong>
-                          <span className="cell-meta mono">{item.sku || 'Sem SKU'}</span>
-                        </div>
+                </thead>
+                <tbody>
+                  {variants.length === 0 ? (
+                    <tr>
+                      <td colSpan={canWrite ? 6 : 5} className="muted">
+                        {canAddVariation
+                          ? 'Nenhuma variação. Use Adicionar variação para criar o primeiro tamanho de pack.'
+                          : 'Nenhuma variação cadastrada.'}
                       </td>
-                      <td>
-                        <div className="cell-stack">
-                          <span>{item.flavor || '-'}</span>
-                          {item.flavorSlug || item.flavorAliases ? (
-                            <span className="cell-meta">
-                              {[item.flavorSlug, item.flavorAliases].filter(Boolean).join(' · ')}
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td>{LIFE_STAGE_LABELS[item.lifeStage]}</td>
-                      <td className="numeric">{formatCurrency(item.regularPrice === '' ? null : Number(item.regularPrice), currency)}</td>
-                      <td>
-                        <div className="cell-stack">
-                          <span className={item.syncStatus === 'synced' && !item.requiresSync ? 'badge-success' : 'badge-warning'}>
-                            {syncStatusLabel(item.syncStatus)}
-                          </span>
-                          {item.requiresSync ? <span className="cell-meta warning-text">Precisa sincronizar</span> : null}
-                          {item.stripePriceId ? (
-                            <span className="cell-meta mono" title={[item.stripeProductId, item.stripePriceId].filter(Boolean).join(' · ')}>
-                              {item.stripePriceId}
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td>
-                        {item.recipeKey ? (
-                          <div className="cell-stack">
-                            <span className="cell-meta mono" title="Receita (conteúdo)">{item.recipeKey}</span>
-                            <span className={item.recipeImageUrl ? 'badge-success' : 'badge-neutral'}>
-                              {item.recipeImageUrl ? 'Imagem cadastrada' : 'Sem imagem'}
-                            </span>
-                            <span className={item.recipeLabelStatus === 'complete' ? 'badge-success' : item.recipeLabelStatus === 'incomplete' ? 'badge-warning' : 'badge-neutral'}>
-                              {LABEL_STATUS_TEXT[item.recipeLabelStatus]}
-                            </span>
-                            {item.id && recipeKey ? (
-                              <button
-                                className="link-button"
-                                type="button"
-                                aria-label={`Conteúdo da receita de ${label}`}
-                                onClick={() => openContentPanel(recipeKey)}
-                              >
-                                Conteúdo
-                              </button>
-                            ) : null}
-                          </div>
-                        ) : (
-                          <span className="cell-meta">Sem receita vinculada</span>
-                        )}
-                      </td>
-                      <td>
-                        <div className="cell-stack">
-                          <span className={item.active ? 'badge-success' : 'badge-neutral'}>{item.active ? 'Ativa' : 'Inativa'}</span>
-                          {pending.length ? (
-                            <span className="cell-meta">
-                              Pendente:{' '}
-                              {pending.map((entry, index) => {
-                                const section = entry.section
-                                return (
-                                  <Fragment key={entry.text}>
-                                    {index ? ', ' : ''}
-                                    {section && item.id && recipeKey ? (
-                                      <button
-                                        className="link-button inline-link-button"
-                                        type="button"
-                                        aria-label={`Abrir ${entry.text} de ${label}`}
-                                        onClick={() => openContentPanel(recipeKey, section)}
-                                      >
-                                        {entry.text}
-                                      </button>
-                                    ) : entry.text}
-                                  </Fragment>
-                                )
-                              })}
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      {canWrite ? (
+                    </tr>
+                  ) : variants.map((item) => {
+                    const label = item.name || item.sku || item.id || 'nova'
+                    const editable = canEditVariation(item)
+                    const pending = item.active ? [] : pendingItems(item, planCountry)
+                    return (
+                      <tr
+                        key={item.key}
+                        id={item.id ? `variation-${item.id}` : undefined}
+                        className={item.id && item.id === focusVariationId ? 'row-focused' : undefined}
+                      >
                         <td>
-                          <div className="cell-stack cell-actions">
-                            {item.id ? (
-                              <div className="table-actions">
-                                <button
-                                  className="ghost-button"
-                                  type="button"
-                                  aria-label={`Editar variação ${label}`}
-                                  disabled={!editable}
-                                  title={editable ? undefined : 'Desative a variação para editar.'}
-                                  onClick={() => openVariationDialog(item)}
-                                >
-                                  Editar
-                                </button>
-                                <button
-                                  className="ghost-button"
-                                  type="button"
-                                  aria-label={`${item.active ? 'Desativar' : 'Ativar'} variação ${label}`}
-                                  disabled={togglingKey === item.key}
-                                  onClick={() => void toggleVariation(item)}
-                                >
-                                  {item.active ? 'Desativar' : 'Ativar'}
-                                </button>
-                                {item.canDelete ? (
-                                  <button
-                                    className="danger-button"
-                                    type="button"
-                                    aria-label={`Excluir variação ${label}`}
-                                    disabled={deletingKey === item.key}
-                                    onClick={() => void deleteVariation(item)}
-                                  >
-                                    {deletingKey === item.key ? 'Excluindo…' : 'Excluir'}
-                                  </button>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {item.id && !editable ? <span className="cell-meta">Ativa e publicada: desative para editar.</span> : null}
-                            {item.id && !item.canDelete ? <span className="cell-meta">Variação em uso numa assinatura.</span> : null}
+                          <div className="cell-stack">
+                            <strong>{item.name || 'Sem nome'}</strong>
+                            <span className="cell-meta mono">{item.sku || 'Sem SKU'}</span>
                           </div>
                         </td>
-                      ) : null}
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </Section>
-
-        {canWrite && data?.canDelete === true ? (
-          <Section title="Excluir produto" description="Remove o produto e as variações do cadastro local. Não pode ser desfeito.">
-            <div className="inline-actions">
-              <button
-                className="danger-button"
-                type="button"
-                disabled={deletingKey === 'product'}
-                onClick={() => void deleteProduct()}
-              >
-                {deletingKey === 'product' ? 'Excluindo…' : 'Excluir produto'}
-              </button>
+                        <td>{item.weight ? weightText(item.weight) : '-'}</td>
+                        <td className="numeric">{formatCurrency(item.regularPrice === '' ? null : Number(item.regularPrice), currency)}</td>
+                        <td>
+                          <div className="cell-stack">
+                            <span className={item.syncStatus === 'synced' && !item.requiresSync ? 'badge-success' : 'badge-warning'}>
+                              {syncStatusLabel(item.syncStatus)}
+                            </span>
+                            {item.requiresSync ? <span className="cell-meta warning-text">Precisa sincronizar</span> : null}
+                            {item.stripePriceId ? (
+                              <span className="cell-meta mono" title={[item.stripeProductId, item.stripePriceId].filter(Boolean).join(' · ')}>
+                                {item.stripePriceId}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="cell-stack">
+                            <span className={item.active ? 'badge-success' : 'badge-neutral'}>{item.active ? 'Ativa' : 'Inativa'}</span>
+                            {pending.length ? (
+                              <span className="cell-meta">
+                                Pendente:{' '}
+                                {pending.map((entry, index) => {
+                                  const section = entry.section
+                                  return (
+                                    <Fragment key={entry.text}>
+                                      {index ? ', ' : ''}
+                                      {section ? (
+                                        <button
+                                          className="link-button inline-link-button"
+                                          type="button"
+                                          aria-label={`Abrir ${entry.text} de ${label}`}
+                                          onClick={() => openTab(ANCHOR_TAB[section], section)}
+                                        >
+                                          {entry.text}
+                                        </button>
+                                      ) : entry.text}
+                                    </Fragment>
+                                  )
+                                })}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
+                        {canWrite ? (
+                          <td>
+                            <div className="cell-stack cell-actions">
+                              {item.id ? (
+                                <div className="table-actions">
+                                  <button
+                                    className="ghost-button"
+                                    type="button"
+                                    aria-label={`Editar variação ${label}`}
+                                    disabled={!editable}
+                                    title={editable ? undefined : 'Desative a variação para editar.'}
+                                    onClick={() => openVariationDialog(item)}
+                                  >
+                                    Editar
+                                  </button>
+                                  <button
+                                    className="ghost-button"
+                                    type="button"
+                                    aria-label={`${item.active ? 'Desativar' : 'Ativar'} variação ${label}`}
+                                    disabled={togglingKey === item.key}
+                                    onClick={() => void toggleVariation(item)}
+                                  >
+                                    {item.active ? 'Desativar' : 'Ativar'}
+                                  </button>
+                                  {item.canDelete ? (
+                                    <button
+                                      className="danger-button"
+                                      type="button"
+                                      aria-label={`Excluir variação ${label}`}
+                                      disabled={deletingKey === item.key}
+                                      onClick={() => void deleteVariation(item)}
+                                    >
+                                      {deletingKey === item.key ? 'Excluindo…' : 'Excluir'}
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                              {item.id && !editable ? <span className="cell-meta">Ativa e publicada: desative para editar.</span> : null}
+                              {item.id && !item.canDelete ? <span className="cell-meta">Variação em uso numa assinatura.</span> : null}
+                            </div>
+                          </td>
+                        ) : null}
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
             </div>
           </Section>
-        ) : null}
-      </form>
+        </div>
+      ) : null}
 
       <Dialog
         open={draft != null}
@@ -1030,15 +1056,38 @@ export function ProductDetailPage() {
           </>
         )}
       >
-        {variationDialog && draft ? (
+        {draft ? (
           <form className="access-form" onSubmit={(event) => { event.preventDefault(); void saveVariation() }}>
-            {dialogError ? <div className="alert">{dialogError}</div> : null}
+            {dialogError ? <div className="alert" role="alert">{dialogError}</div> : null}
+            <dl className="meta-grid" aria-label="Receita do produto">
+              <div className="meta-item">
+                <dt>Sabor</dt>
+                <dd>{content?.name ?? data?.namePt ?? '-'}</dd>
+              </div>
+              <div className="meta-item">
+                <dt>Código</dt>
+                <dd className="mono">{content?.code ?? '-'}</dd>
+              </div>
+              <div className="meta-item">
+                <dt>Fase</dt>
+                <dd>{content ? LIFE_STAGE_LABELS[content.lifeStage] : '-'}</dd>
+              </div>
+            </dl>
+            <p className="access-hint">Sabor, código, fase e nome curto vêm do produto, em Dados gerais.</p>
             <fieldset className="access-group">
-              <legend>Identificação</legend>
+              <legend>Pack</legend>
               <div className="access-fields">
                 <label>
                   SKU
-                  <input aria-label="SKU" value={draft.sku} onChange={(event) => updateDialogDraft({ sku: event.target.value })} placeholder="BOWL-FRANGO-1KG" />
+                  <input aria-label="SKU" value={draft.sku} onChange={(event) => updateDraft({ sku: event.target.value })} placeholder="BOWL-FRANGO-300" />
+                </label>
+                <label>
+                  Peso
+                  <input aria-label="Peso" value={draft.weight} maxLength={32} onChange={(event) => updateDraft({ weight: event.target.value })} placeholder={planCountry === 'US' ? '10.6oz' : '300g'} />
+                </label>
+                <label className="access-field-wide">
+                  Nome
+                  <input aria-label="Nome" value={draft.name} onChange={(event) => updateDraft({ name: event.target.value })} placeholder="Frango 300g" />
                 </label>
                 <label>
                   Preço ({currency})
@@ -1048,22 +1097,8 @@ export function ProductDetailPage() {
                     min={0}
                     step="0.01"
                     value={draft.regularPrice}
-                    onChange={(event) => updateDialogDraft({ regularPrice: event.target.value })}
+                    onChange={(event) => updateDraft({ regularPrice: event.target.value })}
                     placeholder="0.00"
-                  />
-                </label>
-                <label className="access-field-wide">
-                  Nome
-                  <input aria-label="Nome" value={draft.name} onChange={(event) => updateDialogDraft({ name: event.target.value })} placeholder="Frango 1kg" />
-                </label>
-                <label className="access-field-wide">
-                  Nome curto <span className="access-optional">fila de produção</span>
-                  <input
-                    aria-label="Nome curto"
-                    value={draft.shortLabel}
-                    maxLength={64}
-                    onChange={(event) => updateDialogDraft({ shortLabel: event.target.value })}
-                    placeholder="Ex.: Bovino · Sênior"
                   />
                 </label>
               </div>
@@ -1075,11 +1110,11 @@ export function ProductDetailPage() {
                 <div className="access-fields">
                   <label>
                     NCM <span className="access-optional">8 dígitos, definido pelo contador</span>
-                    <input aria-label="NCM" value={draft.ncm} maxLength={10} inputMode="numeric" onChange={(event) => updateDialogDraft({ ncm: event.target.value })} placeholder="0000.00.00" />
+                    <input aria-label="NCM" value={draft.ncm} maxLength={10} inputMode="numeric" onChange={(event) => updateDraft({ ncm: event.target.value })} placeholder="0000.00.00" />
                   </label>
                   <label>
                     Origem da mercadoria
-                    <select aria-label="Origem da mercadoria" value={draft.origin} onChange={(event) => updateDialogDraft({ origin: event.target.value })}>
+                    <select aria-label="Origem da mercadoria" value={draft.origin} onChange={(event) => updateDraft({ origin: event.target.value })}>
                       {GOODS_ORIGINS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                     </select>
                   </label>
@@ -1088,167 +1123,9 @@ export function ProductDetailPage() {
             ) : null}
 
             <fieldset className="access-group">
-              <legend>Sabor e linha</legend>
-              <div className="access-fields">
-                <label>
-                  Sabor
-                  <input aria-label="Sabor" value={draft.flavor} onChange={(event) => updateDialogDraft({ flavor: event.target.value })} placeholder="Ex.: Frango" />
-                </label>
-                <label>
-                  Linha
-                  <select
-                    aria-label="Linha"
-                    aria-describedby={linkedRecipe?.lifeStage ? 'life-stage-hint' : undefined}
-                    value={linkedRecipe?.lifeStage ?? draft.lifeStage}
-                    disabled={Boolean(linkedRecipe?.lifeStage)}
-                    onChange={(event) => updateDialogDraft({ lifeStage: event.target.value as LifeStage })}
-                  >
-                    {(Object.keys(LIFE_STAGE_LABELS) as LifeStage[]).map((stage) => (
-                      <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
-                    ))}
-                  </select>
-                  {linkedRecipe?.lifeStage ? (
-                    <span id="life-stage-hint" className="access-hint">
-                      Vem da receita {linkedRecipe.name}.{' '}
-                      <button
-                        className="link-button inline-link-button"
-                        type="button"
-                        disabled={savingVariation || creatingRecipe}
-                        onClick={() => {
-                          const key = linkedRecipe.key
-                          closeVariationDialog()
-                          openContentPanel(key, 'fase')
-                        }}
-                      >
-                        Editar fase
-                      </button>
-                    </span>
-                  ) : null}
-                </label>
-                <label>
-                  Slug do sabor
-                  <input
-                    aria-label="Slug do sabor"
-                    value={draft.flavorSlug}
-                    disabled={variationDialog.slugLocked}
-                    onChange={(event) => updateDialogDraft({ flavorSlug: event.target.value })}
-                    placeholder="turkey"
-                  />
-                  {variationDialog.slugLocked ? <span className="access-hint">Gravado. Não muda mais.</span> : null}
-                </label>
-                <label>
-                  Aliases do sabor <span className="access-optional">opcional</span>
-                  <input
-                    aria-label="Aliases do sabor"
-                    value={draft.flavorAliases}
-                    onChange={(event) => updateDialogDraft({ flavorAliases: event.target.value })}
-                    placeholder="chicken, frango"
-                  />
-                </label>
-                <label className="access-field-wide">
-                  Receita (conteúdo) <span className="access-optional">imagem e rótulo</span>
-                  <select
-                    aria-label="Receita (conteúdo)"
-                    aria-describedby="recipe-key-hint"
-                    value={draft.recipeKey ?? ''}
-                    onChange={(event) => updateDialogDraft({ recipeKey: event.target.value || null })}
-                  >
-                    <option value="">Sem receita</option>
-                    {draft.recipeKey && !marketRecipes.some((recipe) => recipe.key === draft.recipeKey) ? (
-                      <option value={draft.recipeKey}>{draft.recipeKey}</option>
-                    ) : null}
-                    {marketRecipes.map((recipe) => (
-                      <option key={recipe.key} value={recipe.key}>{recipe.name} · {recipe.key}</option>
-                    ))}
-                  </select>
-                  <span id="recipe-key-hint" className="access-hint">
-                    Variações do mercado com a mesma receita usam a mesma imagem e o mesmo rótulo.
-                  </span>
-                </label>
-                {recipeNotice ? (
-                  <p className="access-field-wide success" role="status">{recipeNotice}</p>
-                ) : null}
-                {recipeKeyCandidate && !recipeCreate ? (
-                  <div className="access-field-wide">
-                    <button className="link-button" type="button" onClick={() => openRecipeCreate(draft, recipeKeyCandidate)}>
-                      Criar receita {recipeKeyCandidate}
-                    </button>
-                  </div>
-                ) : null}
-                {recipeCreate ? (
-                  <div className="access-field-wide recipe-create" role="group" aria-label="Nova receita">
-                    <p className="access-hint">
-                      A receita é cadastrada agora no mercado {data?.planCountry} e continua em Receitas mesmo que você não salve a variação.
-                    </p>
-                    <div className="access-fields">
-                      <label className="access-field-wide">
-                        Nome da receita
-                        <input
-                          aria-label="Nome da receita"
-                          value={recipeCreate.name}
-                          maxLength={120}
-                          onKeyDown={createOnEnter}
-                          onChange={(event) => {
-                            const name = event.target.value
-                            setRecipeCreate((current) => current && ({ ...current, name, key: current.keyTouched ? current.key : recipeKeyFromName(name) }))
-                          }}
-                        />
-                      </label>
-                      <label>
-                        Chave da receita
-                        <input
-                          className="mono"
-                          aria-label="Chave da receita"
-                          aria-describedby="recipe-create-key-hint"
-                          value={recipeCreate.key}
-                          maxLength={64}
-                          onKeyDown={createOnEnter}
-                          onChange={(event) => {
-                            const key = event.target.value
-                            setRecipeCreate((current) => current && ({ ...current, key, keyTouched: true }))
-                          }}
-                        />
-                        <span id="recipe-create-key-hint" className="access-hint">Letras minúsculas, números e hífens. Não muda depois de cadastrada.</span>
-                      </label>
-                      <label>
-                        Fase da receita
-                        <select
-                          aria-label="Fase da receita"
-                          value={recipeCreate.lifeStage}
-                          onChange={(event) => {
-                            const lifeStage = event.target.value as LifeStage
-                            setRecipeCreate((current) => current && ({ ...current, lifeStage }))
-                          }}
-                        >
-                          {(Object.keys(LIFE_STAGE_LABELS) as LifeStage[]).map((stage) => (
-                            <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    <div className="inline-actions">
-                      <button className="primary-button" type="button" disabled={creatingRecipe} onClick={() => void createRecipe()}>
-                        {creatingRecipe ? 'Cadastrando…' : 'Cadastrar e vincular'}
-                      </button>
-                      <button
-                        className="ghost-button"
-                        type="button"
-                        aria-label="Cancelar nova receita"
-                        disabled={creatingRecipe}
-                        onClick={() => setRecipeCreate(null)}
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </fieldset>
-
-            <fieldset className="access-group">
               <legend>Confirmações para ativar</legend>
-              {draft.recipeImageUrl ? (
-                <p className="access-hint">Imagem cadastrada em Conteúdo da receita. Não precisa de confirmação.</p>
+              {content?.imageUrl ? (
+                <p className="access-hint">Imagem cadastrada na aba Imagens. Não precisa de confirmação.</p>
               ) : (
                 <div className="readiness-item">
                   <label className="checkbox-field">
@@ -1256,17 +1133,17 @@ export function ProductDetailPage() {
                       type="checkbox"
                       aria-describedby="final-image-hint"
                       checked={draft.finalImageReady}
-                      onChange={(event) => updateDialogDraft({ finalImageReady: event.target.checked })}
+                      onChange={(event) => updateDraft({ finalImageReady: event.target.checked })}
                     />
                     Foto definitiva já está na loja
                   </label>
                   <p id="final-image-hint" className="access-hint">
-                    Só para imagem no código da loja. Marque depois que a foto final do design substituir a provisória. Ou cadastre a imagem em Conteúdo da receita, que dispensa esta confirmação.
+                    Só para imagem no código da loja. Ou cadastre a imagem na aba Imagens, que dispensa esta confirmação.
                   </p>
                 </div>
               )}
-              {draft.recipeLabelStatus === 'complete' ? (
-                <p className="access-hint">Rótulo completo cadastrado em Conteúdo da receita. Não precisa de confirmação.</p>
+              {content?.labelStatus === 'complete' ? (
+                <p className="access-hint">Rótulo completo na aba Rótulo. Não precisa de confirmação.</p>
               ) : (
                 <div className="readiness-item">
                   <label className="checkbox-field">
@@ -1274,14 +1151,14 @@ export function ProductDetailPage() {
                       type="checkbox"
                       aria-describedby="label-data-hint"
                       checked={draft.labelDataReady}
-                      onChange={(event) => updateDialogDraft({ labelDataReady: event.target.checked })}
+                      onChange={(event) => updateDraft({ labelDataReady: event.target.checked })}
                     />
                     Dados de rótulo já estão na página da receita
                   </label>
                   <p id="label-data-hint" className="access-hint">
                     Só para rótulo no código da loja: ingredientes, níveis de garantia, kcal e avisos.{' '}
                     {planCountry === 'US' ? 'Obrigatório para ativar nos EUA.' : 'Opcional no Brasil; obrigatório para ativar nos EUA.'}
-                    {' '}Um rótulo completo em Conteúdo da receita dispensa esta confirmação.
+                    {' '}Um rótulo completo na aba Rótulo dispensa esta confirmação.
                   </p>
                 </div>
               )}
@@ -1289,53 +1166,6 @@ export function ProductDetailPage() {
           </form>
         ) : null}
       </Dialog>
-
-      <Drawer
-        open={contentPanel != null}
-        title={panelContent ? `Conteúdo da receita ${panelContent.name}` : 'Conteúdo da receita'}
-        description={contentPanel ? `Receita ${contentPanel.recipeKey} · mercado ${savedCountry}` : undefined}
-        onRequestClose={closeContentPanel}
-        notice={panelContent && contentPanel ? (
-          <div className="warning drawer-shared" role="note">
-            <p>
-              Este conteúdo vale para {panelContent.variations.length === 1 ? '1 variação' : `${panelContent.variations.length} variações`} do
-              mercado {savedCountry} com a receita {contentPanel.recipeKey}
-              {panelContent.variations.some((variation) => variation.productId !== data?.id) ? ', inclusive de outros produtos' : ''}.
-              {' '}Mudar a fase muda a linha de todas.
-            </p>
-            {panelContent.variations.length ? (
-              <ul className="drawer-shared-list">
-                {panelContent.variations.map((variation) => (
-                  <li key={variation.id}>
-                    {variation.name || variation.sku}
-                    <span className="cell-meta">
-                      {' · '}{variation.productName || 'Produto'}{variation.productId === data?.id ? ' (este produto)' : ''}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <Link className="link-button" to={recipePagePath(savedCountry, contentPanel.recipeKey)}>Abrir página da receita</Link>
-          </div>
-        ) : null}
-      >
-        {panelError ? <div className="alert" role="alert">{panelError}</div> : null}
-        {panelContent && contentPanel ? (
-          <div className="stack">
-            <RecipeContentSections
-              key={contentPanel.recipeKey}
-              token={token}
-              market={savedCountry}
-              recipeKey={contentPanel.recipeKey}
-              content={panelContent}
-              canWrite={canWrite}
-              onSaved={onPanelSaved}
-              onLifeStageSaved={onPanelLifeStageSaved}
-              onDirtyChange={onPanelDirty}
-            />
-          </div>
-        ) : !panelError ? <p className="muted">Carregando o conteúdo da receita.</p> : null}
-      </Drawer>
     </PageFrame>
   )
 }

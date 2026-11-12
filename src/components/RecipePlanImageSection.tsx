@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Section } from './Section'
 import { apiRequest } from '../lib/api'
 import { RECIPE_PLAN_IMAGE_SIZES, checkRecipePlanImage, fileToImagePayload, type ImagePayload } from '../lib/imageUpload'
-import { recipeContentFailure, recipeContentPath, type RecipeContent } from '../lib/recipeContent'
+import { recipeContentFailure, productContentPath, type RecipeContent } from '../lib/recipeContent'
 
 type Notice = { tone: 'success' | 'error'; text: string } | null
 
@@ -12,10 +12,10 @@ const SIZES_TEXT = RECIPE_PLAN_IMAGE_SIZES.map((side) => `${side} × ${side} px`
 
 // Package thumbnail of the plan flavor picker, apart from the home banner. Optional: without it the plan
 // shows the banner image.
-export function RecipePlanImageSection({ token, market, recipeKey, content, canWrite, onSaved, onDirtyChange }: {
+export function RecipePlanImageSection({ token, productId, content, canWrite, onSaved, onDirtyChange }: {
   token: string | null
+  productId: string
   market: string
-  recipeKey: string
   content: RecipeContent
   canWrite: boolean
   onSaved: (content: RecipeContent) => void
@@ -63,7 +63,7 @@ export function RecipePlanImageSection({ token, market, recipeKey, content, canW
     if (!token || !pendingImage || saving) return
     try {
       setSaving(true)
-      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/plan-image'), {
+      const saved = await apiRequest<RecipeContent>(productContentPath(productId, '/plan-image'), {
         token,
         method: 'PUT',
         body: pendingImage.payload,
@@ -83,7 +83,7 @@ export function RecipePlanImageSection({ token, market, recipeKey, content, canW
     if (!window.confirm('Remover a miniatura do plano? A tela Plano volta a usar a imagem da tela inicial.')) return
     try {
       setSaving(true)
-      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/plan-image'), { token, method: 'DELETE' })
+      const saved = await apiRequest<RecipeContent>(productContentPath(productId, '/plan-image'), { token, method: 'DELETE' })
       onSaved(saved)
       setNotice({ tone: 'success', text: 'Miniatura removida. A tela Plano volta a usar a imagem da tela inicial.' })
     } catch (requestError) {

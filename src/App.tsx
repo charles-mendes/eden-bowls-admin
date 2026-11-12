@@ -10,8 +10,7 @@ import { ReportsPage } from './pages/ReportsPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
 import { PlanSettingsPage } from './pages/PlanSettingsPage'
-import { RecipeContentPage } from './pages/RecipeContentPage'
-import { RecipesPage } from './pages/RecipesPage'
+import { RecipeRedirectPage } from './pages/RecipeRedirectPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { ProductionQueuePage } from './pages/ProductionQueuePage'
 import { LabelQueuePage } from './pages/LabelQueuePage'
@@ -71,8 +70,8 @@ function App() {
           <Route path="/catalog/products" element={<ProductsPage />} />
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
           <Route path="/catalog/plan" element={<PlanSettingsPage />} />
-          <Route path="/catalog/recipes" element={<RecipesPage />} />
-          <Route path="/catalog/recipes/:market/:recipeKey" element={<RecipeContentPage />} />
+          <Route path="/catalog/recipes" element={<Navigate to="/catalog/products" replace />} />
+          <Route path="/catalog/recipes/:market/:recipeKey" element={<RecipeRedirectPage />} />
           <Route path="/onboarding/sessions" element={<OnboardingPage />} />
           <Route path="/onboarding/sessions/:id" element={<LegacyCheckoutRedirect />} />
           <Route path="/operations/production" element={<ProductionQueuePage />} />
