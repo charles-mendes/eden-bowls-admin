@@ -47,7 +47,7 @@ The list and the product detail MUST describe the same `active` flag, which is t
 
 ### Requirement: Detail mutations wait until the product loads
 
-On product detail, **Salvar**, **Publicar**, **Desativar**, **Sincronizar Stripe**, and **Excluir produto** MUST NOT be rendered until the product GET has resolved. A session without `catalog.write` MUST NOT see save, publish, deactivate, or delete. A session without `catalog.sync` MUST NOT see **Sincronizar Stripe**. After the product has loaded, a publish of that loaded draft MUST send that product’s plan country, plan days, and `active` true, and MUST NOT include `variants`. **Salvar** MUST stay disabled while the loaded product is published. **Desativar** is the control that unpublishes a loaded published product (`PATCH` with `active` false). **Excluir produto** MUST appear only when the loaded product has `canDelete` true.
+On product detail, **Salvar**, **Publicar**, **Desativar**, **Sincronizar Stripe**, and **Excluir produto** MUST NOT be rendered until the product GET has resolved. A session without `catalog.write` MUST NOT see save, publish, deactivate, or delete. A session without `catalog.sync` MUST NOT see **Sincronizar Stripe**. After the product has loaded, a publish of that loaded draft MUST send that product's plan country and `active` true, and MUST NOT include `variants` or plan days. **Salvar** MUST stay disabled while the loaded product is published. **Desativar** is the control that unpublishes a loaded published product (`PATCH` with `active` false). **Excluir produto** MUST appear only when the loaded product has `canDelete` true.
 
 #### Scenario: Publish is absent while the product is loading
 
@@ -62,28 +62,14 @@ On product detail, **Salvar**, **Publicar**, **Desativar**, **Sincronizar Stripe
 #### Scenario: Publish uses the loaded product
 
 - **WHEN** a session with `catalog.write` publishes a loaded draft
-- **THEN** the PATCH body includes that product’s plan country, plan days, and `active` true
-- **AND** the PATCH body does not include `variants`
+- **THEN** the PATCH body includes that product's plan country and `active` true
+- **AND** the PATCH body does not include `variants` or `planDays`
 
 #### Scenario: Published linked product deactivates instead of deleting
 
 - **WHEN** a session with `catalog.write` opens a loaded published product whose `canDelete` is false
 - **THEN** the screen shows **Desativar** and does not show **Excluir produto**
 - **AND** confirming **Desativar** asks to take the product off the store while keeping the record and current billing, then sends `PATCH` with `active` false
-
-### Requirement: Missing plan days stay empty
-
-When the loaded product has no positive `planDays`, the duration field MUST be empty. The panel MUST NOT display or submit `28` as a stand-in. A product that already has plan days MUST keep showing and submitting that value.
-
-#### Scenario: Null plan days
-
-- **WHEN** product detail loads a product whose `planDays` is null
-- **THEN** the duration field is empty and saving does not send `28`
-
-#### Scenario: Existing plan days
-
-- **WHEN** product detail loads a product whose `planDays` is `28`
-- **THEN** the duration field shows `28` and a save sends `28`
 
 ### Requirement: Variation sync status is readable
 
@@ -180,30 +166,6 @@ When the variation PATCH fails, the dialog MUST stay open, the fields MUST keep 
 - **WHEN** a session with `catalog.write` confirms a variation edit and the PATCH is rejected
 - **THEN** the dialog stays open, the edited fields are unchanged, and the error is visible in the dialog
 
-### Requirement: Unsaved plan fields are visible
-
-**Salvar** on product detail MUST send plan country and plan days and MUST NOT send `variants`. When the country, duration or large-pack limit on screen differs from the loaded product, the page MUST say so and that it must be saved before leaving, and closing the browser tab MUST warn. Saving the product or reloading it MUST clear that warning, except the reload after a save in the recipe side panel, which MUST keep the typed plan fields and their warning.
-
-#### Scenario: Product save omits variations
-
-- **WHEN** a session with `catalog.write` saves plan country and plan days on a loaded draft
-- **THEN** the PATCH body includes plan country and plan days and does not include `variants`
-
-#### Scenario: Changed duration warns before leaving
-
-- **WHEN** a session with `catalog.write` changes the duration of a loaded draft and has not saved
-- **THEN** the page says country and duration are changed and must be saved before leaving
-
-#### Scenario: Side panel save keeps a typed duration
-
-- **WHEN** a writer changes the duration of a draft from 30 to 15, does not save, and saves the home image in the recipe side panel
-- **THEN** after the product reload the duration still shows 15 and the unsaved warning stays
-
-#### Scenario: Side panel save keeps a typed limit on a published product
-
-- **WHEN** a writer changes the large-pack limit of a published product from 8 to 6, does not save, and saves the label in the recipe side panel
-- **THEN** after the product reload the limit still shows 6 and the unsaved warning stays
-
 ### Requirement: Catalog sync runs are persisted per market
 
 Every catalog price sync MUST be stored as one run per market it touched, with market (`BR`|`US`), currency, scope (`market`|`product`), product id when scoped to a product, result (`completed`, `completed_with_skips` or `failed`), created/updated/skipped counts, start and finish time. A failed sync MUST be stored with result `failed` and its error message (up to 500 characters), and the API MUST still return the original error to the caller.
@@ -245,20 +207,6 @@ The system MUST keep at most the 50 most recent runs per market. Storing a new r
 
 - **WHEN** no sync has ever run in the caller's scope
 - **THEN** the response is `{ status: null, byMarket: {} }`
-
-### Requirement: Plan section edits the large-pack limit
-
-The product "Plano" section MUST show the large-pack limit (`largePackLimit`, 1 to 60) and the weights of the active variations that the recommendation uses as pack sizes. An operator with `catalog.write` MUST be able to save the limit with `PATCH /api/v1/admin/catalog/products/:id`, also while the product is published; in a published product the save MUST send only `largePackLimit`, and plan country and days stay locked.
-
-#### Scenario: Save the limit of a published product
-
-- **WHEN** an operator sets the limit of a published product to 6 and saves
-- **THEN** the page sends `{ largePackLimit: 6 }` and shows the saved value
-
-#### Scenario: Out of range
-
-- **WHEN** an operator types 0
-- **THEN** the field is marked invalid by its 1 to 60 range and the page does not send the request
 
 ### Requirement: Missing presentation blocks activation in the product page
 
@@ -439,3 +387,17 @@ For an inactive variation linked to a recipe, the pending items "foto", "rótulo
 
 - **WHEN** a variation lists "preço" as pending
 - **THEN** "preço" is plain text and opens nothing
+
+### Requirement: Unsaved product fields are visible
+
+**Salvar** on product detail MUST send the plan country and MUST NOT send `variants`, plan days or large-pack limit. When the country on screen differs from the loaded product, the page MUST say so and that it must be saved before leaving, and closing the browser tab MUST warn. Saving the product or reloading it MUST clear that warning, except the reload after a save in the recipe side panel, which MUST keep the typed country and its warning.
+
+#### Scenario: Product save omits variations
+
+- **WHEN** a session with `catalog.write` saves the plan country on a loaded draft
+- **THEN** the PATCH body includes the plan country and does not include `variants` or `planDays`
+
+#### Scenario: Changed field warns before leaving
+
+- **WHEN** a session with `catalog.write` changes the country of a loaded draft and has not saved
+- **THEN** the page says the country is changed and must be saved before leaving
