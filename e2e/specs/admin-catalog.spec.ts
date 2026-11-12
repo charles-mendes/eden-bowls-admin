@@ -98,6 +98,9 @@ test.describe('Admin catalog', () => {
             flavor: 'Frango',
             lifeStage: 'adult',
             shortLabel: '',
+            // A BR variation carries its fiscal fields (NF-e).
+            ncm: '',
+            origin: 0,
             finalImageReady: false,
             labelDataReady: false,
             regularPrice: 30,
@@ -139,22 +142,23 @@ test.describe('Admin catalog', () => {
     await expect(page.getByText('Variação "Frango 1kg" excluída.')).toBeVisible()
   })
 
-  test('opens recipe content from the variation and uploads only a banner-sized image', async ({ page }) => {
+  test('opens recipe content from the variation in the side panel and uploads only a banner-sized image', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
 
-    await page.getByRole('link', { name: 'Conteúdo da receita de Frango 1kg' }).click()
-    await expect(page).toHaveURL(/\/catalog\/recipes\/BR\/turkey$/)
-    await expect(page.getByRole('heading', { name: 'Imagem' })).toBeVisible()
-    await expect(page.getByText('Frango 1kg', { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Conteúdo da receita de Frango 1kg' }).click()
+    const panel = page.getByRole('dialog', { name: 'Conteúdo da receita Frango' })
+    await expect(panel.getByRole('heading', { name: 'Imagem' })).toBeVisible()
+    await expect(panel.getByRole('note')).toContainText('Frango 1kg')
+    await expect(panel.getByRole('link', { name: 'Abrir página da receita' })).toHaveAttribute('href', '/catalog/recipes/BR/turkey')
 
-    await page.getByLabel('Escolher imagem').setInputFiles({ name: 'grande.png', mimeType: 'image/png', buffer: solidPng(1200, 800) })
-    await expect(page.getByText('A imagem tem 1200 × 800 px e precisa ter 1024 × 636 px.')).toBeVisible()
+    await panel.getByLabel('Escolher imagem').setInputFiles({ name: 'grande.png', mimeType: 'image/png', buffer: solidPng(1200, 800) })
+    await expect(panel.getByText('A imagem tem 1200 × 800 px e precisa ter 1024 × 636 px.')).toBeVisible()
     expect(captured.some((item) => item.method === 'PUT')).toBe(false)
 
-    await page.getByLabel('Escolher imagem').setInputFiles({ name: 'banner.png', mimeType: 'image/png', buffer: solidPng(1024, 636) })
-    await expect(page.getByRole('img', { name: 'Prévia da nova imagem' })).toBeVisible()
-    await page.getByRole('button', { name: 'Salvar imagem' }).click()
-    await expect(page.getByText('Imagem salva. A loja passa a usar esta imagem.')).toBeVisible()
+    await panel.getByLabel('Escolher imagem').setInputFiles({ name: 'banner.png', mimeType: 'image/png', buffer: solidPng(1024, 636) })
+    await expect(panel.getByRole('img', { name: 'Prévia da nova imagem' })).toBeVisible()
+    await panel.getByRole('button', { name: 'Salvar imagem' }).click()
+    await expect(panel.getByText('Imagem salva. A loja passa a usar esta imagem.')).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'PUT')).toEqual(expect.objectContaining({
       path: '/api/v1/admin/catalog/recipe-content/turkey/image',
       search: '?market=BR',
@@ -196,7 +200,7 @@ test.describe('Admin catalog', () => {
     await page.getByRole('button', { name: 'Salvar variação' }).click()
 
     await expect(page.getByText('Sem receita vinculada')).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Conteúdo da receita de Frango 1kg' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Conteúdo da receita de Frango 1kg' })).toHaveCount(0)
     await expect.poll(() => captured.find((item) => item.method === 'PATCH')?.body).toEqual({
       variants: [expect.objectContaining({ id: 'var-1', recipeKey: null })],
     })
