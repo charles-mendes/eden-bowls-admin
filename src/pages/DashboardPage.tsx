@@ -34,6 +34,10 @@ function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado'], stal
   const blocked = items.filter((item) => item.productionStatus === 'blocked')
   const notStarted = items.filter((item) => item.dueBucket === 'today' && item.paymentState === 'paid' && item.productionStatus === 'to_prepare')
   const noLabel = items.filter((item) => item.upsLabel === 'missing' && item.productionStatus === 'ready')
+  // queue-overdue-filter-matches-metric: a ready Brazil order past its preparation day whose box has not left is
+  // late for the customer even though the kitchen is done; "Atrasados" leaves it out, so it is pending here.
+  const waitingToLeave = items.filter((item) => item.dueBucket === 'overdue' && item.productionStatus === 'ready'
+    && item.market === 'BR' && (item.courierDelivery == null || item.courierDelivery === 'none'))
 
   const list: Pending[] = []
   if (stalePaid > 0) {
@@ -65,6 +69,17 @@ function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado'], stal
       key: 'blocked', severity: 'high', title: plural(blocked.length, 'pedido bloqueado', 'pedidos bloqueados'),
       detail: 'Leia a nota de cada um e resolva o bloqueio.',
       action: 'Ver na fila', to: productionQueueHref({ status: 'blocked', mercado }),
+    })
+  }
+  if (waitingToLeave.length) {
+    const one = waitingToLeave.length === 1 ? waitingToLeave[0] : null
+    list.push({
+      key: 'waiting-to-leave', severity: 'medium',
+      title: plural(waitingToLeave.length, 'pedido pronto esperando saída', 'pedidos prontos esperando saída'),
+      detail: one
+        ? `${customer(one)}: o dia de preparo já passou e a caixa ainda não saiu.`
+        : 'O dia de preparo já passou e as caixas ainda não saíram.',
+      action: 'Abrir entregas', to: courierHref(),
     })
   }
   if (notStarted.length) {

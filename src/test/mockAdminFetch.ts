@@ -620,9 +620,12 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (path === '/api/v1/admin/production/queue' && method === 'GET') {
       const productionStatus = url.searchParams.get('productionStatus')
-      const items = productionStatus
-        ? queueItems.filter((item) => item.productionStatus === productionStatus)
-        : queueItems
+      const due = url.searchParams.get('due')
+      const items = queueItems
+        .filter((item) => !productionStatus || item.productionStatus === productionStatus)
+        .filter((item) => !due || item.dueBucket === due)
+        // queue-overdue-filter-matches-metric: due=overdue lists ready rows only when Pronto is asked for.
+        .filter((item) => due !== 'overdue' || productionStatus === 'ready' || item.productionStatus !== 'ready')
       return jsonResponse({
         ...productionQueueList,
         metrics: options.productionMetrics ?? productionQueueList.metrics,

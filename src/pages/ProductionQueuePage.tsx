@@ -26,6 +26,7 @@ import {
   isProductionStatus,
   isQueueDue,
   plural,
+  productionQueueHref,
   stockShortageHref,
   type BlockPreview,
   type DueBucket,
@@ -124,6 +125,13 @@ const BUCKET_HEADERS: Record<QueueGroup, string> = {
 function queueGroup(item: QueueItem): QueueGroup | null {
   if (item.dueBucket === 'overdue' && item.productionStatus === 'ready') return 'readyLate'
   return item.dueBucket
+}
+
+// queue-overdue-filter-matches-metric: a ready order past its day is not kitchen work running late; its row says
+// how long the box has been waiting to leave instead of "Atrasado N dias".
+function waitingToLeaveLabel(daysUntil: number | null) {
+  const days = daysUntil == null ? 0 : Math.abs(daysUntil)
+  return days > 0 ? `Aguardando saída há ${plural(days, 'dia', 'dias')}` : 'Aguardando saída'
 }
 
 // The API sorts by due day; the ready ones past their day move above "Atrasados", each group in its order.
@@ -268,6 +276,8 @@ export function ProductionQueuePage() {
   const [stockWarning, setStockWarning] = useState('')
   const [recipientItem, setRecipientItem] = useState<QueueItem | null>(null)
   const [recipientNotice, setRecipientNotice] = useState('')
+  // queue-overdue-filter-matches-metric: orders marked ready under "Atrasados" leave that list; say where they went.
+  const [readyMoved, setReadyMoved] = useState(0)
   // PM-09: a short order asks before it is marked ready.
   const [readyConfirm, setReadyConfirm] = useState<QueueItem | null>(null)
   // PM-15: the block preview of the dialog's cycle, kept with the key it was asked for.
@@ -297,12 +307,17 @@ export function ProductionQueuePage() {
       return next
     }, { replace: true })
     setPage(1)
+    setReadyMoved(0)
   }
 
   const clearFilters = () => {
     setParams(new URLSearchParams(), { replace: true })
     setPage(1)
+    setReadyMoved(0)
   }
+  // Under "Atrasados" the API lists no ready row (unless Pronto is the status filter), so a ready one leaves the list.
+  const leavesOverdueFilter = (status: ProductionStatus) => status === 'ready' && due === 'atrasados' && productionStatus !== 'ready'
+  const readyQueueHref = productionQueueHref({ status: 'ready', mercado: pickedMarket === 'br' || pickedMarket === 'us' ? pickedMarket : undefined })
 
   const [reloadKey, setReloadKey] = useState(0)
   const [loadedKey, setLoadedKey] = useState('')
@@ -358,6 +373,7 @@ export function ProductionQueuePage() {
     setError('')
     setStockWarning('')
     setBatchResult(null)
+    setReadyMoved(0)
     try {
       const updated = await sendStatus(item, status, note)
       if (status === 'ready' && updated.stock && (updated.stock.shortages.length > 0 || updated.stock.unsized > 0)) {
@@ -367,6 +383,7 @@ export function ProductionQueuePage() {
       setBlockNote('')
       setBlockPreview(null)
       setReadyConfirm(null)
+      if (leavesOverdueFilter(status)) setReadyMoved(1)
       setReloadKey((key) => key + 1)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao atualizar o status de produção')
@@ -441,6 +458,7 @@ export function ProductionQueuePage() {
     }
     setBatchProgress(null)
     setBatchResult({ updated, failures, shortages: warnings.join(' ') })
+    setReadyMoved(leavesOverdueFilter(status) ? updated : 0)
     setReloadKey((key) => key + 1)
   }
 
@@ -595,6 +613,16 @@ export function ProductionQueuePage() {
           <button className="link-button" type="button" onClick={() => setRecipientNotice('')}>Fechar</button>
         </div>
       ) : null}
+      {readyMoved > 0 ? (
+        <div className="notice" role="status" data-testid="ready-moved">
+          {readyMoved === 1
+            ? 'O pedido saiu de Atrasados e está em Prontos para expedir.'
+            : `${readyMoved} pedidos saíram de Atrasados e estão em Prontos para expedir.`}
+          {' '}
+          <Link className="table-link" to={readyQueueHref} onClick={() => setReadyMoved(0)}>Ver prontos</Link>
+          <button className="link-button" type="button" onClick={() => setReadyMoved(0)}>Fechar</button>
+        </div>
+      ) : null}
       {stockWarning ? (
         <div className="alert" role="status">
           {stockWarning}
@@ -697,7 +725,11 @@ export function ProductionQueuePage() {
                       <td className="nowrap" data-label="Dia de preparo">
                         <div className="queue-cell-stack">
                           <span>{shortDay(civilDay(item))}</span>
-                          {item.dueBucket === 'overdue' ? <span className="badge-error">{item.dueLabel}</span> : null}
+                          {item.dueBucket === 'overdue' ? (
+                            queueGroup(item) === 'readyLate'
+                              ? <span className="badge-warning">{waitingToLeaveLabel(item.daysUntil)}</span>
+                              : <span className="badge-error">{item.dueLabel}</span>
+                          ) : null}
                         </div>
                       </td>
                       <td data-label="Sabores">

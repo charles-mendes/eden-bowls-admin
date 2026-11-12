@@ -492,6 +492,12 @@ describe('ProductionQueuePage', () => {
     const rows = screen.getAllByRole('row').map((row) => row.textContent || '')
     expect(rows.findIndex((text) => text.includes('Ana Ledger'))).toBeLessThan(rows.findIndex((text) => text === 'Atrasados'))
     expect(rows.findIndex((text) => text.includes('Bia Cozinha'))).toBeGreaterThan(rows.findIndex((text) => text === 'Atrasados'))
+    // queue-overdue-filter-matches-metric: the ready row says how long it waits to leave, not "Atrasado".
+    const readyRow = screen.getByText('Ana Ledger').closest('tr') as HTMLElement
+    expect(within(readyRow).getByText('Aguardando saída há 24 dias')).toHaveClass('badge-warning')
+    expect(within(readyRow).queryByText('Atrasado 24 dias')).not.toBeInTheDocument()
+    const kitchenRow = screen.getByText('Bia Cozinha').closest('tr') as HTMLElement
+    expect(within(kitchenRow).getByText('Atrasado 24 dias')).toHaveClass('badge-error')
     const overdueCard = screen.getByRole('button', { name: /^Atrasados/ })
     expect(within(overdueCard).getByText('1')).toBeInTheDocument()
     // explain-hold-reason-and-overdue: one number, and the text says the ready ones are not in it.
@@ -499,19 +505,60 @@ describe('ProductionQueuePage', () => {
     expect(overdueCard.textContent?.match(/\d+/g)).toEqual(['1'])
   })
 
-  it('a late order marked ready from the overdue filter moves to Prontos para expedir', async () => {
-    seedAuth()
-    const late = { ...productionQueueItem, dueBucket: 'overdue', daysUntil: -24, dueLabel: 'Atrasado 24 dias', stockCoverage: null, productionStatus: 'in_production', paidInvoiceId: 'in_123', deliveryDate: null, courierIssues: [] }
-    installAdminFetchMock(operatorWriteUser, { productionQueue: [late] })
-    renderQueue('/operations/production?prazo=atrasados')
+  // queue-overdue-filter-matches-metric: under "Atrasados" a ready order leaves the list and the panel says where.
+  const lateInProduction = { ...productionQueueItem, dueBucket: 'overdue', daysUntil: -24, dueLabel: 'Atrasado 24 dias', stockCoverage: null, productionStatus: 'in_production', paidInvoiceId: 'in_123', deliveryDate: null, courierIssues: [] }
 
+  async function markReady() {
     fireEvent.click(await screen.findByRole('button', { name: 'Marcar como pronto' }))
     const confirm = await screen.findByRole('dialog').catch(() => null)
     if (confirm) fireEvent.click(within(confirm).getByRole('button', { name: 'Marcar como pronto' }))
+  }
+
+  it('a late order marked ready from the overdue filter leaves the list and the notice points to Pronto', async () => {
+    seedAuth()
+    installAdminFetchMock(adminUser, { productionQueue: [lateInProduction] })
+    renderQueue('/operations/production?prazo=atrasados&mercado=br')
+
+    await markReady()
+
+    const notice = await screen.findByTestId('ready-moved')
+    expect(notice).toHaveTextContent('O pedido saiu de Atrasados e está em Prontos para expedir.')
+    expect(within(notice).getByRole('link', { name: 'Ver prontos' })).toHaveAttribute('href', '/operations/production?status=ready&mercado=br')
+    await waitFor(() => expect(screen.queryByText('Ana Ledger')).not.toBeInTheDocument())
+    expect(screen.queryByText('Prontos para expedir', { selector: 'td, th' })).not.toBeInTheDocument()
+  })
+
+  it('a batch marked ready from the overdue filter says how many went to Prontos para expedir', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [
+        { ...lateInProduction, stockCoverage: 'covered' },
+        { ...lateInProduction, id: 2, customerName: 'Bia', email: 'bia@edenbowls.com', stockCoverage: 'covered' },
+      ],
+    })
+    renderQueue('/operations/production?prazo=atrasados')
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Selecionar Ana Ledger' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar Bia' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar como pronto (2)' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Marcar como pronto' }))
+
+    expect(await screen.findByTestId('ready-moved')).toHaveTextContent('2 pedidos saíram de Atrasados e estão em Prontos para expedir.')
+    await waitFor(() => expect(screen.queryByText('Bia')).not.toBeInTheDocument())
+  })
+
+  it('a late order marked ready without a due filter moves to Prontos para expedir with no notice', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { productionQueue: [lateInProduction] })
+    renderQueue()
+
+    await markReady()
 
     const row = (await screen.findByRole('link', { name: 'Expedir' })).closest('tr') as HTMLElement
     expect(within(row).getByText('Ana Ledger')).toBeInTheDocument()
     expect(screen.getByText('Prontos para expedir')).toBeInTheDocument()
+    expect(screen.queryByTestId('ready-moved')).not.toBeInTheDocument()
   })
 
   it('flags a ready order whose account and address are in different countries', async () => {

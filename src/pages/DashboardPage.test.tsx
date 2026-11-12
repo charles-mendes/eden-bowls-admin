@@ -229,6 +229,30 @@ describe('DashboardPage', () => {
     expect(region.getByText('1 pedido atrasado')).toBeInTheDocument()
   })
 
+  // queue-overdue-filter-matches-metric: a ready Brazil box past its day is late for the customer, not "tudo em dia".
+  it('lists ready Brazil orders past their day whose box has not left as a pending item', async () => {
+    seedAuth()
+    const ready = { ...todayOverview.items[1], dueBucket: 'overdue', dueLabel: 'Atrasado 8 dias', productionStatus: 'ready', paymentState: 'paid' }
+    installAdminFetchMock(adminUser, {
+      routes: withToday({
+        totals: { overdue: 0, today: 0, tomorrow: 0 },
+        items: [
+          { ...ready, id: 50, displayName: 'Charles Mendes', courierDelivery: 'none' },
+          { ...ready, id: 51, displayName: 'Na rua', courierDelivery: 'out_for_delivery' },
+          { ...todayOverview.items[0], id: 52 },
+        ],
+      }),
+    })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const item = (await screen.findByText('1 pedido pronto esperando saída')).closest('li') as HTMLElement
+    expect(within(item).getByText('Média')).toBeInTheDocument()
+    expect(within(item).getByText('Charles Mendes: o dia de preparo já passou e a caixa ainda não saiu.')).toBeInTheDocument()
+    expect(within(item).getByRole('link', { name: 'Abrir entregas' })).toHaveAttribute('href', '/operations/courier')
+    expect(screen.queryByText('Nada travado. Tudo em dia.')).not.toBeInTheDocument()
+    expect(within(screen.getByRole('link', { name: /^Atrasados/ })).getByText('0')).toBeInTheDocument()
+  })
+
   it('keeps system health for admins only', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorUser)
