@@ -75,28 +75,28 @@ describe('NfeDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Reenviar e-mail' })).not.toBeInTheDocument()
   })
 
-  it('shows the ids, the saved payload and the DANFE link', async () => {
+  it('shows an operator the DANFE and no technical data, since Origem already links every id', async () => {
     seedAuth()
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    const technical = (await screen.findByText('Dados técnicos')).closest('details') as HTMLElement
-    expect(within(technical).getByText('in_nfe_1')).toBeInTheDocument()
-    expect(within(technical).getByText('9001')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Abrir DANFE' })).toHaveAttribute('href', 'https://bling.example/danfe')
-    // The ids stay under "Dados técnicos"; the Bling JSON is for the admin.
-    expect(screen.getByText('Dados técnicos')).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Abrir DANFE' })).toHaveAttribute('href', 'https://bling.example/danfe')
+    expect(screen.queryByText('Dados técnicos')).not.toBeInTheDocument()
     expect(screen.queryByText('Enviado ao Bling')).not.toBeInTheDocument()
-    expect(screen.queryByText('Resposta do Bling')).not.toBeInTheDocument()
   })
 
-  it('shows the admin the JSON sent to and received from Bling', async () => {
+  it('shows the admin only what Origem lacks: the Bling ids and the JSON exchanged with Bling', async () => {
     seedAuth()
     installAdminFetchMock(adminUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    expect(await screen.findByText('Dados técnicos')).toBeInTheDocument()
+    const technical = (await screen.findByText('Dados técnicos')).closest('details') as HTMLElement
+    expect(technical).toHaveTextContent('NF-e Bling')
+    expect(technical).toHaveTextContent('Contato Bling')
+    expect(technical).not.toHaveTextContent('in_nfe_1')
+    expect(technical).not.toHaveTextContent('Conta Stripe')
     expect(screen.getByText('Enviado ao Bling')).toBeInTheDocument()
+    expect(screen.getByText('Resposta do Bling')).toBeInTheDocument()
   })
 
   it('leads back to the list and leaves out fields with nothing in them', async () => {
@@ -104,7 +104,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('Dados técnicos')
+    await screen.findByRole('heading', { name: 'Situação' })
     expect(screen.getByRole('link', { name: 'Notas fiscais' })).toHaveAttribute('href', '/operations/nfe')
     expect(screen.queryByText('Protocolo')).not.toBeInTheDocument()
     expect(screen.queryByText('Autorizada em')).not.toBeInTheDocument()
@@ -150,7 +150,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('Dados técnicos')
+    await screen.findByRole('heading', { name: 'Situação' })
     expect(screen.queryByRole('link', { name: 'Abrir no Bling' })).not.toBeInTheDocument()
   })
 
@@ -173,7 +173,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('Dados técnicos')
+    await screen.findByRole('heading', { name: 'Situação' })
     expect(screen.queryByRole('region', { name: 'Ações feitas no Bling' })).not.toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: 'Documento fiscal' })).not.toBeInTheDocument()
   })
@@ -183,7 +183,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('Dados técnicos')
+    await screen.findByRole('heading', { name: 'Situação' })
     expect(screen.queryByRole('button', { name: /excluir|apagar|remover/i })).not.toBeInTheDocument()
   })
 
@@ -222,7 +222,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(profile)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('Dados técnicos')
+    await screen.findByRole('heading', { name: 'Situação' })
     expect(screen.queryByRole('button', { name: 'Corrigir dados' })).not.toBeInTheDocument()
   })
 
@@ -231,7 +231,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('Dados técnicos')
+    await screen.findByRole('heading', { name: 'Situação' })
     expect(screen.queryByRole('button', { name: 'Nova tentativa' })).not.toBeInTheDocument()
   })
 

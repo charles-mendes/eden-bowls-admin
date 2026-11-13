@@ -7,6 +7,7 @@ import { AddressIssueStatus } from '../components/AddressIssueStatus'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
+import { useShowsTechnicalJson } from '../hooks/useShowsTechnicalJson'
 import { apiRequest } from '../lib/api'
 import { billingHref } from '../lib/billing'
 import {
@@ -173,6 +174,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
 export function NfeDetailPage() {
   const { id } = useParams()
   const { token, hasPermission } = useAuth()
+  const showsTechnical = useShowsTechnicalJson()
   const [item, setItem] = useState<NfeDetail | null>(null)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -368,20 +370,19 @@ export function NfeDetailPage() {
             </section>
           ) : null}
 
-          <details className="section-card nfe-technical">
-            <summary>Dados técnicos</summary>
-            <MetaGrid items={filled([
-              { label: 'Usuário', value: item.user_id },
-              { label: 'Conta Stripe', value: item.imported ? null : item.stripe_account },
-              { label: 'Assinatura Stripe', value: item.stripe_subscription_id },
-              { label: 'Fatura Stripe', value: item.imported ? null : item.stripe_invoice_id },
-              { label: 'Contato Bling', value: item.bling_contact_id },
-              { label: 'Pedido Bling', value: item.bling_order_id },
-              { label: 'NF-e Bling', value: item.bling_nfe_id },
-            ])} />
-            <JsonDetails title="Enviado ao Bling" value={item.request_payload} />
-            <JsonDetails title="Resposta do Bling" value={item.response_payload} />
-          </details>
+          {/* Customer, subscription, charge and order are already in Origem; the Stripe account is always BR. What is
+              left (Bling's own ids and the raw exchange) only helps the admin chase a failure with Bling. */}
+          {showsTechnical ? (
+            <details className="section-card nfe-technical">
+              <summary>Dados técnicos</summary>
+              <MetaGrid items={filled([
+                { label: 'NF-e Bling', value: item.bling_nfe_id },
+                { label: 'Contato Bling', value: item.bling_contact_id },
+              ])} />
+              <JsonDetails title="Enviado ao Bling" value={item.request_payload} />
+              <JsonDetails title="Resposta do Bling" value={item.response_payload} />
+            </details>
+          ) : null}
         </div>
       ) : null}
 
