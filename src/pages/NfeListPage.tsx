@@ -101,6 +101,12 @@ export function NfeListPage() {
     navigate(`/operations/nfe/${id}`)
   }
 
+  const activeFilters = [status, from, to, search].filter(Boolean).length
+  const clearFilters = () => {
+    setSearchDraft('')
+    setSearchParams(new URLSearchParams(), { replace: true })
+  }
+
   const submitSearch = (event: FormEvent) => {
     event.preventDefault()
     setFilters({ busca: searchDraft.trim(), pagina: 1 })
@@ -172,6 +178,12 @@ export function NfeListPage() {
           </label>
           <button className="ghost-button" type="submit">Buscar</button>
         </form>
+        {activeFilters > 0 ? (
+          <div className="nfe-filters-active">
+            <span>{activeFilters === 1 ? '1 filtro ativo' : `${activeFilters} filtros ativos`}</span>
+            <button className="link-button" type="button" onClick={clearFilters}>Limpar filtros</button>
+          </div>
+        ) : null}
       </FiltersBar>
 
       <Section title="Notas" description={`Total: ${data?.total ?? '—'}. O status do Bling é atualizado a cada 5 minutos.`}>

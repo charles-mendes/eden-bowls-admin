@@ -113,6 +113,32 @@ describe('NfeListPage', () => {
     expect(screen.getByLabelText('Busca')).toHaveValue('Ana')
   })
 
+  it('clears status, dates and search in one click', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeListPage />, '/operations/nfe?status=error&de=2026-11-11&ate=2026-11-11&busca=Ana', '/operations/nfe')
+
+    await user.click(await screen.findByRole('button', { name: 'Limpar filtros' }))
+
+    await waitFor(() => {
+      const last = calls.filter((call) => call.path === '/api/v1/admin/nfe').at(-1)
+      expect(last?.search).not.toMatch(/status=|from=|to=|search=/)
+    })
+    expect(screen.getByLabelText('Status')).toHaveValue('')
+    expect(screen.getByLabelText('Busca')).toHaveValue('')
+    expect(screen.queryByRole('button', { name: 'Limpar filtros' })).not.toBeInTheDocument()
+  })
+
+  it('offers no clear button while nothing is filtered', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeListPage />, '/operations/nfe')
+
+    await screen.findByRole('link', { name: 'Ana Souza' })
+    expect(screen.queryByRole('button', { name: 'Limpar filtros' })).not.toBeInTheDocument()
+  })
+
   it('asks for the three statuses that need action', async () => {
     const user = userEvent.setup()
     seedAuth()

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { JsonDetails } from '../components/JsonDetails'
 import { MetaGrid } from '../components/MetaGrid'
@@ -35,6 +35,63 @@ function filled(fields: Field[]) {
   return fields
     .filter((field) => field.value !== null && field.value !== undefined && field.value !== '')
     .map((field) => ({ label: field.label, value: String(field.value) }))
+}
+
+// Where the note comes from: the customer, the subscription (the order) and the Stripe charge it bills.
+function NfeOrigin({ item }: { item: NfeDetail }) {
+  const subscriptionPath = item.subscription_id ? `/billing/subscriptions/${item.subscription_id}` : null
+  const rows: Array<{ label: string; value: ReactNode; hint?: string }> = []
+  if (item.user_id) {
+    rows.push({
+      label: 'Cliente',
+      value: <Link className="table-link" to={`/users/${item.user_id}`}>{item.customer_name || `Usuário ${item.user_id}`}</Link>,
+      hint: `Usuário ${item.user_id}`,
+    })
+  }
+  if (item.stripe_subscription_id) {
+    rows.push({
+      label: 'Assinatura',
+      value: (
+        <Link className="table-link" to={subscriptionPath ?? billingHref({ busca: item.stripe_subscription_id, status: 'all' })}>
+          {item.stripe_subscription_id}
+        </Link>
+      ),
+      hint: subscriptionPath ? 'Pedido, checkout e entregas' : 'Não encontrada no painel; abre a busca',
+    })
+  }
+  if (!item.imported && item.stripe_invoice_id) {
+    rows.push({
+      label: 'Cobrança Stripe',
+      value: subscriptionPath
+        ? <Link className="table-link" to={`${subscriptionPath}#faturas-stripe`}>{item.stripe_invoice_id}</Link>
+        : item.stripe_invoice_id,
+      hint: 'A fatura paga que gerou esta nota',
+    })
+  }
+  if (item.bling_order_id) {
+    rows.push({ label: 'Pedido no Bling', value: String(item.bling_order_id) })
+  }
+
+  return (
+    <Section title="Origem" description="A cobrança da loja que gerou esta nota.">
+      {item.imported ? (
+        <p className="muted nfe-hint">Criada direto no Bling: não tem cobrança, assinatura nem cliente da loja.</p>
+      ) : rows.length === 0 ? (
+        <p className="muted nfe-hint">Nenhum cliente ou cobrança da loja ligado a esta nota.</p>
+      ) : null}
+      {rows.length ? (
+        <dl className="meta-grid nfe-origin-grid">
+          {rows.map((row) => (
+            <div key={row.label} className="meta-item">
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+              {row.hint ? <dd className="nfe-origin-hint">{row.hint}</dd> : null}
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </Section>
+  )
 }
 
 function CopyField({ label, value }: { label: string; value: string }) {
@@ -139,7 +196,10 @@ export function NfeDetailPage() {
         <div className="nfe-actions">
           {item.user_id ? <Link className="ghost-button" to={`/users/${item.user_id}`}>Abrir cliente</Link> : null}
           {item.stripe_subscription_id ? (
-            <Link className="ghost-button" to={billingHref({ busca: item.stripe_subscription_id, status: 'all' })}>Abrir assinatura</Link>
+            <Link
+              className="ghost-button"
+              to={item.subscription_id ? `/billing/subscriptions/${item.subscription_id}` : billingHref({ busca: item.stripe_subscription_id, status: 'all' })}
+            >Abrir assinatura</Link>
           ) : null}
           {item.bling_nfe_id ? (
             <a className="ghost-button" href={blingNfeUrl(item.bling_nfe_id)} target="_blank" rel="noreferrer">Abrir no Bling</a>
@@ -189,6 +249,8 @@ export function NfeDetailPage() {
               { label: 'Autorizada em', value: item.authorized_at ? formatNfeDate(item.authorized_at) : null },
             ])} />
           </Section>
+
+          <NfeOrigin item={item} />
 
           <Section title="Documento fiscal">
             <MetaGrid items={filled([

@@ -65,6 +65,8 @@ export type NfeDetail = NfeSummary & {
   missing_fields?: string[]
   // delivery-address-issues: what the customer was told about the subscription of this note.
   address_issue?: AddressIssue | null
+  // The panel's id of the subscription the note bills; null for a note created in Bling or an unknown subscription.
+  subscription_id?: number | null
 }
 
 const MISSING_FIELD_LABELS: Record<string, string> = {

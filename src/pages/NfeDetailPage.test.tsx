@@ -80,8 +80,9 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    expect(await screen.findByText('in_nfe_1')).toBeInTheDocument()
-    expect(screen.getByText('9001')).toBeInTheDocument()
+    const technical = (await screen.findByText('Dados técnicos')).closest('details') as HTMLElement
+    expect(within(technical).getByText('in_nfe_1')).toBeInTheDocument()
+    expect(within(technical).getByText('9001')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Abrir DANFE' })).toHaveAttribute('href', 'https://bling.example/danfe')
     // The ids stay under "Dados técnicos"; the Bling JSON is for the admin.
     expect(screen.getByText('Dados técnicos')).toBeInTheDocument()
@@ -94,7 +95,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(adminUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    expect(await screen.findByText('in_nfe_1')).toBeInTheDocument()
+    expect(await screen.findByText('Dados técnicos')).toBeInTheDocument()
     expect(screen.getByText('Enviado ao Bling')).toBeInTheDocument()
   })
 
@@ -103,7 +104,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('in_nfe_1')
+    await screen.findByText('Dados técnicos')
     expect(screen.getByRole('link', { name: 'Notas fiscais' })).toHaveAttribute('href', '/operations/nfe')
     expect(screen.queryByText('Protocolo')).not.toBeInTheDocument()
     expect(screen.queryByText('Autorizada em')).not.toBeInTheDocument()
@@ -149,7 +150,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('in_nfe_1')
+    await screen.findByText('Dados técnicos')
     expect(screen.queryByRole('link', { name: 'Abrir no Bling' })).not.toBeInTheDocument()
   })
 
@@ -170,7 +171,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('in_nfe_1')
+    await screen.findByText('Dados técnicos')
     expect(screen.queryByRole('button', { name: /excluir|apagar|remover/i })).not.toBeInTheDocument()
   })
 
@@ -209,7 +210,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(profile)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('in_nfe_1')
+    await screen.findByText('Dados técnicos')
     expect(screen.queryByRole('button', { name: 'Corrigir dados' })).not.toBeInTheDocument()
   })
 
@@ -218,7 +219,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('in_nfe_1')
+    await screen.findByText('Dados técnicos')
     expect(screen.queryByRole('button', { name: 'Nova tentativa' })).not.toBeInTheDocument()
   })
 
@@ -242,6 +243,31 @@ describe('NfeDetailPage', () => {
 
     expect(await screen.findByRole('link', { name: 'Abrir cliente' })).toHaveAttribute('href', '/users/42')
     expect(screen.getByRole('link', { name: 'Abrir assinatura' })).toHaveAttribute('href', '/billing?busca=sub_123&status=all')
+  })
+
+  it('shows where the note comes from and links straight to the subscription and its charge', async () => {
+    nfeDetailState.override = { user_id: 42, customer_name: 'Ana Souza', stripe_subscription_id: 'sub_123', stripe_invoice_id: 'in_123', bling_order_id: 9002, subscription_id: 12 }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const origin = (await screen.findByRole('heading', { name: 'Origem' })).closest('section') as HTMLElement
+    expect(within(origin).getByRole('link', { name: 'Ana Souza' })).toHaveAttribute('href', '/users/42')
+    expect(within(origin).getByRole('link', { name: 'sub_123' })).toHaveAttribute('href', '/billing/subscriptions/12')
+    expect(within(origin).getByRole('link', { name: 'in_123' })).toHaveAttribute('href', '/billing/subscriptions/12#faturas-stripe')
+    expect(origin).toHaveTextContent('9002')
+    expect(screen.getByRole('link', { name: 'Abrir assinatura' })).toHaveAttribute('href', '/billing/subscriptions/12')
+  })
+
+  it('says a note created in Bling has no store charge', async () => {
+    nfeDetailState.override = { imported: true, can_retry: false, user_id: null, stripe_subscription_id: null, stripe_invoice_id: 'bling:9003', bling_order_id: null }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const origin = (await screen.findByRole('heading', { name: 'Origem' })).closest('section') as HTMLElement
+    expect(origin).toHaveTextContent('Criada direto no Bling')
+    expect(within(origin).queryByRole('link')).not.toBeInTheDocument()
   })
 
   it('shows neither link for an imported note without ids', async () => {

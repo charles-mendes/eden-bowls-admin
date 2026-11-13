@@ -4759,6 +4759,23 @@ label.ghost-button {
   height: 40px;
 }
 
+/* A quiet line under the fields: the fields stay the subject, clearing is a secondary action. */
+.nfe-filters-active {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-1) var(--space-3);
+  margin-top: calc(var(--space-1) * -1);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.nfe-filters-active .link-button {
+  padding: 4px 0;
+}
+
 .nfe-table-shell {
   container-type: inline-size;
   border: 1px solid var(--border);
@@ -4971,6 +4988,15 @@ label.ghost-button {
 
 .nfe-detail .meta-item {
   align-content: start;
+}
+
+.nfe-detail .nfe-origin-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+}
+
+.nfe-origin-grid .nfe-origin-hint {
+  color: var(--text-soft);
+  font-size: var(--text-xs);
 }
 
 .nfe-status-list {
