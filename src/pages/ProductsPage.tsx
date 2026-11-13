@@ -94,6 +94,7 @@ export function ProductsPage() {
   const [data, setData] = useState<ProductsResponse | null>(null)
   const [search, setSearch] = useState('')
   const [market, setMarket] = useState('')
+  const [lifeStage, setLifeStage] = useState<LifeStage | ''>('')
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
   const [error, setError] = useState('')
@@ -126,6 +127,9 @@ export function ProductsPage() {
       const response = await apiRequest<ProductsResponse>(`/admin/catalog/products${buildQueryString({
         search: search || undefined,
         market: scopedMarket || undefined,
+        lifeStage: lifeStage || undefined,
+        noImage: noImage || undefined,
+        labelIncomplete: labelIncomplete || undefined,
         page,
         perPage,
       })}`, { token })
@@ -137,7 +141,7 @@ export function ProductsPage() {
 
   useEffect(() => {
     void load()
-  }, [token, user, search, scopedMarket, page, perPage])
+  }, [token, user, search, scopedMarket, lifeStage, noImage, labelIncomplete, page, perPage])
 
   const openCreate = () => {
     setCreateError('')
@@ -233,10 +237,8 @@ export function ProductsPage() {
     }
   }
 
-  // Quick filters work on the loaded page; "Rótulo incompleto" also takes products without a label.
-  const visibleItems = (data?.items ?? [])
-    .filter((item) => !noImage || !item.content?.imageUrl)
-    .filter((item) => !labelIncomplete || item.content?.labelStatus !== 'complete')
+  // Every filter runs on the API, so the total and the pages match the list.
+  const visibleItems = data?.items ?? []
 
   return (
     <PageFrame
@@ -252,7 +254,7 @@ export function ProductsPage() {
       <CatalogPricesSection />
 
       <Section title="Filtros">
-        <FiltersBar>
+        <FiltersBar className="products-filters">
           <label>
             Busca
             <span className="filter-field">
@@ -270,27 +272,42 @@ export function ProductsPage() {
             user={user}
             value={scopedMarket}
             includeAll
-            allLabel="Selecionar"
+            allLabel="Todos"
             onChange={(value) => { setMarket(value); setPage(1) }}
           />
-          <label className="checkbox-field">
-            <input type="checkbox" checked={noImage} onChange={(event) => setNoImage(event.target.checked)} />
-            Sem imagem
-          </label>
-          <label className="checkbox-field">
-            <input type="checkbox" checked={labelIncomplete} onChange={(event) => setLabelIncomplete(event.target.checked)} />
-            Rótulo incompleto
+          <label>
+            Fase
+            <select
+              aria-label="Filtrar por fase"
+              value={lifeStage}
+              onChange={(event) => { setLifeStage(event.target.value as LifeStage | ''); setPage(1) }}
+            >
+              <option value="">Todas</option>
+              {(Object.keys(LIFE_STAGE_LABELS) as LifeStage[]).map((stage) => (
+                <option key={stage} value={stage}>{LIFE_STAGE_LABELS[stage]}</option>
+              ))}
+            </select>
           </label>
           <label>
             Por página
             <input type="number" min={1} max={100} value={perPage} onChange={(event) => { setPerPage(Number(event.target.value)); setPage(1) }} />
           </label>
+          <div className="filter-checks">
+            <label className="checkbox-field">
+              <input type="checkbox" checked={noImage} onChange={(event) => { setNoImage(event.target.checked); setPage(1) }} />
+              Sem imagem
+            </label>
+            <label className="checkbox-field">
+              <input type="checkbox" checked={labelIncomplete} onChange={(event) => { setLabelIncomplete(event.target.checked); setPage(1) }} />
+              Rótulo incompleto
+            </label>
+          </div>
         </FiltersBar>
       </Section>
 
       <Section title="Produtos cadastrados" description={`Total: ${data?.total ?? '—'}`}>
-        <div className="table-shell table-scroll">
-          <table>
+        <div className="table-shell table-scroll products-table-shell">
+          <table className="products-table">
             <thead>
               <tr>
                 <th>Produto</th>
@@ -309,33 +326,33 @@ export function ProductsPage() {
               ) : null}
               {visibleItems.map((item) => (
                 <tr key={item.id}>
-                  <td>
+                  <td className="products-cell-name">
                     <Link className="table-link" to={`/catalog/products/${item.id}`}>{item.namePt}</Link>
                     <div className="muted mono">{item.content?.code ?? item.slug}</div>
                   </td>
-                  <td>{item.planCountry ?? (item.marketConfigs.map((config) => config.marketCountry).join(', ') || '-')}</td>
-                  <td>{item.content ? LIFE_STAGE_LABELS[item.content.lifeStage] : '-'}</td>
-                  <td aria-label={`${item.variants.filter((variant) => variant.active).length} de ${item.variants.length} variações ativas`}>
+                  <td data-label="Mercado">{item.planCountry ?? (item.marketConfigs.map((config) => config.marketCountry).join(', ') || '-')}</td>
+                  <td data-label="Fase">{item.content ? LIFE_STAGE_LABELS[item.content.lifeStage] : '-'}</td>
+                  <td data-label="Variações" aria-label={`${item.variants.filter((variant) => variant.active).length} de ${item.variants.length} variações ativas`}>
                     {item.variants.filter((variant) => variant.active).length}/{item.variants.length}
                   </td>
-                  <td>
+                  <td data-label="Imagem">
                     <span className={item.content?.imageUrl ? 'badge-success' : 'badge-neutral'}>
                       {item.content?.imageUrl ? 'Com imagem' : 'Sem imagem'}
                     </span>
                   </td>
-                  <td>
+                  <td data-label="Rótulo">
                     {item.content ? (
                       <span className={item.content.labelStatus === 'complete' ? 'badge-success' : item.content.labelStatus === 'incomplete' ? 'badge-warning' : 'badge-neutral'}>
                         {LABEL_STATUS_TEXT[item.content.labelStatus]}
                       </span>
                     ) : '-'}
                   </td>
-                  <td>
+                  <td data-label="Status">
                     <span className={item.active ? 'badge-success' : 'badge-warning'}>
                       {item.active ? 'Publicado' : 'Rascunho'}
                     </span>
                   </td>
-                  <td>
+                  <td className="products-cell-actions">
                     <div className="table-actions">
                       <Link className="ghost-button" to={`/catalog/products/${item.id}`}>Detalhes</Link>
                       {canWrite && item.canDelete === true ? (
@@ -361,7 +378,7 @@ export function ProductsPage() {
                         </button>
                       ) : null}
                       {canWrite && item.canDelete !== true && !item.active ? (
-                        <span className="muted">Produto vinculado a assinatura. Não pode ser excluído.</span>
+                        <span className="muted" title="Produto vinculado a assinatura. Não pode ser excluído.">Vinculado a assinatura</span>
                       ) : null}
                     </div>
                   </td>

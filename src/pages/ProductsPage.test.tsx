@@ -186,23 +186,38 @@ describe('ProductsPage', () => {
     expect(screen.queryByRole('button', { name: 'Novo produto' })).not.toBeInTheDocument()
   })
 
-  it('Quick filter', async () => {
+  it('filters the list by life stage on the API', async () => {
     const user = userEvent.setup()
     seedAuth()
-    installAdminFetchMock(readonlyUser, { products: [beefProduct, seniorLamb, { ...beefProduct, id: 'prod-3', namePt: 'Peixe', content: { ...beefProduct.content!, code: 'fish', labelStatus: 'incomplete' } }] })
+    const { calls } = installAdminFetchMock(readonlyUser, { products: [beefProduct, seniorLamb] })
     renderAuthedPage(<ProductsPage />, '/catalog/products')
 
     await screen.findByRole('link', { name: 'Carne' })
+    expect(findCall(calls, 'GET', '/admin/catalog/products')?.search).not.toContain('lifeStage=')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Filtrar por fase' }), 'senior')
+    await waitFor(() => {
+      expect(calls.some((call) => call.path.endsWith('/admin/catalog/products') && call.search.includes('lifeStage=senior') && call.search.includes('page=1'))).toBe(true)
+    })
+  })
+
+  it('Quick filter', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(readonlyUser, { products: [beefProduct, seniorLamb] })
+    renderAuthedPage(<ProductsPage />, '/catalog/products')
+    const listedWith = (query: string) => calls.some((call) => call.path.endsWith('/admin/catalog/products') && call.search.includes(query))
+
+    await screen.findByRole('link', { name: 'Carne' })
+    expect(listedWith('noImage=')).toBe(false)
+
     await user.click(screen.getByLabelText('Sem imagem'))
-    expect(screen.getByRole('link', { name: 'Sênior Cordeiro' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Carne' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Peixe' })).not.toBeInTheDocument()
+    await waitFor(() => expect(listedWith('noImage=true')).toBe(true))
 
     await user.click(screen.getByLabelText('Sem imagem'))
     await user.click(screen.getByLabelText('Rótulo incompleto'))
-    expect(screen.getByRole('link', { name: 'Sênior Cordeiro' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Peixe' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Carne' })).not.toBeInTheDocument()
+    await waitFor(() => expect(calls.some((call) => call.path.endsWith('/admin/catalog/products')
+      && call.search.includes('labelIncomplete=true') && !call.search.includes('noImage='))).toBe(true))
   })
 
   it('deletes a product from the catalog list', async () => {
@@ -257,7 +272,7 @@ describe('ProductsPage', () => {
     renderAuthedPage(<ProductsPage />, '/catalog/products')
 
     await waitFor(() => {
-      expect(screen.getByText('Produto vinculado a assinatura. Não pode ser excluído.')).toBeInTheDocument()
+      expect(screen.getByTitle('Produto vinculado a assinatura. Não pode ser excluído.')).toHaveTextContent('Vinculado a assinatura')
     })
     expect(screen.queryByRole('button', { name: 'Excluir produto Bowl Adulto' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Desativar produto Bowl Adulto' })).not.toBeInTheDocument()
