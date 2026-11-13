@@ -21,6 +21,7 @@ import {
   isNfeListStatus,
   nfeApiStatus,
   nfeListHref,
+  splitNfeError,
   type BlingConnection,
   type NfeListFilters,
   type NfeListResponse,
@@ -173,7 +174,8 @@ export function NfeListPage() {
             <input
               value={searchDraft}
               onChange={(event) => setSearchDraft(event.target.value)}
-              placeholder="Nome, e-mail, documento, número ou chave"
+              placeholder="Nome, CPF, nº ou chave"
+              aria-description="Busca por nome, e-mail, documento, número ou chave de acesso"
             />
           </label>
           <button className="ghost-button" type="submit">Buscar</button>
@@ -192,30 +194,33 @@ export function NfeListPage() {
             <thead>
               <tr>
                 <th className="nfe-col-status">Status</th>
-                <th className="nfe-col-status">Bling</th>
                 <th>Cliente</th>
                 <th className="nfe-col-value">Valor</th>
-                <th className="nfe-col-number">Número/série</th>
-                <th className="nfe-col-date">Data</th>
+                <th className="nfe-col-date">Data e número</th>
                 <th className="nfe-col-error">Erro</th>
                 <th className="nfe-col-open"><span className="visually-hidden">Ações</span></th>
               </tr>
             </thead>
             <tbody>
               {!data && !error ? (
-                <tr><td className="nfe-empty" colSpan={8}>Carregando notas...</td></tr>
+                <tr><td className="nfe-empty" colSpan={6}>Carregando notas...</td></tr>
               ) : null}
               {data && data.items.length === 0 ? (
-                <tr><td className="nfe-empty" colSpan={8}>Nenhuma nota encontrada.</td></tr>
+                <tr><td className="nfe-empty" colSpan={6}>Nenhuma nota encontrada.</td></tr>
               ) : null}
               {data?.items.map((item) => (
                 <tr key={item.id} className="nfe-row" onClick={(event) => openNote(event, item.id)}>
-                  <td data-label="Status"><span className={nfeStatusTone(item.status)}>{nfeStatusLabel(item.status)}</span></td>
-                  <td data-label="Bling">
-                    {item.bling_situacao_label
-                      ? <span className={blingSituacaoTone(item.bling_situacao)}>{item.bling_situacao_label}</span>
-                      : '—'}
-                    {item.imported ? <div className="muted nfe-origin">Criada no Bling</div> : null}
+                  <td data-label="Status">
+                    <div className="nfe-status-stack">
+                      <span className={nfeStatusTone(item.status)}>{nfeStatusLabel(item.status)}</span>
+                      {item.bling_situacao_label ? (
+                        <span className="nfe-bling-state">
+                          <span className="muted">Bling</span>
+                          <span className={blingSituacaoTone(item.bling_situacao)}>{item.bling_situacao_label}</span>
+                        </span>
+                      ) : null}
+                      {item.imported ? <span className="muted nfe-origin">Criada no Bling</span> : null}
+                    </div>
                   </td>
                   <td className="nfe-cell-customer">
                     <Link className="table-link" to={`/operations/nfe/${item.id}`}>{item.customer_name || `Nota ${item.id}`}</Link>
@@ -223,9 +228,18 @@ export function NfeListPage() {
                     <div className="muted nfe-line">{formatTaxDocument(item.customer_document)}</div>
                   </td>
                   <td data-label="Valor">{formatNfeAmount(item)}</td>
-                  <td data-label="Número/série">{formatNfeNumber(item)}</td>
-                  <td data-label="Data">{formatNfeDate(item.created_at)}</td>
-                  <td data-label="Erro"><span className="nfe-error" title={item.last_error || undefined}>{item.last_error || '—'}</span></td>
+                  <td data-label="Data">
+                    <div>
+                      {formatNfeDate(item.created_at)}
+                      {item.nfe_number ? <div className="muted nfe-line">Nº {formatNfeNumber(item)}</div> : null}
+                    </div>
+                  </td>
+                  {/* The headline is enough to scan the list; the whole message and what to fix are on the note. */}
+                  <td data-label="Erro" className={item.last_error ? undefined : 'nfe-cell-blank'}>
+                    {item.last_error
+                      ? <span className="nfe-error" title={item.last_error}>{splitNfeError(item.last_error).title}</span>
+                      : '—'}
+                  </td>
                   <td className="nfe-cell-open">
                     <Link className="nfe-open" to={`/operations/nfe/${item.id}`} aria-label={`Ver detalhes da nota de ${item.customer_name || item.id}`}>
                       <span>Detalhes</span> <span aria-hidden="true">›</span>

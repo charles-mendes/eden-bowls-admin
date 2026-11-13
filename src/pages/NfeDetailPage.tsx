@@ -48,8 +48,8 @@ function NfeError({ item }: { item: NfeDetail }) {
 
   return (
     <>
-      <div className="nfe-alert nfe-alert-error nfe-error" role="alert">
-        <p className="nfe-error-title">{title}</p>
+      <div className="nfe-alert nfe-alert-error nfe-refusal" role="alert">
+        <p className="nfe-refusal-title">{title}</p>
         {extra.map((detail) => <p key={detail}>{detail}</p>)}
       </div>
       {problems.length ? (

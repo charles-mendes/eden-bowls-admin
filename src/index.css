@@ -4921,27 +4921,46 @@ label.ghost-button {
 }
 
 .nfe-col-status {
-  width: 112px;
+  width: 136px;
+}
+
+/* Our status first; Bling's own reading under it, smaller, since it usually agrees. */
+.nfe-status-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.nfe-status-stack [class^='badge-'] {
+  white-space: nowrap;
+}
+
+.nfe-bling-state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+}
+
+.nfe-bling-state > span:last-child {
+  font-size: var(--text-xs);
+  padding: 0 6px;
 }
 
 .nfe-col-value {
   width: 112px;
 }
 
-.nfe-col-number {
-  width: 104px;
-}
-
 .nfe-col-date {
-  width: 104px;
+  width: 136px;
 }
 
 .nfe-col-error {
-  width: 180px;
+  width: 200px;
 }
 
 .nfe-origin {
-  margin-top: var(--space-1);
   font-size: var(--text-xs);
 }
 
@@ -5014,16 +5033,20 @@ label.ghost-button {
     font-weight: 600;
   }
 
-  .nfe-table td[data-label="Bling"] .nfe-origin {
-    grid-column: 2;
-    margin-top: 0;
+  /* A card says nothing about what is empty: no "Erro —" line on a note without an error. */
+  .nfe-table td.nfe-cell-blank {
+    display: none;
   }
 
-  /* On a card the whole error fits, and it is what the operator came to read. */
-  .nfe-error {
-    display: block;
-    -webkit-line-clamp: none;
-    line-clamp: none;
+  .nfe-status-stack {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: var(--space-3);
+  }
+
+  .nfe-status-stack .nfe-origin {
+    flex-basis: 100%;
   }
 }
 
@@ -5162,16 +5185,16 @@ label.ghost-button {
   margin: var(--space-3) 0 0;
 }
 
-.nfe-error {
+.nfe-refusal {
   display: grid;
   gap: var(--space-1);
 }
 
-.nfe-error p {
+.nfe-refusal p {
   margin: 0;
 }
 
-.nfe-error-title {
+.nfe-refusal-title {
   font-weight: 600;
   color: var(--danger);
 }

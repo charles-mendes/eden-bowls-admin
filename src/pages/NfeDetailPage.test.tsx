@@ -293,7 +293,7 @@ describe('NfeDetailPage', () => {
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
     const alert = await screen.findByRole('alert')
-    expect(within(alert).getByText('Não foi possível emitir a nota fiscal')).toHaveClass('nfe-error-title')
+    expect(within(alert).getByText('Não foi possível emitir a nota fiscal')).toHaveClass('nfe-refusal-title')
     expect(alert).not.toHaveTextContent('Informe o NCM')
     const fix = screen.getByRole('region', { name: 'O que corrigir' })
     expect(fix).toHaveTextContent('Informe o NCM')

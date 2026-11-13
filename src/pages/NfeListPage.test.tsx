@@ -42,7 +42,7 @@ describe('NfeListPage', () => {
     const row = (await screen.findByRole('link', { name: 'Ana Souza' })).closest('tr') as HTMLElement
     expect(within(row).getByText('Rejeitada')).toHaveClass('badge-error')
     expect(within(row).queryByText('Criada no Bling')).not.toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Bling' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Bling' })).not.toBeInTheDocument()
   })
 
   it('opens the note from a visible action and from anywhere on the row', async () => {
