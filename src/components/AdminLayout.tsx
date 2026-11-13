@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { activeMenuHref, groupedMenuItems } from '../lib/menu'
 import { useAuth } from '../contexts/AuthContext'
 import { effectiveSessionMarkets } from '../lib/markets'
@@ -42,7 +42,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               <p className="menu-group-label">{group.group}</p>
               <div className="menu-sub">
                 {group.items.map((item) => (
-                  <NavLink
+                  <Link
                     key={item.href}
                     to={item.href}
                     aria-current={item.href === activeHref ? 'page' : undefined}
@@ -50,7 +50,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                     onClick={() => setMenuOpen(false)}
                   >
                     {item.label}
-                  </NavLink>
+                  </Link>
                 ))}
               </div>
             </div>

@@ -13,7 +13,7 @@ test.describe('Admin readonly', () => {
     await expect(page.getByRole('link', { name: 'Feedbacks' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Clientes' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Checkouts' })).toHaveCount(0)
-    await expect(page.getByRole('link', { name: 'Frete' })).toHaveAttribute('href', '/config/shipping')
+    await expect(page.getByRole('link', { name: 'Regras de frete' })).toHaveAttribute('href', '/config/shipping')
     await expect(page.getByRole('link', { name: 'Cupons 1ª compra' })).toHaveCount(0)
     await expect(page.getByRole('link', { name: 'Equipe e papéis' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Sincronizar catálogo' })).toHaveCount(0)
@@ -91,10 +91,10 @@ test.describe('Admin readonly', () => {
     await openAuthed(page, '/config/shipping', e2eProfiles.readonly)
 
     // The page opens on Regras for every role; readonly reads the rules without save controls.
-    await expect(page.getByRole('tab', { name: /Regras de entrega/ })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: /^Regras/ })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('heading', { name: 'Entrega local' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Salvar regras/ })).toHaveCount(0)
-    await page.getByRole('tab', { name: 'Simulador de frete' }).click()
+    await page.getByRole('tab', { name: 'Simulador' }).click()
     await expect(page.getByRole('heading', { name: 'Simular frete por CEP' })).toBeVisible()
     await page.getByRole('tab', { name: /Sede/ }).click()
     await expect(page.getByRole('button', { name: /Salvar sede|Validar endereço/ })).toHaveCount(0)

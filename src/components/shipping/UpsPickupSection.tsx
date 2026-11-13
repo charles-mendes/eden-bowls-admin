@@ -176,7 +176,7 @@ export function UpsPickupSection({
       {notice ? (
         <div className={notice.kind === 'error' ? 'alert' : 'muted'} role={notice.kind === 'error' ? 'alert' : 'status'}>
           {notice.text}
-          {notice.settingsLink ? <> <Link to="/config/shipping?aba=sede&mercado=us">Abrir Configurações &gt; Frete</Link></> : null}
+          {notice.settingsLink ? <> <Link to="/config/shipping?aba=sede&mercado=us">Abrir Regras de frete</Link></> : null}
         </div>
       ) : null}
 

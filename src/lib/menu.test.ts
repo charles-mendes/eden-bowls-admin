@@ -15,7 +15,7 @@ describe('admin menu', () => {
     }
   })
 
-  it('keeps Frete active, not Configurações, on the shipping page', () => {
+  it('keeps Regras de frete active, not Configurações, on the shipping page', () => {
     expect(activeMenuHref('/config/shipping', visibleMenuItems(['admin']))).toBe('/config/shipping')
     expect(activeMenuHref('/config', visibleMenuItems(['admin']))).toBe('/config')
   })
@@ -143,11 +143,11 @@ describe('admin menu', () => {
 
     expect(br.group).toBe('Operação')
     expect(br.items.map((item) => item.label)).toEqual([
-      'Hoje', 'Fila de produção', 'Entregas Brasil', 'Exceções de mercado', 'Estoque', 'Notas fiscais', 'Feriados e fechamentos', 'Frete',
+      'Hoje', 'Fila de produção', 'Entregas Brasil', 'Exceções de mercado', 'Estoque', 'Notas fiscais', 'Feriados e fechamentos',
     ])
     expect(us.group).toBe('Operação')
     expect(us.items.map((item) => item.label)).toEqual([
-      'Hoje', 'Fila de produção', 'Etiquetas UPS', 'Exceções de mercado', 'Estoque', 'Feriados e fechamentos', 'Frete',
+      'Hoje', 'Fila de produção', 'Etiquetas UPS', 'Exceções de mercado', 'Estoque', 'Feriados e fechamentos',
     ])
   })
 

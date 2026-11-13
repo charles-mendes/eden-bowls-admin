@@ -27,7 +27,6 @@ export const adminMenu: MenuItem[] = [
   { label: 'Estoque', href: '/operations/stock', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Notas fiscais', href: '/operations/nfe', roles: ['admin', 'operator', 'readonly'], group: 'Operação', markets: ['BR'] },
   { label: 'Feriados e fechamentos', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
-  { label: 'Frete', href: '/config/shipping', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
   { label: 'Assinantes', href: '/billing', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
   { label: 'Produtos', href: '/catalog/products', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
@@ -41,6 +40,8 @@ export const adminMenu: MenuItem[] = [
   { label: 'Equipe e papéis', href: '/users/roles', roles: ['admin'], group: 'Administração' },
   { label: 'Privacidade', href: '/privacy/requests', roles: ['admin', 'operator', 'readonly'], group: 'Administração' },
   { label: 'Configurações', href: '/config', roles: ['admin', 'operator', 'readonly'], group: 'Administração' },
+  // Shipping rules are set up once, not worked daily: the day's deliveries are in Entregas Brasil and Etiquetas UPS.
+  { label: 'Regras de frete', href: '/config/shipping', roles: ['admin', 'operator', 'readonly'], group: 'Administração' },
 ]
 
 // The longest menu href that prefixes the path, so a list and its sub-page are never both active.

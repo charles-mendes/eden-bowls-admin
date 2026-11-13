@@ -565,7 +565,7 @@ describe('LabelQueuePage pickup', () => {
     await user.click(await coleta.findByRole('button', { name: 'Pedir coleta à UPS' }))
 
     expect(await coleta.findByText(/O telefone da sede dos EUA está faltando ou curto/)).toBeInTheDocument()
-    expect(coleta.getByRole('link', { name: 'Abrir Configurações > Frete' })).toHaveAttribute('href', '/config/shipping?aba=sede&mercado=us')
+    expect(coleta.getByRole('link', { name: 'Abrir Regras de frete' })).toHaveAttribute('href', '/config/shipping?aba=sede&mercado=us')
   })
 
   it('No UPS answer: shows the text and reloads', async () => {

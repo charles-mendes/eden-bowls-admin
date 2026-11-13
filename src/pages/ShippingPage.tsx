@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
 import { HeadquartersCard } from '../components/shipping/HeadquartersCard'
 import { PageFrame } from '../components/PageFrame'
@@ -128,13 +128,19 @@ function brQuoteError(error: unknown) {
 
 type ShippingTab = 'regras' | 'sede' | 'simulador'
 
-// Configuration first, in the order it is set up: the rules, the headquarters they start from, then the
-// simulator that checks them.
+// This page only configures shipping; the day's deliveries are worked in Entregas Brasil and Etiquetas UPS.
+// Tabs follow the setup order: the rules, the headquarters they start from, then the simulator that checks them.
 const TABS: Array<{ id: ShippingTab; label: string }> = [
-  { id: 'regras', label: 'Regras de entrega' },
+  { id: 'regras', label: 'Regras' },
   { id: 'sede', label: 'Sede' },
-  { id: 'simulador', label: 'Simulador de frete' },
+  { id: 'simulador', label: 'Simulador' },
 ]
+
+// Where each market's deliveries are dispatched, linked from the page so this screen is not mistaken for it.
+const DISPATCH_PAGE: Record<'BR' | 'US', { label: string; href: string }> = {
+  BR: { label: 'Entregas Brasil', href: '/operations/courier' },
+  US: { label: 'Etiquetas UPS', href: '/operations/labels' },
+}
 
 const MARKET_NAME: Record<'BR' | 'US', string> = { BR: 'Brasil', US: 'EUA' }
 const RULES_OF: Record<'BR' | 'US', string> = { BR: 'do Brasil', US: 'dos EUA' }
@@ -324,8 +330,13 @@ export function ShippingPage() {
 
   return (
     <PageFrame
-      title="Frete"
-      description="Regras de entrega, sede e simulação de frete do mercado escolhido."
+      title="Regras de frete"
+      description={(
+        <>
+          Como a loja cota o frete, de onde as entregas saem e um simulador para conferir. As entregas do dia ficam
+          em <Link className="link-button" to={DISPATCH_PAGE[market].href}>{DISPATCH_PAGE[market].label}</Link>.
+        </>
+      )}
       actions={bothMarkets ? (
         <div className="segmented" role="group" aria-label="Mercado">
           {(['BR', 'US'] as const).map((option) => (
@@ -339,7 +350,7 @@ export function ShippingPage() {
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success" role="status">{message}</div> : null}
 
-      <div className="page-tabs" role="tablist" aria-label="Frete" onKeyDown={moveTabFocus}>
+      <div className="page-tabs" role="tablist" aria-label="Regras de frete" onKeyDown={moveTabFocus}>
         {TABS.map((option) => (
           <button
             key={option.id}

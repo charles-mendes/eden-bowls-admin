@@ -20,8 +20,8 @@ describe('ShippingPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Entrega local' })).toBeInTheDocument()
     expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.replace(/não salvo|pendente/, '').trim()))
-      .toEqual(['Regras de entrega', 'Sede', 'Simulador de frete'])
-    expect(screen.getByRole('tab', { name: /Regras de entrega/ })).toHaveAttribute('aria-selected', 'true')
+      .toEqual(['Regras', 'Sede', 'Simulador'])
+    expect(screen.getByRole('tab', { name: /^Regras/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
     expect(screen.queryByText('CD SP')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Latitude')).not.toBeInTheDocument()
@@ -47,7 +47,7 @@ describe('ShippingPage', () => {
     renderAuthedPage(<ShippingPage />, '/config/shipping')
 
     expect(await screen.findByRole('heading', { name: 'Entrega local' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Regras de entrega/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: /^Regras/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('button', { name: /Salvar regras/ })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: /Sede/ }))
@@ -62,6 +62,19 @@ describe('ShippingPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Simular frete por ZIP' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'EUA' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('points to the screen where each market ships the day, since this page only configures', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(adminUser)
+    renderAuthedPage(<ShippingPage />, '/config/shipping')
+
+    expect(await screen.findByRole('heading', { name: 'Regras de frete' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Entregas Brasil' })).toHaveAttribute('href', '/operations/courier')
+
+    await user.click(screen.getByRole('button', { name: 'EUA' }))
+    expect(await screen.findByRole('link', { name: 'Etiquetas UPS' })).toHaveAttribute('href', '/operations/labels')
   })
 
   it('validates the Brazil headquarters address before saving it', async () => {
@@ -168,7 +181,7 @@ describe('ShippingPage', () => {
 
     await user.click(screen.getByRole('switch', { name: /Se a UPS falhar/ }))
     expect(screen.queryByRole('heading', { name: 'Valor de reserva' })).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Regras de entrega/ })).toHaveTextContent('não salvo')
+    expect(screen.getByRole('tab', { name: /^Regras/ })).toHaveTextContent('não salvo')
 
     await user.click(screen.getByRole('tab', { name: /Simulador/ }))
     expect(screen.getByText(/Há alterações não salvas nas regras dos EUA\. A simulação usa as regras salvas\./)).toBeInTheDocument()
@@ -440,9 +453,9 @@ describe('ShippingPage', () => {
       expect(screen.getByText('Sede do Brasil salva.')).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('tab', { name: /Regras de entrega/ }))
+    await user.click(screen.getByRole('tab', { name: /^Regras/ }))
     expect(screen.getByRole('spinbutton', { name: /Raio de entrega/ })).toHaveValue(50)
-    expect(screen.getByRole('tab', { name: /Regras de entrega/ })).toHaveTextContent('não salvo')
+    expect(screen.getByRole('tab', { name: /^Regras/ })).toHaveTextContent('não salvo')
   })
 
   it('points the simulator to the headquarters when it has no validated address', async () => {
