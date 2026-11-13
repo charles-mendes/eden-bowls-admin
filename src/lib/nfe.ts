@@ -65,6 +65,8 @@ export type NfeDetail = NfeSummary & {
   missing_fields?: string[]
   // delivery-address-issues: what the customer was told about the subscription of this note.
   address_issue?: AddressIssue | null
+  // The fields Bling named when it last refused the note; empty when it named none or the note moved on.
+  bling_problems?: BlingProblem[]
   // The panel's id of the subscription the note bills; null for a note created in Bling or an unknown subscription.
   subscription_id?: number | null
 }
@@ -72,6 +74,72 @@ export type NfeDetail = NfeSummary & {
 const MISSING_FIELD_LABELS: Record<string, string> = {
   tax_document: 'CPF',
   fiscal_name: 'Nome fiscal',
+}
+
+export type BlingProblem = { element: string; message: string }
+export type BlingProblemGuide = { where: string; how: string }
+
+// Where each kind of field is fixed. Bling names the field in `element` (contato.telefone, itens[0].ncm, ...); the
+// message alone is often the same generic sentence. First match wins, so the narrow rules come first.
+const BLING_PROBLEM_GUIDES: Array<{ test: RegExp; guide: BlingProblemGuide }> = [
+  {
+    test: /natureza|cfop/,
+    guide: {
+      where: 'Natureza de operação no Bling',
+      how: 'No Bling, abra a natureza de operação usada pela integração e confira as regras de CFOP e de tributos para o estado do cliente. Depois, use Nova tentativa.',
+    },
+  },
+  {
+    test: /transport|volume|frete/,
+    guide: {
+      where: 'Transporte da nota',
+      how: 'Esses dados saem da integração da loja, não de um cadastro. Passe esta mensagem para o time técnico.',
+    },
+  },
+  {
+    test: /parcela|pagamento/,
+    guide: {
+      where: 'Pagamento da nota',
+      how: 'Esses dados saem da integração da loja, não de um cadastro. Passe esta mensagem para o time técnico.',
+    },
+  },
+  {
+    test: /contato|destinat|cpf|cnpj|documento|endere|cep|munic|bairro|telefone|inscri|\bie\b|\buf\b/,
+    guide: {
+      where: 'Dados do cliente',
+      how: 'Use Corrigir dados nesta tela, ou peça ao cliente para corrigir em Meu plano → Editar assinatura. Depois, use Nova tentativa.',
+    },
+  },
+  {
+    test: /iten|item|produto|ncm|origem|tribut|icms|pis|cofins|ipi|cest|gtin|unidade|peso/,
+    guide: {
+      where: 'Cadastro do produto no Bling',
+      how: 'No Bling, abra Cadastros → Produtos, procure o código do item (EDEN-…) e complete o que falta, em geral na aba Tributação. Depois, use Nova tentativa.',
+    },
+  },
+  {
+    test: /certificad|emitente|empresa|s[eé]rie|numera/,
+    guide: {
+      where: 'Cadastro da empresa no Bling',
+      how: 'No Bling, confira os dados da empresa, a série e a numeração da NF-e e o certificado digital. Depois, use Nova tentativa.',
+    },
+  },
+]
+
+const UNKNOWN_PROBLEM_GUIDE: BlingProblemGuide = {
+  where: 'Não identificado',
+  how: 'Abra a nota no Bling e clique em Enviar: o Bling destaca o campo que falta.',
+}
+
+export function blingProblemGuide(problem: BlingProblem): BlingProblemGuide {
+  const text = `${problem.element} ${problem.message}`.toLowerCase()
+  return BLING_PROBLEM_GUIDES.find((rule) => rule.test.test(text))?.guide ?? UNKNOWN_PROBLEM_GUIDE
+}
+
+// The API joins Bling's message, its description and the field messages with " · ". The first part is the headline.
+export function splitNfeError(text: string): { title: string; details: string[] } {
+  const [title = '', ...details] = text.split(' · ').map((part) => part.trim()).filter(Boolean)
+  return { title, details }
 }
 
 export function missingFieldLabel(field: string): string {

@@ -11,7 +11,9 @@ import { apiRequest } from '../lib/api'
 import { billingHref } from '../lib/billing'
 import {
   blingNfeUrl,
+  blingProblemGuide,
   blingSituacaoTone,
+  splitNfeError,
   formatNfeAmount,
   NFE_EMAIL_LABELS,
   formatNfeDate,
@@ -35,6 +37,55 @@ function filled(fields: Field[]) {
   return fields
     .filter((field) => field.value !== null && field.value !== undefined && field.value !== '')
     .map((field) => ({ label: field.label, value: String(field.value) }))
+}
+
+// The refusal, split into a headline and its details, and then what to fix, where and how.
+function NfeError({ item }: { item: NfeDetail }) {
+  const { title, details } = splitNfeError(item.last_error ?? '')
+  const problems = item.bling_problems ?? []
+  const shown = new Set(problems.map((problem) => problem.message))
+  const extra = details.filter((detail) => !shown.has(detail))
+
+  return (
+    <>
+      <div className="nfe-alert nfe-alert-error nfe-error" role="alert">
+        <p className="nfe-error-title">{title}</p>
+        {extra.map((detail) => <p key={detail}>{detail}</p>)}
+      </div>
+      {problems.length ? (
+        <section className="nfe-fix" aria-label="O que corrigir">
+          <h3>O que corrigir</h3>
+          <ol className="nfe-fix-list">
+            {problems.map((problem, index) => {
+              const guide = blingProblemGuide(problem)
+              return (
+                <li key={`${problem.element}-${index}`}>
+                  <p className="nfe-fix-message">{problem.message}</p>
+                  {problem.element ? <p className="nfe-fix-field">Campo no Bling: <code>{problem.element}</code></p> : null}
+                  <dl className="nfe-fix-guide">
+                    <div><dt>Onde</dt><dd>{guide.where}</dd></div>
+                    <div><dt>Como</dt><dd>{guide.how}</dd></div>
+                  </dl>
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+      ) : item.status === 'error' && item.bling_nfe_id && !item.imported ? (
+        <section className="nfe-fix" aria-label="Como descobrir o campo">
+          <h3>O Bling não disse qual campo falta</h3>
+          <ol className="nfe-fix-list nfe-fix-steps">
+            <li>
+              <a href={blingNfeUrl(item.bling_nfe_id)} target="_blank" rel="noreferrer">Abra a nota no Bling</a>
+              {' '}e clique em <strong>Enviar</strong>. O Bling destaca o campo que falta.
+            </li>
+            <li>Corrija onde o Bling indicar: em geral o cadastro do produto (aba Tributação), a natureza de operação ou os dados do cliente.</li>
+            <li>Volte aqui e use <strong>Nova tentativa</strong>. Se o Bling recusar de novo, os campos que ele apontar aparecem nesta tela.</li>
+          </ol>
+        </section>
+      ) : null}
+    </>
+  )
 }
 
 // Where the note comes from: the customer, the subscription (the order) and the Stripe charge it bills.
@@ -230,7 +281,7 @@ export function NfeDetailPage() {
                 </dd>
               </div>
             </dl>
-            {item.last_error ? <p className="nfe-alert nfe-alert-error" role="alert">{item.last_error}</p> : null}
+            {item.last_error ? <NfeError item={item} /> : null}
             {item.missing_fields?.length ? (
               <div className="nfe-alert" role="note" aria-label="O que falta na nota">
                 <p>Falta para emitir: {item.missing_fields.map(missingFieldLabel).join(', ')}.</p>

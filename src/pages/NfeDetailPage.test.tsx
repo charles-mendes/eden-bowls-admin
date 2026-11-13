@@ -270,6 +270,43 @@ describe('NfeDetailPage', () => {
     expect(within(origin).queryByRole('link')).not.toBeInTheDocument()
   })
 
+  it('says what Bling pointed at, where to fix it and how', async () => {
+    nfeDetailState.override = {
+      status: 'error',
+      last_error: 'Não foi possível emitir a nota fiscal · Verifique as informações e tente novamente. · Informe o NCM',
+      bling_problems: [{ element: 'itens[0].ncm', message: 'Informe o NCM' }],
+    }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText('Não foi possível emitir a nota fiscal')).toHaveClass('nfe-error-title')
+    expect(alert).not.toHaveTextContent('Informe o NCM')
+    const fix = screen.getByRole('region', { name: 'O que corrigir' })
+    expect(fix).toHaveTextContent('Informe o NCM')
+    expect(fix).toHaveTextContent('itens[0].ncm')
+    expect(fix).toHaveTextContent('Cadastro do produto no Bling')
+    expect(fix).toHaveTextContent('Cadastros → Produtos')
+  })
+
+  it('tells how to find the field when Bling named none', async () => {
+    nfeDetailState.override = {
+      status: 'error',
+      bling_nfe_id: 777,
+      last_error: 'Não foi possível emitir a nota fiscal · Há informações obrigatórias faltando na nota',
+      bling_problems: [],
+    }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const steps = await screen.findByRole('region', { name: 'Como descobrir o campo' })
+    expect(within(steps).getByRole('link', { name: 'Abra a nota no Bling' })).toHaveAttribute('href', expect.stringContaining('777'))
+    expect(steps).toHaveTextContent('Nova tentativa')
+    expect(screen.getByRole('alert')).toHaveTextContent('Há informações obrigatórias faltando na nota')
+  })
+
   it('shows neither link for an imported note without ids', async () => {
     nfeDetailState.override = { imported: true, can_retry: false, user_id: null, stripe_subscription_id: null }
     seedAuth()
