@@ -96,7 +96,6 @@ function NfeOrigin({ item }: { item: NfeDetail }) {
     rows.push({
       label: 'Cliente',
       value: <Link className="table-link" to={`/users/${item.user_id}`}>{item.customer_name || `Usuário ${item.user_id}`}</Link>,
-      hint: `Usuário ${item.user_id}`,
     })
   }
   if (item.stripe_subscription_id) {
@@ -237,6 +236,15 @@ export function NfeDetailPage() {
     : ''
   const number = item ? formatNfeNumber(item) : '—'
   const hasFiles = Boolean(item?.danfe_url || item?.pdf_url || item?.xml_url)
+  // Nothing fiscal to show before Bling numbers the note; the amount is already under the title.
+  const hasFiscalData = Boolean(item && (item.nfe_number || item.access_key || item.protocol || hasFiles))
+  const timeline = item ? [
+    item.created_at ? `Criada em ${formatNfeDate(item.created_at)}` : '',
+    item.submitted_at ? `enviada em ${formatNfeDate(item.submitted_at)}` : '',
+    item.authorized_at ? `autorizada em ${formatNfeDate(item.authorized_at)}` : '',
+    item.attempts ? `${item.attempts} ${item.attempts === 1 ? 'tentativa' : 'tentativas'}` : '',
+    item.next_attempt_at ? `próxima em ${formatNfeDate(item.next_attempt_at)}` : '',
+  ].filter(Boolean) : []
 
   return (
     <PageFrame
@@ -245,13 +253,6 @@ export function NfeDetailPage() {
       description={item ? `${item.customer_name || 'Cliente não informado'} · ${formatNfeAmount(item)}` : 'Carregando nota...'}
       actions={item ? (
         <div className="nfe-actions">
-          {item.user_id ? <Link className="ghost-button" to={`/users/${item.user_id}`}>Abrir cliente</Link> : null}
-          {item.stripe_subscription_id ? (
-            <Link
-              className="ghost-button"
-              to={item.subscription_id ? `/billing/subscriptions/${item.subscription_id}` : billingHref({ busca: item.stripe_subscription_id, status: 'all' })}
-            >Abrir assinatura</Link>
-          ) : null}
           {item.bling_nfe_id ? (
             <a className="ghost-button" href={blingNfeUrl(item.bling_nfe_id)} target="_blank" rel="noreferrer">Abrir no Bling</a>
           ) : null}
@@ -292,38 +293,31 @@ export function NfeDetailPage() {
             {item.imported ? (
               <p className="nfe-alert">Esta nota foi criada direto no Bling. Aqui ela fica só para consulta e o envio é feito por lá.</p>
             ) : null}
-            <MetaGrid items={filled([
-              { label: 'Tentativas', value: item.attempts || null },
-              { label: 'Próxima tentativa', value: item.next_attempt_at ? formatNfeDate(item.next_attempt_at) : null },
-              { label: 'Criada em', value: item.created_at ? formatNfeDate(item.created_at) : null },
-              { label: 'Enviada em', value: item.submitted_at ? formatNfeDate(item.submitted_at) : null },
-              { label: 'Autorizada em', value: item.authorized_at ? formatNfeDate(item.authorized_at) : null },
-            ])} />
+            {timeline.length ? <p className="nfe-timeline">{timeline.join(' · ')}</p> : null}
           </Section>
 
-          <NfeOrigin item={item} />
-
-          <Section title="Documento fiscal">
-            <MetaGrid items={filled([
-              { label: 'Número/série', value: number },
-              { label: 'Valor', value: formatNfeAmount(item) },
-            ])} />
-            {item.access_key || item.protocol ? (
-              <dl className="nfe-copy-list">
-                {item.access_key ? <CopyField label="Chave de acesso" value={item.access_key} /> : null}
-                {item.protocol ? <CopyField label="Protocolo" value={item.protocol} /> : null}
-              </dl>
-            ) : (
-              <p className="muted nfe-hint">A chave de acesso, o protocolo e o XML aparecem depois que a SEFAZ autoriza a nota.</p>
-            )}
-            {hasFiles ? (
-              <div className="nfe-files">
-                {item.danfe_url ? <a className="ghost-button" href={item.danfe_url} target="_blank" rel="noreferrer">Abrir DANFE</a> : null}
-                {item.pdf_url ? <a className="ghost-button" href={item.pdf_url} target="_blank" rel="noreferrer">Abrir PDF</a> : null}
-                {item.xml_url ? <a className="ghost-button" href={item.xml_url} target="_blank" rel="noreferrer">Abrir XML</a> : null}
-              </div>
-            ) : null}
-          </Section>
+          {hasFiscalData ? (
+            <Section title="Documento fiscal">
+              <MetaGrid items={filled([
+                { label: 'Número/série', value: number },
+              ])} />
+              {item.access_key || item.protocol ? (
+                <dl className="nfe-copy-list">
+                  {item.access_key ? <CopyField label="Chave de acesso" value={item.access_key} /> : null}
+                  {item.protocol ? <CopyField label="Protocolo" value={item.protocol} /> : null}
+                </dl>
+              ) : (
+                <p className="muted nfe-hint">A chave de acesso, o protocolo e o XML aparecem depois que a SEFAZ autoriza a nota.</p>
+              )}
+              {hasFiles ? (
+                <div className="nfe-files">
+                  {item.danfe_url ? <a className="ghost-button" href={item.danfe_url} target="_blank" rel="noreferrer">Abrir DANFE</a> : null}
+                  {item.pdf_url ? <a className="ghost-button" href={item.pdf_url} target="_blank" rel="noreferrer">Abrir PDF</a> : null}
+                  {item.xml_url ? <a className="ghost-button" href={item.xml_url} target="_blank" rel="noreferrer">Abrir XML</a> : null}
+                </div>
+              ) : null}
+            </Section>
+          ) : null}
 
           <Section
             title="Cliente na emissão"
@@ -338,6 +332,8 @@ export function NfeDetailPage() {
               { label: 'Endereço', value: addressLine },
             ])} />
           </Section>
+
+          <NfeOrigin item={item} />
 
           {item.status === 'authorized' && !item.imported ? (
             <Section
@@ -359,16 +355,18 @@ export function NfeDetailPage() {
             </Section>
           ) : null}
 
-          <section className="nfe-alert nfe-limits" aria-label="Ações feitas no Bling">
-            <p><strong>Estas ações não estão disponíveis neste painel</strong>, porque o Bling não as oferece para integrações:</p>
-            <ul>
-              <li>Cancelar uma nota autorizada</li>
-              <li>Emitir carta de correção</li>
-              <li>Inutilizar numeração</li>
-              <li>Alterar dados de uma nota autorizada</li>
-            </ul>
-            <p>Faça isso direto no Bling{item.bling_nfe_id ? ', pelo botão Abrir no Bling' : ''}. O cancelamento aparece aqui em poucos minutos.</p>
-          </section>
+          {item.status === 'authorized' ? (
+            <section className="nfe-alert nfe-limits" aria-label="Ações feitas no Bling">
+              <p><strong>Estas ações não estão disponíveis neste painel</strong>, porque o Bling não as oferece para integrações:</p>
+              <ul>
+                <li>Cancelar uma nota autorizada</li>
+                <li>Emitir carta de correção</li>
+                <li>Inutilizar numeração</li>
+                <li>Alterar dados de uma nota autorizada</li>
+              </ul>
+              <p>Faça isso direto no Bling{item.bling_nfe_id ? ', pelo botão Abrir no Bling' : ''}. O cancelamento aparece aqui em poucos minutos.</p>
+            </section>
+          ) : null}
 
           <details className="section-card nfe-technical">
             <summary>Dados técnicos</summary>

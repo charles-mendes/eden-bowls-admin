@@ -5314,6 +5314,12 @@ label.ghost-button {
   gap: var(--space-2);
 }
 
+.nfe-timeline {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
 .nfe-limits {
   margin: 0;
 }
@@ -5356,9 +5362,14 @@ label.ghost-button {
 }
 
 @media (max-width: 560px) {
-  .nfe-actions,
-  .nfe-actions > * {
+  /* Two actions at most since the links moved to Origem: side by side, the primary one still full height. */
+  .nfe-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     width: 100%;
+  }
+
+  .nfe-actions > * {
     text-align: center;
   }
 

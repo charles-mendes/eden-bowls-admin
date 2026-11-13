@@ -154,7 +154,8 @@ describe('NfeDetailPage', () => {
     expect(screen.queryByRole('link', { name: 'Abrir no Bling' })).not.toBeInTheDocument()
   })
 
-  it('says what can only be done in Bling', async () => {
+  it('says what can only be done in Bling once the note is authorized', async () => {
+    nfeDetailState.override = { status: 'authorized' }
     seedAuth()
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
@@ -164,6 +165,17 @@ describe('NfeDetailPage', () => {
     expect(notice).toHaveTextContent('Emitir carta de correção')
     expect(notice).toHaveTextContent('Inutilizar numeração')
     expect(notice).toHaveTextContent('Alterar dados de uma nota autorizada')
+  })
+
+  it('leaves out the Bling-only actions and the empty fiscal section while the note is not authorized', async () => {
+    nfeDetailState.override = { status: 'error', nfe_number: null, access_key: null, protocol: null, danfe_url: null, pdf_url: null, xml_url: null }
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    await screen.findByText('Dados técnicos')
+    expect(screen.queryByRole('region', { name: 'Ações feitas no Bling' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Documento fiscal' })).not.toBeInTheDocument()
   })
 
   it('offers no way to delete a note', async () => {
@@ -241,8 +253,9 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    expect(await screen.findByRole('link', { name: 'Abrir cliente' })).toHaveAttribute('href', '/users/42')
-    expect(screen.getByRole('link', { name: 'Abrir assinatura' })).toHaveAttribute('href', '/billing?busca=sub_123&status=all')
+    const origin = (await screen.findByRole('heading', { name: 'Origem' })).closest('section') as HTMLElement
+    expect(within(origin).getByRole('link', { name: 'Ana Souza' })).toHaveAttribute('href', '/users/42')
+    expect(within(origin).getByRole('link', { name: 'sub_123' })).toHaveAttribute('href', '/billing?busca=sub_123&status=all')
   })
 
   it('shows where the note comes from and links straight to the subscription and its charge', async () => {
@@ -256,7 +269,6 @@ describe('NfeDetailPage', () => {
     expect(within(origin).getByRole('link', { name: 'sub_123' })).toHaveAttribute('href', '/billing/subscriptions/12')
     expect(within(origin).getByRole('link', { name: 'in_123' })).toHaveAttribute('href', '/billing/subscriptions/12#faturas-stripe')
     expect(origin).toHaveTextContent('9002')
-    expect(screen.getByRole('link', { name: 'Abrir assinatura' })).toHaveAttribute('href', '/billing/subscriptions/12')
   })
 
   it('says a note created in Bling has no store charge', async () => {
@@ -315,8 +327,8 @@ describe('NfeDetailPage', () => {
 
     await screen.findByRole('heading', { name: /NF-e|Nota/ })
     await waitFor(() => expect(screen.queryByText('Carregando nota...')).not.toBeInTheDocument())
-    expect(screen.queryByRole('link', { name: 'Abrir cliente' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Abrir assinatura' })).not.toBeInTheDocument()
+    const origin = (await screen.findByRole('heading', { name: 'Origem' })).closest('section') as HTMLElement
+    expect(within(origin).queryByRole('link')).not.toBeInTheDocument()
   })
 
   it('reloads every 5 seconds while the note is in flight and every minute otherwise', async () => {
