@@ -903,4 +903,80 @@ describe('SubscriptionDetailPage courier section', () => {
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
     }
   })
+  // delivery-instructions: the subscription shows its own text or the profile text at the same place.
+  describe('delivery instructions', () => {
+    it('shows the profile text with its source and writes the subscription text', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const snapshot: Record<string, unknown> = { delivery_instructions: 'Interfone 12', delivery_instructions_source: 'profile' }
+      const { calls } = installAdminFetchMock(operatorWriteUser, {
+        subscriptionMarket: 'BR',
+        subscriptionSnapshot: snapshot,
+        routes: ({ path, method }: { path: string; method: string }) => {
+          if (path.endsWith('/delivery-instructions') && method === 'PATCH') {
+            snapshot.delivery_instructions = 'Portão lateral'
+            snapshot.delivery_instructions_source = 'subscription'
+            return undefined
+          }
+          return undefined
+        },
+      })
+      renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+      const section = (await screen.findByRole('heading', { name: 'Instruções de entrega' })).closest('section') as HTMLElement
+      expect(within(section).getByText('Interfone 12')).toBeInTheDocument()
+      expect(within(section).getByText('(do perfil, mesmo endereço)')).toBeInTheDocument()
+      await user.click(within(section).getByRole('button', { name: 'Escrever instruções' }))
+      const input = within(section).getByLabelText('Instruções desta assinatura')
+      expect(input).toHaveValue('')
+      await user.type(input, '  Portão   lateral ')
+      expect(within(section).getByTestId('subscription-instructions-counter')).toHaveTextContent('14/200')
+      await user.click(within(section).getByRole('button', { name: 'Salvar instruções' }))
+      expect(await screen.findByText('Instruções da assinatura salvas.')).toBeInTheDocument()
+      expect(calls.find((call) => call.method === 'PATCH' && call.path.endsWith('/delivery-instructions'))?.body).toEqual({ delivery_instructions: 'Portão lateral' })
+      expect(await within(section).findByText('(da assinatura)')).toBeInTheDocument()
+    })
+
+    it('blocks more than 200 characters, counting an emoji as one', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser, {
+        subscriptionSnapshot: { delivery_instructions: null, delivery_instructions_source: null },
+      })
+      renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+      const section = (await screen.findByRole('heading', { name: 'Instruções de entrega' })).closest('section') as HTMLElement
+      expect(within(section).getByText('Sem instruções.')).toBeInTheDocument()
+      await user.click(within(section).getByRole('button', { name: 'Escrever instruções' }))
+      const input = within(section).getByLabelText('Instruções desta assinatura')
+      await user.click(input)
+      await user.paste(`${'a'.repeat(199)}🐶`)
+      expect(within(section).getByTestId('subscription-instructions-counter')).toHaveTextContent('200/200')
+      await user.paste('b')
+      await user.click(within(section).getByRole('button', { name: 'Salvar instruções' }))
+      expect(within(section).getByRole('alert')).toHaveTextContent('Use no máximo 200 caracteres, em uma linha.')
+      expect(calls.some((call) => call.method === 'PATCH' && call.path.endsWith('/delivery-instructions'))).toBe(false)
+    })
+
+    it('shows the text without the form to a user without users.delivery.write', async () => {
+      seedAuth()
+      installAdminFetchMock(readonlyUser, {
+        subscriptionSnapshot: { delivery_instructions: 'Leave at back door', delivery_instructions_source: 'subscription' },
+      })
+      renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+      const section = (await screen.findByRole('heading', { name: 'Instruções de entrega' })).closest('section') as HTMLElement
+      expect(within(section).getByText('Leave at back door')).toBeInTheDocument()
+      expect(within(section).queryByRole('button', { name: /instruções/ })).toBeNull()
+    })
+
+    it('hides the section on an older API or a profile outside the market', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+      expect(await screen.findByRole('heading', { name: 'Identidade' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Instruções de entrega' })).toBeNull()
+    })
+  })
 })

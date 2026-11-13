@@ -6206,3 +6206,19 @@ button.readiness-step-inner:hover .readiness-title {
 .stock-balance-preview {
   margin: 0;
 }
+
+/* delivery-instructions: up to 200 characters in the label queue; wraps inside the order cell. */
+.queue-instructions {
+  max-width: 28rem;
+  margin-top: 4px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+}
+
+/* Field-level error text (recipient name, NF-e customer, delivery instructions). */
+.form-error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  margin: 0;
+}

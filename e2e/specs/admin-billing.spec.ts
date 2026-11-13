@@ -42,6 +42,27 @@ test.describe('Admin billing', () => {
     await expect(page.getByText(/para ana@edenbowls\.com/)).toBeVisible()
   })
 
+  // delivery-instructions: the profile text shows with its source; the operator writes the subscription text.
+  test('writes the delivery instructions of a subscription', async ({ page }) => {
+    if (process.env.CAPTURE_WIDTH) await page.setViewportSize({ width: Number(process.env.CAPTURE_WIDTH), height: 900 })
+    const { captured } = await openAuthed(page, '/billing/subscriptions/sub-row-1', e2eProfiles.operatorWrite)
+
+    const section = page.locator('section.section-card', { has: page.getByRole('heading', { name: 'Instruções de entrega' }) })
+    await expect(section.getByText('Interfone 12')).toBeVisible()
+    await expect(section.getByText('(do perfil, mesmo endereço)')).toBeVisible()
+    if (process.env.CAPTURE_DIR) await section.screenshot({ path: `${process.env.CAPTURE_DIR}/instructions-profile-${page.viewportSize()?.width}.png` })
+    await section.getByRole('button', { name: 'Escrever instruções' }).click()
+    await section.getByLabel('Instruções desta assinatura').fill('Portão lateral, cuidado com o cachorro')
+    await expect(section.getByTestId('subscription-instructions-counter')).toHaveText('38/200')
+    if (process.env.CAPTURE_DIR) await section.screenshot({ path: `${process.env.CAPTURE_DIR}/instructions-form-${page.viewportSize()?.width}.png` })
+    await section.getByRole('button', { name: 'Salvar instruções' }).click()
+    await expect(page.getByText('Instruções da assinatura salvas.')).toBeVisible()
+    await expect(section.getByText('(da assinatura)')).toBeVisible()
+    await expect.poll(() => captured.find((item) => item.method === 'PATCH' && item.path.endsWith('/delivery-instructions'))?.body)
+      .toEqual({ delivery_instructions: 'Portão lateral, cuidado com o cachorro' })
+    if (process.env.CAPTURE_DIR) await page.screenshot({ path: `${process.env.CAPTURE_DIR}/instructions-saved-${page.viewportSize()?.width}.png`, fullPage: true })
+  })
+
   test('syncs first-purchase coupons with Stripe', async ({ page }) => {
     const { captured } = await openAuthed(page, '/billing/coupons', e2eProfiles.operatorWrite)
 

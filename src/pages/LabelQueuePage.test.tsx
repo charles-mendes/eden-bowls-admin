@@ -75,6 +75,25 @@ describe('LabelQueuePage', () => {
     vi.unstubAllGlobals()
   })
 
+  // delivery-instructions: whoever packs the box reads them; the UPS label does not carry them.
+  it('shows the delivery instructions of each order with their source', async () => {
+    install(operatorUsWriteUser, {
+      queue: {
+        ready: [
+          order(1, { delivery_instructions: 'Leave at back door', delivery_instructions_source: 'subscription' }),
+          order(2, { delivery_instructions: 'Ring twice', delivery_instructions_source: 'profile' }),
+          order(3, { delivery_instructions: null, delivery_instructions_source: null }),
+        ],
+        unresolved: [], created: [], truncated: false,
+      },
+    })
+    render()
+
+    expect(await screen.findByText('Instruções: Leave at back door')).toBeInTheDocument()
+    expect(screen.getByText('Instruções (do perfil): Ring twice')).toBeInTheDocument()
+    expect(screen.queryByText('Sem instruções')).toBeNull()
+  })
+
   it('Several orders bought: one purchase per order, one at a time, then one print job', async () => {
     const user = userEvent.setup()
     vi.stubGlobal('confirm', vi.fn().mockReturnValue(true))

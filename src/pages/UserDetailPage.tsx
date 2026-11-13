@@ -24,6 +24,14 @@ import {
 import { MARKET_LABELS, type MarketCode } from '../lib/markets'
 import { BR_STATES, maskCpf } from '../lib/nfe'
 import { deliveryBody, type DeliveryForm } from '../lib/userDelivery'
+import {
+  DELIVERY_INSTRUCTIONS_ERROR,
+  DELIVERY_INSTRUCTIONS_MAX_LENGTH,
+  deliveryInstructionsLength,
+  isValidDeliveryInstructions,
+  normalizeDeliveryInstructions,
+  oneLineInstructions,
+} from '../lib/deliveryInstructions'
 import { formatConsentSource, formatConsentStatus, formatConsentType, formatPrivacyIdentity, formatPrivacyStatus, formatPrivacyType, type UserPrivacySnapshot } from '../lib/privacy'
 
 type UserDetail = {
@@ -141,6 +149,7 @@ export function UserDetailPage() {
   const [fiscal, setFiscal] = useState({ fullName: '', cpf: '' })
   const [access, setAccess] = useState<AccessForm>(emptyAccessForm)
   const [message, setMessage] = useState('')
+  const [instructionsError, setInstructionsError] = useState('')
   // Saving the account's copy of the address asks first: the box follows the subscription address, not this one.
   const [confirmDelivery, setConfirmDelivery] = useState(false)
   const [deliveryReason, setDeliveryReason] = useState('')
@@ -268,16 +277,25 @@ export function UserDetailPage() {
   const saveInstructions = async (event: FormEvent) => {
     event.preventDefault()
     if (!token || !userId || !canWriteDelivery) return
+    if (!isValidDeliveryInstructions(delivery.deliveryInstructions)) {
+      setInstructionsError(DELIVERY_INSTRUCTIONS_ERROR)
+      return
+    }
     try {
       setError('')
+      setInstructionsError('')
       await apiRequest(`/admin/users/${userId}/delivery-instructions`, {
         token,
         method: 'PATCH',
-        body: { deliveryInstructions: delivery.deliveryInstructions },
+        body: { deliveryInstructions: normalizeDeliveryInstructions(delivery.deliveryInstructions) },
       })
       setMessage('Instruções salvas.')
       await load()
     } catch (requestError) {
+      if (requestError instanceof ApiRequestError && requestError.status === 422) {
+        setInstructionsError(DELIVERY_INSTRUCTIONS_ERROR)
+        return
+      }
       setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar instruções')
     }
   }
@@ -610,13 +628,25 @@ export function UserDetailPage() {
               <form className="stack" onSubmit={saveInstructions}>
                 <label>
                   Instruções
-                  <textarea
-                    rows={4}
+                  <input
                     value={delivery.deliveryInstructions}
-                    onChange={(event) => setDelivery((current) => ({ ...current, deliveryInstructions: event.target.value }))}
+                    aria-invalid={instructionsError ? true : undefined}
+                    aria-describedby={instructionsError ? 'profile-instructions-error' : undefined}
+                    onChange={(event) => {
+                      setInstructionsError('')
+                      setDelivery((current) => ({ ...current, deliveryInstructions: oneLineInstructions(event.target.value) }))
+                    }}
                     disabled={!canWriteDelivery}
                   />
                 </label>
+                <p
+                  className={deliveryInstructionsLength(delivery.deliveryInstructions) > DELIVERY_INSTRUCTIONS_MAX_LENGTH ? 'form-error' : 'muted'}
+                  data-testid="profile-instructions-counter"
+                >
+                  {deliveryInstructionsLength(delivery.deliveryInstructions)}/{DELIVERY_INSTRUCTIONS_MAX_LENGTH}
+                </p>
+                {instructionsError ? <p id="profile-instructions-error" className="form-error" role="alert">{instructionsError}</p> : null}
+                <p className="muted">Vale para o perfil. Cada assinatura guarda as suas instruções, editadas no detalhe da assinatura.</p>
                 {canWriteDelivery ? (
                   <div className="form-footer">
                     <button className="primary-button" type="submit">Salvar instruções</button>

@@ -8,7 +8,8 @@ import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
 import { printLabels } from '../lib/printLabel'
 import { PRODUCTION_STATUS_LABELS, isProductionStatus } from '../lib/productionQueue'
-import { readinessText, type ReadinessReason } from '../lib/courierDeliveries'
+import { instructionsLine, readinessText, type ReadinessReason } from '../lib/courierDeliveries'
+import type { DeliveryInstructionsSource } from '../lib/deliveryInstructions'
 import { boxesSummary, labelIssueText, labelRefusalText, pickupLabel, type LabelIssue, type QueuePickup, type ShipmentPackage } from '../lib/upsLabels'
 import { UpsPickupSection } from '../components/shipping/UpsPickupSection'
 import { AddressIssueStatus } from '../components/AddressIssueStatus'
@@ -32,6 +33,9 @@ type QueueItem = {
   stripe_subscription_id: string
   invoice_id: string
   customer_name: string | null
+  // delivery-instructions: read by whoever packs the box; the UPS label does not carry them.
+  delivery_instructions?: string | null
+  delivery_instructions_source?: DeliveryInstructionsSource
   city: string | null
   zipcode: string | null
   production_status: string
@@ -284,6 +288,7 @@ export function LabelQueuePage() {
         <td>
           <strong>{orderName(item)}</strong>
           <div className="muted">{item.invoice_id}</div>
+          {item.delivery_instructions ? <div className="queue-instructions">{instructionsLine(item)}</div> : null}
         </td>
         <td>{[item.city, item.zipcode].filter(Boolean).join(' · ') || '—'}</td>
         <td>{productionLabel(item.production_status)}</td>

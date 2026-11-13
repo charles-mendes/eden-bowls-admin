@@ -40,6 +40,7 @@ import {
   type CourierDelivery,
   type CourierQueue,
   type CourierQueueItem,
+  instructionsLine,
 } from '../lib/courierDeliveries'
 import { boxCountText } from '../lib/productionQueue'
 
@@ -114,7 +115,7 @@ function RecipientCell({ item, details }: { item: CourierQueueItem; details: boo
             <span className="contact-inline">{item.phone}<CopyButton value={item.phone} label={`Copiar telefone de ${itemName(item)}`} /></span>
           ) : <div className="muted">Sem telefone</div>}
           <div className="muted">
-            {item.delivery_instructions ? `Instruções (do perfil): ${item.delivery_instructions}` : 'Sem instruções'}
+            {instructionsLine(item)}
           </div>
           {lines ? <div>{lines}</div> : null}
         </>

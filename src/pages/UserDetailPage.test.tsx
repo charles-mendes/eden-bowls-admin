@@ -54,6 +54,39 @@ describe('UserDetailPage', () => {
     expect(patch?.authorization).toBe('Bearer access-token')
   })
 
+  // delivery-instructions: one line, counted in code points, blocked past 200; the API 422 is shown on the field.
+  it('blocks profile instructions past 200 characters and shows the API refusal', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      routes: ({ path, method, body }: { path: string; method: string; body: unknown }) => {
+        if (path.endsWith('/delivery-instructions') && method === 'PATCH' && (body as { deliveryInstructions?: string }).deliveryInstructions === 'Recusado') {
+          return new Response(JSON.stringify({ success: false, message: 'Invalid delivery instructions.', details: { field: 'delivery_instructions' } }), { status: 422, headers: { 'Content-Type': 'application/json' } })
+        }
+        return undefined
+      },
+    })
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+
+    const input = await screen.findByLabelText('Instruções')
+    expect(input.tagName).toBe('INPUT')
+    await user.clear(input)
+    await user.click(input)
+    await user.paste(`${'a'.repeat(199)}🐶`)
+    expect(screen.getByTestId('profile-instructions-counter')).toHaveTextContent('200/200')
+    await user.paste('b')
+    expect(screen.getByTestId('profile-instructions-counter')).toHaveTextContent('201/200')
+    await user.click(screen.getByRole('button', { name: 'Salvar instruções' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Use no máximo 200 caracteres, em uma linha.')
+    expect(calls.some((call) => call.method === 'PATCH' && call.path.endsWith('/delivery-instructions'))).toBe(false)
+
+    await user.clear(input)
+    await user.type(input, 'Recusado')
+    await user.click(screen.getByRole('button', { name: 'Salvar instruções' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Use no máximo 200 caracteres, em uma linha.')
+    expect(screen.queryByText('Instruções salvas.')).toBeNull()
+  })
+
   it('saves the customer delivery address', async () => {
     const user = userEvent.setup()
     seedAuth()

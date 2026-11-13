@@ -151,6 +151,8 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     shipping?: unknown
     courier_issues?: string[] | null
     account_name?: string | null
+    delivery_instructions?: string | null
+    delivery_instructions_source?: 'subscription' | 'profile' | null
   }
   // customer-subscriptions-operational-links: the subscriptions of GET /admin/users/:userId.
   customerSubscriptions?: Array<Record<string, unknown>>
@@ -304,7 +306,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse({ success: true, mustChangePassword: false })
     }
 
-    if (path.endsWith('/delivery-instructions') && method === 'PATCH') {
+    if (/^\/api\/v1\/admin\/users\/[^/]+\/delivery-instructions$/.test(path) && method === 'PATCH') {
       return jsonResponse({ ok: true })
     }
 
@@ -902,6 +904,16 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (/^\/api\/v1\/admin\/shipments\/[^/]+\/refresh-tracking$/.test(path) && method === 'POST') {
       return jsonResponse({ success: true, data: { shipment: { id: 'ship_1', tracking_number: '1Z999' } } })
+    }
+
+    // delivery-instructions: the operator sets or clears the instructions of one subscription.
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/delivery-instructions$/.test(path) && method === 'PATCH') {
+      const text = String((body as { delivery_instructions?: string } | null)?.delivery_instructions || '').trim()
+      if ([...text].length > 200) {
+        return jsonResponse({ success: false, message: 'Invalid delivery instructions.', details: { code: 'invalid_delivery_instructions', field: 'delivery_instructions' } }, 422)
+      }
+      const id = path.split('/')[6]
+      return jsonResponse({ success: true, data: { subscription_id: id, delivery_instructions: text || null } })
     }
 
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+$/.test(path) && method === 'GET') {

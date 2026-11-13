@@ -1,3 +1,4 @@
+import type { DeliveryInstructionsSource } from './deliveryInstructions'
 import type { DeliveryRangeInfo } from './deliveryRange'
 import { ApiRequestError } from './api'
 import { issueCodeText, type AddressIssue } from './addressIssues'
@@ -42,7 +43,8 @@ export type CourierQueueItem = {
   address?: CourierAddress
   phone?: string | null
   delivery_instructions?: string | null
-  delivery_instructions_source?: 'profile'
+  // delivery-instructions: the subscription text first, else the profile text at the same place.
+  delivery_instructions_source?: DeliveryInstructionsSource
   items?: Array<{ flavor: string; quantity: number; pack_size: string | null }>
   // shipping-boxes: the boxes the delivery carries; absent on an older API.
   boxes?: Array<{ key: string; label: string; pack_count: number; weight_kg: number }>
@@ -286,4 +288,12 @@ export type CourierTab = 'a_despachar' | 'em_rota' | 'falhas' | 'entregues'
 
 export function courierHref(aba?: CourierTab) {
   return aba && aba !== 'a_despachar' ? `/operations/courier?aba=${aba}` : '/operations/courier'
+}
+
+// delivery-instructions: one line for the courier and the label queue, naming where the text comes from.
+export function instructionsLine(item: { delivery_instructions?: string | null; delivery_instructions_source?: DeliveryInstructionsSource }): string {
+  if (!item.delivery_instructions) return 'Sem instruções'
+  return item.delivery_instructions_source === 'profile'
+    ? `Instruções (do perfil): ${item.delivery_instructions}`
+    : `Instruções: ${item.delivery_instructions}`
 }

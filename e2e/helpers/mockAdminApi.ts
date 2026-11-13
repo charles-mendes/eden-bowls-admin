@@ -505,6 +505,8 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
   const captured: CapturedAdminRequest[] = []
   const calendar = calendarState()
   const stock = stockState()
+  // delivery-instructions: sub-row-1 starts with the profile text at the same place.
+  const subscriptionInstructions: { text: string | null; source: 'subscription' | 'profile' | null } = { text: 'Interfone 12', source: 'profile' }
   // plan-settings: plan days and large-pack limit of each market.
   const planSettings: Record<string, { market: string; planDays: number; largePackLimit: number; updatedAt: string | null }> = {
     BR: { market: 'BR', planDays: 30, largePackLimit: 8, updatedAt: null },
@@ -1012,7 +1014,22 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         planSelection: {},
         shipping: {},
         address: {},
+        delivery_instructions: subscriptionInstructions.text,
+        delivery_instructions_source: subscriptionInstructions.source,
       })
+      return
+    }
+
+    // delivery-instructions: the operator writes the instructions of this subscription.
+    if (path === '/api/v1/admin/billing/subscriptions/sub-row-1/delivery-instructions' && method === 'PATCH') {
+      const text = String((body as { delivery_instructions?: string } | null)?.delivery_instructions || '').trim()
+      if ([...text].length > 200) {
+        await fulfillJson(route, { message: 'Invalid delivery instructions.', details: { code: 'invalid_delivery_instructions', field: 'delivery_instructions' } }, 422)
+        return
+      }
+      subscriptionInstructions.text = text || null
+      subscriptionInstructions.source = text ? 'subscription' : null
+      await fulfillJson(route, { success: true, data: { subscription_id: 'sub-row-1', delivery_instructions: text || null } })
       return
     }
 

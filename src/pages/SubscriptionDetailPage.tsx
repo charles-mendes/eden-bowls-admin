@@ -6,6 +6,8 @@ import { Section } from '../components/Section'
 import { MetricCard } from '../components/MetricCard'
 import { CustomerContact } from '../components/CustomerContact'
 import { RecipientNameDialog } from '../components/shipping/RecipientNameDialog'
+import { SubscriptionInstructions } from '../components/shipping/SubscriptionInstructions'
+import type { DeliveryInstructionsSource } from '../lib/deliveryInstructions'
 import { AddressIssueStatus } from '../components/AddressIssueStatus'
 import { issueCodeText, type AddressIssue } from '../lib/addressIssues'
 import { useAuth } from '../contexts/AuthContext'
@@ -51,6 +53,10 @@ type SubscriptionDetail = {
   courier_issues?: string[] | null
   // operator-fills-recipient-name: the account name to suggest, null outside the operator's market.
   account_name?: string | null
+  // delivery-instructions: the subscription text, or the profile text at the same place; absent when the
+  // customer profile is outside the operator's market.
+  delivery_instructions?: string | null
+  delivery_instructions_source?: DeliveryInstructionsSource
 }
 
 type InvoiceItem = {
@@ -550,6 +556,22 @@ export function SubscriptionDetailPage() {
           )}
         </div>
       </Section>
+
+      {data && data.delivery_instructions !== undefined ? (
+        <Section title="Instruções de entrega">
+          <SubscriptionInstructions
+            subscriptionId={data.id}
+            text={data.delivery_instructions}
+            source={data.delivery_instructions_source}
+            canWrite={canFillRecipient}
+            onSaved={(text) => {
+              setError('')
+              setMessage(text)
+              void load()
+            }}
+          />
+        </Section>
+      ) : null}
 
       {data?.market_exception ? (
         <div className="warning" role="status">

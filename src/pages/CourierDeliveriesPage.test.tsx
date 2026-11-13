@@ -325,6 +325,24 @@ describe('CourierDeliveriesPage', () => {
     expect(await screen.findByText('Copiado')).toBeInTheDocument()
   })
 
+  // delivery-instructions: the subscription text is shown plainly; no text says "Sem instruções".
+  it('labels the instructions by source', async () => {
+    install(operatorWriteUser, {
+      queue: {
+        to_dispatch: [
+          fullItem(1, { delivery_instructions: 'Portão verde', delivery_instructions_source: 'subscription' }),
+          fullItem(2, { delivery_instructions: null, delivery_instructions_source: null }),
+        ],
+        out_for_delivery: [], failed: [], delivered: [], truncated: false,
+      },
+    })
+    render()
+
+    expect(await screen.findByText('Instruções: Portão verde')).toBeInTheDocument()
+    expect(screen.getByText('Sem instruções')).toBeInTheDocument()
+    expect(screen.queryByText(/do perfil/)).toBeNull()
+  })
+
   it('Two-box delivery: the row shows "2 caixas", and a row without boxes shows nothing extra', async () => {
     const boxes = [
       { key: 'monthly', label: 'Caixa mensal', pack_count: 30, weight_kg: 16.5 },
