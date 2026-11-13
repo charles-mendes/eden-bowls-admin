@@ -1,8 +1,8 @@
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NfeDetailPage } from './NfeDetailPage'
-import { operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { addressIssue, adminUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { findCall, installAdminFetchMock, nfeDetailState } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -12,6 +12,32 @@ describe('NfeDetailPage', () => {
     localStorage.clear()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+  })
+
+  it('a note blocked for the fiscal name says what is missing, where it is fixed and the email state', async () => {
+    seedAuth()
+    nfeDetailState.override = {
+      status: 'blocked_missing_document',
+      missing_fields: ['fiscal_name'],
+      address_issue: { ...addressIssue, codes: ['fiscal_name_missing'], source: 'nfe_check' },
+    }
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const note = await screen.findByRole('note', { name: 'O que falta na nota' })
+    expect(note).toHaveTextContent('Falta para emitir: Nome fiscal.')
+    expect(note).toHaveTextContent('Meu plano → Editar assinatura')
+    expect(within(note).getByText('E-mail enviado em 03/11')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Corrigir dados' })).toBeInTheDocument()
+  })
+
+  it('lists CPF and fiscal name when both are missing', async () => {
+    seedAuth()
+    nfeDetailState.override = { status: 'blocked_missing_document', missing_fields: ['tax_document', 'fiscal_name'] }
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    expect(await screen.findByRole('note', { name: 'O que falta na nota' })).toHaveTextContent('Falta para emitir: CPF, Nome fiscal.')
   })
 
   it('shows why the email failed and sends it again after confirmation', async () => {
@@ -49,15 +75,28 @@ describe('NfeDetailPage', () => {
     expect(screen.queryByRole('button', { name: 'Reenviar e-mail' })).not.toBeInTheDocument()
   })
 
-  it('shows the ids, the saved payload and the DANFE link', async () => {
+  it('shows an operator the DANFE and no technical data, since Origem already links every id', async () => {
     seedAuth()
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    expect(await screen.findByText('in_nfe_1')).toBeInTheDocument()
-    expect(screen.getByText('9001')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Abrir DANFE' })).toHaveAttribute('href', 'https://bling.example/danfe')
+    expect(await screen.findByRole('link', { name: 'Abrir DANFE' })).toHaveAttribute('href', 'https://bling.example/danfe')
+    expect(screen.queryByText('Dados técnicos')).not.toBeInTheDocument()
+    expect(screen.queryByText('Enviado ao Bling')).not.toBeInTheDocument()
+  })
+
+  it('shows the admin only what Origem lacks: the Bling ids and the JSON exchanged with Bling', async () => {
+    seedAuth()
+    installAdminFetchMock(adminUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const technical = (await screen.findByText('Dados técnicos')).closest('details') as HTMLElement
+    expect(technical).toHaveTextContent('NF-e Bling')
+    expect(technical).toHaveTextContent('Contato Bling')
+    expect(technical).not.toHaveTextContent('in_nfe_1')
+    expect(technical).not.toHaveTextContent('Conta Stripe')
     expect(screen.getByText('Enviado ao Bling')).toBeInTheDocument()
+    expect(screen.getByText('Resposta do Bling')).toBeInTheDocument()
   })
 
   it('leads back to the list and leaves out fields with nothing in them', async () => {
@@ -65,7 +104,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('in_nfe_1')
+    await screen.findByRole('heading', { name: 'Situação' })
     expect(screen.getByRole('link', { name: 'Notas fiscais' })).toHaveAttribute('href', '/operations/nfe')
     expect(screen.queryByText('Protocolo')).not.toBeInTheDocument()
     expect(screen.queryByText('Autorizada em')).not.toBeInTheDocument()
@@ -111,11 +150,12 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('in_nfe_1')
+    await screen.findByRole('heading', { name: 'Situação' })
     expect(screen.queryByRole('link', { name: 'Abrir no Bling' })).not.toBeInTheDocument()
   })
 
-  it('says what can only be done in Bling', async () => {
+  it('says what can only be done in Bling once the note is authorized', async () => {
+    nfeDetailState.override = { status: 'authorized' }
     seedAuth()
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
@@ -127,12 +167,23 @@ describe('NfeDetailPage', () => {
     expect(notice).toHaveTextContent('Alterar dados de uma nota autorizada')
   })
 
+  it('leaves out the Bling-only actions and the empty fiscal section while the note is not authorized', async () => {
+    nfeDetailState.override = { status: 'error', nfe_number: null, access_key: null, protocol: null, danfe_url: null, pdf_url: null, xml_url: null }
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    await screen.findByRole('heading', { name: 'Situação' })
+    expect(screen.queryByRole('region', { name: 'Ações feitas no Bling' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Documento fiscal' })).not.toBeInTheDocument()
+  })
+
   it('offers no way to delete a note', async () => {
     seedAuth()
     installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('in_nfe_1')
+    await screen.findByRole('heading', { name: 'Situação' })
     expect(screen.queryByRole('button', { name: /excluir|apagar|remover/i })).not.toBeInTheDocument()
   })
 
@@ -147,11 +198,17 @@ describe('NfeDetailPage', () => {
     expect(name).toHaveValue('Ana Souza')
     await user.clear(name)
     await user.type(name, 'Ana Correta')
-    await user.click(screen.getAllByRole('button', { name: 'Salvar' }).at(-1) as HTMLElement)
+    const dialog = screen.getByRole('dialog')
+    expect(dialog).toHaveTextContent('Muda só esta nota')
+    const saveButton = within(dialog).getAllByRole('button', { name: 'Salvar' }).at(-1) as HTMLElement
+    // Without a reason nothing is sent.
+    expect(saveButton).toBeDisabled()
+    await user.type(within(dialog).getByRole('textbox', { name: 'Motivo' }), 'Nome digitado errado no checkout')
+    await user.click(saveButton)
 
     await waitFor(() => expect(findCall(calls, 'PATCH', '/admin/nfe/5/customer')).toBeTruthy())
     const call = findCall(calls, 'PATCH', '/admin/nfe/5/customer')
-    expect(call?.body).toMatchObject({ name: 'Ana Correta', document: '52998224725', address: { street: 'Rua A', city: 'São Paulo' } })
+    expect(call?.body).toMatchObject({ name: 'Ana Correta', document: '52998224725', address: { street: 'Rua A', city: 'São Paulo' }, reason: 'Nome digitado errado no checkout' })
     expect(await screen.findByText(/Use Nova tentativa/)).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
@@ -165,7 +222,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(profile)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('in_nfe_1')
+    await screen.findByRole('heading', { name: 'Situação' })
     expect(screen.queryByRole('button', { name: 'Corrigir dados' })).not.toBeInTheDocument()
   })
 
@@ -174,7 +231,7 @@ describe('NfeDetailPage', () => {
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
 
-    await screen.findByText('in_nfe_1')
+    await screen.findByRole('heading', { name: 'Situação' })
     expect(screen.queryByRole('button', { name: 'Nova tentativa' })).not.toBeInTheDocument()
   })
 
@@ -189,4 +246,101 @@ describe('NfeDetailPage', () => {
     expect(await screen.findByText('Nova tentativa na fila.')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Nova tentativa' })).not.toBeInTheDocument()
   })
+
+  it('links the note to its customer and its subscription', async () => {
+    nfeDetailState.override = { user_id: 42, stripe_subscription_id: 'sub_123' }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const origin = (await screen.findByRole('heading', { name: 'Origem' })).closest('section') as HTMLElement
+    expect(within(origin).getByRole('link', { name: 'Ana Souza' })).toHaveAttribute('href', '/users/42')
+    expect(within(origin).getByRole('link', { name: 'sub_123' })).toHaveAttribute('href', '/billing?busca=sub_123&status=all')
+  })
+
+  it('shows where the note comes from and links straight to the subscription and its charge', async () => {
+    nfeDetailState.override = { user_id: 42, customer_name: 'Ana Souza', stripe_subscription_id: 'sub_123', stripe_invoice_id: 'in_123', bling_order_id: 9002, subscription_id: 12 }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const origin = (await screen.findByRole('heading', { name: 'Origem' })).closest('section') as HTMLElement
+    expect(within(origin).getByRole('link', { name: 'Ana Souza' })).toHaveAttribute('href', '/users/42')
+    expect(within(origin).getByRole('link', { name: 'sub_123' })).toHaveAttribute('href', '/billing/subscriptions/12')
+    expect(within(origin).getByRole('link', { name: 'in_123' })).toHaveAttribute('href', '/billing/subscriptions/12#faturas-stripe')
+    expect(origin).toHaveTextContent('9002')
+  })
+
+  it('says a note created in Bling has no store charge', async () => {
+    nfeDetailState.override = { imported: true, can_retry: false, user_id: null, stripe_subscription_id: null, stripe_invoice_id: 'bling:9003', bling_order_id: null }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const origin = (await screen.findByRole('heading', { name: 'Origem' })).closest('section') as HTMLElement
+    expect(origin).toHaveTextContent('Criada direto no Bling')
+    expect(within(origin).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('says what Bling pointed at, where to fix it and how', async () => {
+    nfeDetailState.override = {
+      status: 'error',
+      last_error: 'Não foi possível emitir a nota fiscal · Verifique as informações e tente novamente. · Informe o NCM',
+      bling_problems: [{ element: 'itens[0].ncm', message: 'Informe o NCM' }],
+    }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const alert = await screen.findByRole('alert')
+    expect(within(alert).getByText('Não foi possível emitir a nota fiscal')).toHaveClass('nfe-refusal-title')
+    expect(alert).not.toHaveTextContent('Informe o NCM')
+    const fix = screen.getByRole('region', { name: 'O que corrigir' })
+    expect(fix).toHaveTextContent('Informe o NCM')
+    expect(fix).toHaveTextContent('itens[0].ncm')
+    expect(fix).toHaveTextContent('Cadastro do produto no Bling')
+    expect(fix).toHaveTextContent('Cadastros → Produtos')
+  })
+
+  it('tells how to find the field when Bling named none', async () => {
+    nfeDetailState.override = {
+      status: 'error',
+      bling_nfe_id: 777,
+      last_error: 'Não foi possível emitir a nota fiscal · Há informações obrigatórias faltando na nota',
+      bling_problems: [],
+    }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    const steps = await screen.findByRole('region', { name: 'Como descobrir o campo' })
+    expect(within(steps).getByRole('link', { name: 'Abra a nota no Bling' })).toHaveAttribute('href', expect.stringContaining('777'))
+    expect(steps).toHaveTextContent('Nova tentativa')
+    expect(screen.getByRole('alert')).toHaveTextContent('Há informações obrigatórias faltando na nota')
+  })
+
+  it('shows neither link for an imported note without ids', async () => {
+    nfeDetailState.override = { imported: true, can_retry: false, user_id: null, stripe_subscription_id: null }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    await screen.findByRole('heading', { name: /NF-e|Nota/ })
+    await waitFor(() => expect(screen.queryByText('Carregando nota...')).not.toBeInTheDocument())
+    const origin = (await screen.findByRole('heading', { name: 'Origem' })).closest('section') as HTMLElement
+    expect(within(origin).queryByRole('link')).not.toBeInTheDocument()
+  })
+
+  it('reloads every 5 seconds while the note is in flight and every minute otherwise', async () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval')
+    nfeDetailState.override = { status: 'pending' }
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<NfeDetailPage />, '/operations/nfe/5', '/operations/nfe/:id')
+
+    await waitFor(() => expect(setIntervalSpy.mock.calls.some(([, ms]) => ms === 5000)).toBe(true))
+    setIntervalSpy.mockClear()
+    nfeDetailState.override = { status: 'authorized' }
+    await waitFor(() => expect(setIntervalSpy.mock.calls.some(([, ms]) => ms === 60000)).toBe(true), { timeout: 7000 })
+  }, 10000)
 })

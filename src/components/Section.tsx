@@ -1,18 +1,20 @@
 import { type ReactNode } from 'react'
 
 export function Section({
+  id,
   title,
   description,
   actions,
   children,
 }: {
+  id?: string
   title: string
   description?: string
   actions?: ReactNode
   children: ReactNode
 }) {
   return (
-    <section className="section-card">
+    <section id={id} className="section-card">
       <div className="section-head">
         <div>
           <h3>{title}</h3>

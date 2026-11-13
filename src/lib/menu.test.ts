@@ -15,7 +15,7 @@ describe('admin menu', () => {
     }
   })
 
-  it('keeps Frete active, not Configurações, on the shipping page', () => {
+  it('keeps Regras de frete active, not Configurações, on the shipping page', () => {
     expect(activeMenuHref('/config/shipping', visibleMenuItems(['admin']))).toBe('/config/shipping')
     expect(activeMenuHref('/config', visibleMenuItems(['admin']))).toBe('/config')
   })
@@ -25,6 +25,13 @@ describe('admin menu', () => {
     expect(visibleMenuItems(['operator']).map((item) => item.href)).toContain('/operations/production')
     expect(visibleMenuItems(['readonly']).map((item) => item.href)).toContain('/operations/production')
     expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/operations/production')
+  })
+
+  it('shows Etiquetas UPS to admin, operator and readonly, not veterinarian', () => {
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role]).map((item) => item.href)).toContain('/operations/labels')
+    }
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/operations/labels')
   })
 
   it('Operator sees Estoque', () => {
@@ -78,7 +85,6 @@ describe('admin menu', () => {
 
     expect(groupedHrefs).toEqual(items.map((item) => item.href))
     expect(groups.map((group) => group.group)).toEqual([
-      'Visão geral',
       'Operação',
       'Clientes',
       'Loja',
@@ -97,27 +103,70 @@ describe('admin menu', () => {
     expect(activeMenuHref('/billingx', items)).toBe('')
   })
 
-  it('shows Receitas next to Produtos in Loja for admin, operator and readonly', () => {
+  it('has no Receitas item: recipes are products', () => {
     for (const role of ['admin', 'operator', 'readonly'] as const) {
-      const loja = groupedMenuItems([role]).find((group) => group.group === 'Loja')
-      const hrefs = loja?.items.map((item) => item.href) ?? []
-      expect(hrefs.indexOf('/catalog/recipes')).toBe(hrefs.indexOf('/catalog/products') + 1)
+      expect(visibleMenuItems([role]).map((item) => item.href)).not.toContain('/catalog/recipes')
     }
-    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/catalog/recipes')
-    expect(activeMenuHref('/catalog/recipes/BR/beef', visibleMenuItems(['operator']))).toBe('/catalog/recipes')
   })
 
-  it('lists Visão do negócio and Relatórios after Hoje only with reports.read', () => {
-    const overview = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) =>
-      groupedMenuItems(roles, permissions).find((group) => group.group === 'Visão geral')?.items.map((item) => item.href)
+  it('shows Plano in Loja for catalog readers', () => {
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      const loja = groupedMenuItems([role], ['catalog.read']).find((group) => group.group === 'Loja')
+      expect(loja?.items.map((item) => item.href)).toContain('/catalog/plan')
+    }
+    expect(visibleMenuItems(['operator'], []).map((item) => item.href)).not.toContain('/catalog/plan')
+    expect(visibleMenuItems(['veterinarian'], ['catalog.read']).map((item) => item.href)).not.toContain('/catalog/plan')
+  })
+
+  it('lists Visão do negócio and Relatórios in Negócio, below Loja, only with reports.read', () => {
+    const groupsOf = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) => groupedMenuItems(roles, permissions)
+    const negocio = (roles: Parameters<typeof groupedMenuItems>[0], permissions: string[]) =>
+      groupsOf(roles, permissions).find((group) => group.group === 'Negócio')?.items.map((item) => item.href)
 
     for (const role of ['admin', 'operator', 'readonly'] as const) {
-      expect(overview([role], ['reports.read'])).toEqual(['/dashboard', '/insights', '/reports'])
-      expect(overview([role], [])).toEqual(['/dashboard'])
+      expect(negocio([role], ['reports.read'])).toEqual(['/insights', '/reports'])
+      const names = groupsOf([role], ['reports.read']).map((group) => group.group)
+      expect(names.indexOf('Negócio')).toBe(names.indexOf('Loja') + 1)
+      expect(negocio([role], [])).toBeUndefined()
     }
 
     const vet = visibleMenuItems(['veterinarian'], ['reports.read']).map((item) => item.href)
     expect(vet).not.toContain('/insights')
     expect(vet).not.toContain('/reports')
+  })
+
+  it('orders Operação by the day of work in each market, with Hoje first', () => {
+    const operacao = (markets: ('BR' | 'US')[]) =>
+      groupedMenuItems(['operator'], ['shipping.read', 'reports.read'], markets)[0]
+    const br = operacao(['BR'])
+    const us = operacao(['US'])
+
+    expect(br.group).toBe('Operação')
+    expect(br.items.map((item) => item.label)).toEqual([
+      'Hoje', 'Fila de produção', 'Entregas Brasil', 'Exceções de mercado', 'Estoque', 'Notas fiscais', 'Feriados e fechamentos',
+    ])
+    expect(us.group).toBe('Operação')
+    expect(us.items.map((item) => item.label)).toEqual([
+      'Hoje', 'Fila de produção', 'Etiquetas UPS', 'Exceções de mercado', 'Estoque', 'Feriados e fechamentos',
+    ])
+  })
+
+  it('shows UPS labels only to US sessions and the Brazil screens only to BR sessions', () => {
+    const hrefs = (markets: ('BR' | 'US')[]) => visibleMenuItems(['operator'], ['shipping.read'], markets).map((item) => item.href)
+    expect(hrefs(['BR'])).toEqual(expect.arrayContaining(['/operations/courier', '/operations/nfe']))
+    expect(hrefs(['BR'])).not.toContain('/operations/labels')
+    expect(hrefs(['US'])).toContain('/operations/labels')
+    expect(hrefs(['US'])).not.toContain('/operations/courier')
+    expect(hrefs(['US'])).not.toContain('/operations/nfe')
+    expect(hrefs([])).toEqual(expect.arrayContaining(['/operations/labels', '/operations/courier', '/operations/nfe']))
+    expect(groupedMenuItems(['operator'], ['shipping.read'], ['BR']).flatMap((group) => group.items).map((item) => item.href)).not.toContain('/operations/labels')
+  })
+
+  it('shows Exceções de mercado only with shipping.read, in every market', () => {
+    const hrefs = (permissions: string[], markets: ('BR' | 'US')[] = []) => visibleMenuItems(['operator'], permissions, markets).map((item) => item.href)
+    expect(hrefs(['shipping.read'])).toContain('/operations/market-exceptions')
+    expect(hrefs(['shipping.read'], ['US'])).toContain('/operations/market-exceptions')
+    expect(hrefs(['shipping.read'], ['BR'])).toContain('/operations/market-exceptions')
+    expect(hrefs([])).not.toContain('/operations/market-exceptions')
   })
 })

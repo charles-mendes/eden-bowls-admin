@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
-import { apiRequest } from '../lib/api'
+import { ApiRequestError, apiRequest } from '../lib/api'
 import { formatDate } from '../lib/format'
 import {
   formatPrivacyIdentity,
@@ -13,6 +13,13 @@ import {
   needsIdentityToComplete,
   type PrivacyRequestItem,
 } from '../lib/privacy'
+
+const NOT_FOUND_MESSAGE = 'Solicitação não encontrada ou fora dos mercados do seu acesso.'
+
+function loadErrorMessage(requestError: unknown) {
+  if (requestError instanceof ApiRequestError && requestError.status === 404) return NOT_FOUND_MESSAGE
+  return requestError instanceof Error ? requestError.message : 'Falha ao carregar solicitação'
+}
 
 export function PrivacyRequestDetailPage() {
   const { id } = useParams()
@@ -24,6 +31,7 @@ export function PrivacyRequestDetailPage() {
   const [note, setNote] = useState('')
   const [extendReason, setExtendReason] = useState('')
   const [busy, setBusy] = useState('')
+  const [loading, setLoading] = useState(true)
 
   const load = async () => {
     if (!token || !id) return
@@ -32,11 +40,15 @@ export function PrivacyRequestDetailPage() {
       const response = await apiRequest<PrivacyRequestItem>(`/admin/privacy/requests/${id}`, { token })
       setItem(response)
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar solicitação')
+      setError(loadErrorMessage(requestError))
+    } finally {
+      setLoading(false)
     }
   }
 
   useEffect(() => {
+    setItem(null)
+    setLoading(true)
     void load()
   }, [token, id])
 
@@ -103,106 +115,112 @@ export function PrivacyRequestDetailPage() {
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
 
-      <Section title="Resumo">
-        <p>{formatPrivacyType(item?.type)} · <span className={item?.status === 'completed' ? 'badge-success' : 'badge-warning'}>{formatPrivacyStatus(item?.status)}</span></p>
-        <p className="muted">Mercado {item?.market || '—'} · canal {item?.channel === 'email' ? 'e-mail' : 'app'}</p>
-        <p>Prazo: {formatDate(item?.dueAt)} {item?.overdue ? <span className="badge-warning">Atrasado</span> : null}</p>
-        <p>Identidade: {formatPrivacyIdentity(item?.identityStatus)}</p>
-        {item?.userId ? <p><Link className="table-link" to={`/users/${item.userId}`}>Cliente #{item.userId}</Link></p> : <p className="muted">Sem user_id vinculado.</p>}
-        {item?.resultNote ? <p>Nota: {item.resultNote}</p> : null}
-        {item?.extensionReason ? <p className="muted">Prorrogação: {item.extensionReason}</p> : null}
-      </Section>
-
-      {canWrite && !closed ? (
-        <Section title="Ações" description="Uma prorrogação por pedido. Completar acesso/exclusão/portabilidade fica bloqueado enquanto a identidade não for verificada.">
-          <div className="inline-actions">
-            <button
-              className="ghost-button"
-              type="button"
-              disabled={busy !== '' || item?.status === 'in_progress'}
-              onClick={() => void runAction('progress', `/admin/privacy/requests/${id}/in-progress`)}
-            >
-              Em andamento
-            </button>
-            {item?.identityStatus === 'unverified' && item.userId ? (
-              <>
-                <button
-                  className="ghost-button"
-                  type="button"
-                  disabled={busy !== ''}
-                  onClick={() => void runAction('verify-email', `/admin/privacy/requests/${id}/send-verification`)}
-                >
-                  Enviar verificação ao e-mail da conta
-                </button>
-                <button
-                  className="ghost-button"
-                  type="button"
-                  disabled={busy !== ''}
-                  onClick={() => void runAction('verify-mark', `/admin/privacy/requests/${id}/verify-identity`)}
-                >
-                  Marcar identidade verificada
-                </button>
-              </>
-            ) : null}
-            {(item?.type === 'access' || item?.type === 'portability') && !completeBlocked ? (
-              <button className="ghost-button" type="button" onClick={() => void downloadPackage()}>
-                Baixar pacote
-              </button>
-            ) : null}
-          </div>
-
-          <form className="stack" onSubmit={onExtend}>
-            <label>
-              Motivo da prorrogação
-              <input
-                value={extendReason}
-                onChange={(event) => setExtendReason(event.target.value)}
-                disabled={Boolean(item?.extendedAt)}
-                placeholder="obrigatório para prorrogar uma vez"
-              />
-            </label>
-            <button className="ghost-button" type="submit" disabled={busy !== '' || Boolean(item?.extendedAt) || extendReason.trim().length < 3}>
-              Prorrogar uma vez
-            </button>
-          </form>
-
-          <form className="stack" onSubmit={onComplete}>
-            <label>
-              Nota
-              <textarea rows={4} value={note} onChange={(event) => setNote(event.target.value)} />
-            </label>
-            <div className="inline-actions">
-              <button
-                className="primary-button"
-                type="submit"
-                disabled={busy !== '' || completeBlocked}
-              >
-                Concluir
-              </button>
-              <button
-                className="danger-button"
-                type="button"
-                disabled={busy !== ''}
-                onClick={() => void runAction('reject', `/admin/privacy/requests/${id}/reject`, { note: note || undefined })}
-              >
-                Recusar
-              </button>
-            </div>
-            {completeBlocked ? (
-              <p className="muted">Não é possível concluir acesso, exclusão ou portabilidade sem verificar a identidade.</p>
-            ) : null}
-          </form>
-        </Section>
+      {!item ? (
+        loading && !error ? <p className="muted">Carregando solicitação…</p> : null
       ) : (
-        <Section title="Pacote">
-          {(item?.type === 'access' || item?.type === 'portability') && !completeBlocked ? (
-            <button className="ghost-button" type="button" onClick={() => void downloadPackage()}>
-              Baixar pacote
-            </button>
+        <>
+          <Section title="Resumo">
+            <p>{formatPrivacyType(item?.type)} · <span className={item?.status === 'completed' ? 'badge-success' : 'badge-warning'}>{formatPrivacyStatus(item?.status)}</span></p>
+            <p className="muted">Mercado {item?.market || '—'} · canal {item?.channel === 'email' ? 'e-mail' : 'app'}</p>
+            <p>Prazo: {formatDate(item?.dueAt)} {item?.overdue ? <span className="badge-warning">Atrasado</span> : null}</p>
+            <p>Identidade: {formatPrivacyIdentity(item?.identityStatus)}</p>
+            {item?.userId ? <p><Link className="table-link" to={`/users/${item.userId}`}>Cliente #{item.userId}</Link></p> : <p className="muted">Sem user_id vinculado.</p>}
+            {item?.resultNote ? <p>Nota: {item.resultNote}</p> : null}
+            {item?.extensionReason ? <p className="muted">Prorrogação: {item.extensionReason}</p> : null}
+          </Section>
+
+          {canWrite && !closed ? (
+            <Section title="Ações" description="Uma prorrogação por pedido. Completar acesso/exclusão/portabilidade fica bloqueado enquanto a identidade não for verificada.">
+              <div className="inline-actions">
+                <button
+                  className="ghost-button"
+                  type="button"
+                  disabled={busy !== '' || item?.status === 'in_progress'}
+                  onClick={() => void runAction('progress', `/admin/privacy/requests/${id}/in-progress`)}
+                >
+                  Em andamento
+                </button>
+                {item?.identityStatus === 'unverified' && item.userId ? (
+                  <>
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      disabled={busy !== ''}
+                      onClick={() => void runAction('verify-email', `/admin/privacy/requests/${id}/send-verification`)}
+                    >
+                      Enviar verificação ao e-mail da conta
+                    </button>
+                    <button
+                      className="ghost-button"
+                      type="button"
+                      disabled={busy !== ''}
+                      onClick={() => void runAction('verify-mark', `/admin/privacy/requests/${id}/verify-identity`)}
+                    >
+                      Marcar identidade verificada
+                    </button>
+                  </>
+                ) : null}
+                {(item?.type === 'access' || item?.type === 'portability') && !completeBlocked ? (
+                  <button className="ghost-button" type="button" onClick={() => void downloadPackage()}>
+                    Baixar pacote
+                  </button>
+                ) : null}
+              </div>
+
+              <form className="stack" onSubmit={onExtend}>
+                <label>
+                  Motivo da prorrogação
+                  <input
+                    value={extendReason}
+                    onChange={(event) => setExtendReason(event.target.value)}
+                    disabled={Boolean(item?.extendedAt)}
+                    placeholder="obrigatório para prorrogar uma vez"
+                  />
+                </label>
+                <button className="ghost-button" type="submit" disabled={busy !== '' || Boolean(item?.extendedAt) || extendReason.trim().length < 3}>
+                  Prorrogar uma vez
+                </button>
+              </form>
+
+              <form className="stack" onSubmit={onComplete}>
+                <label>
+                  Nota
+                  <textarea rows={4} value={note} onChange={(event) => setNote(event.target.value)} />
+                </label>
+                <div className="inline-actions">
+                  <button
+                    className="primary-button"
+                    type="submit"
+                    disabled={busy !== '' || completeBlocked}
+                  >
+                    Concluir
+                  </button>
+                  <button
+                    className="danger-button"
+                    type="button"
+                    disabled={busy !== ''}
+                    onClick={() => void runAction('reject', `/admin/privacy/requests/${id}/reject`, { note: note || undefined })}
+                  >
+                    Recusar
+                  </button>
+                </div>
+                {completeBlocked ? (
+                  <p className="muted">Não é possível concluir acesso, exclusão ou portabilidade sem verificar a identidade.</p>
+                ) : null}
+              </form>
+            </Section>
           ) : (
-            <p className="muted">Somente leitura. Mutações ficam ocultas sem permissão de escrita.</p>
+            <Section title="Pacote">
+              {(item?.type === 'access' || item?.type === 'portability') && !completeBlocked ? (
+                <button className="ghost-button" type="button" onClick={() => void downloadPackage()}>
+                  Baixar pacote
+                </button>
+              ) : (
+                <p className="muted">Somente leitura. Mutações ficam ocultas sem permissão de escrita.</p>
+              )}
+            </Section>
           )}
-        </Section>
+        </>
       )}
     </PageFrame>
   )

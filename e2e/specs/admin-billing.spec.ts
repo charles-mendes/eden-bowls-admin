@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { e2eProfiles, openAuthed } from '../helpers/mockAdminApi'
+import { e2eProfiles, installAdminApiMocks, openAuthed } from '../helpers/mockAdminApi'
 
 test.describe('Admin billing', () => {
   test('loads the subscriber list', async ({ page }) => {
@@ -36,10 +36,97 @@ test.describe('Admin billing', () => {
 
     await expect(page.getByRole('heading', { name: 'ana@edenbowls.com' })).toBeVisible()
     await expect(page.getByText('ana@edenbowls.com', { exact: true })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Invoices Eden Bowls' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Cobranças' })).toBeVisible()
     await expect(page.getByText('EB-2026-000418')).toBeVisible()
     await expect(page.getByText('Enviada', { exact: true })).toBeVisible()
     await expect(page.getByText(/para ana@edenbowls\.com/)).toBeVisible()
+  })
+
+  // subscription-detail-workflow: on a phone the delivery actions show without scrolling sideways.
+  test('a Brazil delivery out for delivery is marked from a 390px screen', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    await installAdminApiMocks(page, { profile: e2eProfiles.operatorWrite })
+    const delivery = {
+      id: 1, subscription_id: 'sub-row-1', stripe_invoice_id: 'in_br_1', method: 'uber', courier_name: null, tracking_url: null,
+      cost_minor: 1000, currency: 'brl', note: null, status: 'out_for_delivery', out_for_delivery_at: '2026-11-12T01:22:00.000Z',
+      delivered_at: null, failed_at: null, failure_reason: null, canceled_at: null,
+    }
+    // Registered after the shared mocks, so these answer first; anything else falls through to them.
+    await page.route('**/api/v1/admin/billing/subscriptions/sub-row-1**', async (route) => {
+      const url = new URL(route.request().url())
+      const json = (body: unknown) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+      if (url.pathname === '/api/v1/admin/billing/subscriptions/sub-row-1') {
+        return json({
+          id: 'sub-row-1',
+          stripeSubscriptionId: 'sub_123',
+          stripeCustomerId: 'cus_1',
+          status: 'active',
+          planLabel: 'Plan #6',
+          stripePriceId: 'price_1',
+          currentPeriodEnd: '2026-12-02T22:37:00.000Z',
+          cancelAtPeriodEnd: false,
+          dashboardUrl: 'https://dashboard.stripe.com/sub_123',
+          stripeAccount: 'br',
+          term: { marketCountry: 'BR', months: 1 },
+          user: { id: 'u-ana', email: 'ana@edenbowls.com' },
+          customerProfileInScope: true,
+          account_name: 'Charles Mendes',
+          petsSnapshot: {},
+          planSelection: {},
+          shipping: { label: 'Entrega Eden Bowl', cost: 2.47 },
+          address: { phone: '(41) 99890-5819' },
+          shipment_market: 'BR',
+          market_exception: false,
+          address_issue: null,
+          courier_issues: [],
+        })
+      }
+      if (url.pathname.endsWith('/shipments')) return json({ success: true, data: { items: [], label_issues: [] } })
+      if (url.pathname.endsWith('/courier-deliveries')) return json({ success: true, data: { recipient_name: 'Charles Mendes', items: [delivery] } })
+      if (url.pathname.endsWith('/paid-cycles')) {
+        return json({ success: true, data: { items: [{ invoice_id: 'in_br_1', preparation_day: '2026-11-11', production_status: 'ready', delivery_date: '2026-11-12', paid_at: '2026-11-02T22:37:00.000Z', ups_shipment: null, courier_delivery: { id: 1, status: 'out_for_delivery', out_for_delivery_at: delivery.out_for_delivery_at, delivered_at: null, failed_at: null } }] } })
+      }
+      return route.fallback()
+    })
+    await page.addInitScript(() => {
+      localStorage.setItem('eden-bowls-admin-token', 'e2e-access-token')
+    })
+    await page.goto('/billing/subscriptions/sub-row-1')
+
+    const section = page.locator('section.section-card', { has: page.getByRole('heading', { name: 'Entrega Brasil' }) })
+    await section.scrollIntoViewIfNeeded()
+    for (const name of ['Entregue', 'Falhou', 'Cancelar']) {
+      const button = section.getByRole('button', { name })
+      await button.scrollIntoViewIfNeeded()
+      await expect(button).toBeInViewport()
+      const box = await button.boundingBox()
+      expect(box && box.x >= 0 && box.x + box.width <= 390).toBe(true)
+    }
+    await expect(page.locator('section.section-card', { has: page.getByRole('heading', { name: 'Ciclo atual' }) }).getByText('Em rota')).toBeVisible()
+    await expect(page.getByText(/unmocked/)).toHaveCount(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390)
+    if (process.env.CAPTURE_DIR) await page.screenshot({ path: `${process.env.CAPTURE_DIR}/subscription-detail-390.png`, fullPage: true })
+  })
+
+  // delivery-instructions: the profile text shows with its source; the operator writes the subscription text.
+  test('writes the delivery instructions of a subscription', async ({ page }) => {
+    if (process.env.CAPTURE_WIDTH) await page.setViewportSize({ width: Number(process.env.CAPTURE_WIDTH), height: 900 })
+    const { captured } = await openAuthed(page, '/billing/subscriptions/sub-row-1', e2eProfiles.operatorWrite)
+
+    const section = page.locator('section.section-card', { has: page.getByRole('heading', { name: 'Instruções de entrega' }) })
+    await expect(section.getByText('Interfone 12')).toBeVisible()
+    await expect(section.getByText('(do perfil, mesmo endereço)')).toBeVisible()
+    if (process.env.CAPTURE_DIR) await section.screenshot({ path: `${process.env.CAPTURE_DIR}/instructions-profile-${page.viewportSize()?.width}.png` })
+    await section.getByRole('button', { name: 'Escrever instruções' }).click()
+    await section.getByLabel('Instruções desta assinatura').fill('Portão lateral, cuidado com o cachorro')
+    await expect(section.getByTestId('subscription-instructions-counter')).toHaveText('38/200')
+    if (process.env.CAPTURE_DIR) await section.screenshot({ path: `${process.env.CAPTURE_DIR}/instructions-form-${page.viewportSize()?.width}.png` })
+    await section.getByRole('button', { name: 'Salvar instruções' }).click()
+    await expect(page.getByText('Instruções da assinatura salvas.')).toBeVisible()
+    await expect(section.getByText('(da assinatura)')).toBeVisible()
+    await expect.poll(() => captured.find((item) => item.method === 'PATCH' && item.path.endsWith('/delivery-instructions'))?.body)
+      .toEqual({ delivery_instructions: 'Portão lateral, cuidado com o cachorro' })
+    if (process.env.CAPTURE_DIR) await page.screenshot({ path: `${process.env.CAPTURE_DIR}/instructions-saved-${page.viewportSize()?.width}.png`, fullPage: true })
   })
 
   test('syncs first-purchase coupons with Stripe', async ({ page }) => {

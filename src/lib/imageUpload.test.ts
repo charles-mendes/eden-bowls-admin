@@ -14,10 +14,23 @@ describe('checkRecipeImage', () => {
     }
   })
 
-  it('says the received and the expected size', async () => {
-    expect(await checkRecipeImage(file('image/png'), sized(2048, 1272))).toEqual({
+  it.each([
+    [1024, 576],
+    [2048, 1272],
+    [1200, 800],
+    [820, 509],
+  ])('accepts a %i × %i banner close enough to be resized', async (width, height) => {
+    expect(await checkRecipeImage(file('image/png'), sized(width, height))).toEqual({ ok: true, width, height })
+  })
+
+  it.each([
+    [800, 497],
+    [1024, 512],
+    [1024, 800],
+  ])('refuses a %i × %i banner too small or too far from the proportion, saying the received and the expected size', async (width, height) => {
+    expect(await checkRecipeImage(file('image/png'), sized(width, height))).toEqual({
       ok: false,
-      message: 'A imagem tem 2048 × 1272 px e precisa ter 1024 × 636 px.',
+      message: `A imagem tem ${width} × ${height} px e precisa ter 1024 × 636 px, ou um tamanho próximo (proporção parecida e pelo menos 820 × 509 px), que é ajustado automaticamente.`,
     })
   })
 

@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
 import { HeadquartersCard } from '../components/shipping/HeadquartersCard'
 import { PageFrame } from '../components/PageFrame'
@@ -8,12 +8,15 @@ import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import {
+  SHIPPING_BOX_KEYS,
   UPS_SERVICES,
   brHeadquartersReady,
   emptySettings,
   formatMoney,
   mergeSettings,
   usHeadquartersReady,
+  type ShippingBox,
+  type ShippingBoxKey,
   type ShippingSettings,
   type UpsSimulation,
 } from '../lib/shippingSettings'
@@ -99,6 +102,17 @@ function Toggle({ checked, onChange, label, description, disabled }: { checked: 
   )
 }
 
+// The API owns the dry ice rule (ups-dry-ice-declaration); its 422 is shown in Portuguese.
+function saveRulesError(error: unknown) {
+  if (error instanceof ApiRequestError && error.code === 'invalid_dry_ice_kg') {
+    return 'Gelo seco por caixa deve ficar entre 0,1 e 2,5 kg, com uma casa decimal, e não pode passar do peso da caixa.'
+  }
+  if (error instanceof ApiRequestError && error.code === 'invalid_shipping_box') {
+    return 'Confira as caixas: medidas acima de 0, peso vazio de 0,1 a 10 kg e a Starter com menos pacotes que a mensal.'
+  }
+  return error instanceof Error ? error.message : 'Falha ao salvar'
+}
+
 function brQuoteError(error: unknown) {
   if (error instanceof ApiRequestError) {
     if (error.code === 'out_of_coverage') {
@@ -114,12 +128,19 @@ function brQuoteError(error: unknown) {
 
 type ShippingTab = 'regras' | 'sede' | 'simulador'
 
-// The simulator comes first: quoting a CEP is the daily job; rules and headquarters change rarely.
+// This page only configures shipping; the day's deliveries are worked in Entregas Brasil and Etiquetas UPS.
+// Tabs follow the setup order: the rules, the headquarters they start from, then the simulator that checks them.
 const TABS: Array<{ id: ShippingTab; label: string }> = [
-  { id: 'simulador', label: 'Simulador de frete' },
-  { id: 'regras', label: 'Regras de entrega' },
+  { id: 'regras', label: 'Regras' },
   { id: 'sede', label: 'Sede' },
+  { id: 'simulador', label: 'Simulador' },
 ]
+
+// Where each market's deliveries are dispatched, linked from the page so this screen is not mistaken for it.
+const DISPATCH_PAGE: Record<'BR' | 'US', { label: string; href: string }> = {
+  BR: { label: 'Entregas Brasil', href: '/operations/courier' },
+  US: { label: 'Etiquetas UPS', href: '/operations/labels' },
+}
 
 const MARKET_NAME: Record<'BR' | 'US', string> = { BR: 'Brasil', US: 'EUA' }
 const RULES_OF: Record<'BR' | 'US', string> = { BR: 'do Brasil', US: 'dos EUA' }
@@ -137,6 +158,7 @@ function rulesOf(settings: ShippingSettings, market: 'BR' | 'US') {
     quote_mode: us.quote_mode,
     fallback_enabled: us.fallback_enabled,
     package: us.package,
+    boxes: us.boxes,
     allowed_service_codes: us.allowed_service_codes,
     max_transit_days: us.max_transit_days,
   }
@@ -153,7 +175,7 @@ export function ShippingPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedMarket = searchParams.get('mercado') === 'us' ? 'US' : 'BR'
   const market: 'BR' | 'US' = bothMarkets ? requestedMarket : (defaultMarket(user) ?? 'BR')
-  const defaultTab: ShippingTab = 'simulador'
+  const defaultTab: ShippingTab = 'regras'
   const requestedTab = searchParams.get('aba')
   const tab: ShippingTab = TABS.some((option) => option.id === requestedTab) ? requestedTab as ShippingTab : defaultTab
 
@@ -195,6 +217,10 @@ export function ShippingPage() {
   const updateBr = (patch: Partial<ShippingSettings['br']>) => setSettings((current) => ({ ...current, br: { ...current.br, ...patch } }))
   const updateBrRule = (patch: Partial<ShippingSettings['br']['rule']>) => setSettings((current) => ({ ...current, br: { ...current.br, rule: { ...current.br.rule, ...patch } } }))
   const updateUs = (patch: Partial<ShippingSettings['us']>) => setSettings((current) => ({ ...current, us: { ...current.us, ...patch } }))
+  const updateBox = (key: ShippingBoxKey, patch: Partial<ShippingBox>) => setSettings((current) => ({
+    ...current,
+    us: { ...current.us, boxes: { ...current.us.boxes, [key]: { ...current.us.boxes[key], ...patch } } },
+  }))
   const updatePackage = (patch: Partial<ShippingSettings['us']['package']>) => setSettings((current) => ({ ...current, us: { ...current.us, package: { ...current.us.package, ...patch } } }))
 
   const toggleService = (code: string, on: boolean) => {
@@ -264,7 +290,7 @@ export function ShippingPage() {
       setMessage(market === 'BR' ? 'Regras do Brasil salvas.' : 'Regras dos Estados Unidos salvas.')
       return true
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar')
+      setError(saveRulesError(requestError))
       return false
     } finally {
       setSaving(false)
@@ -304,8 +330,13 @@ export function ShippingPage() {
 
   return (
     <PageFrame
-      title="Frete"
-      description="Regras de entrega, sede e simulação de frete do mercado escolhido."
+      title="Regras de frete"
+      description={(
+        <>
+          Como a loja cota o frete, de onde as entregas saem e um simulador para conferir. As entregas do dia ficam
+          em <Link className="link-button" to={DISPATCH_PAGE[market].href}>{DISPATCH_PAGE[market].label}</Link>.
+        </>
+      )}
       actions={bothMarkets ? (
         <div className="segmented" role="group" aria-label="Mercado">
           {(['BR', 'US'] as const).map((option) => (
@@ -319,7 +350,7 @@ export function ShippingPage() {
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success" role="status">{message}</div> : null}
 
-      <div className="page-tabs" role="tablist" aria-label="Frete" onKeyDown={moveTabFocus}>
+      <div className="page-tabs" role="tablist" aria-label="Regras de frete" onKeyDown={moveTabFocus}>
         {TABS.map((option) => (
           <button
             key={option.id}
@@ -400,12 +431,24 @@ export function ShippingPage() {
                     <small className="ship-hint">O checkout usa UPS Ground quando aceito; senão, o serviço aceito mais barato.</small>
                   </fieldset>
                   <fieldset className="ship-fieldset">
-                    <legend>Caixa padrão</legend>
+                    <legend>Caixa da cotação do checkout</legend>
+                    <small className="ship-hint">Só calcula o frete do checkout e do simulador. As etiquetas usam as caixas de envio.</small>
                     <div className="ship-fields ship-fields-4">
                       <NumberField label="Peso" suffix="lb" step="0.1" disabled={!canWrite} value={us.package.weight_lb} onChange={(value) => updatePackage({ weight_lb: value ?? 0 })} />
                       <NumberField label="Comprimento" suffix="in" step="0.1" disabled={!canWrite} value={us.package.length_in} onChange={(value) => updatePackage({ length_in: value ?? 0 })} />
                       <NumberField label="Largura" suffix="in" step="0.1" disabled={!canWrite} value={us.package.width_in} onChange={(value) => updatePackage({ width_in: value ?? 0 })} />
                       <NumberField label="Altura" suffix="in" step="0.1" disabled={!canWrite} value={us.package.height_in} onChange={(value) => updatePackage({ height_in: value ?? 0 })} />
+                    </div>
+                    <div className="ship-fields">
+                      <NumberField
+                        label="Gelo seco por caixa"
+                        suffix="kg"
+                        step="0.1"
+                        disabled={!canWrite}
+                        value={us.package.dry_ice_kg}
+                        onChange={(value) => updatePackage({ dry_ice_kg: value ?? 0 })}
+                        hint="Declarado à UPS como UN1845 na etiqueta e na cotação. De 0,1 a 2,5 kg, nunca mais que o peso da caixa."
+                      />
                     </div>
                   </fieldset>
                   <fieldset className="ship-fieldset">
@@ -439,6 +482,28 @@ export function ShippingPage() {
                   </div>
                 </Section>
               ) : null}
+
+              {/* shipping-boxes: labels use these boxes in either quote mode, so they show outside the UPS block. */}
+              <Section title="Caixas de envio" description="A API divide cada pedido nestas caixas pela quantidade de pacotes. A etiqueta UPS leva uma embalagem por caixa.">
+                {SHIPPING_BOX_KEYS.map((key) => {
+                  const box = us.boxes[key]
+                  return (
+                    <fieldset key={key} className="ship-fieldset">
+                      <legend>{box.label}</legend>
+                      <div className="ship-fields ship-fields-4">
+                        <NumberField label="Comprimento" suffix="in" step="0.1" disabled={!canWrite} value={box.length_in} onChange={(value) => updateBox(key, { length_in: value ?? 0 })} />
+                        <NumberField label="Largura" suffix="in" step="0.1" disabled={!canWrite} value={box.width_in} onChange={(value) => updateBox(key, { width_in: value ?? 0 })} />
+                        <NumberField label="Altura" suffix="in" step="0.1" disabled={!canWrite} value={box.height_in} onChange={(value) => updateBox(key, { height_in: value ?? 0 })} />
+                        <NumberField label="Peso vazio" suffix="kg" step="0.1" disabled={!canWrite} value={box.empty_weight_kg} onChange={(value) => updateBox(key, { empty_weight_kg: value ?? 0 })} />
+                      </div>
+                      <div className="ship-fields">
+                        <NumberField label="Máximo de pacotes" step="1" disabled={!canWrite} value={box.max_packs} onChange={(value) => updateBox(key, { max_packs: value ?? 0 })} hint="Pacotes de 300 g ou 500 g contam igual." />
+                      </div>
+                    </fieldset>
+                  )
+                })}
+                <small className="ship-hint">Peso vazio inclui o isolamento. O gelo seco é somado só nas caixas dos EUA.</small>
+              </Section>
             </>
           )}
           {canWrite ? (

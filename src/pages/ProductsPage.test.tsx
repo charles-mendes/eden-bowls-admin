@@ -1,12 +1,33 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProductsPage } from './ProductsPage'
 import { AuthProvider } from '../contexts/AuthContext'
-import { operatorUser, operatorWriteUser, productItem } from '../test/fixtures'
+import { operatorUser, operatorWriteUser, productItem, readonlyUser } from '../test/fixtures'
 import { findCall, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
+
+const beefProduct = {
+  ...productItem,
+  id: 'prod-beef',
+  namePt: 'Carne',
+  variants: [
+    { id: '1001', sku: '1001', active: true, variantPrices: [], canDelete: false },
+    { id: '1005', sku: '1005', active: true, variantPrices: [], canDelete: false },
+  ],
+  canDelete: false,
+  content: { ...productItem.content!, code: 'beef', name: 'Carne', imageUrl: 'https://api.test/recipe-images/beef.webp', labelStatus: 'complete' as const, labelMissing: [] },
+}
+
+const seniorLamb = {
+  ...productItem,
+  id: 'prod-lamb',
+  namePt: 'Sênior Cordeiro',
+  active: false,
+  variants: [],
+  content: { ...productItem.content!, code: 'senior-lamb', name: 'Sênior Cordeiro', lifeStage: 'senior' as const, labelStatus: 'missing' as const },
+}
 
 describe('ProductsPage', () => {
   afterEach(() => {
@@ -70,10 +91,7 @@ describe('ProductsPage', () => {
     expect(screen.getByRole('combobox', { name: 'Mercado' })).toHaveValue('BR')
   })
 
-  it('creates a product and opens the detail to add variations', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
+  function renderWithDetailRoute() {
     render(
       <MemoryRouter initialEntries={['/catalog/products']}>
         <AuthProvider>
@@ -84,24 +102,122 @@ describe('ProductsPage', () => {
         </AuthProvider>
       </MemoryRouter>,
     )
+  }
 
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Criar produto' })).toBeInTheDocument()
-    })
+  it('Create Receita de Cordeiro', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderWithDetailRoute()
 
-    await user.type(screen.getByPlaceholderText('Ex.: Plano Adulto BR'), 'Plano novo')
+    await user.click(await screen.findByRole('button', { name: 'Novo produto' }))
+    expect(screen.getByText('Cada produto é uma receita. Código e mercado não mudam depois de criados.')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Nome'), 'Receita de Cordeiro')
+    expect(screen.getByLabelText('Código')).toHaveValue('receita-de-cordeiro')
+    expect(screen.getByLabelText('Mercado do produto')).toHaveValue('BR')
+    expect(screen.getByLabelText('Fase de vida')).toHaveValue('adult')
     await user.click(screen.getByRole('button', { name: 'Criar produto' }))
 
     await waitFor(() => {
       expect(screen.getByText('product-detail')).toBeInTheDocument()
     })
-
-    const create = findCall(calls, 'POST', '/admin/catalog/products')
-    expect(create?.body).toEqual({
-      name: 'Plano novo',
+    expect(findCall(calls, 'POST', '/admin/catalog/products')?.body).toEqual({
+      name: 'Receita de Cordeiro',
       planCountry: 'BR',
-      planDays: 30,
+      code: 'receita-de-cordeiro',
+      lifeStage: 'adult',
     })
+  })
+
+  it('keeps an edited code when the name changes', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderWithDetailRoute()
+
+    await user.click(await screen.findByRole('button', { name: 'Novo produto' }))
+    await user.type(screen.getByLabelText('Nome'), 'Sênior Cordeiro')
+    expect(screen.getByLabelText('Código')).toHaveValue('senior-cordeiro')
+    await user.clear(screen.getByLabelText('Código'))
+    await user.type(screen.getByLabelText('Código'), 'senior-lamb')
+    await user.type(screen.getByLabelText('Nome'), ' Light')
+    expect(screen.getByLabelText('Código')).toHaveValue('senior-lamb')
+  })
+
+  it('Code taken', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderWithDetailRoute()
+
+    await user.click(await screen.findByRole('button', { name: 'Novo produto' }))
+    await user.type(screen.getByLabelText('Nome'), 'Peru')
+    await user.clear(screen.getByLabelText('Código'))
+    await user.type(screen.getByLabelText('Código'), 'turkey')
+    await user.selectOptions(screen.getByLabelText('Fase de vida'), 'senior')
+    await user.click(screen.getByRole('button', { name: 'Criar produto' }))
+
+    expect(await screen.findByText('Este mercado já tem um produto com esse código. Escolha outro código.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Nome')).toHaveValue('Peru')
+    expect(screen.getByLabelText('Código')).toHaveValue('turkey')
+    expect(screen.getByLabelText('Fase de vida')).toHaveValue('senior')
+    expect(screen.queryByText('product-detail')).not.toBeInTheDocument()
+  })
+
+  it('Products of BR', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser, { products: [beefProduct, seniorLamb] })
+    renderAuthedPage(<ProductsPage />, '/catalog/products')
+
+    const beefRow = (await screen.findByRole('link', { name: 'Carne' })).closest('tr')!
+    expect(within(beefRow).getByText('beef')).toBeInTheDocument()
+    expect(within(beefRow).getByText('Adulto')).toBeInTheDocument()
+    expect(within(beefRow).getByText('2/2')).toBeInTheDocument()
+    expect(within(beefRow).getByText('Com imagem')).toBeInTheDocument()
+    expect(within(beefRow).getByText('Rótulo completo')).toBeInTheDocument()
+
+    const lambRow = screen.getByRole('link', { name: 'Sênior Cordeiro' }).closest('tr')!
+    expect(within(lambRow).getByText('senior-lamb')).toBeInTheDocument()
+    expect(within(lambRow).getByText('Sênior')).toBeInTheDocument()
+    expect(within(lambRow).getByText('0/0')).toBeInTheDocument()
+    expect(within(lambRow).getByText('Sem imagem')).toBeInTheDocument()
+    expect(within(lambRow).getByText('Sem rótulo')).toBeInTheDocument()
+    expect(within(lambRow).getByText('Rascunho')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Novo produto' })).not.toBeInTheDocument()
+  })
+
+  it('filters the list by life stage on the API', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(readonlyUser, { products: [beefProduct, seniorLamb] })
+    renderAuthedPage(<ProductsPage />, '/catalog/products')
+
+    await screen.findByRole('link', { name: 'Carne' })
+    expect(findCall(calls, 'GET', '/admin/catalog/products')?.search).not.toContain('lifeStage=')
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Filtrar por fase' }), 'senior')
+    await waitFor(() => {
+      expect(calls.some((call) => call.path.endsWith('/admin/catalog/products') && call.search.includes('lifeStage=senior') && call.search.includes('page=1'))).toBe(true)
+    })
+  })
+
+  it('Quick filter', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(readonlyUser, { products: [beefProduct, seniorLamb] })
+    renderAuthedPage(<ProductsPage />, '/catalog/products')
+    const listedWith = (query: string) => calls.some((call) => call.path.endsWith('/admin/catalog/products') && call.search.includes(query))
+
+    await screen.findByRole('link', { name: 'Carne' })
+    expect(listedWith('noImage=')).toBe(false)
+
+    await user.click(screen.getByLabelText('Sem imagem'))
+    await waitFor(() => expect(listedWith('noImage=true')).toBe(true))
+
+    await user.click(screen.getByLabelText('Sem imagem'))
+    await user.click(screen.getByLabelText('Rótulo incompleto'))
+    await waitFor(() => expect(calls.some((call) => call.path.endsWith('/admin/catalog/products')
+      && call.search.includes('labelIncomplete=true') && !call.search.includes('noImage='))).toBe(true))
   })
 
   it('deletes a product from the catalog list', async () => {
@@ -156,7 +272,7 @@ describe('ProductsPage', () => {
     renderAuthedPage(<ProductsPage />, '/catalog/products')
 
     await waitFor(() => {
-      expect(screen.getByText('Produto vinculado a assinatura. Não pode ser excluído.')).toBeInTheDocument()
+      expect(screen.getByTitle('Produto vinculado a assinatura. Não pode ser excluído.')).toHaveTextContent('Vinculado a assinatura')
     })
     expect(screen.queryByRole('button', { name: 'Excluir produto Bowl Adulto' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Desativar produto Bowl Adulto' })).not.toBeInTheDocument()

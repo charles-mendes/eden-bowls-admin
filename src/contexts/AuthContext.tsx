@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { apiRequest, logoutRefreshSession, onAccessTokenRefreshed, refreshAccessToken } from '../lib/api'
 import { decodeJwtPayload, isAuthTokenExpired } from '../lib/jwt'
+import { clearStoredToken, readStoredToken, TOKEN_KEY, writeStoredToken } from '../lib/tokenStorage'
 import { isOperationalUser, type AdminRole } from '../lib/roles'
 import type { MarketCode } from '../lib/markets'
 
@@ -12,6 +13,8 @@ export type AdminUser = {
   roles: AdminRole[]
   permissions: string[]
   markets?: MarketCode[]
+  // The markets the API scope applies: both for staff without a stored market while enforcement is off.
+  effectiveMarkets?: MarketCode[]
   mustChangePassword?: boolean
   inviteExpiresAt?: number | null
 }
@@ -29,31 +32,7 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
-export const TOKEN_KEY = 'eden-bowls-admin-token'
-
-function readStoredToken() {
-  try {
-    return localStorage.getItem(TOKEN_KEY)
-  } catch {
-    return null
-  }
-}
-
-function writeStoredToken(token: string) {
-  try {
-    localStorage.setItem(TOKEN_KEY, token)
-  } catch {
-    // private browsing / quota
-  }
-}
-
-function clearStoredToken() {
-  try {
-    localStorage.removeItem(TOKEN_KEY)
-  } catch {
-    // private browsing
-  }
-}
+export { TOKEN_KEY }
 
 function persistAccessToken(token: string) {
   writeStoredToken(token)
@@ -81,6 +60,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       persistAccessToken(nextToken)
       setToken(nextToken)
     })
+  }, [])
+
+  // Another tab refreshed or logged out: follow it, so this tab neither refreshes on its own old token nor
+  // keeps a session that is gone.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== TOKEN_KEY && event.key !== null) return
+      const next = readStoredToken()
+      if (next) {
+        setToken((current) => (current === next ? current : next))
+        return
+      }
+      skipCookieRestoreRef.current = true
+      setToken(null)
+      setUser(null)
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
   }, [])
 
   useEffect(() => {

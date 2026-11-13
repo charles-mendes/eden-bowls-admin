@@ -20,7 +20,23 @@ export type UsShipFrom = {
   state: string
   zipcode: string
   country: string
+  // UPS asks for it on the pickup (ups-pickup); a label buys without it.
+  phone: string
 }
+
+// One shipping box (shipping-boxes). `max_packs` counts packs of any size; the API splits each order into boxes.
+export type ShippingBox = {
+  label: string
+  length_in: number
+  width_in: number
+  height_in: number
+  empty_weight_kg: number
+  max_packs: number
+}
+
+export type ShippingBoxKey = 'starter' | 'monthly'
+
+export const SHIPPING_BOX_KEYS: ShippingBoxKey[] = ['starter', 'monthly']
 
 export type ShippingSettings = {
   br: {
@@ -47,7 +63,9 @@ export type ShippingSettings = {
     quote_mode: 'fixed' | 'ups'
     fallback_enabled: boolean
     ship_from: UsShipFrom
-    package: { weight_lb: number; length_in: number; width_in: number; height_in: number }
+    // dry_ice_kg: dry ice in each box, declared to UPS as UN1845 (ups-dry-ice-declaration).
+    package: { weight_lb: number; length_in: number; width_in: number; height_in: number; dry_ice_kg: number }
+    boxes: Record<ShippingBoxKey, ShippingBox>
     allowed_service_codes: string[]
     // Business days of UPS transit the insulated box accepts; a longer quote makes the address unavailable.
     max_transit_days: number
@@ -116,8 +134,13 @@ export const emptySettings = (): ShippingSettings => ({
     label: 'FedEx 3–5 business days',
     quote_mode: 'fixed',
     fallback_enabled: true,
-    ship_from: { name: '', street: '', street2: '', city: '', state: '', zipcode: '', country: 'US' },
-    package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12 },
+    ship_from: { name: '', street: '', street2: '', city: '', state: '', zipcode: '', country: 'US', phone: '' },
+    package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12, dry_ice_kg: 0.5 },
+    // The client's boxes, as the API seeds them on deploy.
+    boxes: {
+      starter: { label: 'Starter Box', length_in: 14, width_in: 12, height_in: 8, empty_weight_kg: 1, max_packs: 10 },
+      monthly: { label: 'Caixa mensal', length_in: 18, width_in: 14, height_in: 12, empty_weight_kg: 1.5, max_packs: 30 },
+    },
     allowed_service_codes: ['03'],
     max_transit_days: 1,
   },
@@ -139,6 +162,10 @@ export function mergeSettings(input: Partial<ShippingSettings> | undefined): Shi
       ...(us || {}),
       ship_from: { ...base.us.ship_from, ...(us?.ship_from || {}) },
       package: { ...base.us.package, ...(us?.package || {}) },
+      boxes: {
+        starter: { ...base.us.boxes.starter, ...(us?.boxes?.starter || {}) },
+        monthly: { ...base.us.boxes.monthly, ...(us?.boxes?.monthly || {}) },
+      },
       allowed_service_codes: Array.isArray(us?.allowed_service_codes) && us.allowed_service_codes.length
         ? us.allowed_service_codes
         : base.us.allowed_service_codes,
@@ -150,6 +177,14 @@ export function mergeSettings(input: Partial<ShippingSettings> | undefined): Shi
 export function brHeadquartersReady(center: BrCenter) {
   return Boolean(center.zipcode && center.street && center.city && (center.lat !== 0 || center.lng !== 0))
 }
+
+// The US phone UPS takes on the pickup: empty, or 10 digits at least (the API rule).
+export function usPhoneInvalid(phone: string | undefined) {
+  const digits = String(phone || '').replace(/\D/g, '')
+  return digits.length > 0 && digits.length < 10
+}
+
+export const US_PHONE_INVALID_TEXT = 'O telefone precisa de 10 dígitos (código de área e número).'
 
 export function usHeadquartersReady(shipFrom: UsShipFrom) {
   return Boolean(shipFrom.zipcode && shipFrom.street && shipFrom.city && shipFrom.state)

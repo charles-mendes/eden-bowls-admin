@@ -1,7 +1,8 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { addDays, COURIER_TIMEZONE, todayIn } from '../lib/deliveryRange'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProductionQueuePage } from './ProductionQueuePage'
-import { adminUser, operatorWriteUser, productionQueueItem, readonlyUser, WRITE_PERMISSIONS } from '../test/fixtures'
+import { adminUser, operatorWriteUser, productionQueueItem, productionQueueList, readonlyUser, WRITE_PERMISSIONS } from '../test/fixtures'
 import { findCall, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -49,7 +50,7 @@ describe('ProductionQueuePage', () => {
     const menu = await openRowMenu()
     expect(within(menu).getByRole('menuitem', { name: 'Cliente' })).toHaveAttribute('href', '/users/7')
     expect(within(menu).getByRole('menuitem', { name: 'Assinatura' })).toHaveAttribute('href', '/billing/subscriptions/42')
-    expect(within(menu).getByRole('menuitem', { name: 'Checkout' })).toHaveAttribute('href', '/users/7?aba=checkout')
+    expect(within(menu).getByRole('menuitem', { name: 'Checkout' })).toHaveAttribute('href', '/users/7?aba=checkout&assinatura=42')
     expect(within(menu).getByRole('menuitem', { name: 'Bloquear' })).toBeInTheDocument()
   })
 
@@ -69,6 +70,32 @@ describe('ProductionQueuePage', () => {
 
     expect(await screen.findByText('Bovino · Sênior × 4, Frango · Sênior × 2')).toBeInTheDocument()
     expect(screen.queryByText(/senior-beef/)).not.toBeInTheDocument()
+  })
+
+  it('Order with two boxes: the item shows both boxes with their pack counts', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{
+        ...productionQueueItem,
+        packCount: 45,
+        boxes: [
+          { key: 'monthly', label: 'Caixa mensal', pack_count: 30, weight_kg: 16.5 },
+          { key: 'monthly', label: 'Caixa mensal', pack_count: 15, weight_kg: 9 },
+        ],
+      }],
+    })
+    renderAuthedPage(<ProductionQueuePage />, '/operations/production', '/operations/production')
+
+    expect(await screen.findByTestId('boxes-42')).toHaveTextContent('Caixa mensal · 30 pacotes + Caixa mensal · 15 pacotes')
+  })
+
+  it('an item without boxes shows nothing extra', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { productionQueue: [{ ...productionQueueItem, boxes: undefined }] })
+    renderAuthedPage(<ProductionQueuePage />, '/operations/production', '/operations/production')
+
+    expect(await screen.findByText('Bovino × 2, Frango × 1')).toBeInTheDocument()
+    expect(screen.queryByTestId('boxes-42')).not.toBeInTheDocument()
   })
 
   it('opens filtered from the URL and sends the filters to the API', async () => {
@@ -187,7 +214,7 @@ describe('ProductionQueuePage', () => {
     expect(within(menu).queryByRole('menuitem', { name: 'Cliente' })).not.toBeInTheDocument()
     expect(within(menu).getByRole('menuitem', { name: 'Perfil fora do seu mercado' })).toHaveAttribute('aria-disabled', 'true')
     expect(document.querySelector('a[href="/users/7"]')).toBeNull()
-    expect(document.querySelector('a[href="/users/7?aba=checkout"]')).toBeNull()
+    expect(document.querySelector('a[href="/users/7?aba=checkout&assinatura=42"]')).toBeNull()
   })
 
   it('shows a cycle awaiting payment without the start action (3.12)', async () => {
@@ -249,4 +276,414 @@ describe('ProductionQueuePage', () => {
     expect(await screen.findByText('Separado com estoque negativo: frango 300 g (-2).')).toBeInTheDocument()
     expect(await screen.findByText('Pronto', { selector: '.badge-success' })).toBeInTheDocument()
   })
+
+  // admin-flow-fixes-5 (PM-09): the short badge leads to the stock screen, and ready asks first.
+  it('links a short badge to the stock screen filtered by its recipe', async () => {
+    seedAuth()
+    installAdminFetchMock(adminUser, {
+      productionQueue: [{ ...productionQueueItem, stockCoverage: 'short', stockShortages: [{ flavorKey: 'beef', packSizeGrams: 500, recipeName: 'Bovino', missing: 2 }] }],
+    })
+    renderQueue()
+
+    expect(await screen.findByRole('link', { name: 'Falta estoque' })).toHaveAttribute('href', '/operations/stock?mercado=BR&situacao=short&busca=Bovino')
+  })
+
+  it('asks before marking a short order ready and sends nothing on cancel', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{
+        ...productionQueueItem,
+        productionStatus: 'in_production',
+        stockCoverage: 'short',
+        stockShortages: [
+          { flavorKey: 'beef', packSizeGrams: 500, recipeName: 'Bovino', missing: 2 },
+          { flavorKey: 'turkey', packSizeGrams: 500, recipeName: 'Frango', missing: 1 },
+        ],
+      }],
+    })
+    renderQueue()
+
+    expect(await screen.findByRole('link', { name: 'Falta estoque' })).toHaveAttribute('href', '/operations/stock?situacao=short')
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar como pronto' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Pela ordem da fila, falta estoque de Bovino 500 g, Frango 500 g para este pedido. Marcar como pronto pode deixar o saldo negativo.')).toBeInTheDocument()
+    expect(within(dialog).getByRole('link', { name: 'Abrir estoque' })).toHaveAttribute('href', '/operations/stock?situacao=short')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+    expect(findCall(calls, 'PATCH', '/admin/production/queue/42')).toBeUndefined()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar como pronto' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Marcar como pronto' }))
+    await waitFor(() => {
+      expect(findCall(calls, 'PATCH', '/admin/production/queue/42')?.body).toMatchObject({ status: 'ready' })
+    })
+  })
+
+  // admin-flow-fixes-5 (PM-15): the block dialog says where the charge moves.
+  it('shows the day the charge moves to when blocking an unpaid cycle', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [{ ...productionQueueItem, paymentState: 'awaiting_payment', paymentLabel: 'Aguardando pagamento' }],
+      blockPreview: { charged: false, chargeMovesTo: '2026-10-04T02:00:00.000Z', preparationDay: '2026-10-03' },
+    })
+    renderQueue()
+
+    fireEvent.click(within(await openRowMenu()).getByRole('menuitem', { name: 'Bloquear' }))
+    // 02:00 UTC on the 4th is still the 3rd in São Paulo.
+    expect(await screen.findByText('Este pedido ainda não foi cobrado. Bloquear adia a cobrança para 03/10, e reabrir pode cobrar o cliente na hora.')).toBeInTheDocument()
+  })
+
+  it('keeps the generic block text when the preview fails, and a paid cycle asks for none', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [
+        { ...productionQueueItem, paymentState: 'awaiting_payment', paymentLabel: 'Aguardando pagamento' },
+        { ...productionQueueItem, id: 2, customerName: 'Bia', email: 'bia@edenbowls.com', paymentState: 'paid' },
+      ],
+      blockPreview: { status: 500, code: 'boom' },
+    })
+    renderQueue()
+
+    fireEvent.click(within(await openRowMenu('Bia')).getByRole('menuitem', { name: 'Bloquear' }))
+    await screen.findByRole('dialog')
+    expect(calls.some((call) => call.path.includes('block-preview'))).toBe(false)
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+    fireEvent.click(within(await openRowMenu('Ana Ledger')).getByRole('menuitem', { name: 'Bloquear' }))
+    await waitFor(() => expect(calls.some((call) => call.path.includes('/queue/42/block-preview'))).toBe(true))
+    expect(await screen.findByText('Este pedido ainda não foi cobrado. Bloquear adia a cobrança, e reabrir pode cobrar o cliente na hora.')).toBeInTheDocument()
+  })
+
+  // admin-flow-fixes-5 (PM-10): batch actions call the PATCH once per order, in order.
+  it('starts the selected orders one by one and lists the one that failed', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [
+        { ...productionQueueItem },
+        { ...productionQueueItem, id: 2, customerName: 'Bia', email: 'bia@edenbowls.com' },
+        { ...productionQueueItem, id: 3, customerName: 'Caio', email: 'caio@edenbowls.com' },
+        { ...productionQueueItem, id: 4, customerName: 'Duda', email: 'duda@edenbowls.com', paymentState: 'awaiting_payment', paymentLabel: 'Aguardando pagamento' },
+      ],
+      productionPatchFailures: { 2: 'Ciclo mudou' },
+    })
+    renderQueue()
+
+    await screen.findByText('Ana Ledger')
+    expect(screen.queryByRole('checkbox', { name: 'Selecionar Duda' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar todos da página' }))
+    expect(screen.getByRole('button', { name: 'Marcar como pronto (0)' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Iniciar preparo (3)' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(within(dialog).getByTestId('batch-items')).getAllByRole('listitem')).toHaveLength(3)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Iniciar preparo' }))
+
+    const result = await screen.findByTestId('batch-result')
+    expect(within(result).getByText('2 pedidos atualizados.')).toBeInTheDocument()
+    expect(within(result).getByText('Bia: Ciclo mudou')).toBeInTheDocument()
+    const patched = calls.filter((call) => call.method === 'PATCH').map((call) => call.path.split('/').pop())
+    expect(patched).toEqual(['42', '2', '3'])
+  })
+
+  it('warns about short orders before marking a batch ready', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [
+        { ...productionQueueItem, productionStatus: 'in_production', stockCoverage: 'short', stockShortages: [{ flavorKey: 'beef', packSizeGrams: 500, recipeName: 'Bovino', missing: 1 }] },
+        { ...productionQueueItem, id: 2, customerName: 'Bia', email: 'bia@edenbowls.com', productionStatus: 'in_production', stockCoverage: 'covered' },
+      ],
+      productionStock: { shortages: [{ flavorKey: 'beef', packSizeGrams: 500, onHand: -1 }], unsized: 0 },
+    })
+    renderQueue()
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Selecionar Ana Ledger' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar Bia' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar como pronto (2)' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Pela ordem da fila, falta estoque para estes pedidos. Marcar como pronto pode deixar o saldo negativo.')).toBeInTheDocument()
+    expect(within(dialog).getByText(/Falta: Bovino 500 g/)).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Marcar como pronto' }))
+
+    const result = await screen.findByTestId('batch-result')
+    expect(within(result).getByText('2 pedidos atualizados.')).toBeInTheDocument()
+    expect(within(result).getByText(/Separado com estoque negativo: beef 500 g \(-1\)/)).toBeInTheDocument()
+  })
+
+  it('shows no selection to read-only staff', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderQueue()
+
+    await screen.findByText('Ana Ledger')
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  })
+
+  // simplify-brazil-dispatch: Expedir opens Entregas Brasil on the invoice, with a range when it ships later.
+  it.each([
+    ['delivered tomorrow, on the default range', { deliveryDate: addDays(todayIn(COURIER_TIMEZONE), 1) }, (id: number) => `/operations/courier?fatura=in_123&assinatura=${id}`],
+    ['delivered in three days, with a range that holds it', { deliveryDate: addDays(todayIn(COURIER_TIMEZONE), 3) },
+      (id: number) => `/operations/courier?fatura=in_123&assinatura=${id}&de=${todayIn(COURIER_TIMEZONE)}&ate=${addDays(todayIn(COURIER_TIMEZONE), 3)}`],
+    ['with no delivery date', { deliveryDate: null }, (id: number) => `/operations/courier?fatura=in_123&assinatura=${id}`],
+    ['delivered past the 31-day range', { deliveryDate: addDays(todayIn(COURIER_TIMEZONE), 40) }, (id: number) => `/operations/courier?fatura=in_123&assinatura=${id}`],
+    ['with no paid invoice', { paidInvoiceId: null }, () => '/operations/courier'],
+  ])('a ready Brazil order %s', async (_name, extra, href) => {
+    seedAuth()
+    const item = { ...productionQueueItem, stripeAccount: 'br', country: 'BR', productionStatus: 'ready', stockCoverage: null, paidInvoiceId: 'in_123', ...extra }
+    installAdminFetchMock(adminUser, { productionQueue: [item] })
+    renderQueue()
+
+    const row = (await screen.findByText('Ana Ledger')).closest('tr') as HTMLElement
+    expect(within(row).getByRole('link', { name: 'Expedir' })).toHaveAttribute('href', href(Number(item.id)))
+  })
+
+  it.each([
+    ['BR order to Entregas Brasil', { stripeAccount: 'br', country: 'BR' }, '/operations/courier'],
+    ['US order to Etiquetas UPS', { stripeAccount: 'us', country: 'US' }, '/operations/labels'],
+  ])('a ready %s', async (_name, market, href) => {
+    seedAuth()
+    installAdminFetchMock(adminUser, { productionQueue: [{ ...productionQueueItem, ...market, productionStatus: 'ready', stockCoverage: null }] })
+    renderQueue()
+
+    const row = (await screen.findByText('Ana Ledger')).closest('tr') as HTMLElement
+    expect(within(row).getByRole('link', { name: 'Expedir' })).toHaveAttribute('href', href)
+    expect(within(row).queryByText('Concluído')).not.toBeInTheDocument()
+  })
+
+  // keep-ready-orders-dispatchable: the address lock shows on the ready row, before anyone clicks Expedir.
+  it('a ready Brazil order held by the address says why instead of Expedir', async () => {
+    seedAuth()
+    const item = { ...productionQueueItem, productionStatus: 'ready', stockCoverage: null, paidInvoiceId: 'in_123', deliveryDate: null, courierIssues: ['recipient_name_missing'] }
+    installAdminFetchMock(adminUser, { productionQueue: [item] })
+    renderQueue()
+
+    const row = (await screen.findByText('Ana Ledger')).closest('tr') as HTMLElement
+    expect(within(row).getByText('Travado: Falta o nome de quem recebe')).toBeInTheDocument()
+    expect(within(row).getByRole('link', { name: 'Ver na entrega' })).toHaveAttribute('href', '/operations/courier?fatura=in_123&assinatura=42')
+    expect(within(row).queryByRole('link', { name: 'Expedir' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['an empty list', []],
+    ['no field, as an older API', undefined],
+  ])('a ready Brazil order with %s of courier issues keeps Expedir', async (_name, courierIssues) => {
+    seedAuth()
+    const item = { ...productionQueueItem, productionStatus: 'ready', stockCoverage: null, paidInvoiceId: 'in_123', deliveryDate: null, courierIssues }
+    installAdminFetchMock(adminUser, { productionQueue: [item] })
+    renderQueue()
+
+    const row = (await screen.findByText('Ana Ledger')).closest('tr') as HTMLElement
+    expect(within(row).getByRole('link', { name: 'Expedir' })).toBeInTheDocument()
+    expect(within(row).queryByText(/^Travado/)).not.toBeInTheDocument()
+  })
+
+  it('puts the ready orders past their day in their own group above Atrasados', async () => {
+    seedAuth()
+    const late = { ...productionQueueItem, dueBucket: 'overdue', daysUntil: -24, dueLabel: 'Atrasado 24 dias', stockCoverage: null }
+    installAdminFetchMock(adminUser, {
+      productionQueue: [
+        { ...late, id: 41, customerName: 'Bia Cozinha', productionStatus: 'to_prepare' },
+        { ...late, id: 42, productionStatus: 'ready', paidInvoiceId: 'in_123', deliveryDate: null },
+      ],
+      productionMetrics: { today: 0, tomorrow: 0, upcoming: 0, overdue: 1 },
+    })
+    renderQueue()
+
+    await screen.findByText('Ana Ledger')
+    const groups = screen.getAllByRole('row').filter((row) => row.classList.contains('queue-group-row')).map((row) => row.textContent)
+    expect(groups).toEqual(['Prontos para expedir', 'Atrasados'])
+    const rows = screen.getAllByRole('row').map((row) => row.textContent || '')
+    expect(rows.findIndex((text) => text.includes('Ana Ledger'))).toBeLessThan(rows.findIndex((text) => text === 'Atrasados'))
+    expect(rows.findIndex((text) => text.includes('Bia Cozinha'))).toBeGreaterThan(rows.findIndex((text) => text === 'Atrasados'))
+    // queue-overdue-filter-matches-metric: the ready row says how long it waits to leave, not "Atrasado".
+    const readyRow = screen.getByText('Ana Ledger').closest('tr') as HTMLElement
+    expect(within(readyRow).getByText('Aguardando saída há 24 dias')).toHaveClass('badge-warning')
+    expect(within(readyRow).queryByText('Atrasado 24 dias')).not.toBeInTheDocument()
+    const kitchenRow = screen.getByText('Bia Cozinha').closest('tr') as HTMLElement
+    expect(within(kitchenRow).getByText('Atrasado 24 dias')).toHaveClass('badge-error')
+    const overdueCard = screen.getByRole('button', { name: /^Atrasados/ })
+    expect(within(overdueCard).getByText('1')).toBeInTheDocument()
+    // explain-hold-reason-and-overdue: one number, and the text says the ready ones are not in it.
+    expect(within(overdueCard).getByText('Só o que a cozinha não terminou. Pronto esperando saída não conta.')).toBeInTheDocument()
+    expect(overdueCard.textContent?.match(/\d+/g)).toEqual(['1'])
+  })
+
+  // queue-overdue-filter-matches-metric: under "Atrasados" a ready order leaves the list and the panel says where.
+  const lateInProduction = { ...productionQueueItem, dueBucket: 'overdue', daysUntil: -24, dueLabel: 'Atrasado 24 dias', stockCoverage: null, productionStatus: 'in_production', paidInvoiceId: 'in_123', deliveryDate: null, courierIssues: [] }
+
+  async function markReady() {
+    fireEvent.click(await screen.findByRole('button', { name: 'Marcar como pronto' }))
+    const confirm = await screen.findByRole('dialog').catch(() => null)
+    if (confirm) fireEvent.click(within(confirm).getByRole('button', { name: 'Marcar como pronto' }))
+  }
+
+  it('a late order marked ready from the overdue filter leaves the list and the notice points to Pronto', async () => {
+    seedAuth()
+    installAdminFetchMock(adminUser, { productionQueue: [lateInProduction] })
+    renderQueue('/operations/production?prazo=atrasados&mercado=br')
+
+    await markReady()
+
+    const notice = await screen.findByTestId('ready-moved')
+    expect(notice).toHaveTextContent('O pedido saiu de Atrasados e está em Prontos para expedir.')
+    expect(within(notice).getByRole('link', { name: 'Ver prontos' })).toHaveAttribute('href', '/operations/production?status=ready&mercado=br')
+    await waitFor(() => expect(screen.queryByText('Ana Ledger')).not.toBeInTheDocument())
+    expect(screen.queryByText('Prontos para expedir', { selector: 'td, th' })).not.toBeInTheDocument()
+  })
+
+  it('a batch marked ready from the overdue filter says how many went to Prontos para expedir', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      productionQueue: [
+        { ...lateInProduction, stockCoverage: 'covered' },
+        { ...lateInProduction, id: 2, customerName: 'Bia', email: 'bia@edenbowls.com', stockCoverage: 'covered' },
+      ],
+    })
+    renderQueue('/operations/production?prazo=atrasados')
+
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Selecionar Ana Ledger' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Selecionar Bia' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar como pronto (2)' }))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Marcar como pronto' }))
+
+    expect(await screen.findByTestId('ready-moved')).toHaveTextContent('2 pedidos saíram de Atrasados e estão em Prontos para expedir.')
+    await waitFor(() => expect(screen.queryByText('Bia')).not.toBeInTheDocument())
+  })
+
+  it('a late order marked ready without a due filter moves to Prontos para expedir with no notice', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { productionQueue: [lateInProduction] })
+    renderQueue()
+
+    await markReady()
+
+    const row = (await screen.findByRole('link', { name: 'Expedir' })).closest('tr') as HTMLElement
+    expect(within(row).getByText('Ana Ledger')).toBeInTheDocument()
+    expect(screen.getByText('Prontos para expedir')).toBeInTheDocument()
+    expect(screen.queryByTestId('ready-moved')).not.toBeInTheDocument()
+  })
+
+  it('flags a ready order whose account and address are in different countries', async () => {
+    seedAuth()
+    installAdminFetchMock(adminUser, { productionQueue: [{ ...productionQueueItem, stripeAccount: 'us', country: 'BR', productionStatus: 'ready', stockCoverage: null }] })
+    renderQueue()
+
+    const row = (await screen.findByText('Ana Ledger')).closest('tr') as HTMLElement
+    expect(within(row).getByText('Mercado divergente')).toBeInTheDocument()
+    expect(within(row).queryByRole('link', { name: 'Expedir' })).not.toBeInTheDocument()
+  })
+
+  it('links the fulfillment screens of the session markets', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser)
+    renderQueue()
+
+    await screen.findByText('ana@edenbowls.com')
+    expect(screen.getByRole('link', { name: 'Entregas Brasil' })).toHaveAttribute('href', '/operations/courier')
+    expect(screen.queryByRole('link', { name: 'Etiquetas UPS' })).not.toBeInTheDocument()
+    expect(screen.getByRole('searchbox', { name: 'Buscar' })).toHaveAttribute('placeholder', 'Nome ou e-mail')
+  })
+
+  it.each([
+    ['awaiting payment', 'awaiting_payment', true],
+    ['refused payment', 'past_due', true],
+    ['paid', 'paid', false],
+  ])('warns about the charge when blocking a cycle with %s', async (_name, paymentState, warns) => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { productionQueue: [{ ...productionQueueItem, paymentState }] })
+    renderQueue()
+
+    const menu = await openRowMenu()
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Bloquear' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Bloquear pedido' })
+    if (warns) {
+      expect(within(dialog).getByRole('note')).toHaveTextContent('Bloquear adia a cobrança')
+    } else {
+      expect(within(dialog).queryByRole('note')).not.toBeInTheDocument()
+    }
+  })
 })
+
+// operator-fills-recipient-name: the API answer has no customerName; displayName is the name the API picked.
+describe('ProductionQueuePage recipient name', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllGlobals()
+  })
+
+  const lockedItem = (extra: Record<string, unknown> = {}) => {
+    // The current API shape has no customerName; undefined is dropped when the mock serializes the item.
+    return {
+      ...productionQueueItem,
+      customerName: undefined,
+      displayName: 'Ana Costa',
+      nameSource: 'account',
+      accountName: 'Ana Costa',
+      productionStatus: 'ready',
+      stockCoverage: null,
+      paidInvoiceId: 'in_123',
+      deliveryDate: null,
+      courierIssues: ['recipient_name_missing'],
+      ...extra,
+    }
+  }
+
+  function installLocked(user = operatorWriteUser, item: Record<string, unknown> = lockedItem()) {
+    return installAdminFetchMock(user, {
+      productionQueue: [item],
+      routes: ({ path, method }: { path: string; method: string }) => {
+        // The mock copies productionQueue once; this answer reads the item as the PATCH left it.
+        if (path === '/api/v1/admin/production/queue' && method === 'GET') {
+          return new Response(JSON.stringify({ ...productionQueueList, total: 1, totalPages: 1, items: [item] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        }
+        if (path === `/api/v1/admin/billing/subscriptions/${item.id}/recipient-name` && method === 'PATCH') {
+          Object.assign(item, { nameSource: 'recipient', courierIssues: [] })
+          return new Response(JSON.stringify({ success: true, data: { subscription_id: String(item.id), recipient_name: 'Ana Costa', courier_issues: [] } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        }
+        return undefined
+      },
+    })
+  }
+
+  it('shows the name the API picked and marks one taken from the account', async () => {
+    seedAuth()
+    installLocked()
+    renderQueue()
+    const name = await screen.findByText('Ana Costa', { selector: 'strong' })
+    expect(name).toHaveTextContent('Ana Costa (conta)')
+    const row = name.closest('tr') as HTMLElement
+    expect(within(row).getByText('ana@edenbowls.com')).toBeInTheDocument()
+    expect(within(row).getByText('Travado: Falta o nome de quem recebe')).toBeInTheDocument()
+  })
+
+  it('a recipient name reads as before, without the mark', async () => {
+    seedAuth()
+    installLocked(operatorWriteUser, lockedItem({ displayName: 'João Lima', nameSource: 'recipient', courierIssues: [] }))
+    renderQueue()
+    const name = await screen.findByText('João Lima', { selector: 'strong' })
+    expect(name).toHaveTextContent(/^João Lima$/)
+  })
+
+  it('fills the recipient from the ready row and the row offers Expedir', async () => {
+    seedAuth()
+    const { calls } = installLocked()
+    renderQueue()
+    const row = (await screen.findByText('Ana Costa', { selector: 'strong' })).closest('tr') as HTMLElement
+    fireEvent.click(within(row).getByRole('button', { name: 'Informar quem recebe' }))
+    const dialog = screen.getByRole('dialog', { name: 'Informar quem recebe' })
+    expect(within(dialog).getByLabelText('Nome de quem recebe')).toHaveValue('')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Usar nome da conta (Ana Costa)' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar nome' }))
+    expect(await screen.findByText('Nome de quem recebe salvo: Ana Costa.')).toBeInTheDocument()
+    expect(findCall(calls, 'PATCH', '/api/v1/admin/billing/subscriptions/42/recipient-name')?.body).toEqual({ recipient_name: 'Ana Costa' })
+    expect(await screen.findByRole('link', { name: 'Expedir' })).toBeInTheDocument()
+  })
+
+  it('without the permission the row keeps only the lock and Ver na entrega', async () => {
+    seedAuth()
+    installLocked(readonlyUser)
+    renderQueue()
+    const row = (await screen.findByText('Ana Costa', { selector: 'strong' })).closest('tr') as HTMLElement
+    expect(within(row).getByRole('link', { name: 'Ver na entrega' })).toBeInTheDocument()
+    expect(within(row).queryByRole('button', { name: 'Informar quem recebe' })).not.toBeInTheDocument()
+  })
+})
+

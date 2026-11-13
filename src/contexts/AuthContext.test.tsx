@@ -69,6 +69,29 @@ describe('AuthProvider', () => {
     expect(Object.keys(localStorage)).toEqual([TOKEN_KEY])
   })
 
+  // Another tab refreshed (it stored a new token) and later logged out (it removed it).
+  it('follows another tab: takes its refreshed token and ends with its logout, without refreshing', async () => {
+    localStorage.setItem(TOKEN_KEY, 'stored-token')
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(operatorUser))
+    vi.stubGlobal('fetch', fetchMock)
+    renderWithAuth(<AuthProbe />)
+    await screen.findByText('ops@edenbowls.com')
+
+    localStorage.setItem(TOKEN_KEY, 'other-tab-token')
+    window.dispatchEvent(new StorageEvent('storage', { key: TOKEN_KEY, newValue: 'other-tab-token' }))
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith('/api/v1/admin/me', expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer other-tab-token' }),
+      }))
+    })
+
+    localStorage.removeItem(TOKEN_KEY)
+    window.dispatchEvent(new StorageEvent('storage', { key: TOKEN_KEY, newValue: null }))
+    await screen.findByText('anonymous')
+    expect(screen.getByText('no-token')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/auth/refresh'))).toBe(false)
+  })
+
   it('clears a stored token when /admin/me returns a customer account', async () => {
     localStorage.setItem(TOKEN_KEY, 'customer-token')
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(customerUser)))

@@ -24,7 +24,7 @@ test.describe('Admin stock', () => {
 
     await page.getByRole('button', { name: 'Adicionar estoque' }).click()
     const dialog = page.getByRole('dialog', { name: 'Adicionar estoque' })
-    await dialog.getByLabel('Receita').fill('carne')
+    await dialog.getByLabel('Código do produto').fill('carne')
     await dialog.getByLabel('Tamanho (g)').fill('500')
     await dialog.getByLabel('Quantidade').fill('30')
     await dialog.getByRole('button', { name: 'Adicionar' }).click()

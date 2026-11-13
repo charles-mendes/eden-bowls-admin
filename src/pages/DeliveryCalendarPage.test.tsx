@@ -162,7 +162,8 @@ async function openCreate() {
 
 function fillDraft(dialog: HTMLElement, { type = 'adhoc', date = `${YEAR}-03-30`, label = 'Manutenção' } = {}) {
   fireEvent.change(within(dialog).getByLabelText('Tipo'), { target: { value: type } })
-  fireEvent.change(within(dialog).getByLabelText('Data'), { target: { value: date } })
+  // The day is typed as dd/mm/aaaa (BrDateInput); the draft keeps it as ISO.
+  fireEvent.change(within(dialog).getByLabelText('Data'), { target: { value: date.split('-').reverse().join('/') } })
   fireEvent.change(within(dialog).getByLabelText('Rótulo'), { target: { value: label } })
 }
 

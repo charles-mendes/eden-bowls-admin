@@ -11,8 +11,6 @@ import {
   productDetail,
   productsList,
   recipeContent as recipeContentFixture,
-  recipeList,
-  type RecipeListItem,
   recipeImageUrl,
   promotionCodesList,
   shippingSettings,
@@ -95,6 +93,8 @@ export const nfeDetail = {
   next_attempt_at: null,
   submitted_at: null,
   updated_at: '2026-10-30T12:00:00.000Z',
+  missing_fields: [] as string[],
+  address_issue: null as Record<string, unknown> | null,
 }
 
 export const customerInvoice = {
@@ -128,28 +128,55 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   webhookHealth?: WebhookHealthFixture | { status: number; message: string }
   syncStatus?: Record<string, unknown>
   subscriptionInScope?: boolean
+  labelIssues?: Array<{ code: string }>
+  subscriptionMarket?: string
   customerInvoices?: Array<Record<string, unknown>>
   productionInScope?: boolean
   productionQueue?: Array<Record<string, unknown>>
+  productionMetrics?: { today: number; tomorrow: number; upcoming: number; overdue: number }
   productionStock?: { shortages: Array<{ flavorKey: string; packSizeGrams: number; onHand: number }>; unsized: number }
+  // production-block-preview: the answer, or a status for an error.
+  // PM-10: a PATCH of these queue ids fails with this message.
+  productionPatchFailures?: Record<number, string>
+  blockPreview?: { charged: boolean; chargeMovesTo: string | null; preparationDay: string | null } | { status: number; code: string }
   stockItems?: Array<Record<string, unknown>>
   stockUnsized?: Array<Record<string, unknown>>
   stockCatalog?: Array<Record<string, unknown>>
+  stockWithoutWeight?: Array<Record<string, unknown>>
   stockMovements?: Array<Record<string, unknown>>
   subscriptionSnapshot?: {
     petsSnapshot?: unknown
     planSelection?: unknown
     address?: unknown
     shipping?: unknown
+    courier_issues?: string[] | null
+    account_name?: string | null
+    delivery_instructions?: string | null
+    delivery_instructions_source?: 'subscription' | 'profile' | null
   }
+  // subscription-detail-workflow: fields of GET /admin/billing/subscriptions/:id to replace (status, cancel, ...).
+  subscriptionOverrides?: Record<string, unknown>
+  // customer-subscriptions-operational-links: the subscriptions of GET /admin/users/:userId.
+  customerSubscriptions?: Array<Record<string, unknown>>
   products?: typeof productsList.items
   product?: typeof productDetail
   catalogDelete?: 'in_use' | 'archive'
   catalogActivation?: 'refused' | 'in_use'
   catalogPatch?: 'locked'
   recipeContent?: typeof recipeContentFixture
-  recipes?: RecipeListItem[]
   recipeImage?: 'invalid'
+  contacts?: Array<Record<string, unknown>>
+  contactError?: { status: number; code: string; field?: string }
+  paidCycles?: Array<Record<string, unknown>>
+  marketExceptions?: Array<Record<string, unknown>>
+  // The subscription detail's shipping market (shipment-market) and address problem (delivery-address-issues).
+  marketException?: boolean
+  addressIssue?: Record<string, unknown> | null
+  // ups-pickup: the pickups GET /admin/shipments/pickups returns.
+  upsPickups?: Array<Record<string, unknown>>
+  // ups-dry-ice-declaration: the GET and PUT /admin/shipping/settings answer, and a refused PUT.
+  shippingSettings?: typeof shippingSettings
+  shippingSettingsSaveError?: { status: number; code: string; message: string }
   // Answered before the fixed routes; return undefined to fall through.
   routes?: (call: FetchCall) => Response | undefined
 } = {}) {
@@ -163,11 +190,32 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     variants: (options.product ?? productDetail).variants.map((item) => ({ ...item })),
   }
 
-  let recipes = (options.recipes ?? recipeList.items).map((item) => ({ ...item, variations: item.variations.map((variation) => ({ ...variation })) }))
+  // plan-settings: plan days and large-pack limit of each market.
+  const planSettings: Record<string, { market: string; planDays: number; largePackLimit: number; updatedAt: string | null }> = {
+    BR: { market: 'BR', planDays: 30, largePackLimit: 8, updatedAt: null },
+    US: { market: 'US', planDays: 30, largePackLimit: 8, updatedAt: null },
+  }
+
   let recipeContent = {
     ...(options.recipeContent ?? recipeContentFixture),
     variations: (options.recipeContent ?? recipeContentFixture).variations.map((item) => ({ ...item })),
   }
+  // The product detail carries its content as the API annotates it; a content save reaches both.
+  const productContent = () => ({
+    code: recipeContent.flavorSlug,
+    name: recipeContent.name,
+    lifeStage: recipeContent.lifeStage,
+    flavorAliases: recipeContent.flavorAliases ?? '',
+    shortLabel: recipeContent.shortLabel ?? '',
+    imageUrl: recipeContent.imageUrl,
+    planImageUrl: recipeContent.planImageUrl ?? null,
+    labelStatus: recipeContent.labelStatus,
+    labelMissing: recipeContent.labelMissing,
+    presentationReady: Boolean(recipeContent.presentation),
+    label: recipeContent.label,
+    presentation: recipeContent.presentation,
+  })
+  const detailWithContent = () => (catalogDetail.content === null ? catalogDetail : { ...catalogDetail, content: productContent() })
 
   const queueItems = (options.productionQueue ?? [{
     ...productionQueueItem,
@@ -188,6 +236,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     item.belowMinimum = item.minLevel != null && onHand < Number(item.minLevel)
     return item
   }
+
+  let contacts = (options.contacts ?? []).map((item) => ({ ...item }))
+  let nextContactId = contacts.reduce((max, item) => Math.max(max, Number(item.id) || 0), 0) + 1
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = parseUrl(input)
@@ -257,7 +308,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse({ success: true, mustChangePassword: false })
     }
 
-    if (path.endsWith('/delivery-instructions') && method === 'PATCH') {
+    if (/^\/api\/v1\/admin\/users\/[^/]+\/delivery-instructions$/.test(path) && method === 'PATCH') {
       return jsonResponse({ ok: true })
     }
 
@@ -288,7 +339,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (/^\/api\/v1\/admin\/users\/[^/]+$/.test(path) && method === 'GET') {
-      return jsonResponse(userDetail)
+      return jsonResponse(options.customerSubscriptions ? { ...userDetail, subscriptions: options.customerSubscriptions } : userDetail)
     }
 
     if (path === '/api/v1/admin/onboarding/metrics') {
@@ -310,25 +361,46 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(checkoutDetail)
     }
 
+    if (path === '/api/v1/admin/catalog/plan-settings') {
+      const market = (url.searchParams.get('market') || '').toUpperCase()
+      if (!planSettings[market]) return jsonResponse({ message: 'Choose one market.', code: 'market_required' }, 400)
+      if (method === 'PUT') {
+        planSettings[market] = { ...planSettings[market], planDays: Number(body?.planDays), largePackLimit: Number(body?.largePackLimit), updatedAt: '2026-11-12T12:00:00.000Z' }
+      }
+      return jsonResponse(planSettings[market])
+    }
+
     if (path === '/api/v1/admin/catalog/products' && method === 'GET') {
+      const code = url.searchParams.get('code')
+      const listMarket = url.searchParams.get('market')
+      const items = catalogItems
+        .filter((item) => !code || item.content?.code === code)
+        .filter((item) => !listMarket || item.planCountry === listMarket)
       return jsonResponse({
         ...productsList,
-        total: catalogItems.length,
-        items: catalogItems,
+        total: items.length,
+        items,
       })
     }
 
     if (path === '/api/v1/admin/catalog/products' && method === 'POST') {
+      const code = String(body?.code ?? '')
+      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(code)) {
+        return jsonResponse({ message: 'Product code must use lowercase letters, digits and single hyphens.', details: { code: 'recipe_key_invalid' } }, 422)
+      }
+      if (catalogItems.some((item) => item.planCountry === body?.planCountry && item.content?.code === code)) {
+        return jsonResponse({ message: 'A product with this code already exists in the market.', details: { code: 'product_code_taken' } }, 409)
+      }
       return jsonResponse({
         id: '301',
-        slug: 'plano-novo',
+        slug: `${code}-${String(body?.planCountry || 'BR').toLowerCase()}`,
         namePt: body?.name || 'Plano novo',
         nameEn: body?.name || 'Plano novo',
         active: false,
         planCountry: body?.planCountry || 'BR',
-        planDays: body?.planDays || 30,
         stripeProductId: 'prod_live_301',
         variants: [],
+        content: { code, name: body?.name, lifeStage: body?.lifeStage ?? 'adult', flavorAliases: '', shortLabel: '', imageUrl: null, planImageUrl: null, labelStatus: 'missing', labelMissing: [], presentationReady: false },
       })
     }
 
@@ -354,7 +426,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
             }
           : item
       ))
-      return jsonResponse(catalogDetail)
+      return jsonResponse(detailWithContent())
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'DELETE') {
@@ -378,77 +450,25 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'GET') {
-      return jsonResponse(catalogDetail)
+      return jsonResponse(detailWithContent())
     }
 
-    if (path === '/api/v1/admin/catalog/recipe-content' && method === 'GET') {
-      return jsonResponse({ market: url.searchParams.get('market') || 'BR', items: recipes })
-    }
-
-    if (path === '/api/v1/admin/catalog/recipe-content' && method === 'POST') {
-      const key = String(body?.key ?? '')
-      const name = String(body?.name ?? '').trim()
-      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(key)) {
-        return jsonResponse({ message: 'Recipe key must use lowercase letters, digits and single hyphens.', details: { code: 'recipe_key_invalid' } }, 422)
-      }
-      if (!name) {
-        return jsonResponse({ message: 'Recipe name must have 1 to 120 characters.', details: { code: 'recipe_name_invalid' } }, 422)
-      }
-      if (recipes.some((item) => item.key === key)) {
-        return jsonResponse({ message: 'A recipe with this key already exists in the market.', details: { code: 'recipe_key_taken' } }, 409)
-      }
-      const lifeStage = body?.lifeStage ?? 'adult'
-      recipes = [...recipes, { key, name, lifeStage, imageUrl: null, labelStatus: 'missing', variations: [] }]
-      return jsonResponse({ ...recipeContentFixture, flavorSlug: key, name, lifeStage, imageUrl: null, label: null, labelStatus: 'missing', labelMissing: [], variations: [] })
-    }
-
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+$/.test(path) && ['GET', 'PATCH', 'DELETE'].includes(method)) {
-      const key = decodeURIComponent(path.split('/').pop() || '')
-      const listed = recipes.find((item) => item.key === key)
-      const current = key === recipeContent.flavorSlug
-        ? recipeContent
-        : listed
-          ? { ...recipeContentFixture, flavorSlug: key, name: listed.name, lifeStage: listed.lifeStage, imageUrl: listed.imageUrl, label: null, labelStatus: listed.labelStatus, labelMissing: [], variations: listed.variations }
-          : null
-      if (!current) {
-        return jsonResponse({ message: 'Recipe not found.', details: { code: 'recipe_not_found' } }, 404)
-      }
-      if (method === 'PATCH') {
-        const name = body?.name === undefined ? current.name : String(body.name).trim()
-        const lifeStage = body?.lifeStage ?? current.lifeStage
-        recipes = recipes.map((item) => (item.key === key ? { ...item, name, lifeStage } : item))
-        if (key === recipeContent.flavorSlug) recipeContent = { ...recipeContent, name, lifeStage }
-        return jsonResponse({ ...current, name, lifeStage })
-      }
-      if (method === 'DELETE') {
-        if (current.variations.length) {
-          return jsonResponse({
-            message: 'A recipe used by variations cannot be deleted.',
-            details: { code: 'recipe_in_use', variations: current.variations.map((item) => ({ id: item.id, sku: item.sku, name: item.name })) },
-          }, 409)
-        }
-        recipes = recipes.filter((item) => item.key !== key)
-        return jsonResponse({ deleted: true, market: 'BR', flavorSlug: key })
-      }
-      return jsonResponse(current)
-    }
-
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'PUT') {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/image$/.test(path) && method === 'PUT') {
       if (options.recipeImage === 'invalid') {
         return jsonResponse({
-          message: 'Image must be 1024 x 636 pixels.',
-          details: { code: 'recipe_image_invalid', reason: 'dimensions', width: 1200, height: 800, expectedWidth: 1024, expectedHeight: 636 },
+          message: 'Image must be 1024 x 636 pixels, or close enough to be resized to it.',
+          details: { code: 'recipe_image_invalid', reason: 'dimensions', width: 800, height: 800, expectedWidth: 1024, expectedHeight: 636, maxUpscale: 1.25, maxCrop: 0.15 },
         }, 422)
       }
       recipeContent = { ...recipeContent, imageUrl: recipeImageUrl, imageUpdatedAt: '2026-10-23T12:00:00.000Z' }
       return jsonResponse(recipeContent)
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'DELETE') {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/image$/.test(path) && method === 'DELETE') {
       const active = recipeContent.variations.filter((item) => item.active)
       if (active.length) {
         return jsonResponse({
-          message: 'The image of a recipe with an active variation cannot be removed.',
+          message: 'The image of a product with an active variation cannot be removed.',
           details: { code: 'recipe_content_in_use', activeVariations: active.map((item) => item.id) },
         }, 409)
       }
@@ -456,19 +476,19 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(recipeContent)
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/plan-image$/.test(path) && ['PUT', 'DELETE'].includes(method)) {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/plan-image$/.test(path) && ['PUT', 'DELETE'].includes(method)) {
       recipeContent = method === 'PUT'
         ? { ...recipeContent, planImageUrl: '/recipe-images/recipe-br-turkey-plan-1.webp', planImageUpdatedAt: '2026-10-27T12:00:00.000Z' }
         : { ...recipeContent, planImageUrl: null }
       return jsonResponse(recipeContent)
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/presentation$/.test(path) && method === 'PUT') {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/presentation$/.test(path) && method === 'PUT') {
       recipeContent = { ...recipeContent, presentation: body?.presentation ?? null, presentationUpdatedAt: '2026-10-27T12:00:00.000Z' }
       return jsonResponse(recipeContent)
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/label$/.test(path) && method === 'PUT') {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/label$/.test(path) && method === 'PUT') {
       const label = body?.label ?? {}
       const missing = [
         ...(label.ingredients?.length ? [] : ['ingredients']),
@@ -511,7 +531,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         ...catalogDetail,
         variants: catalogDetail.variants.map((item) => (item.id === variationId ? { ...item, active: Boolean(body?.active) } : item)),
       }
-      return jsonResponse(catalogDetail)
+      return jsonResponse(detailWithContent())
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'PATCH' && options.catalogPatch === 'locked' && Array.isArray(body?.variants)) {
@@ -522,10 +542,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'PATCH' && Array.isArray(body?.variants)
-      && body.variants.some((item: { recipeKey?: unknown }) => typeof item.recipeKey === 'string' && !recipes.some((recipe) => recipe.key === item.recipeKey))) {
+      && body.variants.some((item: { id?: string; weight?: string }) => item.weight && catalogDetail.variants.some((row) => row.id !== item.id && (row as { weight?: string | null }).weight === item.weight))) {
       return jsonResponse({
-        message: 'Recipe is not registered in the product market.',
-        details: { code: 'recipe_not_registered' },
+        message: 'Another variation of this product already has this weight.',
+        details: { code: 'variation_weight_taken', weight: body.variants[0].weight },
       }, 422)
     }
 
@@ -541,9 +561,18 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
             return { ...current, ...item }
           })
         : catalogDetail.variants
+      const { name, lifeStage, flavorAliases, shortLabel, ...rest } = body ?? {}
+      recipeContent = {
+        ...recipeContent,
+        ...(name !== undefined ? { name } : {}),
+        ...(lifeStage !== undefined ? { lifeStage } : {}),
+        ...(flavorAliases !== undefined ? { flavorAliases } : {}),
+        ...(shortLabel !== undefined ? { shortLabel } : {}),
+      }
       catalogDetail = {
         ...catalogDetail,
-        ...body,
+        ...rest,
+        ...(name !== undefined ? { namePt: name, nameEn: name } : {}),
         active: body.active ?? catalogDetail.active,
         variants,
       }
@@ -552,7 +581,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
           item.id === catalogDetail.id ? { ...item, active: Boolean(body.active) } : item
         ))
       }
-      return jsonResponse(catalogDetail)
+      return jsonResponse(detailWithContent())
     }
 
     if (path === '/api/v1/admin/catalog/sync' && method === 'POST') {
@@ -592,19 +621,33 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (path === '/api/v1/admin/production/queue' && method === 'GET') {
       const productionStatus = url.searchParams.get('productionStatus')
-      const items = productionStatus
-        ? queueItems.filter((item) => item.productionStatus === productionStatus)
-        : queueItems
+      const due = url.searchParams.get('due')
+      const items = queueItems
+        .filter((item) => !productionStatus || item.productionStatus === productionStatus)
+        .filter((item) => !due || item.dueBucket === due)
+        // queue-overdue-filter-matches-metric: due=overdue lists ready rows only when Pronto is asked for.
+        .filter((item) => due !== 'overdue' || productionStatus === 'ready' || item.productionStatus !== 'ready')
       return jsonResponse({
         ...productionQueueList,
+        metrics: options.productionMetrics ?? productionQueueList.metrics,
         total: items.length,
         totalPages: 1,
         items,
       })
     }
 
+    if (/^\/api\/v1\/admin\/production\/queue\/\d+\/block-preview$/.test(path) && method === 'GET') {
+      const preview = options.blockPreview ?? { charged: false, chargeMovesTo: null, preparationDay: null }
+      if ('status' in preview) {
+        return jsonResponse({ success: false, message: 'Falha na prévia', code: preview.code }, preview.status)
+      }
+      return jsonResponse(preview)
+    }
+
     if (/^\/api\/v1\/admin\/production\/queue\/\d+$/.test(path) && method === 'PATCH') {
       const id = Number(path.split('/').pop())
+      const failure = options.productionPatchFailures?.[id]
+      if (failure) return jsonResponse({ success: false, message: failure }, 409)
       const item = queueItems.find((entry) => Number(entry.id) === id) ?? { ...productionQueueItem, id }
       item.productionStatus = body?.status || 'in_production'
       item.note = body?.note || null
@@ -621,6 +664,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         items: stockItems,
         unsizedLines: stockUnsized,
         catalog: options.stockCatalog ?? [],
+        variationsWithoutWeight: options.stockWithoutWeight ?? [],
       })
     }
 
@@ -783,7 +827,8 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
               id: 'in_test_1',
               number: 'INV-1001',
               status: 'paid',
-              amountPaid: 89.5,
+              // Stripe's amount_paid, in minor units.
+              amountPaid: 8950,
               currency: 'usd',
               createdAt: '2026-08-01T12:00:00.000Z',
             },
@@ -792,8 +837,35 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       })
     }
 
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/contacts$/.test(path) && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: contacts } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/contacts$/.test(path) && method === 'POST') {
+      if (options.contactError) {
+        const { status, code, field } = options.contactError
+        return jsonResponse({ code, message: 'Contato recusado.', details: { code, ...(field ? { field } : {}) } }, status)
+      }
+      const contact = {
+        id: nextContactId++,
+        subscription_id: decodeURIComponent(path.split('/')[6]),
+        channel: 'whatsapp',
+        reason: body?.reason,
+        outcome: body?.outcome,
+        note: body?.note || null,
+        actor_email: profile.email,
+        created_at: new Date().toISOString(),
+      }
+      contacts = [contact, ...contacts]
+      return jsonResponse({ success: true, data: { contact } })
+    }
+
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/paid-cycles$/.test(path) && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: options.paidCycles ?? [] } })
+    }
+
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/shipments$/.test(path) && method === 'GET') {
-      return jsonResponse({ success: true, data: { items: [] } })
+      return jsonResponse({ success: true, data: { items: [], label_issues: options.labelIssues ?? [] } })
     }
 
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/shipments$/.test(path) && method === 'POST') {
@@ -807,6 +879,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
             stripe_invoice_id: body?.invoice_id || 'in_test_1',
             ups_shipment_id: '1Z999',
             tracking_number: '1Z999AA10123456784',
+            tracking_url: 'https://www.ups.com/track?tracknum=1Z999AA10123456784',
+            tracking_status: 'in_transit',
+            tracking_description: 'Departed from facility',
+            delivered_at: null,
             service_code: '03',
             label_format: 'GIF',
             has_label: true,
@@ -821,6 +897,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       })
     }
 
+    if (/^\/api\/v1\/admin\/shipments\/[^/]+\/label$/.test(path) && method === 'GET') {
+      return new Response('GIF89a', { status: 200, headers: { 'Content-Type': 'image/gif' } })
+    }
+
     if (/^\/api\/v1\/admin\/shipments\/[^/]+\/void$/.test(path) && method === 'POST') {
       return jsonResponse({ success: true, data: { shipment: { id: 'ship_1', status: 'voided' } } })
     }
@@ -829,9 +909,20 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse({ success: true, data: { shipment: { id: 'ship_1', tracking_number: '1Z999' } } })
     }
 
+    // delivery-instructions: the operator sets or clears the instructions of one subscription.
+    if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+\/delivery-instructions$/.test(path) && method === 'PATCH') {
+      const text = String((body as { delivery_instructions?: string } | null)?.delivery_instructions || '').trim()
+      if ([...text].length > 200) {
+        return jsonResponse({ success: false, message: 'Invalid delivery instructions.', details: { code: 'invalid_delivery_instructions', field: 'delivery_instructions' } }, 422)
+      }
+      const id = path.split('/')[6]
+      return jsonResponse({ success: true, data: { subscription_id: id, delivery_instructions: text || null } })
+    }
+
     if (/^\/api\/v1\/admin\/billing\/subscriptions\/[^/]+$/.test(path) && method === 'GET') {
       return jsonResponse({
         ...subscriptionItem,
+        term: { ...subscriptionItem.term, marketCountry: options.subscriptionMarket ?? subscriptionItem.term.marketCountry },
         stripeSubscriptionId: subscriptionItem.providerSubscriptionId,
         stripeCustomerId: 'cus_1',
         planLabel: 'Adult 1m',
@@ -844,8 +935,12 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         planSelection: {},
         shipping: {},
         address: {},
+        shipment_market: options.marketException ? null : 'US',
+        market_exception: Boolean(options.marketException),
+        address_issue: options.addressIssue ?? null,
         ...(options.subscriptionSnapshot ?? {}),
         ...(options.subscriptionInScope === undefined ? {} : { customerProfileInScope: options.subscriptionInScope }),
+        ...(options.subscriptionOverrides ?? {}),
       })
     }
 
@@ -862,12 +957,20 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       })
     }
 
+    if (path === '/api/v1/admin/shipments/pickups' && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: options.upsPickups ?? [], from: '2026-11-02' } })
+    }
+
     if (path === '/api/v1/admin/shipping/settings' && method === 'GET') {
-      return jsonResponse(shippingSettings)
+      return jsonResponse(options.shippingSettings ?? shippingSettings)
     }
 
     if (path === '/api/v1/admin/shipping/settings' && method === 'PUT') {
-      return jsonResponse(shippingSettings)
+      if (options.shippingSettingsSaveError) {
+        const { status, code, message } = options.shippingSettingsSaveError
+        return jsonResponse({ code, message, details: { code } }, status)
+      }
+      return jsonResponse(options.shippingSettings ?? shippingSettings)
     }
 
     if (path === '/api/v1/admin/shipping/test' && method === 'POST') {
@@ -1052,6 +1155,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (/^\/api\/v1\/admin\/feedbacks\/\d+$/.test(path) && method === 'DELETE') {
       return jsonResponse({ deleted: true, id: Number(path.split('/').pop()) })
+    }
+
+    if (path === '/api/v1/admin/market-exceptions' && method === 'GET') {
+      return jsonResponse({ success: true, data: { items: options.marketExceptions ?? [], truncated: false } })
     }
 
     if (path === '/api/v1/admin/nfe' && method === 'GET') {

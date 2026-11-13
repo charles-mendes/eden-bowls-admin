@@ -46,41 +46,66 @@ test.describe('Admin catalog', () => {
     }).toBe(true)
   })
 
-  test('creates a product from the catalog list', async ({ page }) => {
+  test('creates a recipe product from the catalog list', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products', e2eProfiles.operatorWrite)
 
-    await page.getByText('Novo produto', { exact: true }).click()
-    await page.getByPlaceholder('Ex.: Plano Adulto BR').fill('Plano novo')
-    await page.getByRole('button', { name: 'Criar produto' }).click()
+    await page.getByRole('button', { name: 'Novo produto' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Novo produto' })
+    await dialog.getByLabel('Nome', { exact: true }).fill('Receita de Cordeiro')
+    await expect(dialog.getByLabel('Código', { exact: true })).toHaveValue('receita-de-cordeiro')
+    await dialog.getByRole('button', { name: 'Criar produto' }).click()
     await expect.poll(() => captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/catalog/products')).toMatchObject({
       authorization: 'Bearer e2e-access-token',
-      body: {
-        name: 'Plano novo',
-        planCountry: 'BR',
-        planDays: 30,
-      },
+      body: { name: 'Receita de Cordeiro', planCountry: 'BR', code: 'receita-de-cordeiro', lifeStage: 'adult' },
     })
-    await expect(page.getByRole('button', { name: 'Adicionar variação' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Dados gerais' })).toHaveAttribute('aria-selected', 'true')
   })
 
-  test('saves product plan fields', async ({ page }) => {
+  test('keeps the create dialog open when the code is taken', async ({ page }) => {
+    await openAuthed(page, '/catalog/products', e2eProfiles.operatorWrite)
+
+    await page.getByRole('button', { name: 'Novo produto' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Novo produto' })
+    await dialog.getByLabel('Nome', { exact: true }).fill('Peru')
+    await dialog.getByLabel('Código', { exact: true }).fill('turkey')
+    await dialog.getByRole('button', { name: 'Criar produto' }).click()
+    await expect(dialog.getByText('Este mercado já tem um produto com esse código. Escolha outro código.')).toBeVisible()
+    await expect(dialog.getByLabel('Nome', { exact: true })).toHaveValue('Peru')
+  })
+
+  test('saves the market plan settings on the Plano screen', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/catalog/plan?market=BR', e2eProfiles.operatorWrite)
+
+    const limit = page.getByRole('spinbutton', { name: 'Limite do pacote pequeno' })
+    await expect(limit).toHaveValue('8')
+    await limit.fill('6')
+    await page.getByRole('button', { name: 'Salvar' }).click()
+    await expect(page.getByText('Plano salvo.')).toBeVisible()
+    await expect.poll(() => captured.find((item) => item.method === 'PUT' && item.path === '/api/v1/admin/catalog/plan-settings')).toMatchObject({
+      authorization: 'Bearer e2e-access-token',
+      search: '?market=BR',
+      body: { planDays: 30, largePackLimit: 6 },
+    })
+  })
+
+  test('saves the general data of the product', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
 
-    await expect(page.getByText('BOWL-1')).toBeVisible()
+    await expect(page.getByText('Código turkey · mercado BR · BRL')).toBeVisible()
+    await page.getByLabel('Nome do produto').fill('Peru e Arroz')
+    await expect(page.getByText('Dados gerais alterados. Salve antes de sair.')).toBeVisible()
     await page.getByRole('button', { name: 'Salvar' }).click()
-    await expect(page.getByText('Produto atualizado.')).toBeVisible()
+    await expect(page.getByText('Dados gerais salvos.')).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'PATCH' && item.path.endsWith('/catalog/products/prod-1'))).toMatchObject({
       authorization: 'Bearer e2e-access-token',
-      body: {
-        planCountry: 'BR',
-        planDays: 28,
-      },
+      body: { name: 'Peru e Arroz', flavorAliases: '', shortLabel: '', lifeStage: 'adult' },
     })
   })
 
   test('publishes edited variation prices', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
 
+    await page.getByRole('tab', { name: 'Variações' }).click()
     await page.getByRole('button', { name: 'Editar variação Frango 1kg' }).click()
     await page.getByLabel('Preço').fill('30')
     await page.getByRole('button', { name: 'Salvar variação' }).click()
@@ -95,23 +120,19 @@ test.describe('Admin catalog', () => {
             id: 'var-1',
             sku: 'BOWL-1',
             name: 'Frango 1kg',
-            flavor: 'Frango',
-            lifeStage: 'adult',
-            shortLabel: '',
+            weight: '1kg',
+            // A BR variation carries its fiscal fields (NF-e).
+            ncm: '',
+            origin: 0,
             finalImageReady: false,
             labelDataReady: false,
             regularPrice: 30,
-            recipeKey: 'turkey',
           }],
         },
       }),
       expect.objectContaining({
         authorization: 'Bearer e2e-access-token',
-        body: {
-          planCountry: 'BR',
-          planDays: 28,
-          active: true,
-        },
+        body: { active: true },
       }),
     ])
     await expect(page.getByText(/30,00/)).toBeVisible()
@@ -132,6 +153,7 @@ test.describe('Admin catalog', () => {
     page.once('dialog', (dialog) => dialog.accept())
     const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
 
+    await page.getByRole('tab', { name: 'Variações' }).click()
     await page.getByRole('button', { name: 'Excluir variação Frango 1kg' }).click()
     await expect.poll(() => captured.find((item) => item.method === 'DELETE' && item.path === '/api/v1/admin/catalog/products/prod-1/variations/var-1')).toMatchObject({
       authorization: 'Bearer e2e-access-token',
@@ -139,34 +161,35 @@ test.describe('Admin catalog', () => {
     await expect(page.getByText('Variação "Frango 1kg" excluída.')).toBeVisible()
   })
 
-  test('opens recipe content from the variation and uploads only a banner-sized image', async ({ page }) => {
+  test('opens the Imagens tab from a pending item and uploads only a banner-sized image', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
 
-    await page.getByRole('link', { name: 'Conteúdo da receita de Frango 1kg' }).click()
-    await expect(page).toHaveURL(/\/catalog\/recipes\/BR\/turkey$/)
-    await expect(page.getByRole('heading', { name: 'Imagem' })).toBeVisible()
-    await expect(page.getByText('Frango 1kg', { exact: true })).toBeVisible()
+    await page.getByRole('tab', { name: 'Variações' }).click()
+    await page.getByRole('button', { name: 'Abrir foto de Frango 1kg' }).click()
+    await expect(page.getByRole('tab', { name: 'Imagens' })).toHaveAttribute('aria-selected', 'true')
+    const panel = page.getByRole('tabpanel')
+    await expect(panel.getByRole('heading', { name: 'Imagem da tela inicial' })).toBeVisible()
 
-    await page.getByLabel('Escolher imagem').setInputFiles({ name: 'grande.png', mimeType: 'image/png', buffer: solidPng(1200, 800) })
-    await expect(page.getByText('A imagem tem 1200 × 800 px e precisa ter 1024 × 636 px.')).toBeVisible()
+    await panel.getByLabel('Escolher imagem').setInputFiles({ name: 'grande.png', mimeType: 'image/png', buffer: solidPng(1200, 800) })
+    await expect(panel.getByText('A imagem tem 1200 × 800 px e precisa ter 1024 × 636 px.')).toBeVisible()
     expect(captured.some((item) => item.method === 'PUT')).toBe(false)
 
-    await page.getByLabel('Escolher imagem').setInputFiles({ name: 'banner.png', mimeType: 'image/png', buffer: solidPng(1024, 636) })
-    await expect(page.getByRole('img', { name: 'Prévia da nova imagem' })).toBeVisible()
-    await page.getByRole('button', { name: 'Salvar imagem' }).click()
-    await expect(page.getByText('Imagem salva. A loja passa a usar esta imagem.')).toBeVisible()
+    await panel.getByLabel('Escolher imagem').setInputFiles({ name: 'banner.png', mimeType: 'image/png', buffer: solidPng(1024, 636) })
+    await expect(panel.getByRole('img', { name: 'Prévia da nova imagem' })).toBeVisible()
+    await panel.getByRole('button', { name: 'Salvar imagem' }).click()
+    await expect(panel.getByText('Imagem salva. A loja passa a usar esta imagem.')).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'PUT')).toEqual(expect.objectContaining({
-      path: '/api/v1/admin/catalog/recipe-content/turkey/image',
-      search: '?market=BR',
+      path: '/api/v1/admin/catalog/products/prod-1/content/image',
       authorization: 'Bearer e2e-access-token',
       body: expect.objectContaining({ mimeType: 'image/png' }),
     }))
   })
 
-  test('fills and saves the recipe label', async ({ page }) => {
-    const { captured } = await openAuthed(page, '/catalog/recipes/BR/turkey', e2eProfiles.operatorWrite)
+  test('fills and saves the label from an old recipe link', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/catalog/recipes/BR/turkey#rotulo', e2eProfiles.operatorWrite)
 
-    await expect(page.getByRole('heading', { name: 'Rótulo' })).toBeVisible()
+    await expect(page).toHaveURL(/\/catalog\/products\/prod-1#rotulo$/)
+    await expect(page.getByRole('tab', { name: 'Rótulo' })).toHaveAttribute('aria-selected', 'true')
     await page.getByRole('button', { name: 'Adicionar ingrediente' }).click()
     await page.getByLabel('Ingrediente 1', { exact: true }).fill('Frango')
     await page.getByRole('button', { name: 'Adicionar nível de garantia' }).click()
@@ -177,50 +200,26 @@ test.describe('Admin catalog', () => {
     await page.getByRole('button', { name: 'Salvar rótulo' }).click()
 
     await expect(page.getByText('Rótulo salvo e completo.')).toBeVisible()
-    await expect(page.getByText('Rótulo completo')).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'PUT' && item.path.endsWith('/label'))).toEqual(expect.objectContaining({
-      path: '/api/v1/admin/catalog/recipe-content/turkey/label',
-      search: '?market=BR',
+      path: '/api/v1/admin/catalog/products/prod-1/content/label',
       body: { label: expect.objectContaining({ ingredients: ['Frango'], analysis: [{ nutrient: 'Proteína bruta (mín.)', value: '9,0%' }] }) },
     }))
   })
 
-  test('unlinks a variation from its recipe in the variation dialog', async ({ page }) => {
-    const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
+  test('asks before leaving a tab with an unsaved label', async ({ page }) => {
+    await openAuthed(page, '/catalog/products/prod-1#rotulo', e2eProfiles.operatorWrite)
 
-    await page.getByRole('button', { name: 'Editar variação Frango 1kg' }).click()
-    const recipe = page.getByLabel('Receita (conteúdo)', { exact: true })
-    await expect(recipe.getByRole('option', { name: 'Carne · beef' })).toBeAttached()
-    await expect(recipe).toHaveValue('turkey')
-    await recipe.selectOption({ label: 'Sem receita' })
-    await page.getByRole('button', { name: 'Salvar variação' }).click()
-
-    await expect(page.getByText('Sem receita vinculada')).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Conteúdo da receita de Frango 1kg' })).toHaveCount(0)
-    await expect.poll(() => captured.find((item) => item.method === 'PATCH')?.body).toEqual({
-      variants: [expect.objectContaining({ id: 'var-1', recipeKey: null })],
-    })
+    await page.getByLabel('Fabricante', { exact: true }).fill('Eden')
+    page.once('dialog', (dialog) => dialog.dismiss())
+    await page.getByRole('tab', { name: 'Variações' }).click()
+    await expect(page.getByRole('tab', { name: 'Rótulo' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByLabel('Fabricante', { exact: true })).toHaveValue('Eden')
   })
 
-  test('lists the recipes of the market and registers a new one', async ({ page }) => {
-    const { captured } = await openAuthed(page, '/catalog/products', e2eProfiles.operatorWrite)
+  test('has no Receitas menu item and sends /catalog/recipes to Produtos', async ({ page }) => {
+    await openAuthed(page, '/catalog/recipes', e2eProfiles.operatorWrite)
 
-    await page.getByRole('link', { name: 'Receitas', exact: true }).click()
-    await expect(page.getByRole('heading', { name: 'Receitas', exact: true })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Carne' })).toHaveAttribute('href', '/catalog/recipes/BR/beef')
-    await expect(page.getByRole('link', { name: 'Frango' })).toBeVisible()
-
-    await page.getByRole('button', { name: 'Nova receita' }).click()
-    await page.getByLabel('Nome', { exact: true }).fill('Sênior Cordeiro')
-    await expect(page.getByLabel('Chave', { exact: true })).toHaveValue('senior-cordeiro')
-    await page.getByRole('button', { name: 'Cadastrar receita' }).click()
-
-    await expect(page).toHaveURL(/\/catalog\/recipes\/BR\/senior-cordeiro$/)
-    await expect(page.getByRole('heading', { name: 'Sênior Cordeiro' })).toBeVisible()
-    await expect(page.getByText(/Nenhuma variação usa esta receita/)).toBeVisible()
-    expect(captured.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/catalog/recipe-content')).toEqual(expect.objectContaining({
-      search: '?market=BR',
-      body: { key: 'senior-cordeiro', name: 'Sênior Cordeiro', lifeStage: 'adult' },
-    }))
+    await expect(page).toHaveURL(/\/catalog\/products$/)
+    await expect(page.getByRole('link', { name: 'Receitas', exact: true })).toHaveCount(0)
   })
 })

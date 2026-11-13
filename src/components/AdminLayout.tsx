@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react'
-import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { activeMenuHref, groupedMenuItems } from '../lib/menu'
 import { useAuth } from '../contexts/AuthContext'
+import { effectiveSessionMarkets } from '../lib/markets'
 
 export function AdminLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth()
@@ -9,7 +10,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
   const location = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const forcePassword = Boolean(user?.mustChangePassword)
-  const menuGroups = groupedMenuItems(forcePassword ? [] : user?.roles ?? [], user?.permissions ?? [])
+  const menuGroups = groupedMenuItems(forcePassword ? [] : user?.roles ?? [], user?.permissions ?? [], effectiveSessionMarkets(user))
   // Only the most specific item is active: /billing/coupons lights Cupons, not Assinantes too.
   const activeHref = activeMenuHref(location.pathname, menuGroups.flatMap((group) => group.items))
 
@@ -41,7 +42,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
               <p className="menu-group-label">{group.group}</p>
               <div className="menu-sub">
                 {group.items.map((item) => (
-                  <NavLink
+                  <Link
                     key={item.href}
                     to={item.href}
                     aria-current={item.href === activeHref ? 'page' : undefined}
@@ -49,7 +50,7 @@ export function AdminLayout({ children }: { children: ReactNode }) {
                     onClick={() => setMenuOpen(false)}
                   >
                     {item.label}
-                  </NavLink>
+                  </Link>
                 ))}
               </div>
             </div>

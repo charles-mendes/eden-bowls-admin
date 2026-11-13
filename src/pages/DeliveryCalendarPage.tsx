@@ -38,6 +38,7 @@ import {
   type ClosedDayType,
   type NewClosedDay,
 } from '../lib/deliveryCalendar'
+import { BrDateInput } from '../components/BrDateInput'
 
 const TIME_ZONES: Record<MarketCode, string> = { BR: 'America/Sao_Paulo', US: 'America/New_York' }
 
@@ -622,7 +623,7 @@ export function DeliveryCalendarPage() {
               </label>
               <label className="closure-field">
                 Data
-                <input aria-label="Data" type="date" value={draft.closedOn} onChange={(event) => setDraft({ ...draft, closedOn: event.target.value })} />
+                <BrDateInput aria-label="Data" value={draft.closedOn} onChange={(closedOn) => setDraft({ ...draft, closedOn })} />
               </label>
             </div>
             <label className="closure-field">

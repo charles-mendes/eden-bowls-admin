@@ -156,4 +156,38 @@ describe('api client', () => {
 
     await expect(refreshAccessToken()).resolves.toBeNull()
   })
+
+  // Two tabs: separate module state (their own in-flight refresh), one localStorage and one lock manager.
+  it('refreshes once across tabs: the tab that waited takes the token the other one stored', async () => {
+    const jwt = (exp: number) => `h.${btoa(JSON.stringify({ exp })).replace(/=+$/, '')}.s`
+    const fresh = jwt(Math.floor(Date.now() / 1000) + 900)
+    localStorage.setItem('eden-bowls-admin-token', jwt(Math.floor(Date.now() / 1000) - 10))
+
+    let queue = Promise.resolve()
+    const request = vi.fn((_name: string, callback: () => Promise<unknown>) => {
+      const run = queue.then(callback)
+      queue = run.then(() => undefined, () => undefined)
+      return run
+    })
+    vi.stubGlobal('navigator', { ...navigator, locks: { request } })
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ token: fresh }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    vi.resetModules()
+    const tabA = await import('./api')
+    vi.resetModules()
+    const tabB = await import('./api')
+
+    const [a, b] = await Promise.all([tabA.refreshAccessToken(), tabB.refreshAccessToken()])
+
+    expect(a).toBe(fresh)
+    expect(b).toBe(fresh)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(localStorage.getItem('eden-bowls-admin-token')).toBe(fresh)
+    localStorage.clear()
+  })
 })

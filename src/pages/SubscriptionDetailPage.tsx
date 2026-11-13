@@ -1,96 +1,137 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useLocation, useParams } from 'react-router-dom'
 import { LedgerSnapshotSections } from '../components/LedgerSnapshotSections'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
-import { MetricCard } from '../components/MetricCard'
+import { SectionFeedbackView } from '../components/SectionFeedbackView'
+import { CustomerContact } from '../components/CustomerContact'
+import { RecipientNameDialog } from '../components/shipping/RecipientNameDialog'
+import { SubscriptionInstructions } from '../components/shipping/SubscriptionInstructions'
+import { CourierDispatchDialog } from '../components/shipping/CourierDelivery'
+import { AddressIssueStatus } from '../components/AddressIssueStatus'
+import { AttentionList } from '../components/subscription/AttentionList'
+import { ChargesSection } from '../components/subscription/ChargesSection'
+import { CourierSection } from '../components/subscription/CourierSection'
+import { CurrentCycleCard } from '../components/subscription/CurrentCycleCard'
+import { SendInvoiceDialog } from '../components/subscription/SendInvoiceDialog'
+import { SubscriptionHeaderActions, SubscriptionHeaderLine } from '../components/subscription/SubscriptionHeader'
+import { UpsShipmentSection, type UpsActions } from '../components/subscription/UpsShipmentSection'
+import { addressPhone, subscriptionTitle, type SubscriptionDetail, type UpsShipment } from '../components/subscription/types'
 import { useAuth } from '../contexts/AuthContext'
-import { apiRequest, getApiBaseUrl } from '../lib/api'
-import { mergeReadablePets, parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
-import { formatDate, formatStripeStatus } from '../lib/format'
-import { formatNfeAmount, formatNfeDate, formatNfeNumber, nfeStatusLabel, nfeStatusTone, type NfeSummary } from '../lib/nfe'
-import { describeInvoiceDelivery, formatInvoiceStatus, formatMinorAmount, type CustomerInvoice } from '../lib/customerInvoices'
+import { ADDRESS_SECTION_ID, attentionEntries } from '../lib/attention'
+import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
+import { buildCharges, type StripeInvoiceItem } from '../lib/charges'
+import { mergeReadablePets, parseCheckoutSnapshots, planDescription } from '../lib/checkoutSnapshot'
+import { currentCycle } from '../lib/currentCycle'
+import { printLabel } from '../lib/printLabel'
+import { labelRefusalText, type LabelIssue } from '../lib/upsLabels'
+import type { NfeSummary } from '../lib/nfe'
+import { describeInvoiceDelivery, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
+import { customerShippingFrom, holdTitle, readinessText, type CourierDelivery, type ReadinessReason } from '../lib/courierDeliveries'
+import { lastContactText, outcomeLabel, reasonLabel, contactsPath, type CustomerContact as Contact } from '../lib/customerContacts'
+import { paidCyclesPath, type PaidCycle } from '../lib/paidCycles'
+import { useSectionFeedback, type SectionFeedback } from '../lib/useSectionFeedback'
 
-type SubscriptionDetail = {
-  id: string
-  stripeSubscriptionId: string
-  stripeCustomerId: string
-  status: string
-  planLabel: string | null
-  stripePriceId: string | null
-  currentPeriodEnd: string | null
-  cancelAtPeriodEnd: boolean
-  dashboardUrl: string
-  stripeAccount?: string
-  customerProfileInScope?: boolean
-  customerName?: string | null
-  user: { id: string; email: string }
-  petsSnapshot: unknown
-  planSelection: unknown
-  shipping: unknown
-  address: unknown
-}
-
-type InvoiceItem = {
-  id: string
-  number: string | null
-  status: string
-  amountPaid: number
-  currency: string
-  createdAt: string | null
-}
-
-type UpsShipment = {
-  id: string
-  subscription_id: string
-  stripe_invoice_id: string
-  ups_shipment_id: string | null
-  tracking_number: string | null
-  service_code: string | null
-  label_format: string | null
-  has_label: boolean
-  quoted_shipping_cost: number | null
-  ups_monetary_value: number | null
-  status: string
-  shipped_at: string | null
-  created_at: string | null
-  updated_at: string | null
-}
-
-const SHIPMENT_STATUS: Record<string, { label: string; badge: string }> = {
-  created: { label: 'Etiqueta criada', badge: 'badge-success' },
-  pending: { label: 'Gerando', badge: 'badge-info' },
-  unknown: { label: 'Verificar na UPS', badge: 'badge-warning' },
-  voided: { label: 'Anulada', badge: 'badge-error' },
-}
+const failure = (requestError: unknown, fallback: string) => (requestError instanceof Error ? requestError.message : fallback)
 
 export function SubscriptionDetailPage() {
   const { token, hasPermission } = useAuth()
   const { id } = useParams()
   const [data, setData] = useState<SubscriptionDetail | null>(null)
-  const [invoices, setInvoices] = useState<InvoiceItem[]>([])
+  const location = useLocation()
+  const [stripeInvoices, setStripeInvoices] = useState<StripeInvoiceItem[]>([])
   const [shipments, setShipments] = useState<UpsShipment[]>([])
+  const [labelIssues, setLabelIssues] = useState<LabelIssue[]>([])
   const [customerInvoices, setCustomerInvoices] = useState<CustomerInvoice[]>([])
   const [nfeItems, setNfeItems] = useState<NfeSummary[]>([])
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
+  const [courierItems, setCourierItems] = useState<CourierDelivery[]>([])
+  const [courierRecipient, setCourierRecipient] = useState('')
+  // The dispatch dialog, and which section's feedback reports it.
+  const [dispatch, setDispatch] = useState<{ invoiceId: string; from: 'cycle' | 'courier' } | null>(null)
+  const [sending, setSending] = useState<CustomerInvoice | null>(null)
+  const [paidCycles, setPaidCycles] = useState<PaidCycle[]>([])
+  const [contacts, setContacts] = useState<Contact[]>([])
+  // Only load failures stay at the top; an action reports in its own section.
+  const [loadError, setLoadError] = useState('')
+  const cycleFeedback = useSectionFeedback()
+  const upsFeedback = useSectionFeedback()
+  const courierFeedback = useSectionFeedback()
+  const chargesFeedback = useSectionFeedback()
+  const instructionsFeedback = useSectionFeedback()
   const canReadShipping = hasPermission('shipping.read')
   const canWriteShipping = hasPermission('shipping.write')
   const canSyncBilling = hasPermission('billing.subscribers.sync')
   const canReadNfe = hasPermission('nfe.read')
+  const canReadSubscription = hasPermission('billing.subscribers.read')
+  const canFillRecipient = hasPermission('users.delivery.write')
+  const [fillingRecipient, setFillingRecipient] = useState(false)
   const profileInScope = isProfileInScope(data?.customerProfileInScope)
+  // Brazil delivers by courier, with no UPS label. The delivery address decides, not the Stripe account.
+  const shipsWithUps = data?.term?.marketCountry === 'US'
+  const shipsByCourier = data?.term?.marketCountry === 'BR'
+
+  const loadCourier = async () => {
+    if (!token || !id || !canReadShipping || !shipsByCourier) return
+    try {
+      const response = await apiRequest<{ success: boolean; data: { items: CourierDelivery[]; recipient_name?: string } }>(
+        `/admin/billing/subscriptions/${id}/courier-deliveries`,
+        { token },
+      )
+      setCourierItems(response.data?.items || [])
+      setCourierRecipient(response.data?.recipient_name || '')
+    } catch (requestError) {
+      setLoadError(failure(requestError, 'Falha ao carregar entregas'))
+    }
+  }
+
+  // Paid cycles decide what waits for a label or a courier, without syncing the Stripe invoices.
+  const loadPaidCycles = async () => {
+    if (!token || !id || !canReadShipping) return
+    try {
+      const response = await apiRequest<{ success: boolean; data: { items: PaidCycle[] } }>(paidCyclesPath(id), { token })
+      setPaidCycles(response.data?.items || [])
+    } catch (requestError) {
+      setLoadError(failure(requestError, 'Falha ao carregar os ciclos pagos'))
+    }
+  }
+
+  const loadContacts = async () => {
+    if (!token || !id || !canReadSubscription) return
+    try {
+      const response = await apiRequest<{ success: boolean; data: { items: Contact[] } }>(contactsPath(id), { token })
+      setContacts(response.data?.items || [])
+    } catch {
+      setContacts([])
+    }
+  }
+
+  useEffect(() => {
+    void loadPaidCycles()
+  }, [token, id, canReadShipping])
+
+  useEffect(() => {
+    void loadContacts()
+  }, [token, id, canReadSubscription])
+
+  const courierDone = (feedback: SectionFeedback) => (text: string) => {
+    setDispatch(null)
+    if (text) feedback.succeed(text)
+    void loadCourier()
+    void loadPaidCycles()
+  }
 
   const loadShipments = async () => {
     if (!token || !id || !canReadShipping) return
     try {
-      const response = await apiRequest<{ success: boolean; data: { items: UpsShipment[] } }>(
+      const response = await apiRequest<{ success: boolean; data: { items: UpsShipment[]; label_issues?: LabelIssue[] } }>(
         `/admin/billing/subscriptions/${id}/shipments`,
         { token },
       )
       setShipments(response.data?.items || [])
+      setLabelIssues(response.data?.label_issues || [])
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar etiquetas UPS')
+      setLoadError(failure(requestError, 'Falha ao carregar etiquetas UPS'))
     }
   }
 
@@ -112,6 +153,15 @@ export function SubscriptionDetailPage() {
     void loadNfe()
   }, [token, id, canReadNfe])
 
+  // The permissions load after the first render, so this waits for them, like the fiscal notes above.
+  useEffect(() => {
+    void loadShipments()
+  }, [token, id, canReadShipping])
+
+  useEffect(() => {
+    void loadCourier()
+  }, [token, id, canReadShipping, shipsByCourier])
+
   const loadCustomerInvoices = async () => {
     if (!token || !id) return
     try {
@@ -121,19 +171,19 @@ export function SubscriptionDetailPage() {
       )
       setCustomerInvoices(response.data?.items || [])
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar invoices')
+      setLoadError(failure(requestError, 'Falha ao carregar invoices'))
     }
   }
 
   const load = async () => {
     if (!token || !id) return
     try {
-      setError('')
+      setLoadError('')
       const response = await apiRequest<SubscriptionDetail>(`/admin/billing/subscriptions/${id}`, { token })
       setData(response)
-      await Promise.all([loadShipments(), loadCustomerInvoices()])
+      await loadCustomerInvoices()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar assinatura')
+      setLoadError(failure(requestError, 'Falha ao carregar assinatura'))
     }
   }
 
@@ -141,48 +191,64 @@ export function SubscriptionDetailPage() {
     void load()
   }, [token, id])
 
-  const syncInvoices = async () => {
+  // A link from another screen can point at a section (#envio-ups, #entrega-brasil, #faturas-stripe). The sections
+  // render after the subscription loads, so the scroll waits for it.
+  useEffect(() => {
+    if (!data || !location.hash) return
+    document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView?.({ block: 'start' })
+  }, [data, location.hash])
+
+  // Adds the Stripe invoices to the charges; the rows already listed stay.
+  const fetchStripeInvoices = async () => {
     if (!token || !id) return
+    chargesFeedback.start()
     try {
-      const response = await apiRequest<{ success: boolean; data: { items: InvoiceItem[] } }>(`/admin/billing/subscriptions/${id}/sync-invoices`, {
+      const response = await apiRequest<{ success: boolean; data: { items: StripeInvoiceItem[] } }>(`/admin/billing/subscriptions/${id}/sync-invoices`, {
         token,
         method: 'POST',
       })
-      setInvoices(response.data?.items || [])
-      setMessage('Faturas sincronizadas.')
+      setStripeInvoices(response.data?.items || [])
+      chargesFeedback.succeed('Faturas da Stripe carregadas.')
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao sincronizar faturas')
+      chargesFeedback.fail(failure(requestError, 'Falha ao buscar as faturas na Stripe'))
     }
   }
 
   const openPdf = async (invoiceId: string) => {
     if (!token) return
-    const response = await apiRequest<{ url: string }>(`/admin/billing/invoices/${invoiceId}/pdf`, { token })
-    if (response.url) {
-      window.open(response.url, '_blank', 'noopener,noreferrer')
+    chargesFeedback.start()
+    try {
+      // The account tells the API which Stripe holds the invoice; without it an admin of both markets gets 404.
+      const account = data?.stripeAccount ? `?account=${encodeURIComponent(data.stripeAccount)}` : ''
+      const response = await apiRequest<{ url: string }>(`/admin/billing/invoices/${invoiceId}/pdf${account}`, { token })
+      if (response.url) {
+        window.open(response.url, '_blank', 'noopener,noreferrer')
+      }
+    } catch (requestError) {
+      chargesFeedback.fail(failure(requestError, 'Falha ao abrir o PDF da Stripe'))
     }
   }
 
   const issueCustomerInvoice = async (stripeInvoiceId: string) => {
     if (!token || !id) return
+    chargesFeedback.start()
     try {
-      setError('')
       await apiRequest(`/admin/billing/subscriptions/${id}/customer-invoices`, {
         token,
         method: 'POST',
         body: { stripe_invoice_id: stripeInvoiceId },
       })
-      setMessage('Invoice gerada. Use "Enviar ao cliente" para mandar por e-mail.')
+      chargesFeedback.succeed('Invoice gerada. Use "Enviar ao cliente" para mandar por e-mail.')
       await loadCustomerInvoices()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao gerar invoice')
+      chargesFeedback.fail(failure(requestError, 'Falha ao gerar invoice'))
     }
   }
 
   const downloadCustomerInvoice = async (item: CustomerInvoice) => {
     if (!token) return
+    chargesFeedback.start()
     try {
-      setError('')
       const response = await fetch(`${getApiBaseUrl()}/admin/billing/customer-invoices/${item.id}/pdf`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -198,14 +264,15 @@ export function SubscriptionDetailPage() {
       anchor.click()
       URL.revokeObjectURL(url)
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao baixar invoice')
+      chargesFeedback.fail(failure(requestError, 'Falha ao baixar invoice'))
     }
   }
 
   const sendCustomerInvoice = async (item: CustomerInvoice) => {
     if (!token) return
+    setSending(null)
+    chargesFeedback.start()
     try {
-      setError('')
       const response = await apiRequest<{ success: boolean; data: CustomerInvoice }>(
         `/admin/billing/customer-invoices/${item.id}/send`,
         { token, method: 'POST' },
@@ -215,25 +282,25 @@ export function SubscriptionDetailPage() {
         setCustomerInvoices((current) => current.map((row) => (row.id === updated.id ? updated : row)))
       }
       if (response.success) {
-        setMessage(`Invoice ${item.invoice_number} enviada para ${updated?.email_to || item.email_to}.`)
+        chargesFeedback.succeed(`Invoice ${item.invoice_number} enviada para ${updated?.email_to || item.email_to}.`)
       } else {
-        setError(`Invoice ${item.invoice_number} não foi enviada: ${describeInvoiceDelivery(updated || item).detail}`)
+        chargesFeedback.fail(`Invoice ${item.invoice_number} não foi enviada: ${describeInvoiceDelivery(updated || item).detail}`)
       }
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao enviar invoice')
+      chargesFeedback.fail(failure(requestError, 'Falha ao enviar invoice'))
     }
   }
 
-  const createShipment = async (invoiceId: string) => {
+  const createShipment = async (invoiceId: string, feedback: SectionFeedback, confirmNotReady = false): Promise<void> => {
     if (!token || !id) return
+    feedback.start()
     try {
-      setError('')
       const response = await apiRequest<{ success: boolean; data: { shipment: UpsShipment; reused?: boolean } }>(
         `/admin/billing/subscriptions/${id}/shipments`,
         {
           token,
           method: 'POST',
-          body: { invoice_id: invoiceId },
+          body: { invoice_id: invoiceId, ...(confirmNotReady ? { confirm_not_ready: true } : {}) },
         },
       )
       const shipment = response.data?.shipment
@@ -245,57 +312,113 @@ export function SubscriptionDetailPage() {
       } else {
         await loadShipments()
       }
-      setMessage(response.data?.reused ? 'Etiqueta já existia para esta invoice (idempotente).' : 'Etiqueta UPS gerada.')
+      feedback.succeed(response.data?.reused ? 'Etiqueta já existia para esta invoice (idempotente).' : 'Etiqueta UPS gerada.')
+      void loadPaidCycles()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao gerar etiqueta')
+      // The order is not ready or the subscription not active: buy only after the operator confirms.
+      if (!confirmNotReady && requestError instanceof ApiRequestError && requestError.code === 'ups_label_needs_confirmation') {
+        const reasons = Array.isArray(requestError.details?.reasons) ? requestError.details.reasons as ReadinessReason[] : []
+        const list = reasons.map((reason) => `- ${readinessText(reason)}`).join('\n')
+        const title = holdTitle(reasons, 'Confirme antes de comprar a etiqueta')
+        if (window.confirm(`${title}.${list ? `\n\n${list}` : ''}\n\nComprar mesmo assim?`)) {
+          await createShipment(invoiceId, feedback, true)
+        }
+        return
+      }
+      if (requestError instanceof ApiRequestError && requestError.status === 422) {
+        feedback.fail(labelRefusalText(requestError.code, requestError.message))
+        return
+      }
+      feedback.fail(failure(requestError, 'Falha ao gerar etiqueta'))
     }
   }
 
-  const downloadLabel = async (shipmentId: string, filenameHint?: string | null) => {
+  const fetchLabel = async (shipmentId: string) => {
+    const response = await fetch(`${getApiBaseUrl()}/admin/shipments/${shipmentId}/label`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null) as { message?: string } | null
+      throw new Error(errorBody?.message || 'Falha ao baixar etiqueta')
+    }
+    return response.blob()
+  }
+
+  const printShipmentLabel = async (shipmentId: string, feedback: SectionFeedback) => {
     if (!token) return
+    feedback.start()
     try {
-      setError('')
-      const response = await fetch(`${getApiBaseUrl()}/admin/shipments/${shipmentId}/label`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => null) as { message?: string } | null
-        throw new Error(errorBody?.message || 'Falha ao baixar etiqueta')
-      }
-      const blob = await response.blob()
+      await printLabel(await fetchLabel(shipmentId))
+    } catch (requestError) {
+      feedback.fail(failure(requestError, 'Falha ao imprimir etiqueta'))
+    }
+  }
+
+  const downloadLabel = async (shipmentId: string, feedback: SectionFeedback) => {
+    if (!token) return
+    feedback.start()
+    try {
+      const blob = await fetchLabel(shipmentId)
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = filenameHint || `ups-label-${shipmentId}.gif`
+      anchor.download = `ups-label-${shipmentId}.gif`
       anchor.click()
       URL.revokeObjectURL(url)
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao baixar etiqueta')
+      feedback.fail(failure(requestError, 'Falha ao baixar etiqueta'))
     }
   }
 
-  const voidShipment = async (shipmentId: string) => {
+  const voidShipment = async (shipmentId: string, feedback: SectionFeedback) => {
     if (!token) return
+    if (!window.confirm('Anular esta etiqueta na UPS? Ela deixa de valer e a fatura volta a precisar de etiqueta.')) return
+    feedback.start()
     try {
-      setError('')
       await apiRequest(`/admin/shipments/${shipmentId}/void`, { token, method: 'POST' })
-      setMessage('Etiqueta anulada na UPS.')
+      feedback.succeed('Etiqueta anulada na UPS.')
       await loadShipments()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao anular')
+      feedback.fail(failure(requestError, 'Falha ao anular'))
     }
   }
 
-  const refreshTracking = async (shipmentId: string) => {
+  // A row without a UPS id may still hold a label UPS bought. It closes here only after the operator checks UPS.
+  const closeUnresolvedShipment = async (shipmentId: string, feedback: SectionFeedback) => {
     if (!token) return
+    const confirmed = window.confirm(
+      'Você conferiu no portal da UPS que não existe etiqueta para esta fatura? A linha é fechada só aqui, sem chamar a UPS, e a fatura volta a ficar pronta para etiqueta.',
+    )
+    if (!confirmed) return
+    feedback.start()
     try {
-      setError('')
-      await apiRequest(`/admin/shipments/${shipmentId}/refresh-tracking`, { token, method: 'POST' })
-      setMessage('Rastreio atualizado.')
+      await apiRequest(`/admin/shipments/${shipmentId}/void`, { token, method: 'POST', body: { confirm_not_created: true } })
+      feedback.succeed('Linha fechada. A fatura pode receber uma nova etiqueta.')
       await loadShipments()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao atualizar o rastreio')
+      feedback.fail(failure(requestError, 'Falha ao anular'))
     }
+  }
+
+  const refreshTracking = async (shipmentId: string, feedback: SectionFeedback) => {
+    if (!token) return
+    feedback.start()
+    try {
+      await apiRequest(`/admin/shipments/${shipmentId}/refresh-tracking`, { token, method: 'POST' })
+      feedback.succeed('Rastreio atualizado.')
+      await loadShipments()
+    } catch (requestError) {
+      feedback.fail(failure(requestError, 'Falha ao atualizar o rastreio'))
+    }
+  }
+
+  const upsActions: UpsActions = {
+    createShipment: (invoiceId, feedback) => void createShipment(invoiceId, feedback),
+    printShipmentLabel: (shipmentId, feedback) => void printShipmentLabel(shipmentId, feedback),
+    downloadLabel: (shipmentId, feedback) => void downloadLabel(shipmentId, feedback),
+    refreshTracking: (shipmentId, feedback) => void refreshTracking(shipmentId, feedback),
+    voidShipment: (shipmentId, feedback) => void voidShipment(shipmentId, feedback),
+    closeUnresolvedShipment: (shipmentId, feedback) => void closeUnresolvedShipment(shipmentId, feedback),
   }
 
   const snapshots = parseCheckoutSnapshots({
@@ -311,278 +434,221 @@ export function SubscriptionDetailPage() {
     },
   }
 
-  const customerInvoiceByStripeId = new Map(customerInvoices.map((item) => [item.stripe_invoice_id, item]))
-
   const activeByInvoice = new Map(
     shipments
       .filter((item) => item.status !== 'voided')
       .map((item) => [item.stripe_invoice_id, item]),
   )
 
-  // Paid invoices still waiting for a label: the shipping team starts here.
-  const awaitingLabel = invoices.filter((item) => item.status === 'paid' && !activeByInvoice.has(item.id))
+  // Paid cycles still waiting for a label: the shipping team starts here. An invoice with no cycle never shows.
+  const awaitingLabel = paidCycles.filter((cycle) => !cycle.ups_shipment && !activeByInvoice.has(cycle.invoice_id))
+
+  // Paid cycles with no courier delivery on the road or delivered.
+  const courierActiveInvoices = new Set(
+    courierItems.filter((item) => item.status === 'out_for_delivery' || item.status === 'delivered').map((item) => item.stripe_invoice_id),
+  )
+  const awaitingCourier = paidCycles.filter((cycle) => (
+    (!cycle.courier_delivery || cycle.courier_delivery.status === 'failed') && !courierActiveInvoices.has(cycle.invoice_id)
+  ))
+  const courierLock = data?.courier_issues ?? []
+  const phone = addressPhone(data?.address)
+  const contactName = data?.account_name || data?.user.email || 'Cliente'
+  const addContact = (contact: Contact) => setContacts((current) => [contact, ...current.filter((item) => item.id !== contact.id)])
+  const shippingMarket = shipsWithUps ? 'US' : shipsByCourier ? 'BR' : null
+
+  const current = data && canReadShipping
+    ? currentCycle({ paidCycles, shipments, courierItems, market: shippingMarket, canWrite: canWriteShipping })
+    : null
+  const entries = data
+    ? attentionEntries({
+      subscriptionId: data.id,
+      stripeAccount: data.stripeAccount,
+      nfeItems: canReadNfe ? nfeItems : [],
+      addressIssue: data.address_issue,
+      courierIssues: data.courier_issues,
+      courierWaiting: shipsByCourier && awaitingCourier.length > 0,
+      courierItems: shipsByCourier ? courierItems : [],
+      marketException: data.market_exception,
+    })
+    : []
+  const charges = buildCharges({
+    subscriptionAccount: data?.stripeAccount,
+    paidCycles,
+    customerInvoices,
+    nfeItems: canReadNfe ? nfeItems : [],
+    stripeInvoices,
+  })
+  const plan = data ? planDescription({ planLabel: data.planLabel, planSelection: data.planSelection, petsSnapshot: data.petsSnapshot, termMonths: data.term?.months }) : ''
+  const chargedFreight = customerShippingFrom(data?.shipping)?.amount ?? null
+  const dispatchFeedback = dispatch?.from === 'cycle' ? cycleFeedback : courierFeedback
 
   return (
     <PageFrame
-      title={data?.user.email || data?.stripeSubscriptionId || 'Assinatura'}
-      description={data ? `Assinatura ${data.stripeSubscriptionId}${data.planLabel ? ` · ${data.planLabel}` : ''}. Pausa e cancelamento são feitos pelo cliente na loja.` : 'Carregando assinatura…'}
+      title={subscriptionTitle(data)}
+      description={data ? <SubscriptionHeaderLine data={data} plan={plan} /> : 'Carregando assinatura…'}
+      actions={data ? <SubscriptionHeaderActions data={data} profileInScope={profileInScope} /> : null}
     >
-      {error ? <div className="alert">{error}</div> : null}
-      {message ? <div className="success">{message}</div> : null}
+      {loadError ? <div className="alert">{loadError}</div> : null}
 
-      <div className="grid cards-4">
-        <MetricCard label="Status" value={data ? formatStripeStatus(data.status) : '—'} />
-        <MetricCard label="Produto" value={data?.planLabel || '—'} />
-        <MetricCard label="Renovação" value={formatDate(data?.currentPeriodEnd)} />
-        <MetricCard label="Cancelando" value={data?.cancelAtPeriodEnd ? 'Sim' : 'Não'} />
+      <div className="subscription-detail">
+        <AttentionList entries={entries} />
+
+        {data && canReadShipping ? (
+          <CurrentCycleCard
+            current={current}
+            token={token}
+            feedback={cycleFeedback}
+            subscriptionId={data.id}
+            contactName={contactName}
+            phone={phone}
+            dispatchLocked={courierLock.length > 0}
+            labelLocked={labelIssues.length > 0}
+            ups={upsActions}
+            onDispatch={(invoiceId) => setDispatch({ invoiceId, from: 'cycle' })}
+            onCourierDone={courierDone(cycleFeedback)}
+            onContactSaved={addContact}
+          />
+        ) : null}
+
+        {data && data.delivery_instructions !== undefined ? (
+          <Section title="Instruções de entrega">
+            <SectionFeedbackView feedback={instructionsFeedback} />
+            <SubscriptionInstructions
+              subscriptionId={data.id}
+              text={data.delivery_instructions}
+              source={data.delivery_instructions_source}
+              canWrite={canFillRecipient}
+              onSaved={(text) => {
+                instructionsFeedback.succeed(text)
+                void load()
+              }}
+            />
+          </Section>
+        ) : null}
+
+        {data?.address_issue ? (
+          <Section
+            id={ADDRESS_SECTION_ID}
+            title="Problema de endereço"
+            description="O cliente corrige em Meu plano → Editar assinatura, na loja. O problema fecha sozinho quando ele salva."
+            actions={(
+              <CustomerContact
+                subscriptionId={data.id}
+                name={contactName}
+                phone={phone}
+                reason="address"
+                showLast={false}
+                onSaved={addContact}
+              />
+            )}
+          >
+            <AddressIssueStatus issue={data.address_issue} detailed />
+          </Section>
+        ) : null}
+
+        {canReadShipping && shipsWithUps ? (
+          <UpsShipmentSection
+            shipments={shipments}
+            labelIssues={labelIssues}
+            awaitingLabel={awaitingLabel}
+            canWrite={canWriteShipping}
+            feedback={upsFeedback}
+            actions={upsActions}
+          />
+        ) : null}
+
+        {canReadShipping && shipsByCourier ? (
+          <CourierSection
+            token={token}
+            recipient={courierRecipient}
+            phone={phone}
+            chargedFreight={chargedFreight}
+            lock={courierLock}
+            awaiting={awaitingCourier}
+            items={courierItems}
+            canWrite={canWriteShipping}
+            canFillRecipient={canFillRecipient}
+            feedback={courierFeedback}
+            onDispatch={(invoiceId) => setDispatch({ invoiceId, from: 'courier' })}
+            onFillRecipient={() => setFillingRecipient(true)}
+            onDone={courierDone(courierFeedback)}
+          />
+        ) : null}
+
+        <ChargesSection
+          charges={charges}
+          canSync={canSyncBilling}
+          canReadNfe={canReadNfe}
+          feedback={chargesFeedback}
+          onFetchStripe={() => void fetchStripeInvoices()}
+          onOpenStripePdf={(invoiceId) => void openPdf(invoiceId)}
+          onIssueInvoice={(invoiceId) => void issueCustomerInvoice(invoiceId)}
+          onDownloadInvoice={(item) => void downloadCustomerInvoice(item)}
+          onSendInvoice={setSending}
+        />
+
+        {canReadSubscription ? (
+          <Section
+            title="Contatos com o cliente"
+            description="Contatos feitos por WhatsApp, do mais novo para o mais antigo."
+            actions={data ? (
+              <CustomerContact
+                subscriptionId={data.id}
+                name={contactName}
+                phone={phone}
+                showLast={false}
+                onSaved={addContact}
+              />
+            ) : null}
+          >
+            {contacts.length ? (
+              <ul className="contact-history">
+                {contacts.map((contact) => (
+                  <li key={contact.id}>
+                    <strong>{reasonLabel(contact.reason)} · {outcomeLabel(contact.outcome)}</strong>
+                    <div className="muted">{lastContactText(contact)}</div>
+                    {contact.note ? <div>{contact.note}</div> : null}
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="muted">Nenhum contato registrado.</p>}
+          </Section>
+        ) : null}
+
+        {data ? (
+          <LedgerSnapshotSections
+            planTitle="Detalhes do produto"
+            planDescription="Cópia gravada no checkout, sem recalcular."
+            snapshots={readableSnapshots}
+            raw={{
+              petsSnapshot: data.petsSnapshot,
+              planSelection: data.planSelection,
+              address: data.address,
+              shipping: data.shipping,
+            }}
+          />
+        ) : null}
       </div>
 
-      <Section title="Identidade">
-        <p>{data?.planLabel} · {data?.stripePriceId}</p>
-        <p className="muted">Conta <span className="badge-info">{(data?.stripeAccount || 'us').toUpperCase()}</span></p>
-        <div className="inline-actions">
-          {data?.dashboardUrl ? <a className="ghost-button" href={data.dashboardUrl} target="_blank" rel="noreferrer">Ver no Stripe</a> : null}
-          {profileInScope && data?.user.id ? (
-            <>
-              <Link className="ghost-button" to={`/users/${data.user.id}`}>Cliente</Link>
-              <Link className="ghost-button" to={`/users/${data.user.id}?aba=checkout`}>Checkout</Link>
-            </>
-          ) : (
-            <>
-              <span>Cliente</span>
-              <span>Checkout</span>
-            </>
-          )}
-        </div>
-      </Section>
-
-      {canReadShipping ? (
-        <Section title="Envio UPS" description="Uma etiqueta por fatura paga. Compare o frete cobrado no checkout com o custo da UPS.">
-          <div className="table-shell table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Fatura</th>
-                  <th>Status</th>
-                  <th>Rastreio</th>
-                  <th>Serviço</th>
-                  <th>Cotado</th>
-                  <th>Custo UPS</th>
-                  <th>Enviado</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {awaitingLabel.map((item) => (
-                  <tr key={`awaiting-${item.id}`}>
-                    <td>{item.number ?? item.id}</td>
-                    <td><span className="badge-warning">Sem etiqueta</span></td>
-                    <td colSpan={5} className="muted">Fatura paga em {formatDate(item.createdAt)}.</td>
-                    <td>
-                      {canWriteShipping ? (
-                        <button className="primary-button" type="button" onClick={() => void createShipment(item.id)}>
-                          Gerar etiqueta UPS
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-                {shipments.length === 0 && awaitingLabel.length === 0 ? (
-                  <tr>
-                    <td colSpan={8}>Nenhuma etiqueta ainda. Faturas pagas aparecem aqui para gerar a etiqueta.</td>
-                  </tr>
-                ) : (
-                  shipments.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.stripe_invoice_id}</td>
-                      <td><span className={SHIPMENT_STATUS[item.status]?.badge ?? 'badge-info'}>{SHIPMENT_STATUS[item.status]?.label ?? item.status}</span></td>
-                      <td>{item.tracking_number || '—'}</td>
-                      <td>{item.service_code || '—'}</td>
-                      <td>{item.quoted_shipping_cost != null ? item.quoted_shipping_cost : '—'}</td>
-                      <td>{item.ups_monetary_value != null ? item.ups_monetary_value : '—'}</td>
-                      <td>{formatDate(item.shipped_at)}</td>
-                      <td>
-                        <div className="inline-actions">
-                          {item.has_label ? (
-                            <button className="ghost-button" type="button" onClick={() => void downloadLabel(item.id)}>
-                              Baixar
-                            </button>
-                          ) : null}
-                          {item.tracking_number ? (
-                            <button className="ghost-button" type="button" onClick={() => void refreshTracking(item.id)}>
-                              Atualizar rastreio
-                            </button>
-                          ) : null}
-                          {canWriteShipping && item.status !== 'voided' && item.ups_shipment_id ? (
-                            <button className="ghost-button" type="button" onClick={() => void voidShipment(item.id)}>
-                              Anular
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Section>
+      {canReadShipping && shipsByCourier ? (
+        <CourierDispatchDialog
+          token={token}
+          target={dispatch && data ? { subscriptionId: data.id, invoiceId: dispatch.invoiceId, name: courierRecipient || data.user.email, customerShipping: customerShippingFrom(data.shipping) } : null}
+          onClose={() => setDispatch(null)}
+          onDone={courierDone(dispatchFeedback)}
+        />
       ) : null}
-
-      <Section
-        title="Invoices Eden Bowls"
-        description="PDF no padrão Eden Bowls, gerado quando a Stripe confirma o pagamento e enviado ao cliente por e-mail com o PDF anexado."
-      >
-        <div className="table-shell table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Número</th>
-                <th>Emissão</th>
-                <th>Total</th>
-                <th>Pagamento</th>
-                <th>Envio ao cliente</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {customerInvoices.length === 0 ? (
-                <tr>
-                  <td colSpan={6}>Nenhuma invoice gerada ainda.</td>
-                </tr>
-              ) : (
-                customerInvoices.map((item) => {
-                  const delivery = describeInvoiceDelivery(item)
-                  return (
-                    <tr key={item.id}>
-                      <td>
-                        {item.invoice_number}
-                        <div className="muted">{item.stripe_invoice_id}</div>
-                      </td>
-                      <td>{formatDate(item.issued_at)}</td>
-                      <td>{formatMinorAmount(item.total_minor, item.currency)}</td>
-                      <td>{formatInvoiceStatus(item.invoice_status)}</td>
-                      <td>
-                        <span className={`badge-${delivery.tone}`}>{delivery.label}</span>
-                        <div className="muted">{delivery.detail}</div>
-                      </td>
-                      <td>
-                        <div className="inline-actions">
-                          <button className="ghost-button" type="button" onClick={() => void downloadCustomerInvoice(item)}>
-                            Baixar PDF
-                          </button>
-                          {canSyncBilling ? (
-                            <button className="ghost-button" type="button" onClick={() => void sendCustomerInvoice(item)}>
-                              {item.email_status === 'sent' ? 'Reenviar' : 'Enviar ao cliente'}
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      {canReadNfe ? (
-        <Section title="Notas fiscais (NF-e)" description="Emitidas pelo Bling. São outro documento, separado das invoices Eden Bowls acima.">
-          <div className="table-shell table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Status</th>
-                  <th>Número/série</th>
-                  <th>Valor</th>
-                  <th>Data</th>
-                  <th>Erro</th>
-                </tr>
-              </thead>
-              <tbody>
-                {nfeItems.length === 0 ? (
-                  <tr><td colSpan={5}>Nenhuma NF-e para esta assinatura.</td></tr>
-                ) : (
-                  nfeItems.map((item) => (
-                    <tr key={item.id}>
-                      <td><span className={nfeStatusTone(item.status)}>{nfeStatusLabel(item.status)}</span></td>
-                      <td><Link className="table-link" to={`/operations/nfe/${item.id}`}>{formatNfeNumber(item) === '—' ? `Nota ${item.id}` : formatNfeNumber(item)}</Link></td>
-                      <td>{formatNfeAmount(item)}</td>
-                      <td>{formatNfeDate(item.created_at)}</td>
-                      <td>{item.last_error || '—'}</td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Section>
-      ) : null}
-
-      <Section title="Faturas Stripe">
-        {canSyncBilling ? (
-          <button className="primary-button" type="button" onClick={() => void syncInvoices()}>Sincronizar faturas</button>
-        ) : null}
-        <div className="table-shell table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Número</th>
-                <th>Status</th>
-                <th>Valor</th>
-                <th>Em</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {invoices.length === 0 ? (
-                <tr>
-                  <td colSpan={5}>Nenhuma fatura carregada. {canSyncBilling ? 'Use "Sincronizar faturas" para buscar na Stripe.' : ''}</td>
-                </tr>
-              ) : null}
-              {invoices.map((item) => {
-                const existing = activeByInvoice.get(item.id)
-                const customerInvoice = customerInvoiceByStripeId.get(item.id)
-                return (
-                  <tr key={item.id}>
-                    <td>{item.number ?? item.id}</td>
-                    <td>{formatInvoiceStatus(item.status)}</td>
-                    <td>{item.amountPaid} {item.currency?.toUpperCase()}</td>
-                    <td>{formatDate(item.createdAt)}</td>
-                    <td>
-                      <div className="inline-actions">
-                        <button className="ghost-button" type="button" onClick={() => void openPdf(item.id)}>PDF Stripe</button>
-                        {customerInvoice ? (
-                          <span className="muted">{customerInvoice.invoice_number}</span>
-                        ) : canSyncBilling && item.status === 'paid' ? (
-                          <button className="ghost-button" type="button" onClick={() => void issueCustomerInvoice(item.id)}>
-                            Gerar invoice
-                          </button>
-                        ) : null}
-                        {existing ? (
-                          <span className="muted">UPS {existing.tracking_number || existing.status}</span>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      {data ? (
-        <LedgerSnapshotSections
-          planTitle="Detalhes do produto"
-          planDescription="Cópia gravada no checkout, sem recalcular."
-          snapshots={readableSnapshots}
-          raw={{
-            petsSnapshot: data.petsSnapshot,
-            planSelection: data.planSelection,
-            address: data.address,
-            shipping: data.shipping,
+      <SendInvoiceDialog invoice={sending} onCancel={() => setSending(null)} onConfirm={(item) => void sendCustomerInvoice(item)} />
+      {fillingRecipient && id ? (
+        <RecipientNameDialog
+          subscriptionId={id}
+          accountName={data?.account_name}
+          onClose={() => setFillingRecipient(false)}
+          onSaved={(text) => {
+            setFillingRecipient(false)
+            courierFeedback.succeed(text)
+            void load()
+            void loadCourier()
           }}
         />
       ) : null}

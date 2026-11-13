@@ -26,6 +26,27 @@ describe('PrivacyRequestDetailPage', () => {
     expect(screen.getByText(/sem verificar a identidade/i)).toBeInTheDocument()
   })
 
+  it('explains a request outside the staff markets and shows no summary or actions', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      routes: ({ path, method }) => (path === '/api/v1/admin/privacy/requests/41' && method === 'GET'
+        ? new Response(JSON.stringify({ success: false, message: 'Not found.' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        })
+        : undefined),
+    })
+    renderAuthedPage(<PrivacyRequestDetailPage />, '/privacy/requests/41', '/privacy/requests/:id')
+
+    expect(await screen.findByText('Solicitação não encontrada ou fora dos mercados do seu acesso.')).toBeInTheDocument()
+    expect(screen.queryByText('Not found.')).not.toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Resumo' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Concluir' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Recusar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Em andamento' })).not.toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Voltar' })).toBeInTheDocument()
+  })
+
   it('hides write actions for readonly accounts', async () => {
     seedAuth()
     installAdminFetchMock(readonlyUser)

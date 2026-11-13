@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ShippingPage } from './ShippingPage'
-import { adminUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
+import { adminUser, operatorUsUser, operatorWriteUser, readonlyUser, shippingSettings } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -12,17 +12,16 @@ describe('ShippingPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('opens on the simulator for a writer too, and saves only the Brazil rules from Regras', async () => {
-    const user = userEvent.setup()
+  it('opens on Regras, tabs in setup order, and saves only the Brazil rules', async () => {
     seedAuth()
+    const user = userEvent.setup()
     const { calls } = installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<ShippingPage />, '/config/shipping')
 
-    expect(await screen.findByRole('heading', { name: 'Simular frete por CEP' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Simulador de frete' })).toHaveAttribute('aria-selected', 'true')
-
-    await user.click(screen.getByRole('tab', { name: /Regras de entrega/ }))
     expect(await screen.findByRole('heading', { name: 'Entrega local' })).toBeInTheDocument()
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.replace(/não salvo|pendente/, '').trim()))
+      .toEqual(['Regras', 'Sede', 'Simulador'])
+    expect(screen.getByRole('tab', { name: /^Regras/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
     expect(screen.queryByText('CD SP')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Latitude')).not.toBeInTheDocument()
@@ -41,16 +40,14 @@ describe('ShippingPage', () => {
     expect(put?.body).not.toHaveProperty('us')
   })
 
-  it('opens on the simulator for readonly accounts and hides every mutation', async () => {
+  it('opens on Regras for readonly accounts and hides every mutation', async () => {
     const user = userEvent.setup()
     seedAuth()
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<ShippingPage />, '/config/shipping')
 
-    expect(await screen.findByRole('heading', { name: 'Simular frete por CEP' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Simulador/ })).toHaveAttribute('aria-selected', 'true')
-
-    await user.click(screen.getByRole('tab', { name: /Regras de entrega/ }))
+    expect(await screen.findByRole('heading', { name: 'Entrega local' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: /^Regras/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryByRole('button', { name: /Salvar regras/ })).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('tab', { name: /Sede/ }))
@@ -65,6 +62,19 @@ describe('ShippingPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Simular frete por ZIP' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'EUA' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('points to the screen where each market ships the day, since this page only configures', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(adminUser)
+    renderAuthedPage(<ShippingPage />, '/config/shipping')
+
+    expect(await screen.findByRole('heading', { name: 'Regras de frete' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Entregas Brasil' })).toHaveAttribute('href', '/operations/courier')
+
+    await user.click(screen.getByRole('button', { name: 'EUA' }))
+    expect(await screen.findByRole('link', { name: 'Etiquetas UPS' })).toHaveAttribute('href', '/operations/labels')
   })
 
   it('validates the Brazil headquarters address before saving it', async () => {
@@ -122,6 +132,39 @@ describe('ShippingPage', () => {
     expect(within(card).getByRole('button', { name: 'Salvar sede' })).toBeDisabled()
   })
 
+  // admin-flow-fixes-6 (ups-pickup): UPS asks for the phone of the US location on the pickup.
+  it('saves the US location phone', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(adminUser, {
+      routes: ({ path, method }) => (path === '/api/v1/admin/shipping/headquarters/validate' && method === 'POST'
+        ? new Response(JSON.stringify({ success: true, data: { valid: true, country: 'US', address: {}, errors: {}, warnings: [] } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        : undefined),
+    })
+    renderAuthedPage(<ShippingPage />, '/config/shipping?aba=sede&mercado=us', '/config/shipping')
+
+    const card = await screen.findByRole('article', { name: 'Sede Estados Unidos' })
+    await user.click(within(card).getByRole('button', { name: 'Alterar endereço' }))
+    expect(within(card).getByText('A UPS pede o telefone para buscar as caixas.')).toBeInTheDocument()
+    expect(within(card).getByLabelText(/^Telefone/)).toHaveValue('305 555 0100')
+    await user.clear(within(card).getByLabelText(/^Telefone/))
+    await user.type(within(card).getByLabelText(/^Telefone/), '555 0100')
+    expect(within(card).getByText('O telefone precisa de 10 dígitos (código de área e número).')).toBeInTheDocument()
+    await user.click(within(card).getByRole('button', { name: 'Validar endereço' }))
+    await waitFor(() => expect(within(card).getByText('Endereço válido')).toBeInTheDocument())
+    expect(within(card).getByRole('button', { name: 'Salvar sede' })).toBeDisabled()
+    await user.clear(within(card).getByLabelText(/^Telefone/))
+    await user.type(within(card).getByLabelText(/^Telefone/), '305 555 0199')
+    await user.click(within(card).getByRole('button', { name: 'Validar endereço' }))
+    await waitFor(() => expect(within(card).getByRole('button', { name: 'Salvar sede' })).toBeEnabled())
+    await user.click(within(card).getByRole('button', { name: 'Salvar sede' }))
+
+    await waitFor(() => {
+      const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
+      expect(put?.body).toMatchObject({ us: { ship_from: { phone: '305 555 0199', street: '100 Main St', country: 'US' } } })
+    })
+  })
+
   it('shows only the UPS fields in UPS mode and simulates with the saved rules', async () => {
     const user = userEvent.setup()
     seedAuth()
@@ -138,7 +181,7 @@ describe('ShippingPage', () => {
 
     await user.click(screen.getByRole('switch', { name: /Se a UPS falhar/ }))
     expect(screen.queryByRole('heading', { name: 'Valor de reserva' })).not.toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: /Regras de entrega/ })).toHaveTextContent('não salvo')
+    expect(screen.getByRole('tab', { name: /^Regras/ })).toHaveTextContent('não salvo')
 
     await user.click(screen.getByRole('tab', { name: /Simulador/ }))
     expect(screen.getByText(/Há alterações não salvas nas regras dos EUA\. A simulação usa as regras salvas\./)).toBeInTheDocument()
@@ -180,6 +223,138 @@ describe('ShippingPage', () => {
     await screen.findByText('Regras dos Estados Unidos salvas.')
     const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
     expect(put?.body).toMatchObject({ us: { quote_mode: 'ups', max_transit_days: 2 } })
+  })
+
+  describe('US dry ice per box', () => {
+    const upsSettings = {
+      ...shippingSettings,
+      data: { settings: { ...shippingSettings.data.settings, us: { ...shippingSettings.data.settings.us, quote_mode: 'ups' } } },
+    }
+
+    it('Value from the API and Save a new weight: starts at 0.5 and sends 1.2 with the package', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(adminUser)
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      await user.click(await screen.findByRole('button', { name: 'EUA' }))
+      await user.click(await screen.findByRole('radio', { name: /UPS/ }))
+      // The settings response has no dry_ice_kg, so the field shows the value the API sets on deploy.
+      const dryIce = screen.getByRole('spinbutton', { name: /Gelo seco por caixa/ })
+      expect(dryIce).toHaveValue(0.5)
+      expect(screen.getByText(/Declarado à UPS como UN1845/)).toBeInTheDocument()
+
+      await user.clear(dryIce)
+      await user.type(dryIce, '1.2')
+      await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+      await screen.findByText('Regras dos Estados Unidos salvas.')
+      const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
+      expect(put?.body).toMatchObject({
+        us: { package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12, dry_ice_kg: 1.2 } },
+      })
+    })
+
+    it('Refused by the API: shows the reason in Portuguese and keeps the typed value', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(adminUser, {
+        shippingSettings: upsSettings,
+        shippingSettingsSaveError: { status: 422, code: 'invalid_dry_ice_kg', message: 'US dry ice per box must be from 0.1 to 2.5 kg.' },
+      })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      await user.click(await screen.findByRole('button', { name: 'EUA' }))
+      const dryIce = await screen.findByRole('spinbutton', { name: /Gelo seco por caixa/ })
+      await user.clear(dryIce)
+      await user.type(dryIce, '3')
+      await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+
+      expect(await screen.findByText('Gelo seco por caixa deve ficar entre 0,1 e 2,5 kg, com uma casa decimal, e não pode passar do peso da caixa.')).toBeInTheDocument()
+      expect(screen.queryByText(/US dry ice per box/)).not.toBeInTheDocument()
+      expect(dryIce).toHaveValue(3)
+    })
+
+    it('Read-only operator: the field is disabled without shipping.write', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorUsUser, { shippingSettings: upsSettings })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      expect(await screen.findByRole('spinbutton', { name: /Gelo seco por caixa/ })).toBeDisabled()
+    })
+  })
+
+  describe('US shipping boxes', () => {
+    it('Save the weighed monthly box: sends us.boxes with the monthly empty weight 1.7', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(adminUser)
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      await user.click(await screen.findByRole('button', { name: 'EUA' }))
+      // Fixed quote mode: the boxes still show, because labels use them in either mode.
+      expect(screen.getByRole('radio', { name: /Valor fixo/ })).toBeChecked()
+      const monthly = screen.getByRole('group', { name: 'Caixa mensal' })
+      const starter = screen.getByRole('group', { name: 'Starter Box' })
+      expect(within(starter).getByRole('spinbutton', { name: /Altura/ })).toHaveValue(8)
+      expect(within(starter).getByRole('spinbutton', { name: /Máximo de pacotes/ })).toHaveValue(10)
+      const emptyWeight = within(monthly).getByRole('spinbutton', { name: /Peso vazio/ })
+      expect(emptyWeight).toHaveValue(1.5)
+
+      await user.clear(emptyWeight)
+      await user.type(emptyWeight, '1.7')
+      await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+      await screen.findByText('Regras dos Estados Unidos salvas.')
+      const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
+      expect(put?.body).toMatchObject({
+        us: {
+          boxes: {
+            starter: { label: 'Starter Box', length_in: 14, width_in: 12, height_in: 8, empty_weight_kg: 1, max_packs: 10 },
+            monthly: { label: 'Caixa mensal', length_in: 18, width_in: 14, height_in: 12, empty_weight_kg: 1.7, max_packs: 30 },
+          },
+        },
+      })
+    })
+
+    it('Refused by the API: shows the box message and keeps the typed values', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(adminUser, {
+        shippingSettingsSaveError: { status: 422, code: 'invalid_shipping_box', message: 'Shipping boxes need sides above 0.' },
+      })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      await user.click(await screen.findByRole('button', { name: 'EUA' }))
+      const maxPacks = within(screen.getByRole('group', { name: 'Starter Box' })).getByRole('spinbutton', { name: /Máximo de pacotes/ })
+      await user.clear(maxPacks)
+      await user.type(maxPacks, '30')
+      await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+
+      expect(await screen.findByText('Confira as caixas: medidas acima de 0, peso vazio de 0,1 a 10 kg e a Starter com menos pacotes que a mensal.')).toBeInTheDocument()
+      expect(screen.queryByText(/Shipping boxes need/)).not.toBeInTheDocument()
+      expect(maxPacks).toHaveValue(30)
+    })
+
+    it('Read-only operator: the box fields are disabled without shipping.write', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorUsUser)
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      const monthly = await screen.findByRole('group', { name: 'Caixa mensal' })
+      for (const field of within(monthly).getAllByRole('spinbutton')) expect(field).toBeDisabled()
+    })
+
+    it('names the UPS package as the checkout quote box', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(adminUser)
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      await user.click(await screen.findByRole('button', { name: 'EUA' }))
+      await user.click(await screen.findByRole('radio', { name: /UPS/ }))
+      expect(screen.getByRole('group', { name: 'Caixa da cotação do checkout' })).toBeInTheDocument()
+      expect(screen.getByText(/Só calcula o frete do checkout e do simulador/)).toBeInTheDocument()
+      expect(screen.queryByText('Caixa padrão')).not.toBeInTheDocument()
+    })
   })
 
   it('simulates a Brazil CEP as same-day delivery', async () => {
@@ -278,9 +453,9 @@ describe('ShippingPage', () => {
       expect(screen.getByText('Sede do Brasil salva.')).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('tab', { name: /Regras de entrega/ }))
+    await user.click(screen.getByRole('tab', { name: /^Regras/ }))
     expect(screen.getByRole('spinbutton', { name: /Raio de entrega/ })).toHaveValue(50)
-    expect(screen.getByRole('tab', { name: /Regras de entrega/ })).toHaveTextContent('não salvo')
+    expect(screen.getByRole('tab', { name: /^Regras/ })).toHaveTextContent('não salvo')
   })
 
   it('points the simulator to the headquarters when it has no validated address', async () => {

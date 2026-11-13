@@ -505,6 +505,13 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
   const captured: CapturedAdminRequest[] = []
   const calendar = calendarState()
   const stock = stockState()
+  // delivery-instructions: sub-row-1 starts with the profile text at the same place.
+  const subscriptionInstructions: { text: string | null; source: 'subscription' | 'profile' | null } = { text: 'Interfone 12', source: 'profile' }
+  // plan-settings: plan days and large-pack limit of each market.
+  const planSettings: Record<string, { market: string; planDays: number; largePackLimit: number; updatedAt: string | null }> = {
+    BR: { market: 'BR', planDays: 30, largePackLimit: 8, updatedAt: null },
+    US: { market: 'US', planDays: 30, largePackLimit: 8, updatedAt: null },
+  }
   const catalog = {
     items: [{
       id: 'prod-1',
@@ -514,10 +521,12 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       active: true,
       category: { namePt: 'Alimentação', nameEn: 'Food' },
       marketConfigs: [{ marketCountry: 'BR', currency: 'BRL', active: true }],
-      variants: [{ id: 'var-1', sku: 'BOWL-1', variantPrices: [{ id: 'price-1' }] }],
+      planCountry: 'BR',
+      variants: [{ id: 'var-1', sku: 'BOWL-1', active: false, variantPrices: [{ id: 'price-1' }] }],
       createdAt: '2026-08-01T12:00:00.000Z',
       canDelete: true,
-    }],
+      content: { code: 'turkey', name: 'Frango', lifeStage: 'adult', imageUrl: null, labelStatus: 'missing' },
+    }] as Array<Record<string, unknown>>,
     detail: {
       id: 'prod-1',
       slug: 'bowl-adulto',
@@ -525,15 +534,13 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       nameEn: 'Adult Bowl',
       active: false,
       planCountry: 'BR',
-      planDays: 28,
       canDelete: true,
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'synced', requiresSync: false, canDelete: true, recipeKey: 'turkey', recipeImageUrl: null, recipeLabelStatus: 'missing' }],
-    },
+      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', weight: '1kg', regularPrice: 89.9, stripeProductId: 'prod_stripe', stripePriceId: 'price_stripe', syncStatus: 'synced', requiresSync: false, canDelete: true, recipeImageUrl: null as string | null, recipeLabelStatus: 'missing', recipePresentationReady: true }] as Array<Record<string, unknown>>,
+    } as Record<string, unknown> & { id: string; variants: Array<Record<string, unknown>> },
   }
-  let recipes: Array<{ key: string; name: string; imageUrl: string | null; labelStatus: string; variations: unknown[] }> = [
-    { key: 'beef', name: 'Carne', imageUrl: null, labelStatus: 'missing', variations: [] },
-  ]
+  // Content of prod-1 (product-is-recipe); the detail carries it and the content routes save it.
   let recipeContent: Record<string, unknown> = {
+    productId: 'prod-1',
     market: 'BR',
     flavorSlug: 'turkey',
     name: 'Frango',
@@ -543,8 +550,26 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     labelUpdatedAt: null,
     labelStatus: 'missing',
     labelMissing: [],
-    variations: [{ id: 'var-1', name: 'Frango 1kg', sku: 'BOWL-1', active: false, productId: 'prod-1', productName: 'Bowl Adulto' }],
+    presentation: null,
+    variations: [{ id: 'var-1', name: 'Frango 1kg', sku: 'BOWL-1', active: false }],
   }
+  const detailWithContent = () => ({
+    ...catalog.detail,
+    content: {
+      code: recipeContent.flavorSlug,
+      name: recipeContent.name,
+      lifeStage: 'adult',
+      flavorAliases: '',
+      shortLabel: '',
+      imageUrl: recipeContent.imageUrl,
+      planImageUrl: null,
+      labelStatus: recipeContent.labelStatus,
+      labelMissing: recipeContent.labelMissing,
+      presentationReady: Boolean(recipeContent.presentation),
+      label: recipeContent.label,
+      presentation: recipeContent.presentation,
+    },
+  })
 
   await page.route('**/api/v1/**', async (route) => {
     const request = route.request()
@@ -678,6 +703,19 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
+    if (path === '/api/v1/admin/catalog/plan-settings') {
+      const market = (url.searchParams.get('market') || '').toUpperCase()
+      if (market !== 'BR' && market !== 'US') {
+        await fulfillJson(route, { message: 'Choose one market.', code: 'market_required' }, 400)
+        return
+      }
+      if (method === 'PUT') {
+        planSettings[market] = { market, planDays: Number(body?.planDays), largePackLimit: Number(body?.largePackLimit), updatedAt: '2026-11-12T12:00:00.000Z' }
+      }
+      await fulfillJson(route, planSettings[market])
+      return
+    }
+
     if (path === '/api/v1/admin/catalog/products' && method === 'GET') {
       await fulfillJson(route, {
         total: catalog.items.length,
@@ -689,14 +727,17 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     }
 
     if (path === '/api/v1/admin/catalog/products' && method === 'POST') {
+      if (body?.code === 'turkey') {
+        await fulfillJson(route, { message: 'A product with this code already exists in the market.', details: { code: 'product_code_taken' } }, 409)
+        return
+      }
       await fulfillJson(route, {
         id: '301',
-        slug: 'plano-novo',
+        slug: `${body?.code}-br`,
         namePt: body?.name || 'Plano novo',
         nameEn: body?.name || 'Plano novo',
         active: false,
         planCountry: body?.planCountry || 'BR',
-        planDays: body?.planDays || 30,
         stripeProductId: 'prod_live_301',
         variants: [],
       })
@@ -714,7 +755,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
           ? { ...item, variants: catalog.detail.variants.map((variant) => ({ id: variant.id, sku: variant.sku, variantPrices: [] })) }
           : item
       ))
-      await fulfillJson(route, catalog.detail)
+      await fulfillJson(route, detailWithContent())
       return
     }
 
@@ -725,65 +766,19 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
-    if (path === '/api/v1/admin/catalog/recipe-content' && method === 'GET') {
-      await fulfillJson(route, {
-        market: 'BR',
-        items: [
-          ...recipes,
-          { key: 'turkey', name: recipeContent.name, imageUrl: recipeContent.imageUrl, labelStatus: recipeContent.labelStatus, variations: recipeContent.variations },
-        ].sort((left, right) => left.key.localeCompare(String(right.key))),
-      })
-      return
-    }
-
-    if (path === '/api/v1/admin/catalog/recipe-content' && method === 'POST') {
-      const input = (body as { key?: string; name?: string } | null) ?? {}
-      const key = String(input.key ?? '')
-      if (key === 'turkey' || recipes.some((item) => item.key === key)) {
-        await fulfillJson(route, { message: 'A recipe with this key already exists in the market.', details: { code: 'recipe_key_taken' } }, 409)
-        return
-      }
-      const created = { key, name: String(input.name ?? ''), imageUrl: null, labelStatus: 'missing', variations: [] }
-      recipes = [...recipes, created]
-      await fulfillJson(route, { ...recipeContent, flavorSlug: key, name: created.name, imageUrl: null, label: null, labelStatus: 'missing', labelMissing: [], variations: [] })
-      return
-    }
-
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+$/.test(path) && ['GET', 'PATCH', 'DELETE'].includes(method)) {
-      const key = decodeURIComponent(path.split('/').pop() || '')
-      if (key === 'turkey') {
-        if (method === 'PATCH') recipeContent = { ...recipeContent, name: (body as { name?: string } | null)?.name ?? recipeContent.name }
-        await fulfillJson(route, recipeContent)
-        return
-      }
-      const listed = recipes.find((item) => item.key === key)
-      if (!listed) {
-        await fulfillJson(route, { message: 'Recipe not found.', details: { code: 'recipe_not_found' } }, 404)
-        return
-      }
-      if (method === 'DELETE') {
-        recipes = recipes.filter((item) => item.key !== key)
-        await fulfillJson(route, { deleted: true, market: 'BR', flavorSlug: key })
-        return
-      }
-      if (method === 'PATCH') listed.name = (body as { name?: string } | null)?.name ?? listed.name
-      await fulfillJson(route, { ...recipeContent, flavorSlug: key, name: listed.name, imageUrl: listed.imageUrl, label: null, labelStatus: listed.labelStatus, labelMissing: [], variations: listed.variations })
-      return
-    }
-
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'PUT') {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/image$/.test(path) && method === 'PUT') {
       recipeContent = { ...recipeContent, imageUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', imageUpdatedAt: '2026-10-23T12:00:00.000Z' }
       await fulfillJson(route, recipeContent)
       return
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/image$/.test(path) && method === 'DELETE') {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/image$/.test(path) && method === 'DELETE') {
       recipeContent = { ...recipeContent, imageUrl: null }
       await fulfillJson(route, recipeContent)
       return
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/recipe-content\/[^/]+\/label$/.test(path) && method === 'PUT') {
+    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/label$/.test(path) && method === 'PUT') {
       const label = (body as { label?: Record<string, unknown> } | null)?.label ?? {}
       const filled = (value: unknown) => (Array.isArray(value) ? value.length > 0 : Boolean(value))
       const missing = ['ingredients', 'analysis', 'energyKg', 'energyPackage'].filter((field) => !filled(label[field]))
@@ -795,7 +790,7 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+$/.test(path) && method === 'GET') {
       const id = path.split('/').pop() || 'prod-1'
       if (id === 'prod-1') {
-        await fulfillJson(route, catalog.detail)
+        await fulfillJson(route, detailWithContent())
         return
       }
       await fulfillJson(route, {
@@ -805,9 +800,9 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         nameEn: 'Plano novo',
         active: false,
         planCountry: 'BR',
-        planDays: 30,
         stripeProductId: 'prod_live_301',
         variants: [],
+        content: { code: 'cordeiro', name: 'Plano novo', lifeStage: 'adult', flavorAliases: '', shortLabel: '', imageUrl: null, planImageUrl: null, labelStatus: 'missing', labelMissing: [], presentationReady: false },
       })
       return
     }
@@ -817,14 +812,14 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       const variants = Array.isArray(body?.variants)
         ? body.variants.map((item: { id?: string }) => ({ ...currentVariant, ...item }))
         : catalog.detail.variants
+      if (typeof body?.name === 'string') recipeContent = { ...recipeContent, name: body.name }
       catalog.detail = {
         ...catalog.detail,
+        ...(typeof body?.name === 'string' ? { namePt: body.name, nameEn: body.name } : {}),
         active: body?.active ?? catalog.detail.active,
-        planCountry: body?.planCountry ?? catalog.detail.planCountry,
-        planDays: body?.planDays ?? catalog.detail.planDays,
         variants,
       }
-      await fulfillJson(route, catalog.detail)
+      await fulfillJson(route, detailWithContent())
       return
     }
 
@@ -1019,7 +1014,22 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
         planSelection: {},
         shipping: {},
         address: {},
+        delivery_instructions: subscriptionInstructions.text,
+        delivery_instructions_source: subscriptionInstructions.source,
       })
+      return
+    }
+
+    // delivery-instructions: the operator writes the instructions of this subscription.
+    if (path === '/api/v1/admin/billing/subscriptions/sub-row-1/delivery-instructions' && method === 'PATCH') {
+      const text = String((body as { delivery_instructions?: string } | null)?.delivery_instructions || '').trim()
+      if ([...text].length > 200) {
+        await fulfillJson(route, { message: 'Invalid delivery instructions.', details: { code: 'invalid_delivery_instructions', field: 'delivery_instructions' } }, 422)
+        return
+      }
+      subscriptionInstructions.text = text || null
+      subscriptionInstructions.source = text ? 'subscription' : null
+      await fulfillJson(route, { success: true, data: { subscription_id: 'sub-row-1', delivery_instructions: text || null } })
       return
     }
 

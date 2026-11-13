@@ -1,4 +1,5 @@
 import { ApiRequestError } from './api'
+import { RECIPE_BANNER_SIZE_TEXT } from './imageUpload'
 
 export type RecipeLabelStatus = 'missing' | 'incomplete' | 'complete'
 
@@ -65,7 +66,9 @@ export function presentationFieldText(field: string) {
   return PRESENTATION_FIELD_TEXT[field] ?? field
 }
 
+// Content of one product in its market, as the product content routes answer.
 export type RecipeContent = {
+  productId?: string
   market: string
   flavorSlug: string
   name: string
@@ -80,16 +83,9 @@ export type RecipeContent = {
   labelMissing: string[]
   presentation?: RecipePresentation | null
   presentationUpdatedAt?: string | null
-  variations: Array<{ id: string; name: string; sku: string; active: boolean; productId?: string | null; productName?: string }>
-}
-
-export type RecipeSummary = {
-  key: string
-  name: string
-  lifeStage: LifeStage
-  imageUrl: string | null
-  labelStatus: RecipeLabelStatus
-  variations: RecipeContent['variations']
+  flavorAliases?: string
+  shortLabel?: string
+  variations?: Array<{ id: string; name: string; sku: string; active: boolean }>
 }
 
 // Items of a list pasted from a label ("Brown Rice, Beef, Lentils." or one per line): split on commas,
@@ -122,12 +118,13 @@ export function listToParagraphs(items: string[]) {
   return items.join('\n\n')
 }
 
-export function recipePagePath(market: string, recipeKey: string) {
-  return `/catalog/recipes/${encodeURIComponent(market)}/${encodeURIComponent(recipeKey)}`
-}
+// Anchors of the recipe content sections on the product page; each opens the tab that holds it.
+export const RECIPE_SECTION_ANCHORS = ['fase', 'apresentacao', 'imagem', 'miniatura', 'rotulo'] as const
 
-// Suggested key for a new recipe: the name as a lowercase slug, accents removed.
-export function recipeKeyFromName(name: string) {
+export type RecipeSectionAnchor = typeof RECIPE_SECTION_ANCHORS[number]
+
+// Suggested code for a new product: the name as a lowercase slug, accents removed.
+export function productCodeFromName(name: string) {
   return name
     .trim()
     .toLowerCase()
@@ -139,8 +136,9 @@ export function recipeKeyFromName(name: string) {
     .replace(/-+$/g, '')
 }
 
-export function recipeContentPath(recipeKey: string, market: string, suffix = '') {
-  return `/admin/catalog/recipe-content/${encodeURIComponent(recipeKey)}${suffix}?market=${encodeURIComponent(market)}`
+// Content routes of one product (presentation, images, label); the product carries its market.
+export function productContentPath(productId: string, suffix: string) {
+  return `/admin/catalog/products/${encodeURIComponent(productId)}/content${suffix}`
 }
 
 export const LABEL_STATUS_TEXT: Record<RecipeLabelStatus, string> = {
@@ -167,6 +165,7 @@ export function recipeContentFailure(error: unknown, fallback: string) {
     const details = (error.details ?? {}) as Record<string, unknown>
     if (error.code === 'recipe_image_invalid') {
       if (details.reason === 'dimensions') {
+        if (details.maxUpscale != null) return `A imagem tem ${details.width} × ${details.height} px e precisa ter ${RECIPE_BANNER_SIZE_TEXT}.`
         return `A imagem tem ${details.width} × ${details.height} px e precisa ter ${details.expectedWidth} × ${details.expectedHeight} px.`
       }
       if (details.reason === 'bytes') return 'A imagem passa de 5 MB.'
@@ -175,9 +174,9 @@ export function recipeContentFailure(error: unknown, fallback: string) {
     }
     if (error.code === 'recipe_content_in_use') {
       if (Array.isArray(details.missing)) {
-        return `O rótulo de uma receita ativa nos EUA precisa continuar completo. Falta: ${labelMissingText(details.missing as string[])}.`
+        return `O rótulo de um produto com variação ativa nos EUA precisa continuar completo. Falta: ${labelMissingText(details.missing as string[])}.`
       }
-      return 'A imagem não pode ser removida enquanto houver variação ativa deste sabor. Desative as variações antes.'
+      return 'A imagem não pode ser removida enquanto houver variação ativa deste produto. Desative as variações antes.'
     }
     if (error.code === 'recipe_label_invalid') {
       return `Rótulo inválido no campo ${String(details.field ?? '')}: ${error.message}`
@@ -186,22 +185,8 @@ export function recipeContentFailure(error: unknown, fallback: string) {
       const fields = Array.isArray(details.fields) ? details.fields as string[] : []
       return `Apresentação inválida. Confira: ${fields.map(presentationFieldText).join(', ') || 'os campos'}.`
     }
-    if (error.code === 'recipe_not_found') {
-      return 'Receita não cadastrada neste mercado.'
-    }
-    if (error.code === 'recipe_key_taken') {
-      return 'Já existe uma receita com essa chave neste mercado.'
-    }
-    if (error.code === 'recipe_key_invalid') {
-      return 'A chave usa só letras minúsculas, números e hífens, por exemplo senior-cordeiro.'
-    }
-    if (error.code === 'recipe_name_invalid') {
-      return 'Informe um nome de até 120 caracteres.'
-    }
-    if (error.code === 'recipe_in_use') {
-      const variations = Array.isArray(details.variations) ? details.variations as Array<{ sku?: string; name?: string }> : []
-      const names = variations.map((item) => item.name || item.sku).filter(Boolean).join(', ')
-      return `Esta receita é usada por variações e não pode ser excluída${names ? `: ${names}` : ''}.`
+    if (error.code === 'product_not_found') {
+      return 'Produto não encontrado neste mercado.'
     }
   }
   return error instanceof Error ? error.message : fallback

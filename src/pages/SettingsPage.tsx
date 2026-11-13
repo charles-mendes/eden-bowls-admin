@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import {
   BATCH_RANGE,
+  PLAN_NOTICE_DAYS_RANGE,
   COMPANY_FIELDS,
   DAILY_CAP_RANGE,
   LEGAL_KINDS,
@@ -33,7 +34,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
 ]
 
 type CompanyForm = Record<CompanyField, string>
-type EmailsForm = { enabled: boolean; batch: string; cap: string }
+type EmailsForm = { enabled: boolean; batch: string; cap: string; renewalNotice: boolean; endingNotice: boolean; noticeDays: string }
 
 function companyFormOf(profile: CompanyProfile | null): CompanyForm {
   return Object.fromEntries(COMPANY_FIELDS.map((field) => [field.key, profile?.[field.key] ?? ''])) as CompanyForm
@@ -44,6 +45,9 @@ function emailsFormOf(settings: AutomatedEmailSettings | null): EmailsForm {
     enabled: Boolean(settings?.life_stage_change_enabled),
     batch: settings ? String(settings.announcement_batch_size) : '',
     cap: settings ? String(settings.announcement_daily_cap) : '',
+    renewalNotice: Boolean(settings?.renewal_notice_enabled),
+    endingNotice: Boolean(settings?.plan_ending_notice_enabled),
+    noticeDays: settings ? String(settings.plan_notice_days) : '',
   }
 }
 
@@ -168,7 +172,15 @@ export function SettingsPage() {
       const settings = await apiRequest<AutomatedEmailSettings>('/admin/settings/automated-emails', {
         token,
         method: 'PUT',
-        body: { market, life_stage_change_enabled: emailsForm.enabled, announcement_batch_size: batch, announcement_daily_cap: cap },
+        body: {
+          market,
+          life_stage_change_enabled: emailsForm.enabled,
+          announcement_batch_size: batch,
+          announcement_daily_cap: cap,
+          renewal_notice_enabled: emailsForm.renewalNotice,
+          plan_ending_notice_enabled: emailsForm.endingNotice,
+          plan_notice_days: Number(emailsForm.noticeDays),
+        },
       })
       setEmails(settings)
       setEmailsForm(emailsFormOf(settings))
@@ -354,6 +366,38 @@ export function SettingsPage() {
                     disabled={!canWriteEmails || busy}
                     aria-invalid={isInvalid('announcement_daily_cap')}
                     onChange={(event) => setEmailsForm((current) => ({ ...current, cap: event.target.value }))}
+                  />
+                </label>
+                <label className="ship-field">
+                  <span>Aviso de renovação</span>
+                  <input
+                    type="checkbox"
+                    checked={emailsForm.renewalNotice}
+                    disabled={!canWriteEmails || busy}
+                    onChange={(event) => setEmailsForm((current) => ({ ...current, renewalNotice: event.target.checked }))}
+                  />
+                </label>
+                <label className="ship-field">
+                  <span>Aviso de fim de plano</span>
+                  <input
+                    type="checkbox"
+                    checked={emailsForm.endingNotice}
+                    disabled={!canWriteEmails || busy}
+                    onChange={(event) => setEmailsForm((current) => ({ ...current, endingNotice: event.target.checked }))}
+                  />
+                </label>
+                <label className="ship-field">
+                  <span>Dias de antecedência dos avisos</span>
+                  <input
+                    type="number"
+                    min={PLAN_NOTICE_DAYS_RANGE.min}
+                    max={PLAN_NOTICE_DAYS_RANGE.max}
+                    step="1"
+                    required
+                    value={emailsForm.noticeDays}
+                    disabled={!canWriteEmails || busy}
+                    aria-invalid={isInvalid('plan_notice_days')}
+                    onChange={(event) => setEmailsForm((current) => ({ ...current, noticeDays: event.target.value }))}
                   />
                 </label>
               </div>

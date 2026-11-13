@@ -2,923 +2,684 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ProductDetailPage } from './ProductDetailPage'
-import { adminUser, jsonResponse, operatorWriteUser, productDetail, readonlyUser, recipeImageUrl } from '../test/fixtures'
+import { jsonResponse, operatorWriteUser, productDetail, readonlyUser, recipeContent, recipeLabel } from '../test/fixtures'
 import { findCall, installAdminFetchMock, type FetchCall } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
+
+// jsdom does not decode images, so each test file name maps to a pixel size.
+const imageSizes = new Map<string, { width: number; height: number }>()
+
+vi.mock('../lib/imageUpload', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/imageUpload')>()
+  const size = (file: File) => {
+    const found = imageSizes.get(file.name)
+    if (!found) throw new Error('unknown test image')
+    return found
+  }
+  return {
+    ...actual,
+    checkRecipeImage: (file: File) => actual.checkRecipeImage(file, async () => size(file)),
+    checkRecipePlanImage: (file: File) => actual.checkRecipePlanImage(file, async () => size(file)),
+  }
+})
+
+const PRODUCT_PATH = '/api/v1/admin/catalog/products/prod-1'
 
 function hangProductGet(calls: FetchCall[], fetchMock: ReturnType<typeof installAdminFetchMock>['fetchMock']) {
   const impl = fetchMock.getMockImplementation()
   fetchMock.mockImplementation(async (input, init) => {
     const url = new URL(String(input), 'http://admin.local')
     const method = (init?.method ?? 'GET').toUpperCase()
-    if (method === 'GET' && url.pathname === '/api/v1/admin/catalog/products/prod-1') {
-      calls.push({
-        url: String(input),
-        path: url.pathname,
-        search: url.search,
-        method,
-        authorization: new Headers(init?.headers).get('Authorization') ?? '',
-        body: null,
-      })
+    if (method === 'GET' && url.pathname === PRODUCT_PATH) {
+      calls.push({ url: String(input), path: url.pathname, search: url.search, method, authorization: '', body: null })
       return new Promise(() => undefined)
     }
     return impl!(input, init)
   })
 }
 
-function rewriteProductGet(
-  fetchMock: ReturnType<typeof installAdminFetchMock>['fetchMock'],
-  patch: (product: Record<string, unknown>) => Record<string, unknown>,
-) {
-  const impl = fetchMock.getMockImplementation()
-  fetchMock.mockImplementation(async (input, init) => {
-    const response = await impl!(input, init)
-    const url = new URL(String(input), 'http://admin.local')
-    const method = (init?.method ?? 'GET').toUpperCase()
-    if (method === 'GET' && url.pathname === '/api/v1/admin/catalog/products/prod-1') {
-      const product = await response.json() as Record<string, unknown>
-      return jsonResponse(patch(product))
-    }
-    return response
-  })
+const inactive = { ...productDetail, variants: [{ ...productDetail.variants[0], active: false }] }
+
+function renderDetail(route = '/catalog/products/prod-1') {
+  return renderAuthedPage(<ProductDetailPage />, route, '/catalog/products/:productId')
+}
+
+function patches(calls: FetchCall[]) {
+  return calls.filter((call) => call.method === 'PATCH' && call.path === PRODUCT_PATH)
+}
+
+async function openTab(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(await screen.findByRole('tab', { name }))
 }
 
 describe('ProductDetailPage', () => {
+  afterEach(() => {
+    localStorage.clear()
+    imageSizes.clear()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  describe('Dados gerais', () => {
+    it('Product save omits variations', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      const name = await screen.findByLabelText('Nome do produto')
+      await waitFor(() => expect(name).toHaveValue('Frango'))
+      await user.clear(name)
+      await user.type(name, 'Peru e Arroz')
+      await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+      expect(await screen.findByText('Dados gerais salvos.')).toBeInTheDocument()
+      const [patch] = patches(calls)
+      expect(patch.body).toEqual({ name: 'Peru e Arroz', flavorAliases: 'peru', shortLabel: 'Peru', lifeStage: 'adult' })
+      expect(patch.body).not.toHaveProperty('variants')
+      expect(patch.body).not.toHaveProperty('planCountry')
+      expect(patch.body).not.toHaveProperty('code')
+      expect(patch.authorization).toBe('Bearer access-token')
+    })
+
+    it('Changed field warns before leaving', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      await user.type(await screen.findByLabelText('Nome na fila de produção'), ' Light')
+      expect(screen.getByText('Dados gerais alterados. Salve antes de sair.')).toBeInTheDocument()
+
+      // The typed field survives a tab switch: it lives on the page, not in the tab.
+      await openTab(user, 'Variações')
+      await openTab(user, 'Dados gerais')
+      expect(screen.getByLabelText('Nome na fila de produção')).toHaveValue('Peru Light')
+
+      await user.click(screen.getByRole('button', { name: 'Salvar' }))
+      await waitFor(() => {
+        expect(screen.queryByText('Dados gerais alterados. Salve antes de sair.')).not.toBeInTheDocument()
+      })
+    })
+
+    it('stays available on a published product and says the life stage applies to every variation', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser, { product: { ...productDetail, active: true } })
+      renderDetail()
+
+      expect(await screen.findByText('Mudar a fase muda a linha de todas as variações deste produto.')).toBeInTheDocument()
+      await user.selectOptions(screen.getByLabelText('Fase de vida'), 'senior')
+      await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+      await waitFor(() => expect(patches(calls)[0]?.body).toMatchObject({ lifeStage: 'senior' }))
+    })
+
+    it('Writer opens a draft: code and market are text', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      // Code and market are shown once, in the page header.
+      expect(await screen.findByText('Código turkey · mercado BR · BRL')).toBeInTheDocument()
+      expect(screen.queryByLabelText('Código')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('País do plano')).not.toBeInTheDocument()
+      expect(screen.queryByRole('combobox', { name: /mercado/i })).not.toBeInTheDocument()
+      expect(screen.getByRole('link', { name: 'Loja › Plano' })).toHaveAttribute('href', '/catalog/plan?market=BR')
+    })
+
+    it('shows the API refusal of a field in Portuguese and keeps the typed value', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        routes: (call) => (call.method === 'PATCH' && call.path === PRODUCT_PATH
+          ? jsonResponse({ message: 'Short name must be at most 64 characters.', details: { code: 'product_short_label_invalid' } }, 422)
+          : undefined),
+      })
+      renderDetail()
+
+      await user.type(await screen.findByLabelText('Nome na fila de produção'), ' X')
+      await user.click(screen.getByRole('button', { name: 'Salvar' }))
+
+      expect(await screen.findByText('O nome na fila de produção tem no máximo 64 caracteres.')).toBeInTheDocument()
+      expect(screen.getByLabelText('Nome na fila de produção')).toHaveValue('Peru X')
+    })
+  })
+
+  describe('publication', () => {
+    it('Publish uses the loaded product', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      await user.click(await screen.findByRole('button', { name: 'Publicar' }))
+
+      expect(await screen.findByText('Publicado.')).toBeInTheDocument()
+      expect(patches(calls)[0].body).toEqual({ active: true })
+    })
+
+    it('Publish is absent while the product is loading', async () => {
+      seedAuth()
+      const { fetchMock, calls } = installAdminFetchMock(operatorWriteUser)
+      hangProductGet(calls, fetchMock)
+      renderDetail()
+
+      await waitFor(() => expect(calls.some((call) => call.method === 'GET' && call.path === PRODUCT_PATH)).toBe(true))
+      for (const name of ['Publicar', 'Desativar', 'Salvar', 'Sincronizar Stripe', 'Excluir produto']) {
+        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+      }
+      expect(calls.some((call) => call.method === 'PATCH')).toBe(false)
+    })
+
+    it('Readonly detail has no mutations', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(readonlyUser)
+      renderDetail()
+
+      expect(await screen.findByLabelText('Nome do produto')).toHaveAttribute('readonly')
+      for (const name of ['Salvar', 'Publicar', 'Desativar', 'Sincronizar Stripe', 'Excluir produto']) {
+        expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
+      }
+      await openTab(user, 'Variações')
+      expect(await screen.findByText('BOWL-1')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Adicionar variação' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /Editar variação/ })).not.toBeInTheDocument()
+    })
+
+    it('Readonly tabs show the content without save, upload or remove', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(readonlyUser, { recipeContent: { ...recipeContent, imageUrl: 'https://api.test/recipe-images/x.webp', label: recipeLabel } })
+      renderDetail()
+
+      await openTab(user, 'Rótulo')
+      expect(await screen.findByRole('heading', { name: 'Rótulo' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Salvar rótulo' })).not.toBeInTheDocument()
+      await openTab(user, 'Imagens')
+      expect(await screen.findByRole('heading', { name: 'Imagem da tela inicial' })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Remover imagem' })).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Escolher imagem')).not.toBeInTheDocument()
+      await openTab(user, 'Apresentação')
+      expect(screen.queryByRole('button', { name: 'Salvar apresentação' })).not.toBeInTheDocument()
+    })
+
+    it('Published linked product deactivates instead of deleting', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const { calls } = installAdminFetchMock(operatorWriteUser, {
+        product: { ...productDetail, active: true, canDelete: false, variants: productDetail.variants.map((item) => ({ ...item, canDelete: false })) },
+      })
+      renderDetail()
+
+      await user.click(await screen.findByRole('button', { name: 'Desativar' }))
+
+      await waitFor(() => expect(findCall(calls, 'PATCH', '/admin/catalog/products/prod-1')?.body).toEqual({ active: false }))
+      expect(screen.queryByRole('button', { name: 'Excluir produto' })).not.toBeInTheDocument()
+      expect(vi.mocked(window.confirm).mock.calls[0][0]).toContain('mantém o cadastro e a cobrança atual')
+    })
+
+    it('names the variation when publish is blocked', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { product: { ...productDetail, gaps: [{ variationId: 'var-1', currencies: ['BRL'] }] } })
+      renderDetail()
+
+      expect(await screen.findByText(/faltam preços Stripe para Frango 1kg \(BRL\)/)).toBeInTheDocument()
+    })
+
+    it('reloads the detail when delete reports the product is in use', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const { calls } = installAdminFetchMock(operatorWriteUser, { catalogDelete: 'in_use' })
+      renderDetail()
+
+      await user.click(await screen.findByRole('button', { name: 'Excluir produto' }))
+
+      expect(await screen.findByText('Este produto já está em assinaturas e não pode ser excluído.')).toBeInTheDocument()
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Excluir produto' })).not.toBeInTheDocument())
+      expect(calls.filter((call) => call.method === 'GET' && call.path === PRODUCT_PATH).length).toBeGreaterThan(1)
+    })
+
+    it('keeps the product on screen when Stripe archive fails', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      installAdminFetchMock(operatorWriteUser, { catalogDelete: 'archive' })
+      renderDetail()
+
+      await user.click(await screen.findByRole('button', { name: 'Excluir produto' }))
+
+      expect(await screen.findByText('Não foi possível arquivar o produto na Stripe. O cadastro foi mantido.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Excluir produto' })).toBeInTheDocument()
+    })
+  })
+
+  describe('content tabs', () => {
+    it('Open the label tab', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { recipeContent: { ...recipeContent, label: recipeLabel, labelStatus: 'incomplete', labelMissing: ['notices'] } })
+      renderDetail()
+
+      await openTab(user, 'Rótulo')
+
+      const panel = await screen.findByRole('tabpanel')
+      expect(within(panel).getByRole('heading', { name: 'Rótulo' })).toBeInTheDocument()
+      expect(within(panel).getByText('Rótulo incompleto')).toBeInTheDocument()
+      expect(within(panel).getByLabelText('Fabricante')).toHaveValue('Pawl & Bowl LLC')
+    })
+
+    it('saves the label to the content route of the product', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      await openTab(user, 'Rótulo')
+      await user.type(await screen.findByLabelText('Fabricante'), 'Eden')
+      await user.click(screen.getByRole('button', { name: 'Salvar rótulo' }))
+
+      await waitFor(() => expect(findCall(calls, 'PUT', '/admin/catalog/products/prod-1/content/label')).toBeTruthy())
+      expect(calls.some((call) => call.path.includes('recipe-content'))).toBe(false)
+    })
+
+    it('Unsaved label asks before switching, and declining keeps it', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+      installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      await openTab(user, 'Rótulo')
+      await user.type(await screen.findByLabelText('Fabricante'), 'Eden')
+      await openTab(user, 'Variações')
+
+      expect(confirm).toHaveBeenCalledWith('Descartar as alterações não salvas do conteúdo?')
+      expect(screen.getByRole('tab', { name: 'Rótulo' })).toHaveAttribute('aria-selected', 'true')
+      expect(screen.getByLabelText('Fabricante')).toHaveValue('Eden')
+
+      confirm.mockReturnValue(true)
+      await openTab(user, 'Variações')
+      expect(await screen.findByText('BOWL-1')).toBeInTheDocument()
+    })
+
+    it('Nothing changed: the tab changes without asking', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const confirm = vi.spyOn(window, 'confirm')
+      installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      await openTab(user, 'Rótulo')
+      await screen.findByLabelText('Fabricante')
+      await openTab(user, 'Variações')
+
+      expect(confirm).not.toHaveBeenCalled()
+      expect(await screen.findByText('BOWL-1')).toBeInTheDocument()
+    })
+
+    it('Link to the label opens the Rótulo tab', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderDetail('/catalog/products/prod-1#rotulo')
+
+      expect(await screen.findByLabelText('Fabricante')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Rótulo' })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('Unknown anchor opens Dados gerais', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderDetail('/catalog/products/prod-1#outra-coisa')
+
+      expect(await screen.findByLabelText('Nome do produto')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Dados gerais' })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('Recipe without presentation starts empty and can be saved', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      await openTab(user, 'Apresentação')
+      expect(await screen.findByRole('heading', { name: 'Apresentação na loja' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Salvar apresentação' })).toBeInTheDocument()
+    })
+
+    it('Removing the image of an active recipe stays in the Imagens tab', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      installAdminFetchMock(operatorWriteUser, { recipeContent: { ...recipeContent, imageUrl: 'https://api.test/recipe-images/x.webp' } })
+      renderDetail()
+
+      await openTab(user, 'Imagens')
+      await user.click(await screen.findByRole('button', { name: 'Remover imagem' }))
+
+      expect(await screen.findByText('A imagem não pode ser removida enquanto houver variação ativa deste produto. Desative as variações antes.')).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Imagens' })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('reloads the product after an image is saved', async () => {
+      const user = userEvent.setup()
+      vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:preview'), revokeObjectURL: vi.fn() }))
+      seedAuth()
+      imageSizes.set('banner.png', { width: 1024, height: 636 })
+      const { calls } = installAdminFetchMock(operatorWriteUser, { product: inactive })
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      await user.click(await screen.findByRole('button', { name: 'Abrir foto de Frango 1kg' }))
+      expect(screen.getByRole('tab', { name: 'Imagens' })).toHaveAttribute('aria-selected', 'true')
+
+      await user.upload(await screen.findByLabelText('Escolher imagem'), new File(['png'], 'banner.png', { type: 'image/png' }))
+      await user.click(await screen.findByRole('button', { name: 'Salvar imagem' }))
+      await waitFor(() => expect(findCall(calls, 'PUT', '/admin/catalog/products/prod-1/content/image')).toBeTruthy())
+      await waitFor(() => expect(calls.filter((call) => call.method === 'GET' && call.path === PRODUCT_PATH).length).toBeGreaterThan(1))
+    })
+  })
+
+  describe('Variações', () => {
+    it('Missing presentation: the pending item opens the Apresentação tab', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        product: { ...productDetail, variants: [{ ...productDetail.variants[0], active: false, recipePresentationReady: false }] },
+      })
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      await user.click(await screen.findByRole('button', { name: 'Abrir apresentação de Frango 1kg' }))
+
+      expect(screen.getByRole('tab', { name: 'Apresentação' })).toHaveAttribute('aria-selected', 'true')
+      expect(await screen.findByRole('heading', { name: 'Apresentação na loja' })).toBeInTheDocument()
+    })
+
+    it('Missing price is plain text', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        product: { ...productDetail, variants: [{ ...productDetail.variants[0], active: false, regularPrice: null as unknown as number }] },
+      })
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      expect(await screen.findByText(/Pendente:/)).toHaveTextContent('preço')
+      expect(screen.queryByRole('button', { name: 'Abrir preço de Frango 1kg' })).not.toBeInTheDocument()
+    })
+
+    it('Edit sends one existing variation with pack fields only', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser, { product: inactive })
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+      const dialog = screen.getByRole('dialog')
+      expect(within(dialog).getByText('turkey')).toBeInTheDocument()
+      expect(within(dialog).getByText('Adulto')).toBeInTheDocument()
+      expect(within(dialog).queryByLabelText('Sabor')).not.toBeInTheDocument()
+      expect(within(dialog).queryByRole('combobox', { name: /Receita/ })).not.toBeInTheDocument()
+      expect(within(dialog).queryByLabelText('Slug do sabor')).not.toBeInTheDocument()
+      await user.clear(within(dialog).getByLabelText('Preço'))
+      await user.type(within(dialog).getByLabelText('Preço'), '99.9')
+      await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+
+      expect(await screen.findByText('Variação atualizada.')).toBeInTheDocument()
+      expect(patches(calls)[0].body).toEqual({
+        variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', weight: '1kg', ncm: '', origin: 0, finalImageReady: false, labelDataReady: false, regularPrice: 99.9 }],
+      })
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    })
+
+    it('adds a 300 g variation and shows it in the table', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      await user.click(await screen.findByRole('button', { name: 'Adicionar variação' }))
+      await user.type(screen.getByLabelText('SKU'), 'TURKEY-300')
+      await user.type(screen.getByLabelText('Nome'), 'Peru 300g')
+      await user.type(screen.getByLabelText('Peso'), '300g')
+      await user.type(screen.getByLabelText('Preço'), '39.9')
+      await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+
+      expect(await screen.findByText('Variação adicionada.')).toBeInTheDocument()
+      expect(patches(calls)[0].body).toMatchObject({ variants: [{ sku: 'TURKEY-300', name: 'Peru 300g', weight: '300g', regularPrice: 39.9 }] })
+      expect((patches(calls)[0].body as { variants: Array<Record<string, unknown>> }).variants[0]).not.toHaveProperty('id')
+      expect(screen.getByText('300 g')).toBeInTheDocument()
+    })
+
+    it('Weight already on the product', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        routes: (call) => (call.method === 'PATCH' && call.path === PRODUCT_PATH
+          ? jsonResponse({ message: 'Another variation of this product already has this weight.', details: { code: 'variation_weight_taken', weight: '300g' } }, 422)
+          : undefined),
+      })
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      await user.click(await screen.findByRole('button', { name: 'Adicionar variação' }))
+      await user.type(screen.getByLabelText('SKU'), 'TURKEY-300')
+      await user.type(screen.getByLabelText('Peso'), '300g')
+      await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+
+      expect(await screen.findByText('Este produto já tem uma variação de 300 g. Use outro peso.')).toBeInTheDocument()
+      expect(screen.getByLabelText('SKU')).toHaveValue('TURKEY-300')
+      expect(screen.getByLabelText('Peso')).toHaveValue('300g')
+    })
+
+    it('Cancel discards the dialog', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser, { product: inactive })
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
+      await user.clear(screen.getByLabelText('Nome'))
+      await user.type(screen.getByLabelText('Nome'), 'Outro nome')
+      await user.click(screen.getByRole('button', { name: 'Cancelar' }))
+
+      expect(patches(calls)).toHaveLength(0)
+      expect(screen.getByText('Frango 1kg')).toBeInTheDocument()
+    })
+
+    it('rejects a new variation without name and SKU without a request', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      await user.click(await screen.findByRole('button', { name: 'Adicionar variação' }))
+      await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
+
+      expect(screen.getByText('Nova variação precisa de nome ou SKU.')).toBeInTheDocument()
+      expect(patches(calls)).toHaveLength(0)
+    })
+
+    it('locks active variations of a published product and still offers adding one', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { product: { ...productDetail, active: true } })
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      expect(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' })).toBeDisabled()
+      expect(screen.getByText('Ativa e publicada: desative para editar.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
+    })
+
+    it('activates and deactivates a variation through the activation route', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      await user.click(await screen.findByRole('button', { name: 'Desativar variação Frango 1kg' }))
+      expect(await screen.findByText('Variação "Frango 1kg" desativada.')).toBeInTheDocument()
+      expect(findCall(calls, 'POST', '/variations/var-1/activation')?.body).toEqual({ active: false })
+
+      await user.click(screen.getByRole('button', { name: 'Ativar variação Frango 1kg' }))
+      expect(await screen.findByText('Variação "Frango 1kg" ativada.')).toBeInTheDocument()
+    })
+
+    it('Activation refused without presentation names it and opens the Apresentação tab', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        product: inactive,
+        routes: (call) => (call.method === 'POST' && call.path.endsWith('/activation')
+          ? jsonResponse({ message: 'Variation cannot be activated: missing presentation.', details: { code: 'recipe_publish_refused', missing: ['presentation'] } }, 422)
+          : undefined),
+      })
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      await user.click(await screen.findByRole('button', { name: 'Ativar variação Frango 1kg' }))
+
+      expect(await screen.findByText(/Ativação recusada\. Falta: apresentação da receita na loja/)).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: 'Abrir Apresentação' }))
+      expect(screen.getByRole('tab', { name: 'Apresentação' })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('the checklist shows what keeps the product out of the store and opens the tab that solves it', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        product: { ...inactive, active: false, content: { ...inactive.content!, imageUrl: null, presentationReady: false } },
+      })
+      renderDetail()
+
+      expect(await screen.findByRole('heading', { name: 'O que falta para aparecer na loja' })).toBeInTheDocument()
+      expect(screen.getByText('Próximo passo').closest('.readiness-next-step')).toHaveTextContent('Foto da receita na loja')
+
+      await user.click(screen.getByRole('button', { name: 'Abrir Imagens (Foto da receita na loja)' }))
+      expect(screen.getByRole('tab', { name: 'Imagens' })).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('names the active subscriptions when deactivation is refused', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { catalogActivation: 'in_use' })
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      await user.click(await screen.findByRole('button', { name: 'Desativar variação Frango 1kg' }))
+
+      expect(await screen.findByText('Esta variação está em 3 assinaturas ativas e não pode ser desativada.')).toBeInTheDocument()
+    })
+
+    it('deletes an existing variation after confirmation', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      vi.spyOn(window, 'confirm').mockReturnValue(true)
+      const { calls } = installAdminFetchMock(operatorWriteUser)
+      renderDetail()
+
+      await openTab(user, 'Variações')
+      await user.click(await screen.findByRole('button', { name: 'Excluir variação Frango 1kg' }))
+
+      expect(await screen.findByText('Variação "Frango 1kg" excluída.')).toBeInTheDocument()
+      expect(findCall(calls, 'DELETE', '/admin/catalog/products/prod-1/variations/var-1')).toBeTruthy()
+    })
+
+    it('opens the variation named in the link on the Variações tab', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { product: inactive })
+      renderDetail('/catalog/products/prod-1?variation=var-1')
+
+      expect(await screen.findByRole('heading', { name: 'Editar variação' })).toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Variações' })).toHaveAttribute('aria-selected', 'true')
+      expect(document.getElementById('variation-var-1')).toHaveClass('row-focused')
+    })
+  })
+})
+
+describe('ProductDetailPage variation without weight', () => {
   afterEach(() => {
     localStorage.clear()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
 
-  it('loads product detail and PATCHes plan fields', async () => {
+  const noWeight = { ...productDetail, active: true, variants: [{ ...productDetail.variants[0], active: true, weight: null }] }
+
+  it('warns that an active variation without weight is out of the stock and fills only the weight', async () => {
     const user = userEvent.setup()
     seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+    const { calls } = installAdminFetchMock(operatorWriteUser, { product: noWeight })
+    renderDetail()
 
-    await waitFor(() => {
-      expect(screen.getByText('BOWL-1')).toBeInTheDocument()
-    })
+    const warning = await screen.findByText(/Fora do estoque:/)
+    expect(warning.closest('.weight-warning')).toHaveTextContent('está sem peso. O estoque conta packs por peso.')
+    await user.click(within(warning.closest('.weight-warning') as HTMLElement).getByRole('button', { name: 'Informar peso' }))
 
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Informar peso' })
+    expect(within(dialog).getByLabelText('Peso')).toHaveFocus()
+    expect(within(dialog).getByText(/Só o peso é salvo e a variação continua ativa/)).toBeInTheDocument()
+    await user.type(within(dialog).getByLabelText('Peso'), '300g')
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar peso' }))
 
-    await waitFor(() => {
-      expect(screen.getByText('Produto atualizado.')).toBeInTheDocument()
-    })
-
-    const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-    expect(patch?.body).toEqual({
-      planCountry: 'BR',
-      planDays: 28,
-    })
-    expect(patch?.body).not.toHaveProperty('variants')
-    expect(patch?.authorization).toBe('Bearer access-token')
+    await waitFor(() => expect(patches(calls).at(-1)?.body).toEqual({ variants: [{ id: 'var-1', weight: '300g' }] }))
+    expect(await screen.findByText(/Peso salvo\. .* já aparece no Estoque\./)).toBeInTheDocument()
+    expect(screen.queryByText(/Fora do estoque:/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Informar peso' })).not.toBeInTheDocument()
   })
 
-  it('saves the variation flavor in the product payload', async () => {
+  it('marks the row and asks for the weight before saving an empty one', async () => {
     const user = userEvent.setup()
     seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+    const { calls } = installAdminFetchMock(operatorWriteUser, { product: noWeight })
+    renderDetail()
 
-    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Sabor')).toHaveValue('Frango')
-    })
-
-    await user.clear(screen.getByLabelText('Sabor'))
-    await user.type(screen.getByLabelText('Sabor'), 'Lamb')
-    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Variação atualizada.')).toBeInTheDocument()
-    })
-
-    const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-    expect(patch?.body).toEqual({
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Lamb', lifeStage: 'adult', shortLabel: '', ncm: '', origin: 0, finalImageReady: false, labelDataReady: false, regularPrice: 89.9, recipeKey: 'turkey' }],
-    })
+    await openTab(user, 'Variações')
+    const row = document.getElementById('variation-var-1') as HTMLElement
+    expect(within(row).getByText('Sem peso')).toHaveClass('badge-warning')
+    await user.click(within(row).getByRole('button', { name: /Informar peso de/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Informar peso' })
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar peso' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Informe o peso, como 300g.')
+    expect(patches(calls)).toHaveLength(0)
   })
 
-  it('opens the variation named in the link from a recipe page', async () => {
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser, {
-      product: { ...productDetail, variants: [{ ...productDetail.variants[0], active: false }] },
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1?variation=var-1', '/catalog/products/:productId')
-
-    expect(await screen.findByRole('heading', { name: 'Editar variação' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Nome')).toHaveValue('Frango 1kg')
-    expect(document.getElementById('variation-var-1')).toHaveClass('row-focused')
-  })
-
-  it('locks the line of a variation linked to a recipe on the recipe life stage', async () => {
+  it('opens the weight straight from the stock link and offers the way back after saving', async () => {
     const user = userEvent.setup()
     seedAuth()
-    installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
+    installAdminFetchMock(operatorWriteUser, { product: noWeight })
+    renderDetail('/catalog/products/prod-1?variation=var-1&campo=peso')
 
-    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-    await screen.findByRole('option', { name: 'Frango · turkey' })
-    expect(screen.getByLabelText('Linha')).toBeDisabled()
-    expect(screen.getByLabelText('Linha')).toHaveValue('adult')
-    expect(screen.getByText(/Vem da receita Frango/)).toBeInTheDocument()
+    const dialog = await screen.findByRole('dialog', { name: 'Informar peso' })
+    expect(screen.getByRole('tab', { name: 'Variações' })).toHaveAttribute('aria-selected', 'true')
+    await user.type(within(dialog).getByLabelText('Peso'), '300g')
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar peso' }))
+    expect(await screen.findByRole('link', { name: 'Voltar ao Estoque' })).toHaveAttribute('href', '/operations/stock')
   })
 
-  it('saves the life stage line of a variation without a recipe and shows it in the table', async () => {
-    const user = userEvent.setup()
+  it('shows the warning without the action to readonly users, and nothing when the weight exists', async () => {
     seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser, {
-      product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeKey: null }] },
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-    await waitFor(() => {
-      expect(screen.getByLabelText('Linha')).toHaveValue('adult')
-    })
-    await user.selectOptions(screen.getByLabelText('Linha'), 'senior')
-    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Variação atualizada.')).toBeInTheDocument()
-    })
-    const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-    expect((patch?.body as { variants: Array<{ lifeStage: string }> }).variants[0].lifeStage).toBe('senior')
+    installAdminFetchMock(readonlyUser, { product: noWeight })
+    renderDetail()
+    expect(await screen.findByText(/Fora do estoque:/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Informar peso' })).not.toBeInTheDocument()
   })
 
-  it('adds an inactive variation and edits it while the product is published, with active ones locked', async () => {
-    const user = userEvent.setup()
+  it('has no warning when every active variation has a weight', async () => {
     seedAuth()
-    const { calls, fetchMock } = installAdminFetchMock(operatorWriteUser)
-    rewriteProductGet(fetchMock, (product) => ({
-      ...product,
-      active: true,
-      variants: [
-        ...(product.variants as Array<Record<string, unknown>>),
-        { id: 'var-2', sku: 'SENIOR-BEEF-300', name: 'Sênior Carne 300g', flavor: 'Receita de Carne para Cães Sênior', active: false, regularPrice: 40, stripeProductId: null, stripePriceId: null, syncStatus: 'not_synced', requiresSync: true, canDelete: true },
-      ],
-    }))
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    expect(await screen.findByRole('button', { name: 'Editar variação Sênior Carne 300g' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Editar variação Frango 1kg' })).toBeDisabled()
-    expect(screen.getByText('Ativa e publicada: desative para editar.')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Editar variação Sênior Carne 300g' }))
-    await user.click(screen.getByLabelText('Foto definitiva já está na loja'))
-    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-    await waitFor(() => {
-      const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-      expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0]).toMatchObject({ id: 'var-2', finalImageReady: true, labelDataReady: false })
-    })
-  })
-
-  it('activates and deactivates a variation through the activation route', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    expect(await screen.findByRole('cell', { name: 'Ativa' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Desativar variação Frango 1kg' }))
-
-    const notice = await screen.findByText('Variação "Frango 1kg" desativada.')
-    expect(notice.closest('section')).toContainElement(screen.getByRole('heading', { name: 'Variações' }))
-    expect(screen.getByText('Inativa')).toBeInTheDocument()
-    const post = calls.find((call) => call.method === 'POST' && call.path === '/api/v1/admin/catalog/products/prod-1/variations/var-1/activation')
-    expect(post?.body).toEqual({ active: false })
-
-    await user.click(screen.getByRole('button', { name: 'Ativar variação Frango 1kg' }))
-    expect(await screen.findByText('Variação "Frango 1kg" ativada.')).toBeInTheDocument()
-  })
-
-  it('names the missing items when activation is refused', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser, {
-      catalogActivation: 'refused',
-      product: { ...productDetail, variants: [{ ...productDetail.variants[0], active: false }] },
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Ativar variação Frango 1kg' }))
-
-    expect(await screen.findByText('Ativação recusada. Falta: preço no Stripe, foto definitiva na loja, dados de rótulo na página da receita.')).toBeInTheDocument()
-  })
-
-  it('names the missing store presentation when activation is refused', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser, {
-      product: { ...productDetail, variants: [{ ...productDetail.variants[0], active: false, recipePresentationReady: false }] },
-      routes: (call) => (
-        call.method === 'POST' && call.path.endsWith('/activation')
-          ? jsonResponse({ message: 'Variation cannot be activated: missing presentation.', details: { code: 'recipe_publish_refused', missing: ['presentation'] } }, 422)
-          : undefined
-      ),
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    expect(await screen.findByText(/Pendente: .*apresentação/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Ativar variação Frango 1kg' }))
-
-    expect(await screen.findByText('Ativação recusada. Falta: apresentação na loja na página da receita.')).toBeInTheDocument()
-  })
-
-  describe('large-pack limit', () => {
-    const published = {
-      ...productDetail,
-      active: true,
-      largePackLimit: 8,
-      variants: [
-        { ...productDetail.variants[0], weight: '300g' },
-        { ...productDetail.variants[0], id: 'var-2', sku: 'BOWL-2', name: 'Frango 500g', weight: '500g' },
-        { ...productDetail.variants[0], id: 'var-3', sku: 'BOWL-3', name: 'Teste 1kg', weight: '1kg', active: false },
-      ],
-    }
-
-    it('saves only the limit of a published product and lists the active pack weights', async () => {
-      const user = userEvent.setup()
-      seedAuth()
-      const { calls } = installAdminFetchMock(operatorWriteUser, { product: published })
-      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-      const limit = await screen.findByLabelText(/^Limite do pacote pequeno/)
-      expect(limit).toHaveValue(8)
-      expect(screen.getByLabelText('Duração (dias)')).toBeDisabled()
-      expect(screen.getByText(/Pacotes na recomendação: 300g, 500g \(variações ativas\)/)).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled()
-
-      await user.clear(limit)
-      await user.type(limit, '6')
-      expect(screen.getByText('Limite do pacote pequeno alterado. Salve antes de sair.')).toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'Salvar' }))
-
-      expect(await screen.findByText('Produto atualizado.')).toBeInTheDocument()
-      const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-      expect(patch?.body).toEqual({ largePackLimit: 6 })
-      expect(screen.getByLabelText(/^Limite do pacote pequeno/)).toHaveValue(6)
-    })
-
-    it('refuses a limit out of range without sending it', async () => {
-      const user = userEvent.setup()
-      seedAuth()
-      const { calls } = installAdminFetchMock(operatorWriteUser, { product: published })
-      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-      const limit = await screen.findByLabelText(/^Limite do pacote pequeno/)
-      await user.clear(limit)
-      await user.type(limit, '0')
-      await user.click(screen.getByRole('button', { name: 'Salvar' }))
-
-      // The field's 1 to 60 range stops the submit before the page code runs.
-      expect(limit).toBeInvalid()
-      expect(calls.some((call) => call.method === 'PATCH')).toBe(false)
-    })
-
-    it('shows 8 when the API sends no limit', async () => {
-      seedAuth()
-      installAdminFetchMock(operatorWriteUser)
-      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-      expect(await screen.findByLabelText(/^Limite do pacote pequeno/)).toHaveValue(8)
-      expect(screen.getByText('Sem variação ativa com peso: a recomendação usa 300 g e 500 g.')).toBeInTheDocument()
-    })
-  })
-
-  it('names the active subscriptions when deactivation is refused', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser, { catalogActivation: 'in_use' })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Desativar variação Frango 1kg' }))
-
-    expect(await screen.findByText('Esta variação está em 3 assinaturas ativas e não pode ser desativada.')).toBeInTheDocument()
-    expect(screen.getByRole('cell', { name: 'Ativa' })).toBeInTheDocument()
-  })
-
-  it('explains the lock when an active variation edit is refused', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser, { catalogPatch: 'locked' })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-    expect(await screen.findByText('Variação ativa não pode ser editada com o produto publicado. Desative a variação antes.')).toBeInTheDocument()
-  })
-
-  it('saves the short name of a variation', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-    await user.type(screen.getByLabelText('Nome curto'), 'Bovino · Sênior')
-    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-    await waitFor(() => {
-      const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-      expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0].shortLabel).toBe('Bovino · Sênior')
-    })
-  })
-
-  it('saves the NCM and the origin of a Brazilian variation', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-    await user.type(screen.getByLabelText('NCM'), '2309.10.00')
-    await user.selectOptions(screen.getByLabelText('Origem da mercadoria'), '1')
-    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-    await waitFor(() => {
-      const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-      expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0]).toMatchObject({ ncm: '2309.10.00', origin: 1 })
-    })
-  })
-
-  it('shows the stored line of each variation', async () => {
-    seedAuth()
-    const { fetchMock } = installAdminFetchMock(operatorWriteUser)
-    rewriteProductGet(fetchMock, (product) => ({
-      ...product,
-      variants: (product.variants as Array<Record<string, unknown>>).map((variant) => ({ ...variant, lifeStage: 'puppy' })),
-    }))
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    expect(await screen.findByRole('cell', { name: 'Filhote' })).toBeInTheDocument()
-  })
-
-  it('creates a variation from draft and includes it in the save payload', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Adicionar variação' }))
-    await user.type(screen.getByLabelText('SKU'), 'NOVO-1')
-    await user.type(screen.getByLabelText('Nome'), 'Cordeiro 300g')
-    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Variação adicionada.')).toBeInTheDocument()
-    })
-
-    const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-    expect(patch?.body).toEqual({
-      variants: [{ sku: 'NOVO-1', name: 'Cordeiro 300g', flavor: '', lifeStage: 'adult', shortLabel: '', ncm: '', origin: 0, finalImageReady: false, labelDataReady: false, regularPrice: null, recipeKey: null }],
-    })
-  })
-
-  it('unlocks editing after returning to draft', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByRole('button', { name: 'Publicar' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Publicado.')).toBeInTheDocument()
-    })
-
-    expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Editar variação Frango 1kg' })).toBeDisabled()
-    expect(screen.getByText(/Variações inativas podem ser adicionadas e editadas/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Voltar' })).toHaveAttribute('href', '/catalog/products')
-    expect(screen.getByText('Sincronizado')).toBeInTheDocument()
-    const publishHeading = screen.getByRole('heading', { name: 'Publicação e sincronização' })
-    const variationsHeading = screen.getByRole('heading', { name: 'Variações' })
-    expect(publishHeading.compareDocumentPosition(variationsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    await user.click(screen.getByRole('button', { name: 'Desativar' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Voltou para rascunho.')).toBeInTheDocument()
-    })
-
-    expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Editar variação Frango 1kg' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Excluir variação Frango 1kg' })).toBeInTheDocument()
-  })
-
-  it('publishes the in-progress variation prices instead of reverting them', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-    const priceInput = screen.getByLabelText('Preço')
-    await user.clear(priceInput)
-    await user.type(priceInput, '30')
-    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-    await waitFor(() => {
-      expect(screen.getByText(/30,00/)).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByRole('button', { name: 'Publicar' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Publicado.')).toBeInTheDocument()
-    })
-
-    const patches = calls.filter((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-    expect(patches[0]?.body).toEqual({
-      variants: [{ id: 'var-1', sku: 'BOWL-1', name: 'Frango 1kg', flavor: 'Frango', lifeStage: 'adult', shortLabel: '', ncm: '', origin: 0, finalImageReady: false, labelDataReady: false, regularPrice: 30, recipeKey: 'turkey' }],
-    })
-    expect(patches[1]?.body).toEqual({
-      planCountry: 'BR',
-      planDays: 28,
-      active: true,
-    })
-    expect(patches[1]?.body).not.toHaveProperty('variants')
-  })
-
-  it('hides catalog mutations from readonly accounts', async () => {
-    seedAuth()
-    installAdminFetchMock(readonlyUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await waitFor(() => {
-      expect(screen.getByText('BOWL-1')).toBeInTheDocument()
-    })
-
-    expect(screen.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Adicionar variação' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Publicar' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Sincronizar Stripe' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Excluir produto' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Excluir variação/ })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Editar variação/ })).not.toBeInTheDocument()
-  })
-
-  it('deletes an existing variation after confirmation', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Excluir variação Frango 1kg' })).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByRole('button', { name: 'Excluir variação Frango 1kg' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Variação "Frango 1kg" excluída.')).toBeInTheDocument()
-    })
-    expect(findCall(calls, 'DELETE', '/admin/catalog/products/prod-1/variations/var-1')).toBeTruthy()
-    expect(screen.queryByText('BOWL-1')).not.toBeInTheDocument()
-  })
-
-  it('does not offer publish while the product request is still pending', async () => {
-    seedAuth()
-    const { fetchMock, calls } = installAdminFetchMock(operatorWriteUser)
-    hangProductGet(calls, fetchMock)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await waitFor(() => {
-      expect(calls.some((call) => call.method === 'GET' && call.path === '/api/v1/admin/catalog/products/prod-1')).toBe(true)
-    })
-
-    expect(screen.queryByRole('button', { name: 'Publicar' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Sincronizar Stripe' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Excluir produto' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Desativar' })).not.toBeInTheDocument()
-    expect(calls.some((call) => call.method === 'PATCH')).toBe(false)
-  })
-
-  it('keeps an empty duration when plan days are missing', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { fetchMock, calls } = installAdminFetchMock(operatorWriteUser)
-    rewriteProductGet(fetchMock, (product) => ({ ...product, planDays: null }))
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await waitFor(() => {
-      expect(screen.getByLabelText('Duração (dias)')).toHaveValue(null)
-    })
-
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Produto atualizado.')).toBeInTheDocument()
-    })
-
-    const patch = calls.find((call) => call.method === 'PATCH' && call.path === '/api/v1/admin/catalog/products/prod-1')
-    expect(patch?.body).toEqual({
-      planCountry: 'BR',
-    })
-    expect(patch?.body).not.toHaveProperty('variants')
-    expect(patch?.body).not.toHaveProperty('planDays')
-  })
-
-  it('limits plan country to the session markets', async () => {
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await waitFor(() => {
-      expect(screen.getByRole('option', { name: 'BR / BRL' })).toBeInTheDocument()
-    })
-    expect(screen.queryByRole('option', { name: 'US / USD' })).not.toBeInTheDocument()
-  })
-
-  it('lets an admin pick either plan country', async () => {
-    seedAuth()
-    installAdminFetchMock(adminUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await waitFor(() => {
-      expect(screen.getByRole('option', { name: 'US / USD' })).toBeInTheDocument()
-    })
-    expect(screen.getByRole('option', { name: 'BR / BRL' })).toBeInTheDocument()
-  })
-
-  it('names the variation when publish is blocked', async () => {
-    seedAuth()
-    const { fetchMock } = installAdminFetchMock(operatorWriteUser)
-    rewriteProductGet(fetchMock, (product) => ({
-      ...product,
-      gaps: [{ variationId: 'var-1', currencies: ['BRL'] }],
-    }))
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await waitFor(() => {
-      expect(screen.getByText(/faltam preços Stripe para Frango 1kg \(BRL\)/)).toBeInTheDocument()
-    })
-    expect(screen.queryByText(/var-1/)).not.toBeInTheDocument()
-  })
-
-  it('deactivates a published linked product instead of deleting it', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const { calls } = installAdminFetchMock(operatorWriteUser, {
-      product: {
-        ...productDetail,
-        active: true,
-        canDelete: false,
-        variants: productDetail.variants.map((item) => ({ ...item, canDelete: false })),
-      },
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Desativar' })).toBeInTheDocument()
-    })
-    expect(screen.queryByRole('button', { name: 'Excluir produto' })).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Desativar' }))
-
-    await waitFor(() => {
-      expect(findCall(calls, 'PATCH', '/admin/catalog/products/prod-1')?.body).toEqual({ active: false })
-    })
-    expect(findCall(calls, 'DELETE', '/admin/catalog/products/prod-1')).toBeUndefined()
-    expect(vi.mocked(window.confirm).mock.calls[0][0]).toContain('mantém o cadastro e a cobrança atual')
-  })
-
-  it('lets an unlinked variation be deleted beside a linked one', async () => {
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser, {
-      product: {
-        ...productDetail,
-        variants: [
-          { ...productDetail.variants[0], canDelete: false },
-          {
-            ...productDetail.variants[0],
-            id: 'var-2',
-            sku: 'BOWL-2',
-            name: 'Carne 1kg',
-            canDelete: true,
-          },
-        ],
-      },
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Excluir variação Carne 1kg' })).toBeInTheDocument()
-    })
-    expect(screen.queryByRole('button', { name: 'Excluir variação Frango 1kg' })).not.toBeInTheDocument()
-    expect(screen.getByText('Variação em uso numa assinatura.')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Desativar' })).not.toBeInTheDocument()
-  })
-
-  it('reloads the detail when delete reports the product is in use', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    const { calls } = installAdminFetchMock(operatorWriteUser, { catalogDelete: 'in_use' })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Excluir produto' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Este produto já está em assinaturas e não pode ser excluído.')).toBeInTheDocument()
-    })
-    expect(screen.getByText('Bowl Adulto')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Excluir produto' })).not.toBeInTheDocument()
-    expect(calls.filter((call) => call.method === 'GET' && call.path === '/api/v1/admin/catalog/products/prod-1').length).toBeGreaterThan(1)
-  })
-
-  it('keeps the product on screen when Stripe archive fails', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
-    installAdminFetchMock(operatorWriteUser, { catalogDelete: 'archive' })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Excluir produto' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Não foi possível arquivar o produto na Stripe. O cadastro foi mantido.')).toBeInTheDocument()
-    })
-    expect(screen.getByRole('button', { name: 'Excluir produto' })).toBeInTheDocument()
-  })
-
-  it('warns when plan duration differs from the loaded product', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    const duration = await screen.findByLabelText('Duração (dias)')
-    await user.clear(duration)
-    await user.type(duration, '14')
-
-    expect(screen.getByText('País e duração alterados. Salve antes de sair.')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Salvar' }))
-
-    await waitFor(() => {
-      expect(screen.queryByText('País e duração alterados. Salve antes de sair.')).not.toBeInTheDocument()
-    })
-  })
-
-  it('does not send a patch for an empty new variation and keeps the dialog open', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Adicionar variação' }))
-    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-    expect(screen.getByRole('heading', { name: 'Nova variação' })).toBeInTheDocument()
-    expect(screen.getByText('Nova variação precisa de nome ou SKU.')).toBeInTheDocument()
-    expect(calls.some((call) => call.method === 'PATCH')).toBe(false)
-  })
-
-  it('discards a variation edit when the dialog is cancelled', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-    await user.clear(screen.getByLabelText('Nome'))
-    await user.type(screen.getByLabelText('Nome'), 'Outro nome')
-    await user.click(screen.getByRole('button', { name: 'Cancelar' }))
-
-    expect(screen.queryByRole('heading', { name: 'Editar variação' })).not.toBeInTheDocument()
-    expect(screen.getByText('Frango 1kg')).toBeInTheDocument()
-    expect(calls.some((call) => call.method === 'PATCH')).toBe(false)
-  })
-
-  it('keeps the variation dialog open when the patch is rejected', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    const { fetchMock } = installAdminFetchMock(operatorWriteUser)
-    const impl = fetchMock.getMockImplementation()
-    fetchMock.mockImplementation(async (input, init) => {
-      const method = (init?.method ?? 'GET').toUpperCase()
-      if (method === 'PATCH') {
-        return jsonResponse({ message: 'Variation price must be a non-negative number.' }, 422)
-      }
-      return impl!(input, init)
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-    const price = screen.getByLabelText('Preço')
-    await user.clear(price)
-    await user.type(price, '30')
-    await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Variation price must be a non-negative number.')).toBeInTheDocument()
-    })
-    expect(screen.getByRole('heading', { name: 'Editar variação' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Preço')).toHaveValue(30)
-  })
-
-  it('locks the flavor slug after it has been saved', async () => {
-    seedAuth()
-    const { fetchMock } = installAdminFetchMock(operatorWriteUser)
-    rewriteProductGet(fetchMock, (product) => ({
-      ...product,
-      variants: (product.variants as Array<Record<string, unknown>>).map((item) => ({ ...item, flavorSlug: 'turkey' })),
-    }))
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-    expect(screen.getByLabelText('Slug do sabor')).toBeDisabled()
-  })
-
-  it('locks active variations of a published product and still offers adding one', async () => {
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser, {
-      product: { ...productDetail, active: true },
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await screen.findByRole('button', { name: 'Desativar' })
-    expect(screen.getByRole('button', { name: 'Editar variação Frango 1kg' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Adicionar variação' })).toBeInTheDocument()
-  })
-
-  it('shows the stored image state and links each variation to its recipe content', async () => {
-    seedAuth()
-    installAdminFetchMock(readonlyUser, {
-      product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeImageUrl }] },
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    expect(await screen.findByText('Imagem cadastrada')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Conteúdo da receita de Frango 1kg' })).toHaveAttribute('href', '/catalog/recipes/BR/turkey')
-  })
-
-  it('hides the image confirmation when the flavor has a stored image', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser, {
-      product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeImageUrl }] },
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-
-    expect(screen.queryByLabelText('Foto definitiva já está na loja')).not.toBeInTheDocument()
-    expect(screen.getByText('Imagem cadastrada em Conteúdo da receita. Não precisa de confirmação.')).toBeInTheDocument()
-  })
-
-  it('keeps the image confirmation for a flavor without a stored image', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser)
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    expect(await screen.findByText('Sem imagem')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Editar variação Frango 1kg' }))
-
-    expect(screen.getByLabelText('Foto definitiva já está na loja')).toBeInTheDocument()
-  })
-
-  it('shows the label state and asks for the label confirmation only while the stored label is not complete', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser, {
-      product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeImageUrl, recipeLabelStatus: 'incomplete' }] },
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    expect(await screen.findByText('Imagem cadastrada')).toBeInTheDocument()
-    expect(screen.getByText('Rótulo incompleto')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Editar variação Frango 1kg' }))
-
-    expect(screen.queryByLabelText('Foto definitiva já está na loja')).not.toBeInTheDocument()
-    expect(screen.getByLabelText('Dados de rótulo já estão na página da receita')).toBeInTheDocument()
-  })
-
-  it('hides the label confirmation when the stored label is complete', async () => {
-    const user = userEvent.setup()
-    seedAuth()
-    installAdminFetchMock(operatorWriteUser, {
-      product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeLabelStatus: 'complete' }] },
-    })
-    renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-    expect(await screen.findByText('Rótulo completo')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Editar variação Frango 1kg' }))
-
-    expect(screen.queryByLabelText('Dados de rótulo já estão na página da receita')).not.toBeInTheDocument()
-    expect(screen.getByText('Rótulo completo cadastrado em Conteúdo da receita. Não precisa de confirmação.')).toBeInTheDocument()
-  })
-
-  describe('recipe link', () => {
-    async function openDialog(user: ReturnType<typeof userEvent.setup>) {
-      await user.click(await screen.findByRole('button', { name: 'Editar variação Frango 1kg' }))
-      // The registered recipes arrive after the product.
-      await screen.findByRole('option', { name: 'Carne · beef' })
-    }
-
-    it('unlinks a variation by choosing Sem receita', async () => {
-      const user = userEvent.setup()
-      seedAuth()
-      const { calls } = installAdminFetchMock(operatorWriteUser)
-      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-      await openDialog(user)
-      expect(screen.getByLabelText('Receita (conteúdo)')).toHaveValue('turkey')
-      await user.selectOptions(screen.getByLabelText('Receita (conteúdo)'), 'Sem receita')
-      await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-      expect(await screen.findByText('Sem receita vinculada')).toBeInTheDocument()
-      expect(screen.queryByRole('link', { name: /Conteúdo da receita/ })).not.toBeInTheDocument()
-      const patch = calls.find((call) => call.method === 'PATCH')
-      expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0].recipeKey).toBeNull()
-    })
-
-    it('offers only the recipes registered in the market, with a link to register more', async () => {
-      const user = userEvent.setup()
-      seedAuth()
-      const { calls } = installAdminFetchMock(operatorWriteUser)
-      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-      await openDialog(user)
-
-      const select = screen.getByLabelText('Receita (conteúdo)')
-      expect(select.tagName).toBe('SELECT')
-      expect(within(select).getAllByRole('option').map((option) => option.textContent)).toEqual([
-        'Sem receita',
-        'Carne · beef',
-        'Sênior Cordeiro · senior-lamb',
-        'Frango · turkey',
-      ])
-      expect(screen.getByRole('link', { name: 'Cadastre em Receitas' })).toHaveAttribute('href', '/catalog/recipes?market=BR')
-      expect(calls.some((call) => call.path === '/api/v1/admin/catalog/recipe-content' && call.search === '?market=BR')).toBe(true)
-    })
-
-    it('explains a recipe that is no longer registered and keeps the other fields', async () => {
-      const user = userEvent.setup()
-      seedAuth()
-      installAdminFetchMock(operatorWriteUser, {
-        recipes: [{ key: 'beef', name: 'Carne', lifeStage: 'adult', imageUrl: null, labelStatus: 'missing', variations: [] }],
-      })
-      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-      await openDialog(user)
-      await user.clear(screen.getByLabelText('Nome'))
-      await user.type(screen.getByLabelText('Nome'), 'Frango 1,2kg')
-      await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-      expect(await screen.findByText('Esta receita não está mais cadastrada no mercado. Escolha outra ou cadastre em Receitas.')).toBeInTheDocument()
-      expect(screen.getByLabelText('Nome')).toHaveValue('Frango 1,2kg')
-    })
-
-    it('starts a new variation on the registered recipe of its flavor slug, or on no recipe', async () => {
-      const user = userEvent.setup()
-      seedAuth()
-      const { calls } = installAdminFetchMock(operatorWriteUser)
-      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-      await user.click(await screen.findByRole('button', { name: 'Adicionar variação' }))
-      await screen.findByRole('option', { name: 'Carne · beef' })
-      await user.type(screen.getByLabelText('SKU'), 'SL-300')
-      await user.type(screen.getByLabelText('Sabor'), 'Pato')
-      expect(screen.getByLabelText('Receita (conteúdo)')).toHaveValue('')
-      await user.clear(screen.getByLabelText('Sabor'))
-      await user.type(screen.getByLabelText('Sabor'), 'Senior Lamb')
-      expect(screen.getByLabelText('Receita (conteúdo)')).toHaveValue('senior-lamb')
-      await user.click(screen.getByRole('button', { name: 'Salvar variação' }))
-
-      await screen.findByText('Variação adicionada.')
-      const patch = calls.find((call) => call.method === 'PATCH')
-      expect((patch?.body as { variants: Array<Record<string, unknown>> }).variants[0]).toMatchObject({ recipeKey: 'senior-lamb', lifeStage: 'senior' })
-    })
-
-    it('shows a variation without a recipe without a content link', async () => {
-      seedAuth()
-      installAdminFetchMock(readonlyUser, {
-        product: { ...productDetail, variants: [{ ...productDetail.variants[0], recipeKey: null }] },
-      })
-      renderAuthedPage(<ProductDetailPage />, '/catalog/products/prod-1', '/catalog/products/:productId')
-
-      expect(await screen.findByText('Sem receita vinculada')).toBeInTheDocument()
-      expect(screen.queryByRole('link', { name: /Conteúdo da receita/ })).not.toBeInTheDocument()
-    })
+    installAdminFetchMock(operatorWriteUser, { product: { ...productDetail, active: true } })
+    renderDetail()
+    await screen.findByRole('tab', { name: 'Variações' })
+    expect(screen.queryByText(/Fora do estoque:/)).not.toBeInTheDocument()
   })
 })

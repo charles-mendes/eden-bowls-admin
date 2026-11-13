@@ -61,3 +61,93 @@ The four stored payloads (`petsSnapshot`, `planSelection`, `address`, `shipping`
 
 - **WHEN** the operator expands a technical JSON disclosure
 - **THEN** that payload's stored JSON is shown
+
+### Requirement: Stripe PDF names the subscription's account
+
+"PDF Stripe" MUST request the invoice PDF with the subscription's Stripe account as `account`, so a session with both markets opens the PDF instead of getting `404`.
+
+#### Scenario: Admin with both markets
+
+- **WHEN** an admin with BR and US clicks "PDF Stripe" on an invoice of a `br` subscription
+- **THEN** the panel requests `/api/v1/admin/billing/invoices/<invoice>/pdf?account=br` and opens the returned URL
+
+### Requirement: Shipping sections list the paid cycles
+
+"Envio UPS" and "Entrega Brasil" MUST list the subscription's paid cycles from the API, each with preparation day, production status, delivery date and shipping state, without needing "Sincronizar faturas". Paid invoices with no cycle (old or zero-value) MUST NOT appear as waiting for a label or a courier. The section shown MUST follow the same rule as today.
+
+#### Scenario: Opened from Today
+
+- **WHEN** an operator opens a subscription with one ready paid cycle and no label
+- **THEN** "Envio UPS" lists that cycle as waiting for a label, before any sync
+
+#### Scenario: Zero-value invoice
+
+- **WHEN** the subscription's invoices include a paid zero-value invoice with no cycle
+- **THEN** it is not listed as waiting
+
+### Requirement: Buying a label here asks when the order is not ready
+
+Buying a label from the subscription detail MUST, on `409 ups_label_needs_confirmation`, show the reasons and ask to confirm, and buy only after confirmation, sending `confirm_not_ready`. The question MUST open with a title taken from the reasons, by the same rule as the dispatch confirmation in Entregas Brasil: with exactly one known reason, the title is that reason ("Pedido ainda não está pronto", "Assinatura cancelada" and the other subscription titles). With two or more reasons, with no reasons, or with an unknown code, the title MUST be "Confirme antes de comprar a etiqueta". The question MUST then list the reasons and end with "Comprar mesmo assim?".
+
+#### Scenario: Order in production
+
+- **WHEN** the API answers 409 with `production_not_ready`
+- **THEN** the question opens with "Pedido ainda não está pronto", lists "Preparo: Em preparo", ends with "Comprar mesmo assim?", and the detail buys only if confirmed
+
+#### Scenario: Canceled subscription
+
+- **WHEN** the API answers 409 with only `subscription_not_active` and status `canceled`
+- **THEN** the question opens with "Assinatura cancelada", not with "Pedido ainda não está pronto"
+
+#### Scenario: Two reasons
+
+- **WHEN** the API answers 409 with `production_not_ready` and `subscription_not_active`
+- **THEN** the question opens with "Confirme antes de comprar a etiqueta", lists both reasons, and ends with "Comprar mesmo assim?"
+
+### Requirement: The detail keeps the contact history
+
+The detail MUST show the subscription's contacts, newest first, and offer "Registrar contato" to a user with `customers.contact.write`, with the account phone and a copy button beside it.
+
+#### Scenario: History
+
+- **WHEN** the subscription has two contacts
+- **THEN** both show, newest first, with reason, outcome, note, who and when
+
+### Requirement: The detail shows the address problem
+
+When the subscription detail has `address_issue`, the page MUST show its codes in plain words, the source, the email state, and the "Registrar contato" action for users with `customers.contact.write`. It MUST NOT offer a field to rewrite the address.
+
+#### Scenario: Open problem
+
+- **WHEN** an operator opens a subscription whose problem lists a missing neighborhood and whose email went out
+- **THEN** the detail says the neighborhood is missing, shows "E-mail enviado em" with the date, and offers "Registrar contato"
+
+#### Scenario: Problem closed because the subscription ended
+
+- **WHEN** an operator opens a canceled subscription whose problem was closed on 5 November with `resolved_by: ended`
+- **THEN** the detail shows "Assinatura encerrada em 05/11"
+
+#### Scenario: Problem closed by an operator
+
+- **WHEN** an operator opens a subscription whose problem was closed on 5 November with `resolved_by: operator`
+- **THEN** the detail shows "Operador corrigiu em 05/11"
+
+### Requirement: Dispatch here is held by the address
+
+In "Entrega Brasil", when the subscription detail's `courier_issues` is not empty, each "Despachar" MUST be disabled and the section MUST say what is missing, in the same words as Entregas Brasil, before any dialog opens. The detail MUST NOT offer any way to dispatch anyway.
+A section locked by `recipient_name_missing` MUST offer "Informar quem recebe" to a user with `users.delivery.write`. It MUST open a dialog with one empty field, "Nome de quem recebe", the text "Fica nesta assinatura e vale para os próximos pedidos. O nome da conta não muda. Se for presente, confirme com o cliente." and "Salvar nome". When the detail has `account_name`, the dialog MUST offer "Usar nome da conta ({account_name})", which fills the field without saving. A 409 `recipient_name_present` MUST say "Esta assinatura já tem nome de quem recebe." and reload. Saving MUST send the name to the subscription's recipient-name route and reload the subscription; a 422 MUST show under the field. When `courier_issues` is empty, null or absent, "Despachar" MUST behave as before.
+
+#### Scenario: No recipient name
+
+- **WHEN** an operator with `shipping.write` opens a Brazil subscription whose `courier_issues` is `["recipient_name_missing"]` and that has a paid cycle waiting
+- **THEN** "Despachar" is disabled, the section says "Falta o nome de quem recebe", and no dispatch dialog can open
+
+#### Scenario: Complete address
+
+- **WHEN** `courier_issues` is empty
+- **THEN** "Despachar" opens the dispatch dialog as before
+
+#### Scenario: Recipient filled in the detail
+
+- **WHEN** `courier_issues` is `["recipient_name_missing"]` and an operator with `users.delivery.write` saves a name in "Informar quem recebe"
+- **THEN** the subscription reloads and "Despachar" is enabled

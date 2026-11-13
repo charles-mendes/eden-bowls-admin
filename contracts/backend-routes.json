@@ -25,6 +25,22 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/admin/billing/subscriptions/:id/contacts"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/billing/subscriptions/:id/contacts"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/billing/subscriptions/:id/courier-deliveries"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/billing/subscriptions/:id/courier-deliveries"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/admin/billing/subscriptions/:id/customer-invoices"
   },
   {
@@ -32,8 +48,20 @@
     "path": "/api/v1/admin/billing/subscriptions/:id/customer-invoices"
   },
   {
+    "method": "PATCH",
+    "path": "/api/v1/admin/billing/subscriptions/:id/delivery-instructions"
+  },
+  {
     "method": "GET",
     "path": "/api/v1/admin/billing/subscriptions/:id/nfe"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/billing/subscriptions/:id/paid-cycles"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/admin/billing/subscriptions/:id/recipient-name"
   },
   {
     "method": "GET",
@@ -73,6 +101,14 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/admin/catalog/plan-settings"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/catalog/plan-settings"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/admin/catalog/pricing"
   },
   {
@@ -97,55 +133,35 @@
   },
   {
     "method": "DELETE",
+    "path": "/api/v1/admin/catalog/products/:productId/content/image"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/catalog/products/:productId/content/image"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/catalog/products/:productId/content/label"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/v1/admin/catalog/products/:productId/content/plan-image"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/catalog/products/:productId/content/plan-image"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/v1/admin/catalog/products/:productId/content/presentation"
+  },
+  {
+    "method": "DELETE",
     "path": "/api/v1/admin/catalog/products/:productId/variations/:variationId"
   },
   {
     "method": "POST",
     "path": "/api/v1/admin/catalog/products/:productId/variations/:variationId/activation"
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/admin/catalog/recipe-content"
-  },
-  {
-    "method": "POST",
-    "path": "/api/v1/admin/catalog/recipe-content"
-  },
-  {
-    "method": "DELETE",
-    "path": "/api/v1/admin/catalog/recipe-content/:flavorSlug"
-  },
-  {
-    "method": "GET",
-    "path": "/api/v1/admin/catalog/recipe-content/:flavorSlug"
-  },
-  {
-    "method": "PATCH",
-    "path": "/api/v1/admin/catalog/recipe-content/:flavorSlug"
-  },
-  {
-    "method": "DELETE",
-    "path": "/api/v1/admin/catalog/recipe-content/:flavorSlug/image"
-  },
-  {
-    "method": "PUT",
-    "path": "/api/v1/admin/catalog/recipe-content/:flavorSlug/image"
-  },
-  {
-    "method": "PUT",
-    "path": "/api/v1/admin/catalog/recipe-content/:flavorSlug/label"
-  },
-  {
-    "method": "DELETE",
-    "path": "/api/v1/admin/catalog/recipe-content/:flavorSlug/plan-image"
-  },
-  {
-    "method": "PUT",
-    "path": "/api/v1/admin/catalog/recipe-content/:flavorSlug/plan-image"
-  },
-  {
-    "method": "PUT",
-    "path": "/api/v1/admin/catalog/recipe-content/:flavorSlug/presentation"
   },
   {
     "method": "POST",
@@ -162,6 +178,26 @@
   {
     "method": "GET",
     "path": "/api/v1/admin/catalog/sync/status"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/v1/admin/courier-deliveries/:id"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/courier-deliveries/:id/cancel"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/courier-deliveries/:id/delivered"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/courier-deliveries/:id/failed"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/courier-deliveries/queue"
   },
   {
     "method": "GET",
@@ -254,6 +290,10 @@
   {
     "method": "POST",
     "path": "/api/v1/admin/life-stage/preview"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/market-exceptions"
   },
   {
     "method": "GET",
@@ -389,6 +429,10 @@
   },
   {
     "method": "GET",
+    "path": "/api/v1/admin/production/queue/:id/block-preview"
+  },
+  {
+    "method": "GET",
     "path": "/api/v1/admin/reports/acquisition"
   },
   {
@@ -446,6 +490,26 @@
   {
     "method": "POST",
     "path": "/api/v1/admin/shipments/:id/void"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/shipments/pickups"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/shipments/pickups"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/shipments/pickups/:id/cancel"
+  },
+  {
+    "method": "POST",
+    "path": "/api/v1/admin/shipments/pickups/:id/not-created"
+  },
+  {
+    "method": "GET",
+    "path": "/api/v1/admin/shipments/queue"
   },
   {
     "method": "POST",

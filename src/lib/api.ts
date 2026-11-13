@@ -1,3 +1,6 @@
+import { isAuthTokenExpired } from './jwt'
+import { readStoredToken, writeStoredToken } from './tokenStorage'
+
 const DEFAULT_API_BASE_URL = '/api/v1'
 const JWT_AUTH_INVALID_TOKEN_CODE = 'jwt_auth_invalid_token'
 const COOKIE_AUTH_PATHS = new Set(['/auth/token', '/auth/refresh', '/auth/logout'])
@@ -63,6 +66,55 @@ function isJwtInvalidError(errorBody: unknown) {
   return readErrorCode(errorBody) === JWT_AUTH_INVALID_TOKEN_CODE
 }
 
+const REFRESH_LOCK = 'eden-bowls-admin-auth-refresh'
+
+async function requestRefresh() {
+  try {
+    const response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    })
+
+    if (!response?.ok) {
+      return null
+    }
+
+    const body = await response.json().catch(() => null) as { token?: unknown } | null
+    const token = typeof body?.token === 'string' ? body.token.trim() : ''
+    if (!token) {
+      return null
+    }
+
+    // Stored before the lock is released, so the next tab in line finds it.
+    writeStoredToken(token)
+    return token
+  } catch {
+    return null
+  }
+}
+
+// Every tab sends the same refresh cookie, and the API revokes the whole session when one cookie is used
+// more than twice. So the tabs refresh one at a time: a tab that waited and finds a token another tab just
+// stored takes it instead of refreshing again.
+async function refreshAcrossTabs() {
+  const before = readStoredToken()
+  const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined
+  if (!locks || typeof locks.request !== 'function') {
+    return requestRefresh()
+  }
+
+  return locks.request(REFRESH_LOCK, async () => {
+    const stored = readStoredToken()
+    if (stored && stored !== before && !isAuthTokenExpired(stored)) {
+      return stored
+    }
+    return requestRefresh()
+  })
+}
+
 export async function refreshAccessToken() {
   if (refreshInFlight) {
     return refreshInFlight
@@ -70,25 +122,10 @@ export async function refreshAccessToken() {
 
   refreshInFlight = (async () => {
     try {
-      const response = await fetch(`${getApiBaseUrl()}/auth/refresh`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          'X-Requested-With': 'XMLHttpRequest',
-        },
-      })
-
-      if (!response?.ok) {
-        return null
+      const token = await refreshAcrossTabs()
+      if (token) {
+        notifyAccessTokenRefreshed(token)
       }
-
-      const body = await response.json().catch(() => null) as { token?: unknown } | null
-      const token = typeof body?.token === 'string' ? body.token.trim() : ''
-      if (!token) {
-        return null
-      }
-
-      notifyAccessTokenRefreshed(token)
       return token
     } catch {
       return null

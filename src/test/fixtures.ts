@@ -36,6 +36,7 @@ export const WRITE_PERMISSIONS = [
   'production.write',
   'reports.read',
   'reports.export',
+  'customers.contact.write',
 ] as const
 
 export const operatorUser: AdminUser = {
@@ -55,6 +56,15 @@ export const operatorWriteUser: AdminUser = {
     ...WRITE_PERMISSIONS.filter((permission) => permission !== 'users.roles.write' && permission !== 'users.access.write' && permission !== 'system.health.read'),
     'market.br',
   ],
+}
+
+// Same write access as operatorWriteUser, working in the United States.
+export const operatorUsWriteUser: AdminUser = {
+  ...operatorWriteUser,
+  userId: 'u-operator-us-write',
+  email: 'ops.us.write@edenbowls.com',
+  markets: ['US'],
+  permissions: operatorWriteUser.permissions.map((permission) => (permission === 'market.br' ? 'market.us' : permission)),
 }
 
 export const operatorUsUser: AdminUser = {
@@ -135,6 +145,8 @@ export const productionQueueItem = {
     { flavor: 'Bovino', flavorKey: 'beef', quantity: 2, packSize: '500 g', petName: 'Luna' },
     { flavor: 'Frango', flavorKey: 'turkey', quantity: 1, packSize: '500 g', petName: 'Luna' },
   ],
+  // shipping-boxes: 3 packs of 500 g in one Starter box, no dry ice in Brazil.
+  boxes: [{ key: 'starter', label: 'Starter Box', pack_count: 3, weight_kg: 2.5 }],
 }
 
 export const productionQueueList = {
@@ -241,7 +253,10 @@ export const checkoutDetail = {
   subscriptions: [
     { id: 'sub-row-1', stripeSubscriptionId: 'sub_123', status: 'active', currentPeriodEnd: '2026-09-01T12:00:00.000Z', cancelAtPeriodEnd: false, planLabel: 'Adult 1m' },
   ],
-  pets: [{ id: 'pet-1', name: 'Luna', breed: 'Vira-lata', ageYears: 4, ageMonths: 0, weightInput: 12, weightUnit: 'kg', activityLevel: 'BAIXO', petCondition: 'ADEQUADO', neutered: true }],
+  pets: [{
+    id: 'pet-1', name: 'Luna', breed: 'Vira-lata', ageYears: 4, ageMonths: 0, weightInput: 12, weightUnit: 'kg', activityLevel: 'BAIXO', petCondition: 'ADEQUADO', neutered: true,
+    subscriptions: [{ id: 'sub-row-1', stripeSubscriptionId: 'sub_123', status: 'active', planLabel: 'Adult 1m' }] as Array<Record<string, unknown>>,
+  }],
   recurrence: { frequency: 'every_4_weeks' },
   planSelection: {
     pets: [{ pet_id: 'pet-1', enabled: true, pet_name: 'Luna', flavor_weights: [5, 5], selected_flavors: ['beef', 'fish'] }],
@@ -343,6 +358,34 @@ export const usersList = {
   items: [userItem, staffAccessItem],
 }
 
+// One subscription as an operator reads it on the customer detail (backend: admin-customer-subscriptions).
+export const customerSubscription = {
+  id: 'sub-row-1',
+  stripeSubscriptionId: 'sub_123',
+  stripeAccount: 'br',
+  status: 'active',
+  currentPeriodEnd: '2026-09-01T12:00:00.000Z',
+  cancelAtPeriodEnd: false,
+  planLabel: 'Adult 1m',
+  createdAt: '2026-03-01T12:00:00.000Z',
+  subscriptionTermMonths: 6,
+  chargedDeliveries: 2,
+  autoRenew: true,
+  paymentMethod: { brand: 'visa', last4: '4242' },
+  checkoutShipping: { label: 'Entrega local', amount: 25, currency: 'BRL' },
+  latestCycle: {
+    invoiceId: 'in_123',
+    paidAt: '2026-08-01T12:00:00.000Z',
+    preparationDay: '2026-08-08',
+    deliveryDate: '2026-08-10',
+    production: { status: 'ready', note: 'sem frango' },
+    delivery: { kind: 'courier', id: 5, status: 'delivered', outForDeliveryAt: '2026-08-10T12:00:00.000Z', deliveredAt: '2026-08-10T15:00:00.000Z', failedAt: null },
+    nfe: { id: 31, number: '123', series: '1', status: 'authorized', lastError: null, emailStatus: 'sent' },
+  },
+  alerts: [] as Array<Record<string, unknown>>,
+  pets: [{ id: 'pet-1', name: 'Luna' }] as Array<{ id: string; name: string }>,
+}
+
 export const userDetail = {
   ...userItem,
   lockedByAllowlist: false,
@@ -359,19 +402,45 @@ export const userDetail = {
     deliveryInstructions: 'Deixar na portaria',
   },
   subscriptions: [
-    { id: 'sub-row-1', stripeSubscriptionId: 'sub_123', stripeAccount: 'br', status: 'active', currentPeriodEnd: '2026-09-01T12:00:00.000Z', cancelAtPeriodEnd: false, planLabel: 'Adult 1m' },
+    customerSubscription,
   ],
+}
+
+export type ProductContentSummary = {
+  code: string
+  name: string
+  lifeStage: 'adult' | 'puppy' | 'senior'
+  flavorAliases: string
+  shortLabel: string
+  imageUrl: string | null
+  planImageUrl: string | null
+  labelStatus: 'missing' | 'incomplete' | 'complete'
+  labelMissing: string[]
+  presentationReady: boolean
 }
 
 export const productItem = {
   id: 'prod-1',
-  slug: 'bowl-adulto',
+  slug: 'turkey-br',
   namePt: 'Bowl Adulto',
   nameEn: 'Adult Bowl',
   active: true,
+  planCountry: 'BR' as string | null,
   category: { namePt: 'Alimentação', nameEn: 'Food' },
   marketConfigs: [{ marketCountry: 'BR', currency: 'BRL', active: true }],
-  variants: [{ id: 'var-1', sku: 'BOWL-1', variantPrices: [{ id: 'price-1' }], canDelete: true }],
+  variants: [{ id: 'var-1', sku: 'BOWL-1', active: true, variantPrices: [{ id: 'price-1' }], canDelete: true }] as Array<{ id: string; sku: string; active?: boolean; variantPrices?: Array<{ id: string }>; canDelete?: boolean }>,
+  content: {
+    code: 'turkey',
+    name: 'Bowl Adulto',
+    lifeStage: 'adult',
+    flavorAliases: 'peru',
+    shortLabel: 'Peru',
+    imageUrl: null,
+    planImageUrl: null,
+    labelStatus: 'missing',
+    labelMissing: ['ingredients', 'analysis', 'energyKg', 'energyPackage'],
+    presentationReady: true,
+  } as ProductContentSummary | null,
   createdAt: '2026-08-01T12:00:00.000Z',
   canDelete: true,
 }
@@ -385,14 +454,13 @@ export const productsList = {
 
 export const productDetail = {
   id: 'prod-1',
-  slug: 'bowl-adulto',
+  slug: 'turkey-br',
   namePt: 'Bowl Adulto',
   nameEn: 'Adult Bowl',
   active: false,
   planCountry: 'BR',
-  planDays: 28,
   publishBlocked: false,
-  gaps: [],
+  gaps: [] as Array<{ variationId: string; currencies: string[] }>,
   variants: [
     {
       id: 'var-1',
@@ -410,9 +478,11 @@ export const productDetail = {
       recipeImageUrl: null as string | null,
       recipeLabelStatus: 'missing' as 'missing' | 'incomplete' | 'complete',
       recipePresentationReady: true as boolean,
+      weight: '1kg' as string | null,
     },
   ],
   canDelete: true,
+  content: { ...productItem.content!, label: null, presentation: null } as (ProductContentSummary & { label?: unknown; presentation?: unknown }) | null,
 }
 
 export const recipeImageUrl = 'https://api.test/recipe-images/recipe-br-turkey-0123456789abcdef0123456789abcdef.webp'
@@ -466,6 +536,7 @@ export const recipePresentation: RecipePresentationFixture = {
 }
 
 export const recipeContent = {
+  productId: 'prod-1',
   market: 'BR',
   flavorSlug: 'turkey',
   name: 'Frango',
@@ -480,38 +551,11 @@ export const recipeContent = {
   labelMissing: [] as string[],
   presentation: null as RecipePresentationFixture | null,
   presentationUpdatedAt: null as string | null,
+  flavorAliases: 'peru',
+  shortLabel: 'Peru',
   variations: [
     { id: 'var-1', name: 'Frango 1kg', sku: 'BOWL-1', active: true, productId: 'prod-1', productName: 'Bowl Adulto' },
     { id: 'var-2', name: 'Frango 500g', sku: 'BOWL-2', active: false, productId: 'prod-1', productName: 'Bowl Adulto' },
-  ],
-}
-
-export type RecipeListItem = {
-  key: string
-  name: string
-  lifeStage: 'adult' | 'puppy' | 'senior'
-  imageUrl: string | null
-  labelStatus: 'missing' | 'incomplete' | 'complete'
-  variations: Array<{ id: string; name: string; sku: string; active: boolean; productId: string; productName: string }>
-}
-
-export const recipeList: { market: string; items: RecipeListItem[] } = {
-  market: 'BR',
-  items: [
-    {
-      key: 'beef',
-      name: 'Carne',
-      lifeStage: 'adult',
-      imageUrl: recipeImageUrl,
-      labelStatus: 'complete',
-      variations: [
-        { id: '1001', name: 'Beef 300g', sku: '1001', active: false, productId: 'prod-1', productName: 'Bowl Adulto' },
-        { id: '1005', name: 'Beef 500g', sku: '1005', active: true, productId: 'prod-1', productName: 'Bowl Adulto' },
-        { id: '3000', name: 'Bovino', sku: '3000', active: true, productId: 'prod-9', productName: 'Plano antigo' },
-      ],
-    },
-    { key: 'senior-lamb', name: 'Sênior Cordeiro', lifeStage: 'senior', imageUrl: null, labelStatus: 'missing', variations: [] },
-    { key: 'turkey', name: 'Frango', lifeStage: 'adult', imageUrl: null, labelStatus: 'incomplete', variations: recipeContent.variations },
   ],
 }
 
@@ -597,7 +641,7 @@ export const syncHealth = {
   currency: 'BRL',
   totalExpected: 10,
   totalMapped: 10,
-  gaps: [],
+  gaps: [] as Array<{ variationId: string; currencies: string[] }>,
 }
 
 const brSyncRun = {
@@ -652,6 +696,7 @@ export const shippingSettings = {
           state: 'FL',
           zipcode: '33101',
           country: 'US',
+          phone: '305 555 0100',
         },
         package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12 },
         allowed_service_codes: ['03'],
@@ -815,11 +860,71 @@ export const todayOverview = {
   total: 4,
   items: [
     { ...todayOrder, id: 31, market: 'US', dueBucket: 'overdue', dueLabel: 'Atrasado 1 dia', displayName: 'Ana Costa', city: 'Miami', productionStatus: 'ready', paymentState: 'paid', upsLabel: 'missing' },
-    { ...todayOrder, id: 32, market: 'BR', dueBucket: 'today', displayName: 'Bruno Lima', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'paid', upsLabel: null },
+    { ...todayOrder, id: 32, market: 'BR', dueBucket: 'today', displayName: 'Bruno Lima', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'paid', upsLabel: null, courierDelivery: 'none' },
     { ...todayOrder, id: 33, market: 'US', dueBucket: 'today', displayName: 'Carla Diaz', city: 'Orlando', productionStatus: 'in_production', paymentState: 'paid', upsLabel: 'missing' },
-    { ...todayOrder, id: 34, market: 'BR', dueBucket: 'tomorrow', dueLabel: 'Amanhã', displayName: 'Davi Rocha', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'past_due', upsLabel: null },
+    { ...todayOrder, id: 34, market: 'BR', dueBucket: 'tomorrow', dueLabel: 'Amanhã', displayName: 'Davi Rocha', city: 'Curitiba', productionStatus: 'to_prepare', paymentState: 'past_due', upsLabel: null, courierDelivery: null, lastContact: null, phone: '+55 41 99999-0000' },
   ],
   closedDays: [
     { market: 'BR', date: '2026-10-08', label: 'Folga da cozinha', closesPreparation: true, closesPickup: false, closesDelivery: true },
   ],
+  fulfillment: {
+    courierToDispatch: 0,
+    courierOnTheRoadLong: 0,
+    courierFailed: 0,
+    courierAwaitingNfe: null,
+    nfeMissingDocument: 0,
+    nfeRejected: 0,
+    nfeError: 0,
+    upsUnresolved: 0,
+    blingConnected: true,
+    addressIssues: { BR: { open: 0, stale: 0 }, US: { open: 0, stale: 0 } },
+    marketExceptions: { BR: 0, US: 0 },
+  },
+}
+
+export const customerContact = {
+  id: 1,
+  subscription_id: 'sub-row-1',
+  channel: 'whatsapp',
+  reason: 'payment_failed',
+  outcome: 'no_answer',
+  note: 'Mandei o link do cartão',
+  actor_email: 'ops@edenbowls.com',
+  created_at: '2026-10-06T17:05:00.000Z',
+}
+
+// delivery-address-issues: an open problem whose email went out on 3 November.
+export const addressIssue = {
+  id: 3,
+  codes: ['address_neighborhood_missing'],
+  source: 'courier_check',
+  open: true,
+  opened_at: '2026-11-03T12:00:00.000Z',
+  email_sent_at: '2026-11-03T12:00:05.000Z',
+  resolved_at: null,
+  resolved_by: null,
+}
+
+// shipment-market: a Brazil account delivered in the US, so it ships from no market.
+export const marketExceptionItem = {
+  subscription_id: 42,
+  stripe_subscription_id: 'sub_cross_1',
+  status: 'active',
+  stripe_account: 'br',
+  address_country: 'US',
+  customer: { id: 7, email: 'ana@example.com', name: 'Ana Costa' },
+  open_paid_cycles: 1,
+}
+
+// ups-pickup: a pickup UPS confirmed, as GET /admin/shipments/pickups lists it.
+export const upsPickupRequested = {
+  id: 31,
+  pickup_date: '2026-11-09',
+  ready_time: '14:00',
+  close_time: '18:00',
+  package_count: 8,
+  status: 'requested',
+  prn: '2929602E9CP',
+  shipment_ids: [101, 102],
+  requested_by: 'ops@edenbowls.com',
 }
