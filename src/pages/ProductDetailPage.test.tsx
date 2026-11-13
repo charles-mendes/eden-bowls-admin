@@ -606,3 +606,80 @@ describe('ProductDetailPage', () => {
     })
   })
 })
+
+describe('ProductDetailPage variation without weight', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  const noWeight = { ...productDetail, active: true, variants: [{ ...productDetail.variants[0], active: true, weight: null }] }
+
+  it('warns that an active variation without weight is out of the stock and fills only the weight', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, { product: noWeight })
+    renderDetail()
+
+    const warning = await screen.findByText(/Fora do estoque:/)
+    expect(warning.closest('.weight-warning')).toHaveTextContent('está sem peso. O estoque conta packs por peso.')
+    await user.click(within(warning.closest('.weight-warning') as HTMLElement).getByRole('button', { name: 'Informar peso' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Informar peso' })
+    expect(within(dialog).getByLabelText('Peso')).toHaveFocus()
+    expect(within(dialog).getByText(/Só o peso é salvo e a variação continua ativa/)).toBeInTheDocument()
+    await user.type(within(dialog).getByLabelText('Peso'), '300g')
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar peso' }))
+
+    await waitFor(() => expect(patches(calls).at(-1)?.body).toEqual({ variants: [{ id: 'var-1', weight: '300g' }] }))
+    expect(await screen.findByText(/Peso salvo\. .* já aparece no Estoque\./)).toBeInTheDocument()
+    expect(screen.queryByText(/Fora do estoque:/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: 'Informar peso' })).not.toBeInTheDocument()
+  })
+
+  it('marks the row and asks for the weight before saving an empty one', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, { product: noWeight })
+    renderDetail()
+
+    await openTab(user, 'Variações')
+    const row = document.getElementById('variation-var-1') as HTMLElement
+    expect(within(row).getByText('Sem peso')).toHaveClass('badge-warning')
+    await user.click(within(row).getByRole('button', { name: /Informar peso de/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Informar peso' })
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar peso' }))
+    expect(within(dialog).getByRole('alert')).toHaveTextContent('Informe o peso, como 300g.')
+    expect(patches(calls)).toHaveLength(0)
+  })
+
+  it('opens the weight straight from the stock link and offers the way back after saving', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { product: noWeight })
+    renderDetail('/catalog/products/prod-1?variation=var-1&campo=peso')
+
+    const dialog = await screen.findByRole('dialog', { name: 'Informar peso' })
+    expect(screen.getByRole('tab', { name: 'Variações' })).toHaveAttribute('aria-selected', 'true')
+    await user.type(within(dialog).getByLabelText('Peso'), '300g')
+    await user.click(within(dialog).getByRole('button', { name: 'Salvar peso' }))
+    expect(await screen.findByRole('link', { name: 'Voltar ao Estoque' })).toHaveAttribute('href', '/operations/stock')
+  })
+
+  it('shows the warning without the action to readonly users, and nothing when the weight exists', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser, { product: noWeight })
+    renderDetail()
+    expect(await screen.findByText(/Fora do estoque:/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Informar peso' })).not.toBeInTheDocument()
+  })
+
+  it('has no warning when every active variation has a weight', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, { product: { ...productDetail, active: true } })
+    renderDetail()
+    await screen.findByRole('tab', { name: 'Variações' })
+    expect(screen.queryByText(/Fora do estoque:/)).not.toBeInTheDocument()
+  })
+})

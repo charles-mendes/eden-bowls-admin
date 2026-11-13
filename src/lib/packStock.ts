@@ -1,4 +1,5 @@
 import { ApiRequestError } from './api'
+import type { LifeStage } from './recipeContent'
 
 export const STOCK_WINDOWS = [7, 14, 30] as const
 export type StockWindow = (typeof STOCK_WINDOWS)[number]
@@ -25,11 +26,26 @@ export type UnsizedLine = {
   quantity: number
 }
 
+// One variation of a product of the market: the product is the recipe and has one variation per weight.
 export type StockCatalogEntry = {
   flavorKey: string
   packSizeGrams: number
+  /** Product name. */
   label: string
+  productId?: string | null
+  variationId?: string | null
+  sku?: string | null
   published: boolean
+}
+
+// A variation on sale with no weight: it has no pack size, so it stays out of the stock until the weight is filled.
+export type VariationWithoutWeight = {
+  productId: string
+  productName: string
+  lifeStage?: LifeStage | null
+  variationId: string
+  name: string | null
+  sku: string | null
 }
 
 export type StockOverview = {
@@ -37,8 +53,26 @@ export type StockOverview = {
   windowDays: number
   items: StockItem[]
   unsizedLines: UnsizedLine[]
-  /** Names and sizes of the market catalog. Empty when the catalog is unavailable. */
+  /** Products and sizes of the market catalog. Empty when the catalog is unavailable. */
   catalog?: StockCatalogEntry[]
+  /** Variations on sale without weight, out of the stock. */
+  variationsWithoutWeight?: VariationWithoutWeight[]
+}
+
+const LIFE_STAGE_ORDER: Record<LifeStage, number> = { adult: 0, puppy: 1, senior: 2 }
+
+// Grouped by life stage (Adulto, Filhote, Sênior), then by product name and SKU, so the same recipe line reads together.
+export function sortVariationsWithoutWeight(items: VariationWithoutWeight[]) {
+  return items.toSorted((left, right) => (
+    (left.lifeStage ? LIFE_STAGE_ORDER[left.lifeStage] : 3) - (right.lifeStage ? LIFE_STAGE_ORDER[right.lifeStage] : 3)
+    || left.productName.localeCompare(right.productName)
+    || (left.sku ?? '').localeCompare(right.sku ?? '')
+  ))
+}
+
+// Product page with the variation's weight open to fill.
+export function variationWeightHref(item: { productId: string; variationId: string }) {
+  return `/catalog/products/${item.productId}?variation=${item.variationId}&campo=peso`
 }
 
 export type StockStatus = 'short' | 'below' | 'ok'
@@ -115,7 +149,7 @@ export function stockItemLabel(flavorKey: string, packSizeGrams: number, market 
 export function stockErrorMessage(error: unknown) {
   const code = error instanceof ApiRequestError ? error.code : ''
   if (code === 'stock_item_unknown') {
-    return 'Essa receita e tamanho não existem no catálogo deste mercado.'
+    return 'Esse produto não tem variação com esse tamanho neste mercado.'
   }
   if (code === 'market_forbidden') {
     return 'Este mercado está fora do seu escopo.'
@@ -143,23 +177,50 @@ export function stockItemKey(item: { flavorKey: string; packSizeGrams: number })
   return `${item.flavorKey}|${item.packSizeGrams}`
 }
 
-export function stockRecipeNames(catalog: StockCatalogEntry[]) {
-  return new Map(catalog.map((entry) => [entry.flavorKey, entry.label]))
+export type StockProduct = {
+  flavorKey: string
+  /** Product name, with the code beside it when another product of the market has the same name. */
+  name: string
+  productId: string | null
 }
 
-// Recipes and sizes the operator can pick: the published catalog plus whatever is already in stock or demanded.
-export function stockRecipeOptions(catalog: StockCatalogEntry[], items: StockItem[]) {
+// The product of each code (flavorKey), read from the catalog. Without the catalog the code stands for the name.
+export function stockProducts(catalog: StockCatalogEntry[]) {
+  const products = new Map<string, StockProduct>()
+  for (const entry of catalog) {
+    const current = products.get(entry.flavorKey)
+    products.set(entry.flavorKey, {
+      flavorKey: entry.flavorKey,
+      name: current?.name || entry.label || entry.flavorKey,
+      productId: current?.productId || entry.productId || null,
+    })
+  }
+  const counts = new Map<string, number>()
+  for (const product of products.values()) counts.set(product.name, (counts.get(product.name) ?? 0) + 1)
+  for (const product of products.values()) {
+    if ((counts.get(product.name) ?? 0) > 1) product.name = `${product.name} (${product.flavorKey})`
+  }
+  return products
+}
+
+// SKU of each product and size, for the row subline.
+export function stockVariationSkus(catalog: StockCatalogEntry[]) {
+  return new Map(catalog.filter((entry) => entry.sku).map((entry) => [stockItemKey(entry), entry.sku as string]))
+}
+
+// Products and sizes the operator can pick: the published variations plus whatever is already in stock or demanded.
+export function stockProductOptions(catalog: StockCatalogEntry[], items: StockItem[]) {
   const sizes = new Map<string, Set<number>>()
   for (const entry of [...catalog.filter((item) => item.published), ...items]) {
     const current = sizes.get(entry.flavorKey) ?? new Set<number>()
     current.add(entry.packSizeGrams)
     sizes.set(entry.flavorKey, current)
   }
-  const names = stockRecipeNames(catalog)
+  const products = stockProducts(catalog)
   return [...sizes.entries()]
     .map(([flavorKey, grams]) => ({
       flavorKey,
-      label: names.get(flavorKey) ?? flavorKey,
+      label: products.get(flavorKey)?.name ?? flavorKey,
       sizes: [...grams].toSorted((left, right) => left - right),
     }))
     .toSorted((left, right) => left.label.localeCompare(right.label))
@@ -171,12 +232,22 @@ function searchable(text: string) {
 
 export function filterStockItems(
   items: StockItem[],
-  { search, status, names }: { search: string; status: StockStatus | ''; names: Map<string, string> },
+  { search, status, products, skus }: {
+    search: string
+    status: StockStatus | ''
+    products: Map<string, StockProduct>
+    skus?: Map<string, string>
+  },
 ) {
   const term = searchable(search.trim())
   return items.filter((item) => (
     (!status || stockStatus(item) === status)
-    && (!term || searchable(`${names.get(item.flavorKey) ?? ''} ${item.flavorKey} ${item.packSizeGrams}`).includes(term))
+    && (!term || searchable([
+      products.get(item.flavorKey)?.name ?? '',
+      item.flavorKey,
+      skus?.get(stockItemKey(item)) ?? '',
+      item.packSizeGrams,
+    ].join(' ')).includes(term))
   ))
 }
 

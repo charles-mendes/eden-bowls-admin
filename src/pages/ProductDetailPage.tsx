@@ -276,6 +276,11 @@ function pendingItems(item: VariantDraft, planCountry: string) {
   return pending
 }
 
+// An active variation without weight has no pack size: the stock cannot list it.
+function needsWeight(item: VariantDraft) {
+  return Boolean(item.id && item.active && !item.weight.trim())
+}
+
 const MISSING_LABELS: Record<string, string> = {
   price: 'preço',
   stripe_price: 'preço no Stripe',
@@ -352,6 +357,12 @@ export function ProductDetailPage() {
   const [variationNotice, setVariationNotice] = useState<{ tone: 'success' | 'error'; text: string; tab?: TabId } | null>(null)
   const [deletingKey, setDeletingKey] = useState('')
   const [variationDraft, setVariationDraft] = useState<VariantDraft | null>(null)
+  // Weight of an active variation saved without it. The API accepts it alone even while the variation is locked.
+  const [weightDraft, setWeightDraft] = useState<{ item: VariantDraft; weight: string } | null>(null)
+  const [weightError, setWeightError] = useState('')
+  const [savingWeight, setSavingWeight] = useState(false)
+  // Shown where the warning was, so the confirmation is on screen whatever the scroll.
+  const [weightSaved, setWeightSaved] = useState('')
   const [dialogError, setDialogError] = useState('')
   const [savingVariation, setSavingVariation] = useState(false)
   const [togglingKey, setTogglingKey] = useState('')
@@ -390,6 +401,7 @@ export function ProductDetailPage() {
   }, [])
 
   const notifyVariation = (tone: 'success' | 'error', text: string, noticeTab?: TabId) => {
+    setWeightSaved('')
     setMessage('')
     setError('')
     setVariationNotice({ tone, text, tab: noticeTab })
@@ -538,9 +550,17 @@ export function ProductDetailPage() {
     setVariationDraft(draft)
   }
 
+  const openWeightDialog = (item: VariantDraft) => {
+    setWeightSaved('')
+    setWeightError('')
+    setWeightDraft({ item, weight: '' })
+  }
+
   // ?variation=<id> opens the Variações tab on that variation, highlights it and opens it when editable.
+  // With &campo=peso (link from Estoque) a variation without weight opens straight on the weight.
   const [searchParams] = useSearchParams()
   const focusVariationId = searchParams.get('variation')
+  const focusField = searchParams.get('campo')
   const focusedVariation = useRef<string | null>(null)
   useEffect(() => {
     if (!data || !focusVariationId || focusedVariation.current === focusVariationId) return
@@ -549,8 +569,41 @@ export function ProductDetailPage() {
     focusedVariation.current = focusVariationId
     setTab('variacoes')
     requestAnimationFrame(() => document.getElementById(`variation-${focusVariationId}`)?.scrollIntoView?.({ block: 'center' }))
-    if (canEditVariation(item)) openVariationDialog(item)
-  }, [data, variants, focusVariationId])
+    if (focusField === 'peso' && canWrite && needsWeight(item)) openWeightDialog(item)
+    else if (canEditVariation(item)) openVariationDialog(item)
+  }, [data, variants, focusVariationId, focusField, canWrite])
+
+  const closeWeightDialog = () => {
+    if (savingWeight) return
+    setWeightDraft(null)
+    setWeightError('')
+  }
+
+  const saveWeight = async () => {
+    if (!token || !productId || !weightDraft || savingWeight) return
+    const weight = weightDraft.weight.trim()
+    if (!weight) {
+      setWeightError(`Informe o peso, como ${planCountry === 'US' ? '10.6oz' : '300g'}.`)
+      return
+    }
+    try {
+      setSavingWeight(true)
+      const response = await apiRequest<ProductDetail>(`/admin/catalog/products/${productId}`, {
+        token,
+        method: 'PATCH',
+        body: { variants: [{ id: weightDraft.item.id, weight }] },
+      })
+      applyProduct(response, { keepGeneral: generalDirty })
+      setWeightDraft(null)
+      setWeightError('')
+      setVariationNotice(null)
+      setWeightSaved(`Peso salvo. ${weightDraft.item.name || weightDraft.item.sku || 'A variação'} já aparece no Estoque.`)
+    } catch (requestError) {
+      setWeightError(variationFailure(requestError, 'Falha ao salvar o peso', weight))
+    } finally {
+      setSavingWeight(false)
+    }
+  }
 
   const updateDraft = (patch: Partial<VariantDraft>) => {
     setVariationDraft((current) => (current ? { ...current, ...patch } : current))
@@ -670,6 +723,7 @@ export function ProductDetailPage() {
     : ''
 
   const pendingSyncCount = variants.filter((item) => item.requiresSync).length
+  const withoutWeight = variants.filter(needsWeight)
   const content = data?.content ?? null
   const contentForSections = data ? sectionContent(data) : null
   const draft = variationDraft
@@ -737,6 +791,29 @@ export function ProductDetailPage() {
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
       {gapText ? <div className="alert">Publicação bloqueada: faltam preços Stripe para {gapText}.</div> : null}
+      {weightSaved ? (
+        <div className="success weight-warning" role="status">
+          <span>{weightSaved}</span>
+          {/* Came from the Estoque warning: the way back to the variations still without weight. */}
+          {focusField === 'peso' ? <Link className="ghost-button" to="/operations/stock">Voltar ao Estoque</Link> : null}
+        </div>
+      ) : null}
+      {withoutWeight.length ? (
+        <div className="warning weight-warning" role="status">
+          <span>
+            <strong>Fora do estoque:</strong>{' '}
+            {withoutWeight.length === 1
+              ? `a variação ativa ${withoutWeight[0].name || withoutWeight[0].sku || ''} está sem peso.`
+              : `${withoutWeight.length} variações ativas estão sem peso.`}
+            {' '}O estoque conta packs por peso.
+          </span>
+          {canWrite ? (
+            <button className="ghost-button" type="button" onClick={() => { setTab('variacoes'); openWeightDialog(withoutWeight[0]) }}>
+              Informar peso
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {data ? <ProductReadiness steps={readinessSteps} onOpen={openReadiness} canPublish={canWrite} /> : null}
 
@@ -777,7 +854,7 @@ export function ProductDetailPage() {
               {generalError ? <div className="alert" role="alert">{generalError}</div> : null}
               {data ? (
                 <>
-                  <div className="form-grid">
+                                    <div className="form-grid">
                     <label>
                       Nome
                       <input
@@ -939,7 +1016,11 @@ export function ProductDetailPage() {
                             <span className="cell-meta mono">{item.sku || 'Sem SKU'}</span>
                           </div>
                         </td>
-                        <td data-label="Peso">{item.weight ? weightText(item.weight) : '-'}</td>
+                        <td data-label="Peso">
+                          {item.weight ? weightText(item.weight) : needsWeight(item) ? (
+                            <span className="badge-warning" title="Sem peso, a variação fica fora do Estoque.">Sem peso</span>
+                          ) : '-'}
+                        </td>
                         <td className="numeric" data-label={`Preço (${currency})`}>{formatCurrency(item.regularPrice === '' ? null : Number(item.regularPrice), currency)}</td>
                         <td data-label="Stripe">
                           <div className="cell-stack">
@@ -987,6 +1068,16 @@ export function ProductDetailPage() {
                             <div className="cell-stack cell-actions">
                               {item.id ? (
                                 <div className="table-actions">
+                                  {needsWeight(item) ? (
+                                    <button
+                                      className="primary-button"
+                                      type="button"
+                                      aria-label={`Informar peso de ${label}`}
+                                      onClick={() => openWeightDialog(item)}
+                                    >
+                                      Informar peso
+                                    </button>
+                                  ) : null}
                                   <button
                                     className="ghost-button"
                                     type="button"
@@ -1155,6 +1246,41 @@ export function ProductDetailPage() {
                 </div>
               )}
             </fieldset>
+          </form>
+        ) : null}
+      </Dialog>
+
+      <Dialog
+        open={weightDraft != null}
+        title="Informar peso"
+        description={weightDraft ? [weightDraft.item.name, weightDraft.item.sku ? `SKU ${weightDraft.item.sku}` : ''].filter(Boolean).join(' · ') : undefined}
+        onClose={closeWeightDialog}
+        footer={(
+          <>
+            <button className="ghost-button" type="button" onClick={closeWeightDialog} disabled={savingWeight}>Cancelar</button>
+            <button className="primary-button" type="submit" form="variation-weight-form" disabled={savingWeight}>
+              {savingWeight ? 'Salvando…' : 'Salvar peso'}
+            </button>
+          </>
+        )}
+      >
+        {weightDraft ? (
+          <form id="variation-weight-form" className="access-form" onSubmit={(event) => { event.preventDefault(); void saveWeight() }}>
+            {weightError ? <div className="alert" role="alert">{weightError}</div> : null}
+            <label className="closure-field">
+              Peso
+              <input
+                aria-label="Peso"
+                value={weightDraft.weight}
+                maxLength={32}
+                onChange={(event) => setWeightDraft((current) => (current ? { ...current, weight: event.target.value } : current))}
+                placeholder={planCountry === 'US' ? '10.6oz' : '300g'}
+              />
+            </label>
+            <p className="access-hint">
+              Sem peso, esta variação fica fora do Estoque.
+              {weightDraft.item.active && data?.active ? ' Só o peso é salvo e a variação continua ativa. Depois, o peso só muda desativando a variação.' : ''}
+            </p>
           </form>
         ) : null}
       </Dialog>

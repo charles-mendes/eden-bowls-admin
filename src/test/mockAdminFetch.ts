@@ -142,6 +142,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   stockItems?: Array<Record<string, unknown>>
   stockUnsized?: Array<Record<string, unknown>>
   stockCatalog?: Array<Record<string, unknown>>
+  stockWithoutWeight?: Array<Record<string, unknown>>
   stockMovements?: Array<Record<string, unknown>>
   subscriptionSnapshot?: {
     petsSnapshot?: unknown
@@ -659,6 +660,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         items: stockItems,
         unsizedLines: stockUnsized,
         catalog: options.stockCatalog ?? [],
+        variationsWithoutWeight: options.stockWithoutWeight ?? [],
       })
     }
 

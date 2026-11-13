@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
 import { FiltersBar } from '../components/FiltersBar'
+import { InfoHint } from '../components/InfoHint'
 import { MarketSelect } from '../components/MarketSelect'
 import { MetricCard } from '../components/MetricCard'
 import { PageFrame } from '../components/PageFrame'
@@ -11,6 +12,7 @@ import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate } from '../lib/format'
+import { LIFE_STAGE_LABELS } from '../lib/recipeContent'
 import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import {
   ADJUSTMENT_REASON_LABELS,
@@ -29,8 +31,11 @@ import {
   stockItemKey,
   stockItemLabel,
   stockPackSize,
-  stockRecipeNames,
-  stockRecipeOptions,
+  stockProductOptions,
+  stockProducts,
+  sortVariationsWithoutWeight,
+  stockVariationSkus,
+  variationWeightHref,
   stockStatus,
   type StockAdjustmentReason,
   type StockFilters,
@@ -51,6 +56,28 @@ const EMPTY_PRODUCTION: ProductionForm = { flavorKey: '', packSizeGrams: '', qua
 const EMPTY_ADJUSTMENT: AdjustmentForm = { quantity: '', reason: 'loss', note: '' }
 const EMPTY_COUNT: CountForm = { countedQuantity: '', note: '' }
 const PER_PAGE = 20
+
+// Free text kept with the movement and shown in Histórico. Not an invoice: "Nota" read as nota fiscal, so it is
+// named Observação, with its meaning behind the "i".
+function ObservationField({ id, value, onChange, required = false, hint }: {
+  id: string
+  value: string
+  onChange: (value: string) => void
+  required?: boolean
+  hint: string
+}) {
+  return (
+    <div className="closure-field field-with-hint stock-observation-field">
+      <div className="field-label-row">
+        <label htmlFor={id}>{required ? 'Observação (obrigatória)' : 'Observação (opcional)'}</label>
+        <InfoHint id={`${id}-hint`} topic="a observação" text={hint} />
+      </div>
+      <input id={id} value={value} maxLength={255} required={required} aria-describedby={`${id}-hint`} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  )
+}
+
+const OBSERVATION_HINT = 'Texto livre que fica no Histórico do Estoque junto com este movimento. Não é nota fiscal.'
 
 function highlighted(item: StockItem) {
   return stockStatus(item) !== 'ok'
@@ -277,17 +304,33 @@ export function StockPage() {
 
   const allItems = sortStockItems(overview?.items ?? [])
   const catalog = overview?.catalog ?? []
-  const names = stockRecipeNames(catalog)
-  const items = filterStockItems(allItems, { search, status: statusFilter, names })
-  const recipeOptions = stockRecipeOptions(catalog, allItems)
-  const selectedRecipe = recipeOptions.find((option) => option.flavorKey === production.flavorKey)
+  const products = stockProducts(catalog)
+  const skus = stockVariationSkus(catalog)
+  const items = filterStockItems(allItems, { search, status: statusFilter, products, skus })
+  const productOptions = stockProductOptions(catalog, allItems)
+  const selectedProduct = productOptions.find((option) => option.flavorKey === production.flavorKey)
   const unsized = overview?.unsizedLines ?? []
+  const withoutWeight = sortVariationsWithoutWeight(overview?.variationsWithoutWeight ?? [])
+  // Products on sale with no variation weighed yet: listed disabled, so whoever registers them sees what is missing.
+  const sellableProductIds = new Set(
+    productOptions.map((option) => products.get(option.flavorKey)?.productId).filter((id): id is string => Boolean(id)),
+  )
+  const productsWithoutWeight = withoutWeight
+    .filter((item, index) => !sellableProductIds.has(item.productId)
+      && withoutWeight.findIndex((other) => other.productId === item.productId) === index)
   const unsizedTotal = unsized.reduce((sum, line) => sum + line.quantity, 0)
   const columnCount = 9
   const adjustmentDelta = Number(adjustment.quantity)
 
-  const recipeName = (flavorKey: string) => names.get(flavorKey) ?? flavorKey
-  const itemLabel = (item: { flavorKey: string; packSizeGrams: number }) => stockItemLabel(recipeName(item.flavorKey), item.packSizeGrams, scopedMarket)
+  const productName = (flavorKey: string) => products.get(flavorKey)?.name ?? flavorKey
+  // Product code and variation SKU under the name; the code is left out when it already is the name.
+  const productMeta = (item: StockItem) => {
+    const sku = skus.get(stockItemKey(item))
+    return [productName(item.flavorKey) === item.flavorKey ? '' : item.flavorKey, sku ? `SKU ${sku}` : '']
+      .filter(Boolean)
+      .join(' · ')
+  }
+  const itemLabel = (item: { flavorKey: string; packSizeGrams: number }) => stockItemLabel(productName(item.flavorKey), item.packSizeGrams, scopedMarket)
 
   const emptyPacksMessage = () => {
     if (!overview) return error ? 'Estoque indisponível.' : 'Carregando estoque...'
@@ -321,7 +364,7 @@ export function StockPage() {
           {' '}
           O estoque não bloqueia vendas nem renovações e não aparece na loja: um sabor com saldo zero continua à venda.
           {' '}
-          Cada pack é uma receita e um tamanho neste mercado, então variações com a mesma receita e gramas dividem o mesmo saldo.
+          Cada linha é uma variação de produto deste mercado: o produto (a receita) e o tamanho do pack.
         </div>
 
         {error ? <div className="alert" role="alert">{error}</div> : null}
@@ -335,6 +378,35 @@ export function StockPage() {
           </div>
         ) : null}
 
+        {withoutWeight.length > 0 ? (
+          <div className="warning stock-weight-missing" role="status">
+            <p>
+              <strong>
+                {withoutWeight.length === 1 ? '1 variação à venda está sem peso' : `${withoutWeight.length} variações à venda estão sem peso`}
+              </strong>
+              {' '}e fica{withoutWeight.length === 1 ? '' : 'm'} fora do estoque. Informe o peso de cada uma:
+            </p>
+            <ul aria-label="Variações sem peso">
+              {withoutWeight.map((item) => {
+                const stage = item.lifeStage ? LIFE_STAGE_LABELS[item.lifeStage] : ''
+                return (
+                  <li key={item.variationId}>
+                    <Link
+                      to={variationWeightHref(item)}
+                      aria-label={`Informar peso de ${[item.productName, stage, item.sku ? `SKU ${item.sku}` : ''].filter(Boolean).join(', ')}`}
+                    >
+                      <span className="weight-missing-name" title={item.productName}>{item.productName}</span>
+                      <span className="weight-missing-stage">{stage || '—'}</span>
+                      <span className="weight-missing-sku mono">{item.sku ? `SKU ${item.sku}` : 'Sem SKU'}</span>
+                      <span className="weight-missing-action">Informar peso<span aria-hidden="true"> →</span></span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ) : null}
+
         {unsized.length > 0 ? (
           <div className="warning stock-unsized" role="status">
             <span>{unsizedTotal} packs sem tamanho não entram no comprometido</span>
@@ -344,7 +416,7 @@ export function StockPage() {
                 className="table-link"
                 to={`/billing/subscriptions/${line.subscriptionId}`}
               >
-                {line.label || line.flavorKey || 'pack'} × {line.quantity}
+                {(line.flavorKey && products.get(line.flavorKey)?.name) || line.label || line.flavorKey || 'pack'} × {line.quantity}
               </Link>
             ))}
           </div>
@@ -379,7 +451,7 @@ export function StockPage() {
         >
           <FiltersBar>
             <label>
-              Buscar receita
+              Buscar produto
               <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
             </label>
             <label>
@@ -407,7 +479,7 @@ export function StockPage() {
             <table className="stock-table">
               <thead>
                 <tr>
-                  <th>Receita</th>
+                  <th>Produto</th>
                   <th>Tamanho</th>
                   <th className="stock-number">Em estoque</th>
                   <th className="stock-number">Comprometido</th>
@@ -427,7 +499,18 @@ export function StockPage() {
                   const status = stockStatus(item)
                   return (
                     <tr key={stockItemKey(item)} className={highlighted(item) ? 'stock-row-warning' : undefined}>
-                      <td className="stock-table-title">{recipeName(item.flavorKey)}</td>
+                      <td className="stock-table-title">
+                        <div className="queue-cell-stack">
+                          {products.get(item.flavorKey)?.productId ? (
+                            <Link className="table-link" to={`/catalog/products/${products.get(item.flavorKey)?.productId}`}>
+                              {productName(item.flavorKey)}
+                            </Link>
+                          ) : (
+                            <span>{productName(item.flavorKey)}</span>
+                          )}
+                          {productMeta(item) ? <span className="cell-meta mono">{productMeta(item)}</span> : null}
+                        </div>
+                      </td>
                       <td data-label="Tamanho">{stockPackSize(item.packSizeGrams, scopedMarket)}</td>
                       <td className="stock-number" data-label="Em estoque">{item.onHand}</td>
                       <td className="stock-number" data-label="Comprometido">
@@ -560,15 +643,16 @@ export function StockPage() {
       >
         <form id="stock-production-form" className="closure-form" onSubmit={submitProduction}>
           {dialogError ? <div className="alert" role="alert">{dialogError}</div> : null}
-          {recipeOptions.length > 0 && catalog.length > 0 ? (
+          {productOptions.length > 0 && catalog.length > 0 ? (
             <>
               <label className="closure-field">
-                Receita
+                Produto
                 <select
                   required
+                  aria-describedby={productsWithoutWeight.length && !production.flavorKey ? 'stock-production-without-weight' : undefined}
                   value={production.flavorKey}
                   onChange={(event) => {
-                    const sizes = recipeOptions.find((option) => option.flavorKey === event.target.value)?.sizes ?? []
+                    const sizes = productOptions.find((option) => option.flavorKey === event.target.value)?.sizes ?? []
                     setProduction((current) => ({
                       ...current,
                       flavorKey: event.target.value,
@@ -577,21 +661,38 @@ export function StockPage() {
                   }}
                 >
                   <option value="">Selecione</option>
-                  {recipeOptions.map((option) => (
+                  {productOptions.map((option) => (
                     <option key={option.flavorKey} value={option.flavorKey}>{option.label}</option>
                   ))}
+                  {productsWithoutWeight.length ? (
+                    <optgroup label="Sem peso cadastrado">
+                      {productsWithoutWeight.map((item) => (
+                        <option key={item.productId} value={`sem-peso-${item.productId}`} disabled>
+                          {[item.productName, item.lifeStage ? LIFE_STAGE_LABELS[item.lifeStage] : ''].filter(Boolean).join(' · ')} (sem peso)
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
                 </select>
               </label>
+              {productsWithoutWeight.length && !production.flavorKey ? (
+                <p id="stock-production-without-weight" className="field-hint warning-text">
+                  {productsWithoutWeight.length === 1
+                    ? '1 produto está desabilitado porque não tem peso na variação.'
+                    : `${productsWithoutWeight.length} produtos estão desabilitados porque não têm peso na variação.`}
+                  {' '}Informe o peso pelo aviso no topo do Estoque para lançar.
+                </p>
+              ) : null}
               <label className="closure-field">
                 Tamanho
                 <select
                   required
-                  disabled={!selectedRecipe}
+                  disabled={!selectedProduct}
                   value={production.packSizeGrams}
                   onChange={(event) => setProduction((current) => ({ ...current, packSizeGrams: event.target.value }))}
                 >
                   <option value="">Selecione</option>
-                  {(selectedRecipe?.sizes ?? []).map((grams) => (
+                  {(selectedProduct?.sizes ?? []).map((grams) => (
                     <option key={grams} value={grams}>{stockPackSize(grams, scopedMarket)}</option>
                   ))}
                 </select>
@@ -600,7 +701,7 @@ export function StockPage() {
           ) : (
             <>
               <label className="closure-field">
-                Receita
+                Código do produto
                 <input required value={production.flavorKey} onChange={(event) => setProduction((current) => ({ ...current, flavorKey: event.target.value }))} />
               </label>
               <label className="closure-field">
@@ -613,10 +714,12 @@ export function StockPage() {
             Quantidade
             <input required type="number" min={1} max={10000} value={production.quantity} onChange={(event) => setProduction((current) => ({ ...current, quantity: event.target.value }))} />
           </label>
-          <label className="closure-field">
-            Nota
-            <input value={production.note} onChange={(event) => setProduction((current) => ({ ...current, note: event.target.value }))} />
-          </label>
+          <ObservationField
+            id="stock-production-note"
+            value={production.note}
+            onChange={(note) => setProduction((current) => ({ ...current, note }))}
+            hint={`${OBSERVATION_HINT} Use para o lote, a data de fabricação ou quem produziu.`}
+          />
         </form>
       </Dialog>
 
@@ -652,14 +755,13 @@ export function StockPage() {
               ))}
             </select>
           </label>
-          <label className="closure-field">
-            Nota
-            <input
-              required={adjustment.reason === 'other'}
-              value={adjustment.note}
-              onChange={(event) => setAdjustment((current) => ({ ...current, note: event.target.value }))}
-            />
-          </label>
+          <ObservationField
+            id="stock-adjustment-note"
+            value={adjustment.note}
+            required={adjustment.reason === 'other'}
+            onChange={(note) => setAdjustment((current) => ({ ...current, note }))}
+            hint={`${OBSERVATION_HINT} Explique o que aconteceu; é obrigatória quando o motivo é Outro.`}
+          />
         </form>
       </Dialog>
 
@@ -687,10 +789,12 @@ export function StockPage() {
               {count.countedQuantity.trim() !== '' ? ` → novo saldo: ${Number(count.countedQuantity)}` : ''}
             </p>
           ) : null}
-          <label className="closure-field">
-            Nota
-            <input value={count.note} onChange={(event) => setCount((current) => ({ ...current, note: event.target.value }))} />
-          </label>
+          <ObservationField
+            id="stock-count-note"
+            value={count.note}
+            onChange={(note) => setCount((current) => ({ ...current, note }))}
+            hint={`${OBSERVATION_HINT} Use para registrar onde ou por quem a contagem foi feita.`}
+          />
         </form>
       </Dialog>
 

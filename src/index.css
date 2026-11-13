@@ -1241,6 +1241,129 @@ pre.legal-text {
   gap: var(--space-1) var(--space-3);
 }
 
+/* Observação in the stock dialogs: the label reads like the other dialog fields. It is the last field of the
+   dialog, so its tip opens upward instead of being cut by the scrolling dialog body. */
+.stock-observation-field .field-label-row {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.stock-observation-field .info-hint-text {
+  top: auto;
+  bottom: calc(100% + 6px);
+  font-weight: 400;
+}
+
+/* Every variation on sale without weight. Each row is one link laid out as aligned columns (product, stage,
+   SKU, action); rows sit in two columns on wide screens and stack on a phone. */
+.stock-weight-missing p {
+  margin: 0 0 var(--space-3);
+}
+
+.stock-weight-missing ul {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 28rem), 1fr));
+  gap: var(--space-2) var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stock-weight-missing li {
+  min-width: 0;
+}
+
+.stock-weight-missing li a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.5rem 5.5rem max-content;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-strong);
+  text-decoration: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.stock-weight-missing li a:hover {
+  border-color: var(--info-border);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%);
+}
+
+.stock-weight-missing li a:focus-visible {
+  outline: 2px solid var(--info-text);
+  outline-offset: 2px;
+}
+
+.weight-missing-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.weight-missing-stage {
+  justify-self: start;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.weight-missing-sku {
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.weight-missing-action {
+  color: var(--info-text);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stock-weight-missing li a:hover .weight-missing-action {
+  text-decoration: underline;
+}
+
+/* Phone: product and action on the first line, stage and SKU under the product. */
+@media (max-width: 560px) {
+  .stock-weight-missing li a {
+    grid-template-columns: auto minmax(0, 1fr) max-content;
+    grid-template-areas:
+      'name name action'
+      'stage sku sku';
+    row-gap: var(--space-1);
+    padding: 8px 12px;
+  }
+
+  .weight-missing-name { grid-area: name; }
+  .weight-missing-stage { grid-area: stage; }
+  .weight-missing-sku { grid-area: sku; }
+  .weight-missing-action { grid-area: action; }
+}
+
+/* Active variation without weight: one line with its action, wrapping under the text on narrow screens. */
+.weight-warning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+}
+
+.weight-warning > span {
+  flex: 1 1 18rem;
+}
+
 .stock-page-stack {
   display: grid;
   gap: var(--space-4);

@@ -285,6 +285,15 @@ Switching tabs or leaving the page MUST ask for confirmation when the presentati
 - **WHEN** a session with `catalog.write` opens **Editar** and cancels
 - **THEN** no PATCH is sent and the table still shows the variation as it was loaded
 
+### Requirement: Active variation without weight asks for it
+
+When an active variation has no weight, the product page MUST show, above the publication section, a warning "Fora do estoque:" naming the variation (or how many) and, for `catalog.write`, an **Informar peso** button. Its row MUST show the badge "Sem peso" in the Peso column and, for `catalog.write`, an **Informar peso** action, even when the variation is locked by the published product. **Informar peso** MUST open a dialog with only the Peso field and MUST send `PATCH` with `variants: [{ id, weight }]`. An empty weight MUST NOT be sent. After saving, the warning MUST give place to "Peso salvo. … já aparece no Estoque." and, when the page was opened with `?variation=:id&campo=peso`, a **Voltar ao Estoque** link. Opening the page with `?variation=:id&campo=peso` on a variation without weight MUST open that dialog on the Variações tab.
+
+#### Scenario: Fill the weight from the stock link
+
+- **WHEN** an operator opens `/catalog/products/2038?variation=2015&campo=peso` and variation `2015` is active without weight
+- **THEN** the Variações tab opens with the Informar peso dialog, saving `300g` sends `{ variants: [{ id: '2015', weight: '300g' }] }`, and the page shows **Voltar ao Estoque**
+
 ### Requirement: Product list shows the recipe state
 
 The product list MUST show, for each product, its code, life stage, active and total variations, whether it has a home image and its label status. It MUST offer the quick filters **Sem imagem** and **Rótulo incompleto**, the latter also matching products without a label.
