@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SubscriptionDetailPage } from './SubscriptionDetailPage'
 import { addressIssue, adminUser, checkoutDetail, customerContact, operatorUsWriteUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
-import { customerInvoice, installAdminFetchMock } from '../test/mockAdminFetch'
+import { customerInvoice, installAdminFetchMock, nfeSummary } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
 const printLabel = vi.hoisted(() => vi.fn())
@@ -19,6 +19,8 @@ const cycle = (invoiceId: string, extra: Record<string, unknown> = {}) => ({
   courier_delivery: null,
   ...extra,
 })
+
+const sectionOf = async (name: string) => (await screen.findByRole('heading', { name })).closest('section') as HTMLElement
 
 describe('SubscriptionDetailPage', () => {
   afterEach(() => {
@@ -101,11 +103,12 @@ describe('SubscriptionDetailPage', () => {
     expect(screen.getByText('US')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Ver no Stripe' })).toHaveAttribute('href', 'https://dashboard.stripe.com/sub_123')
 
-    await user.click(screen.getByRole('button', { name: 'Sincronizar faturas' }))
+    await user.click(screen.getByRole('button', { name: 'Buscar na Stripe' }))
 
-    await waitFor(() => {
-      expect(screen.getByText('Faturas sincronizadas.')).toBeInTheDocument()
-    })
+    const charges = await sectionOf('Cobranças')
+    expect(await within(charges).findByText('Faturas da Stripe carregadas.')).toBeInTheDocument()
+    // Stripe's amount comes in minor units.
+    expect(within(charges).getByText('$89.50')).toBeInTheDocument()
 
     expect(calls.some((call) => call.method === 'GET' && call.path === '/api/v1/admin/billing/subscriptions/sub-row-1')).toBe(true)
     expect(calls.some((call) => call.method === 'POST' && call.path === '/api/v1/admin/billing/subscriptions/sub-row-1/sync-invoices' && call.authorization === 'Bearer access-token')).toBe(true)
@@ -120,12 +123,12 @@ describe('SubscriptionDetailPage', () => {
       expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
     })
 
-    expect(screen.queryByRole('button', { name: 'Sincronizar faturas' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Cliente' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Checkout' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Buscar na Stripe' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Abrir cadastro' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Ver checkout' })).not.toBeInTheDocument()
   })
 
-  it('links Cliente and Checkout only when the profile is in scope', async () => {
+  it('links the account and the checkout only when the profile is in scope', async () => {
     seedAuth()
     installAdminFetchMock(operatorWriteUser, { subscriptionInScope: true })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
@@ -134,8 +137,8 @@ describe('SubscriptionDetailPage', () => {
       expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
     })
 
-    expect(screen.getByRole('link', { name: 'Cliente' })).toHaveAttribute('href', '/users/u-ana')
-    expect(screen.getByRole('link', { name: 'Checkout' })).toHaveAttribute('href', '/users/u-ana?aba=checkout&assinatura=sub-row-1')
+    expect(screen.getByRole('link', { name: 'Abrir cadastro' })).toHaveAttribute('href', '/users/u-ana')
+    expect(screen.getByRole('link', { name: 'Ver checkout' })).toHaveAttribute('href', '/users/u-ana?aba=checkout&assinatura=sub-row-1')
   })
 
   it('keeps ledger identity as text when the profile is out of scope', async () => {
@@ -147,11 +150,11 @@ describe('SubscriptionDetailPage', () => {
       expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
     })
 
-    expect(screen.queryByRole('link', { name: 'Cliente' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Checkout' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Abrir cadastro' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Ver checkout' })).not.toBeInTheDocument()
     expect(document.querySelector('a[href="/users/u-ana"]')).toBeNull()
     expect(document.querySelector('a[href="/users/u-ana?aba=checkout&assinatura=sub-row-1"]')).toBeNull()
-    expect(screen.getAllByText('Cliente').length).toBeGreaterThan(0)
+    expect(screen.getByText('Cadastro e checkout fora do seu mercado')).toBeInTheDocument()
   })
 
   it('warns about what blocks the label and disables the button before the click', async () => {
@@ -167,7 +170,8 @@ describe('SubscriptionDetailPage', () => {
     expect(warning).toHaveTextContent('Falta rua, cidade, estado ou ZIP')
     expect(within(warning).getByRole('link', { name: 'Abrir configuração de frete' })).toHaveAttribute('href', '/config/shipping?aba=sede&mercado=us')
 
-    expect(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' })).toBeDisabled()
+    expect(await within(await sectionOf('Envio UPS')).findByRole('button', { name: 'Gerar etiqueta UPS' })).toBeDisabled()
+    expect(within(await sectionOf('Ciclo atual')).getByRole('button', { name: 'Gerar etiqueta UPS' })).toBeDisabled()
     expect(calls.some((call) => call.method === 'POST' && call.path.endsWith('/shipments'))).toBe(false)
   })
 
@@ -183,8 +187,9 @@ describe('SubscriptionDetailPage', () => {
     })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
-    expect(await screen.findByText(/Conta e país do endereço não combinam: esta assinatura não sai por nenhum mercado/)).toBeInTheDocument()
+    const ups = await sectionOf('Envio UPS')
+    await user.click(await within(ups).findByRole('button', { name: 'Gerar etiqueta UPS' }))
+    expect(await within(ups).findByText(/Conta e país do endereço não combinam: esta assinatura não sai por nenhum mercado/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '1Z999AA10123456784' })).not.toBeInTheDocument()
   })
 
@@ -204,15 +209,16 @@ describe('SubscriptionDetailPage', () => {
     installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US', paidCycles: [cycle('in_test_1')] })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
+    const ups = await sectionOf('Envio UPS')
+    await user.click(await within(ups).findByRole('button', { name: 'Gerar etiqueta UPS' }))
 
-    expect(await screen.findByRole('link', { name: '1Z999AA10123456784' })).toHaveAttribute(
+    expect(await within(ups).findByRole('link', { name: '1Z999AA10123456784' })).toHaveAttribute(
       'href',
       'https://www.ups.com/track?tracknum=1Z999AA10123456784',
     )
-    expect(screen.getByText('Em trânsito')).toBeInTheDocument()
+    expect(within(ups).getByText('Em trânsito')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Imprimir' }))
+    await user.click(within(ups).getByRole('button', { name: 'Imprimir' }))
 
     await waitFor(() => expect(printLabel).toHaveBeenCalledTimes(1))
     expect(printLabel.mock.calls[0][0].size).toBeGreaterThan(0)
@@ -257,9 +263,10 @@ describe('SubscriptionDetailPage', () => {
     const { calls } = installAdminFetchMock(operatorWriteUser, withShipments([shipmentRow({ status: 'unknown' })]))
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    expect(await screen.findByText('Verificar na UPS')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Anular' })).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Fechar após conferir na UPS' }))
+    const ups = await sectionOf('Envio UPS')
+    expect(await within(ups).findByText('Verificar na UPS')).toBeInTheDocument()
+    expect(within(ups).queryByRole('button', { name: 'Anular' })).not.toBeInTheDocument()
+    await user.click(within(ups).getByRole('button', { name: 'Fechar após conferir na UPS' }))
 
     await waitFor(() => {
       const call = calls.find((item) => item.method === 'POST' && item.path === '/api/v1/admin/shipments/ship_1/void')
@@ -276,8 +283,8 @@ describe('SubscriptionDetailPage', () => {
     await waitFor(() => {
       expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
     })
-    await user.click(screen.getByRole('button', { name: 'Sincronizar faturas' }))
-    await screen.findByText('Faturas sincronizadas.')
+    await user.click(screen.getByRole('button', { name: 'Buscar na Stripe' }))
+    await screen.findByText('Faturas da Stripe carregadas.')
 
     expect(screen.queryByRole('heading', { name: 'Envio UPS' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Gerar etiqueta UPS' })).toBeNull()
@@ -294,11 +301,10 @@ describe('SubscriptionDetailPage', () => {
     expect(within(section).getByText('Preparo 03/11/2026 · Pronto · entrega 05/11/2026')).toBeInTheDocument()
     expect(calls.some((call) => call.path.endsWith('/sync-invoices'))).toBe(false)
 
-    await user.click(screen.getByRole('button', { name: 'Gerar etiqueta UPS' }))
+    await user.click(within(section).getByRole('button', { name: 'Gerar etiqueta UPS' }))
 
-    await waitFor(() => {
-      expect(screen.getByText('Etiqueta UPS gerada.')).toBeInTheDocument()
-    })
+    // The result shows in the section where the label was bought.
+    expect(await within(section).findByText('Etiqueta UPS gerada.')).toBeInTheDocument()
 
     expect(calls.some((call) => (
       call.method === 'POST'
@@ -313,8 +319,8 @@ describe('SubscriptionDetailPage', () => {
     installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'US', paidCycles: [] })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    await user.click(await screen.findByRole('button', { name: 'Sincronizar faturas' }))
-    await screen.findByText('Faturas sincronizadas.')
+    await user.click(await screen.findByRole('button', { name: 'Buscar na Stripe' }))
+    await screen.findByText('Faturas da Stripe carregadas.')
     const section = screen.getByRole('heading', { name: 'Envio UPS' }).closest('section') as HTMLElement
     expect(within(section).queryByText('Sem etiqueta')).toBeNull()
     expect(within(section).queryByRole('button', { name: 'Gerar etiqueta UPS' })).toBeNull()
@@ -347,7 +353,7 @@ describe('SubscriptionDetailPage', () => {
     })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
+    await user.click(await within(await sectionOf('Envio UPS')).findByRole('button', { name: 'Gerar etiqueta UPS' }))
 
     expect(await screen.findByText('Etiqueta UPS gerada.')).toBeInTheDocument()
     const question = confirm.mock.calls[0][0] as string
@@ -373,7 +379,7 @@ describe('SubscriptionDetailPage', () => {
     })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
+    await user.click(await within(await sectionOf('Envio UPS')).findByRole('button', { name: 'Gerar etiqueta UPS' }))
 
     await waitFor(() => expect(confirm).toHaveBeenCalled())
     const question = confirm.mock.calls[0][0] as string
@@ -394,7 +400,7 @@ describe('SubscriptionDetailPage', () => {
     })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    await user.click(await screen.findByRole('button', { name: 'Gerar etiqueta UPS' }))
+    await user.click(await within(await sectionOf('Envio UPS')).findByRole('button', { name: 'Gerar etiqueta UPS' }))
 
     await waitFor(() => expect(labelPosts(calls)).toHaveLength(1))
     expect(screen.queryByText('Etiqueta UPS gerada.')).toBeNull()
@@ -440,7 +446,7 @@ describe('SubscriptionDetailPage', () => {
     expect(within(section).queryByRole('button', { name: 'Registrar contato' })).toBeNull()
   })
 
-  it('lists Eden Bowls invoices with when and to whom each was sent', async () => {
+  it('lists each charge with its Eden Bowls invoice, when and to whom it was sent', async () => {
     seedAuth()
     installAdminFetchMock(operatorWriteUser, {
       customerInvoices: [
@@ -464,15 +470,18 @@ describe('SubscriptionDetailPage', () => {
       expect(screen.getByText('EB-2026-000418')).toBeInTheDocument()
     })
 
-    expect(screen.getByRole('heading', { name: 'Invoices Eden Bowls' })).toBeInTheDocument()
-    expect(screen.getByText('Enviada')).toHaveClass('badge-success')
-    expect(screen.getByText(/para ana@edenbowls\.com/)).toBeInTheDocument()
-    expect(screen.getByText('Falhou')).toHaveClass('badge-error')
-    expect(screen.getByText(/connection refused · 2 tentativa\(s\), nova tentativa/)).toBeInTheDocument()
-    expect(screen.getAllByText('$144.50', { selector: 'td' })).toHaveLength(2)
+    const charges = await sectionOf('Cobranças')
+    expect(within(charges).getByText('Enviada')).toHaveClass('badge-success')
+    expect(within(charges).getByText(/para ana@edenbowls\.com/)).toBeInTheDocument()
+    expect(within(charges).getByText('Falhou')).toHaveClass('badge-error')
+    expect(within(charges).getByText(/connection refused · 2 tentativa\(s\), nova tentativa/)).toBeInTheDocument()
+    expect(within(charges).getAllByText('$144.50', { selector: 'td' })).toHaveLength(2)
+    // One row per Stripe invoice, with the Stripe id as secondary text and the Stripe PDF.
+    expect(within(charges).getByText('in_test_0')).toHaveClass('muted')
+    expect(within(charges).getAllByRole('button', { name: 'PDF Stripe' }).length).toBeGreaterThanOrEqual(2)
   })
 
-  it('resends an invoice and downloads its PDF', async () => {
+  it('resends an invoice after the confirmation, reports it in the charges, and downloads its PDF', async () => {
     const user = userEvent.setup()
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser)
@@ -484,11 +493,15 @@ describe('SubscriptionDetailPage', () => {
       expect(screen.getByText('EB-2026-000418')).toBeInTheDocument()
     })
 
-    await user.click(screen.getByRole('button', { name: 'Reenviar' }))
-    await waitFor(() => {
-      expect(screen.getByText('Invoice EB-2026-000418 enviada para ana@edenbowls.com.')).toBeInTheDocument()
-    })
-    await user.click(screen.getByRole('button', { name: 'Baixar PDF' }))
+    const charges = await sectionOf('Cobranças')
+    await user.click(within(charges).getByRole('button', { name: 'Reenviar' }))
+    const dialog = within(screen.getByRole('dialog', { name: 'Reenviar invoice ao cliente?' }))
+    expect(dialog.getByText('EB-2026-000418')).toBeInTheDocument()
+    expect(dialog.getByText('ana@edenbowls.com')).toBeInTheDocument()
+    await user.click(dialog.getByRole('button', { name: 'Reenviar' }))
+
+    expect(await within(charges).findByText('Invoice EB-2026-000418 enviada para ana@edenbowls.com.')).toBeInTheDocument()
+    await user.click(within(charges).getByRole('button', { name: 'Baixar PDF' }))
     await waitFor(() => {
       expect(createObjectURL).toHaveBeenCalled()
     })
@@ -497,21 +510,34 @@ describe('SubscriptionDetailPage', () => {
     expect(calls.some((call) => call.method === 'GET' && call.path === '/api/v1/admin/billing/customer-invoices/12/pdf')).toBe(true)
   })
 
-  it('generates the invoice of a paid Stripe invoice that has none yet', async () => {
+  it('cancelling the confirmation sends nothing', async () => {
     const user = userEvent.setup()
     seedAuth()
-    const { calls } = installAdminFetchMock(operatorWriteUser, { customerInvoices: [] })
+    const { calls } = installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    await waitFor(() => {
-      expect(screen.getByText('Nenhuma invoice gerada ainda.')).toBeInTheDocument()
-    })
-    await user.click(screen.getByRole('button', { name: 'Sincronizar faturas' }))
-    await user.click(await screen.findByRole('button', { name: 'Gerar invoice' }))
+    const charges = await sectionOf('Cobranças')
+    await user.click(await within(charges).findByRole('button', { name: 'Reenviar' }))
+    await user.click(within(screen.getByRole('dialog', { name: 'Reenviar invoice ao cliente?' })).getByRole('button', { name: 'Cancelar' }))
 
-    await waitFor(() => {
-      expect(screen.getByText('Invoice gerada. Use "Enviar ao cliente" para mandar por e-mail.')).toBeInTheDocument()
-    })
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(calls.some((call) => call.path.endsWith('/send'))).toBe(false)
+    expect(within(charges).getByText('Enviada')).toBeInTheDocument()
+  })
+
+  it('generates the invoice of a paid cycle without fetching from Stripe first', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser, { customerInvoices: [], paidCycles: [cycle('in_test_1')] })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const charges = await sectionOf('Cobranças')
+    const row = (await within(charges).findByText('in_test_1')).closest('tr') as HTMLElement
+    expect(within(row).getByText('Sem invoice')).toBeInTheDocument()
+    await user.click(within(row).getByRole('button', { name: 'Gerar invoice' }))
+
+    expect(await within(charges).findByText('Invoice gerada. Use "Enviar ao cliente" para mandar por e-mail.')).toBeInTheDocument()
+    expect(calls.some((call) => call.path.endsWith('/sync-invoices'))).toBe(false)
     expect(calls.some((call) => (
       call.method === 'POST'
       && call.path === '/api/v1/admin/billing/subscriptions/sub-row-1/customer-invoices'
@@ -665,14 +691,44 @@ describe('SubscriptionDetailPage', () => {
     })
   })
 
-  it('lists the NF-e of the subscription apart from the EB invoices', async () => {
+  it('puts the NF-e on the row of its Stripe invoice, next to the Eden Bowls invoice', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser, {
+      routes: ({ path, method }) => (/\/subscriptions\/[^/]+\/nfe$/.test(path) && method === 'GET'
+        ? new Response(JSON.stringify({ success: true, data: { items: [{ ...nfeSummary, stripe_invoice_id: 'in_test_0' }] } }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+        : undefined),
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const charges = await sectionOf('Cobranças')
+    const link = await within(charges).findByRole('link', { name: 'Nota 158 / 1' })
+    expect(link).toHaveAttribute('href', '/operations/nfe/5')
+    expect(link.closest('tr')).toHaveTextContent('EB-2026-000418')
+  })
+
+  it('an NF-e from an older API, without its invoice, still gets a row', async () => {
     seedAuth()
     installAdminFetchMock(readonlyUser)
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    const section = (await screen.findByRole('heading', { name: 'Notas fiscais (NF-e)' })).closest('section') as HTMLElement
-    await waitFor(() => expect(within(section).getByRole('link', { name: '158 / 1' })).toHaveAttribute('href', '/operations/nfe/5'))
-    expect(section).not.toHaveTextContent('EB-')
+    const charges = await sectionOf('Cobranças')
+    expect(await within(charges).findByRole('link', { name: 'Nota 158 / 1' })).toHaveAttribute('href', '/operations/nfe/5')
+  })
+
+  it('names the second Eden Bowls invoice of the same Stripe invoice in the same row', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      customerInvoices: [
+        { ...customerInvoice },
+        { ...customerInvoice, id: 13, invoice_number: 'EB-2026-000419', stripe_account: 'br', locale: 'pt-BR' },
+      ],
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const charges = await sectionOf('Cobranças')
+    const other = await within(charges).findByText(/Também emitida como EB-2026-000419 \(conta BR\)/)
+    expect(other.closest('tr')).toHaveTextContent('EB-2026-000418')
+    expect(within(charges).getByRole('button', { name: 'Baixar EB-2026-000419' })).toBeInTheDocument()
   })
 })
 
@@ -877,8 +933,9 @@ describe('SubscriptionDetailPage courier section', () => {
     })
     renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-    await user.click(await screen.findByRole('button', { name: 'Sincronizar faturas' }))
-    await user.click(await screen.findByRole('button', { name: 'PDF Stripe' }))
+    await user.click(await screen.findByRole('button', { name: 'Buscar na Stripe' }))
+    const row = (await screen.findByText(/INV-1001/)).closest('tr') as HTMLElement
+    await user.click(within(row).getByRole('button', { name: 'PDF Stripe' }))
 
     await waitFor(() => expect(open).toHaveBeenCalledWith('https://pay.stripe.com/invoice/pdf', '_blank', 'noopener,noreferrer'))
     const pdf = calls.find((call) => call.path === '/api/v1/admin/billing/invoices/in_test_1/pdf')
@@ -898,7 +955,7 @@ describe('SubscriptionDetailPage courier section', () => {
       renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1#faturas-stripe', '/billing/subscriptions/:id')
 
       await waitFor(() => expect(scrolled).toContain('faturas-stripe'))
-      expect(document.getElementById('faturas-stripe')).toHaveTextContent('Faturas Stripe')
+      expect(document.getElementById('faturas-stripe')).toHaveTextContent('Cobranças')
     } finally {
       delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView
     }
@@ -975,8 +1032,249 @@ describe('SubscriptionDetailPage courier section', () => {
       installAdminFetchMock(operatorWriteUser)
       renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
 
-      expect(await screen.findByRole('heading', { name: 'Identidade' })).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { name: 'Cobranças' })).toBeInTheDocument()
       expect(screen.queryByRole('heading', { name: 'Instruções de entrega' })).toBeNull()
     })
+  })
+})
+
+// subscription-detail-workflow: the header, the current cycle, what needs attention and the Brazil delivery.
+describe('SubscriptionDetailPage workflow', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.unstubAllGlobals()
+  })
+
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  const open = (path: string) => renderAuthedPage(<SubscriptionDetailPage />, path, '/billing/subscriptions/:id')
+  const page = '/billing/subscriptions/sub-row-1'
+  const courierRow = (id: number, status: string, extra: Record<string, unknown> = {}) => ({
+    id, subscription_id: 'sub-row-1', stripe_invoice_id: 'in_br_1', method: 'uber', courier_name: null, tracking_url: null,
+    cost_minor: 1000, currency: 'brl', note: null, status, out_for_delivery_at: '2026-11-03T12:00:00.000Z',
+    delivered_at: null, failed_at: null, failure_reason: null, canceled_at: null, ...extra,
+  })
+  const ups = (extra: Record<string, unknown>) => ({
+    id: 'ship_1', subscription_id: 'sub-row-1', stripe_invoice_id: 'in_test_1', ups_shipment_id: '1Z9', tracking_number: '1Z999',
+    tracking_url: null, tracking_status: null, tracking_description: null, delivered_at: null, service_code: '03', label_format: 'GIF',
+    has_label: true, quoted_shipping_cost: 12.9, ups_monetary_value: 14.2, status: 'created', shipped_at: null,
+    created_at: '2026-08-02T12:00:00.000Z', updated_at: '2026-08-02T12:00:00.000Z', ...extra,
+  })
+  const courierRoute = (items: unknown[]) => ({ path, method }: { path: string; method: string }) => (
+    path === '/api/v1/admin/billing/subscriptions/sub-row-1/courier-deliveries' && method === 'GET'
+      ? json({ success: true, data: { recipient_name: 'Charles Mendes', items } })
+      : undefined
+  )
+
+  describe('header', () => {
+    it('titles the page with the account name, the email and the state below, and the renewal as a day', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { subscriptionSnapshot: { account_name: 'Ana Souza' }, subscriptionOverrides: { currentPeriodEnd: '2026-12-02T15:00:00.000Z' } })
+      open(page)
+
+      expect(await screen.findByRole('heading', { level: 2, name: 'Ana Souza' })).toBeInTheDocument()
+      expect(screen.getByText('ana@edenbowls.com')).toBeInTheDocument()
+      expect(screen.getByText('renova em 02/12/2026')).toBeInTheDocument()
+      expect(document.querySelector('.subscription-header-line')?.textContent).not.toMatch(/\d{2}:\d{2}/)
+      expect(screen.getByText('Pausa e cancelamento são feitos pelo cliente na loja.')).toBeInTheDocument()
+    })
+
+    it('titles the page with the email when the API gives no name', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      open(page)
+
+      expect(await screen.findByRole('heading', { level: 2, name: 'ana@edenbowls.com' })).toBeInTheDocument()
+    })
+
+    it('says when a subscription cancelling at period end ends', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { subscriptionOverrides: { cancelAtPeriodEnd: true, currentPeriodEnd: '2026-12-02T15:00:00.000Z' } })
+      open(page)
+
+      expect(await screen.findByText('termina em 02/12/2026')).toBeInTheDocument()
+      expect(screen.queryByText(/renova em/)).toBeNull()
+    })
+
+    it('describes a fallback plan label from the checkout copy and keeps the Stripe ids as secondary text', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        subscriptionOverrides: { planLabel: 'Plan #6' },
+        subscriptionSnapshot: {
+          planSelection: {
+            subscription_term_months: 1,
+            pets: [{ pet_id: 'pet-1', pet_name: 'chocolate', selected_flavors: ['beef'], flavor_weights: [1] }],
+            catalog_pricing: { currency: 'BRL', subtotal: 1327.5, discounted_first_month_total: 1327.5, line_items: [{ flavor: 'beef', pet_name: 'chocolate', quantity: 30, unit_price: 44.25, line_total: 1327.5, pack_size_label: '500 g' }] },
+          },
+        },
+      })
+      open(page)
+
+      expect(await screen.findByText('Plano de 1 mês · 1 pet (chocolate) · 30 pacotes')).toBeInTheDocument()
+      expect(screen.queryByText('Plan #6')).toBeNull()
+      expect(screen.getByText(/price_1/)).toHaveClass('muted')
+      // Equal totals: only the subtotal stays.
+      expect(screen.getByText('Subtotal do plano')).toBeInTheDocument()
+      expect(screen.queryByText('1ª fatura (plano)')).toBeNull()
+    })
+  })
+
+  describe('current cycle', () => {
+    it('a Brazil order out for delivery shows Em rota and the delivery actions', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        subscriptionMarket: 'BR',
+        paidCycles: [cycle('in_br_1', { courier_delivery: { id: 1, status: 'out_for_delivery', out_for_delivery_at: '2026-11-03T12:00:00.000Z', delivered_at: null, failed_at: null } })],
+        routes: courierRoute([courierRow(1, 'out_for_delivery')]),
+      })
+      open(page)
+
+      const card = await sectionOf('Ciclo atual')
+      expect(await within(card).findByText('Em rota')).toHaveClass('badge-info')
+      expect(await within(card).findByRole('button', { name: 'Entregue' })).toBeInTheDocument()
+      expect(within(card).getByRole('button', { name: 'Falhou' })).toBeInTheDocument()
+    })
+
+    it('the oldest cycle on the road wins over a newer paid one, and the card counts the other', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        subscriptionMarket: 'BR',
+        paidCycles: [
+          cycle('in_br_2', { production_status: 'to_prepare', delivery_date: '2026-12-05' }),
+          cycle('in_br_1', { courier_delivery: { id: 1, status: 'out_for_delivery', out_for_delivery_at: '2026-11-03T12:00:00.000Z', delivered_at: null, failed_at: null } }),
+        ],
+        routes: courierRoute([courierRow(1, 'out_for_delivery')]),
+      })
+      open(page)
+
+      const card = await sectionOf('Ciclo atual')
+      expect(await within(card).findByText('Em rota')).toBeInTheDocument()
+      expect(within(card).getByText('Mais 1 ciclo pago esperando.')).toBeInTheDocument()
+    })
+
+    it('a UPS box in transit shows the tracking and Atualizar rastreio', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        subscriptionMarket: 'US',
+        paidCycles: [cycle('in_test_1', { ups_shipment: { id: 'ship_1', status: 'created', tracking_number: '1Z999' } })],
+        routes: ({ path, method }) => (/\/subscriptions\/[^/]+\/shipments$/.test(path) && method === 'GET'
+          ? json({ success: true, data: { items: [ups({ tracking_status: 'in_transit' })], label_issues: [] } })
+          : undefined),
+      })
+      open(page)
+
+      const card = await sectionOf('Ciclo atual')
+      expect(await within(card).findByText('Em trânsito')).toBeInTheDocument()
+      expect(within(card).getByText(/Rastreio 1Z999/)).toBeInTheDocument()
+      expect(within(card).getByRole('button', { name: 'Atualizar rastreio' })).toBeInTheDocument()
+    })
+
+    it('blocked production links to the production queue', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { subscriptionMarket: 'BR', paidCycles: [cycle('in_br_1', { production_status: 'blocked' })] })
+      open(page)
+
+      const card = await sectionOf('Ciclo atual')
+      expect(await within(card).findByText('Produção bloqueada')).toBeInTheDocument()
+      expect(within(card).getByRole('link', { name: 'Abrir fila de produção' })).toHaveAttribute('href', '/operations/production')
+    })
+
+    it('a reader without shipping write sees the stage and no action', async () => {
+      seedAuth()
+      installAdminFetchMock(readonlyUser, { subscriptionMarket: 'BR', paidCycles: [cycle('in_br_1')] })
+      open(page)
+
+      const card = await sectionOf('Ciclo atual')
+      expect(await within(card).findByText('Pronto para sair')).toBeInTheDocument()
+      expect(within(card).queryByRole('button')).toBeNull()
+    })
+
+    it('a reader without shipping access gets no card and the page still loads', async () => {
+      seedAuth()
+      installAdminFetchMock({ ...readonlyUser, permissions: readonlyUser.permissions.filter((permission: string) => !permission.startsWith('shipping.')) }, { paidCycles: [cycle('in_test_1')] })
+      open(page)
+
+      expect(await screen.findByRole('heading', { name: 'Cobranças' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Ciclo atual' })).toBeNull()
+    })
+  })
+
+  describe('what needs attention', () => {
+    const nfeRoute = (item: Record<string, unknown>) => ({ path, method }: { path: string; method: string }) => (
+      /\/subscriptions\/[^/]+\/nfe$/.test(path) && method === 'GET' ? json({ success: true, data: { items: [{ ...nfeSummary, ...item }] } }) : undefined
+    )
+
+    it('a note blocked for a missing fiscal name says so and links to the note', async () => {
+      seedAuth()
+      installAdminFetchMock(adminUser, { routes: nfeRoute({ status: 'blocked_missing_document', missing_fields: ['fiscal_name'] }) })
+      open(page)
+
+      const block = await sectionOf('Precisa de atenção')
+      expect(await within(block).findByText('Falta para emitir: Nome fiscal.')).toBeInTheDocument()
+      expect(within(block).getByRole('link', { name: 'Abrir a nota' })).toHaveAttribute('href', '/operations/nfe/5')
+    })
+
+    it('a note Bling refused lists the fields Bling named', async () => {
+      seedAuth()
+      installAdminFetchMock(adminUser, { routes: nfeRoute({ status: 'error', bling_problems: [{ element: 'contato.telefone', message: 'Informe o telefone' }] }) })
+      open(page)
+
+      const block = await sectionOf('Precisa de atenção')
+      expect(await within(block).findByText('Informe o telefone (Dados do cliente)')).toBeInTheDocument()
+      expect(within(block).queryByText('Escopo ausente')).toBeNull()
+    })
+
+    it('an open address problem links to its section, which keeps the contact', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { addressIssue })
+      open(page)
+
+      const block = await sectionOf('Precisa de atenção')
+      expect(within(block).getByRole('link', { name: 'Ver o problema de endereço' })).toHaveAttribute('href', '#problema-endereco')
+      const section = document.getElementById('problema-endereco') as HTMLElement
+      expect(within(section).getByRole('button', { name: 'Registrar contato' })).toBeInTheDocument()
+    })
+
+    it('a closed address problem is not listed', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { addressIssue: { ...addressIssue, open: false, resolved_by: 'customer', resolved_at: '2026-11-05T13:00:00.000Z' } })
+      open(page)
+
+      expect(await screen.findByText('Cliente corrigiu em 05/11')).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Precisa de atenção' })).toBeNull()
+    })
+
+    it('the account and country mismatch shows once, as an entry linking to market exceptions', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { marketException: true })
+      open(page)
+
+      const block = await sectionOf('Precisa de atenção')
+      expect(screen.getAllByText(/Conta e país do endereço não combinam/)).toHaveLength(1)
+      expect(within(block).getByRole('link', { name: 'Abrir Exceções de mercado' })).toHaveAttribute('href', '/operations/market-exceptions')
+    })
+
+    it('nothing open, no block', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser)
+      open(page)
+
+      expect(await screen.findByRole('heading', { name: 'Cobranças' })).toBeInTheDocument()
+      expect(screen.queryByRole('heading', { name: 'Precisa de atenção' })).toBeNull()
+    })
+  })
+
+  it('the Brazil delivery shows the charged freight next to the courier cost, and the phone next to the recipient', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      subscriptionMarket: 'BR',
+      subscriptionSnapshot: { shipping: { label: 'Entrega Eden Bowl', cost: 2.47 }, address: { phone: '(41) 99890-5819' } },
+      routes: courierRoute([courierRow(1, 'delivered', { delivered_at: '2026-11-04T15:00:00.000Z' })]),
+    })
+    open(page)
+
+    const section = await sectionOf('Entrega Brasil')
+    expect(await within(section).findByText(/Frete cobrado no checkout: R\$\s2,47/)).toBeInTheDocument()
+    expect(within(section).getByText(/R\$\s10,00/)).toBeInTheDocument()
+    expect(within(section).getByText('Telefone (41) 99890-5819')).toBeInTheDocument()
   })
 })

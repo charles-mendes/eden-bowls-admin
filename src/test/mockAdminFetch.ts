@@ -154,6 +154,8 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     delivery_instructions?: string | null
     delivery_instructions_source?: 'subscription' | 'profile' | null
   }
+  // subscription-detail-workflow: fields of GET /admin/billing/subscriptions/:id to replace (status, cancel, ...).
+  subscriptionOverrides?: Record<string, unknown>
   // customer-subscriptions-operational-links: the subscriptions of GET /admin/users/:userId.
   customerSubscriptions?: Array<Record<string, unknown>>
   products?: typeof productsList.items
@@ -825,7 +827,8 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
               id: 'in_test_1',
               number: 'INV-1001',
               status: 'paid',
-              amountPaid: 89.5,
+              // Stripe's amount_paid, in minor units.
+              amountPaid: 8950,
               currency: 'usd',
               createdAt: '2026-08-01T12:00:00.000Z',
             },
@@ -937,6 +940,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         address_issue: options.addressIssue ?? null,
         ...(options.subscriptionSnapshot ?? {}),
         ...(options.subscriptionInScope === undefined ? {} : { customerProfileInScope: options.subscriptionInScope }),
+        ...(options.subscriptionOverrides ?? {}),
       })
     }
 

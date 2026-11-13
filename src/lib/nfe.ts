@@ -35,6 +35,11 @@ export type NfeSummary = {
   imported: boolean
   can_retry: boolean
   can_edit: boolean
+  // subscription-detail-workflow: the subscription's list says what to fix without opening the note. Absent on an
+  // older API.
+  stripe_invoice_id?: string | null
+  missing_fields?: string[]
+  bling_problems?: BlingProblem[]
 }
 
 export type NfeDetail = NfeSummary & {

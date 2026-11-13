@@ -421,3 +421,37 @@ export function paymentBadgeClass(paymentState: string | null) {
   if (raw) return 'badge-warning'
   return 'badge-info'
 }
+
+// The API names a plan with no stored label `Plan #<id>`. The page describes it from the checkout copy instead:
+// term, pets and packs. Any other label is kept as it is.
+export function planDescription(input: {
+  planLabel: string | null | undefined
+  planSelection: unknown
+  petsSnapshot?: unknown
+  termMonths?: number | null
+}): string {
+  const label = String(input.planLabel || '').trim()
+  if (label && !/^Plan #\d+$/.test(label)) return label
+
+  const plan = asRecord(input.planSelection)
+  const catalog = asRecord(plan?.catalog_pricing)
+  const term = formatTermMonths(input.termMonths ?? readNumber(plan, 'subscription_term_months'))
+  const pets = mergeReadablePets(input.planSelection, input.petsSnapshot)
+  const quantities = asArray(catalog?.line_items).map((row) => readNumber(asRecord(row), 'quantity'))
+  const packs = quantities.length && quantities.every((value) => value !== null)
+    ? quantities.reduce<number>((sum, value) => sum + (value as number), 0)
+    : null
+
+  const parts = [
+    term === '-' ? '' : `Plano de ${term}`,
+    pets.length ? `${pets.length} pet${pets.length > 1 ? 's' : ''} (${pets.map((pet) => pet.petName).join(', ')})` : '',
+    packs ? `${formatNumber(packs)} pacote${packs > 1 ? 's' : ''}` : '',
+  ].filter(Boolean)
+  return parts.length ? parts.join(' · ') : label || 'Plano'
+}
+
+// "1ª fatura (plano)" equal to "Subtotal do plano" says the same thing twice: only the subtotal stays.
+export function distinctPlanTotals(items: MetaItem[]): MetaItem[] {
+  const subtotal = items.find((item) => item.label === 'Subtotal do plano')
+  return items.filter((item) => !(subtotal && item.label === '1ª fatura (plano)' && item.value === subtotal.value))
+}

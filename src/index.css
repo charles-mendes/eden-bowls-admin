@@ -6222,3 +6222,82 @@ button.readiness-step-inner:hover .readiness-title {
   font-size: var(--text-sm);
   margin: 0;
 }
+
+/* Subscription detail: the header line, what needs attention, the current cycle and section feedback. */
+.subscription-header-line {
+  display: grid;
+  gap: 4px;
+}
+
+.subscription-header-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text);
+}
+
+.subscription-header-plan {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.subscription-header-ids {
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.subscription-detail > * + * {
+  margin-top: var(--space-4);
+}
+
+.attention-list {
+  border-color: var(--warning-border, var(--border));
+}
+
+.attention-list > ul {
+  display: grid;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.attention-entry {
+  display: grid;
+  gap: 4px;
+}
+
+.attention-entry p {
+  margin: 0;
+}
+
+.attention-details {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+.current-cycle {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.current-cycle-stage {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.section-feedback {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.charge-other-invoice {
+  margin-top: 4px;
+}

@@ -3,7 +3,7 @@ import { JsonDetails } from './JsonDetails'
 import { useShowsTechnicalJson } from '../hooks/useShowsTechnicalJson'
 import { MetaGrid } from './MetaGrid'
 import { Section } from './Section'
-import type { CheckoutSnapshots } from '../lib/checkoutSnapshot'
+import { distinctPlanTotals, type CheckoutSnapshots } from '../lib/checkoutSnapshot'
 
 const DEFAULT_PLAN_TITLE = 'Plano e itens'
 const DEFAULT_PLAN_DESCRIPTION = 'Cópia do plano escolhido no checkout. Sem recalcular.'
@@ -84,7 +84,7 @@ export function LedgerSnapshotSections({
               </table>
             </div>
           ) : null}
-          <MetaGrid items={snapshots.plan.totals} />
+          <MetaGrid items={distinctPlanTotals(snapshots.plan.totals)} />
         </div>
       </Section>
 
