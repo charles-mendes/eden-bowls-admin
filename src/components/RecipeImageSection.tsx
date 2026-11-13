@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Section } from './Section'
 import { apiRequest } from '../lib/api'
 import {
+  RECIPE_BANNER_SIZE_TEXT,
   RECIPE_IMAGE_HEIGHT,
   RECIPE_IMAGE_WIDTH,
   checkRecipeImage,
@@ -12,7 +13,7 @@ import { recipeContentFailure, productContentPath, type RecipeContent } from '..
 
 type Notice = { tone: 'success' | 'error'; text: string } | null
 
-type PendingImage = { payload: ImagePayload; previewUrl: string; fileName: string }
+type PendingImage = { payload: ImagePayload; previewUrl: string; fileName: string; width: number; height: number }
 
 // Home banner of the recipe. A chosen file that is not saved yet is an unsaved change.
 export function RecipeImageSection({ token, productId, market, content, canWrite, onSaved, onDirtyChange }: {
@@ -54,7 +55,7 @@ export function RecipeImageSection({ token, productId, market, content, canWrite
     }
     try {
       const payload = await fileToImagePayload(file)
-      setPendingImage({ payload, previewUrl: URL.createObjectURL(file), fileName: file.name })
+      setPendingImage({ payload, previewUrl: URL.createObjectURL(file), fileName: file.name, width: check.width, height: check.height })
     } catch (readError) {
       clearPending()
       setNotice({ tone: 'error', text: readError instanceof Error ? readError.message : 'Falha ao ler a imagem.' })
@@ -102,7 +103,7 @@ export function RecipeImageSection({ token, productId, market, content, canWrite
     <Section
       id="imagem"
       title="Imagem da tela inicial"
-      description={`Banner da receita no carrossel da tela inicial e na página da receita. PNG, JPEG ou WebP com exatamente ${RECIPE_IMAGE_WIDTH} × ${RECIPE_IMAGE_HEIGHT} px e até 5 MB.`}
+      description={`Banner da receita no carrossel da tela inicial e na página da receita. PNG, JPEG ou WebP de até 5 MB, com ${RECIPE_BANNER_SIZE_TEXT} para ${RECIPE_IMAGE_WIDTH} × ${RECIPE_IMAGE_HEIGHT} px.`}
     >
       {notice ? (
         <div className={notice.tone === 'error' ? 'alert' : 'success'} role={notice.tone === 'error' ? 'alert' : 'status'}>
@@ -124,7 +125,7 @@ export function RecipeImageSection({ token, productId, market, content, canWrite
         <div className="recipe-image-side">
           <p className="field-hint">
             {pendingImage
-              ? `Nova imagem: ${pendingImage.fileName} · ${RECIPE_IMAGE_WIDTH} × ${RECIPE_IMAGE_HEIGHT} px. Ainda não foi salva.`
+              ? `Nova imagem: ${pendingImage.fileName} · ${pendingImage.width} × ${pendingImage.height} px${pendingImage.width === RECIPE_IMAGE_WIDTH && pendingImage.height === RECIPE_IMAGE_HEIGHT ? '' : `, será ajustada para ${RECIPE_IMAGE_WIDTH} × ${RECIPE_IMAGE_HEIGHT} px`}. Ainda não foi salva.`
               : content.imageUrl ? 'Imagem cadastrada no painel.' : 'Nenhuma imagem cadastrada no painel.'}
           </p>
           {canWrite ? (

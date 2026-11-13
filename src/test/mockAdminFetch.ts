@@ -451,8 +451,8 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/image$/.test(path) && method === 'PUT') {
       if (options.recipeImage === 'invalid') {
         return jsonResponse({
-          message: 'Image must be 1024 x 636 pixels.',
-          details: { code: 'recipe_image_invalid', reason: 'dimensions', width: 1200, height: 800, expectedWidth: 1024, expectedHeight: 636 },
+          message: 'Image must be 1024 x 636 pixels, or close enough to be resized to it.',
+          details: { code: 'recipe_image_invalid', reason: 'dimensions', width: 800, height: 800, expectedWidth: 1024, expectedHeight: 636, maxUpscale: 1.25, maxCrop: 0.15 },
         }, 422)
       }
       recipeContent = { ...recipeContent, imageUrl: recipeImageUrl, imageUpdatedAt: '2026-10-23T12:00:00.000Z' }

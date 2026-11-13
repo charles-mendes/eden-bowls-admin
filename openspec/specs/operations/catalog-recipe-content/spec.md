@@ -32,12 +32,17 @@ The **Apresentação** tab of the product page MUST show the stored presentation
 
 ### Requirement: Panel checks the image before sending
 
-The panel MUST read the chosen file's type and pixel size before uploading. When the file is not PNG, JPEG or WebP, is larger than 5 MB, or is not 1024 × 636, the panel MUST show the received and the expected values and MUST NOT send the upload. A valid file MUST show a preview before it is saved.
+The panel MUST read the chosen file's type and pixel size before uploading. When the file is not PNG, JPEG or WebP, is larger than 5 MB, or is not 1024 × 636 nor close enough for the API to resize it (at most 25% of enlargement, so at least 820 × 509, and at most 15% of the width or height cut off), the panel MUST show the received and the expected values and MUST NOT send the upload. A valid file MUST show a preview before it is saved.
 
 #### Scenario: Oversized photo is stopped in the panel
 
-- **WHEN** an operator picks a 2048 × 1272 PNG on the content page
-- **THEN** the panel says the image is 2048 × 1272 and must be 1024 × 636, and no upload request is sent
+- **WHEN** an operator picks an 800 × 800 PNG on the content page
+- **THEN** the panel says the image is 800 × 800 and must be 1024 × 636 or a close size of at least 820 × 509, and no upload request is sent
+
+#### Scenario: Close photo is accepted
+
+- **WHEN** an operator picks a 1024 × 576 PNG
+- **THEN** the panel shows the preview, says it will be adjusted to 1024 × 636, and offers **Salvar imagem**
 
 #### Scenario: Valid photo shows a preview
 

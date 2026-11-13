@@ -1,4 +1,5 @@
 import { ApiRequestError } from './api'
+import { RECIPE_BANNER_SIZE_TEXT } from './imageUpload'
 
 export type RecipeLabelStatus = 'missing' | 'incomplete' | 'complete'
 
@@ -164,6 +165,7 @@ export function recipeContentFailure(error: unknown, fallback: string) {
     const details = (error.details ?? {}) as Record<string, unknown>
     if (error.code === 'recipe_image_invalid') {
       if (details.reason === 'dimensions') {
+        if (details.maxUpscale != null) return `A imagem tem ${details.width} × ${details.height} px e precisa ter ${RECIPE_BANNER_SIZE_TEXT}.`
         return `A imagem tem ${details.width} × ${details.height} px e precisa ter ${details.expectedWidth} × ${details.expectedHeight} px.`
       }
       if (details.reason === 'bytes') return 'A imagem passa de 5 MB.'
