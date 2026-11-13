@@ -91,7 +91,7 @@ test.describe('Admin catalog', () => {
   test('saves the general data of the product', async ({ page }) => {
     const { captured } = await openAuthed(page, '/catalog/products/prod-1', e2eProfiles.operatorWrite)
 
-    await expect(page.getByText('turkey', { exact: true })).toBeVisible()
+    await expect(page.getByText('Código turkey · mercado BR · BRL')).toBeVisible()
     await page.getByLabel('Nome do produto').fill('Peru e Arroz')
     await expect(page.getByText('Dados gerais alterados. Salve antes de sair.')).toBeVisible()
     await page.getByRole('button', { name: 'Salvar' }).click()

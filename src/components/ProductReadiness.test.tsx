@@ -53,11 +53,30 @@ describe('ProductReadiness', () => {
 
     expect(screen.getByRole('heading', { name: 'O que falta para aparecer na loja' })).toBeInTheDocument()
     expect(screen.getByRole('progressbar', { name: 'Itens concluídos' })).toHaveAttribute('aria-valuenow', '1')
-    const next = screen.getByText('Próximo passo').closest('li')!
-    expect(within(next).getByText('Apresentação da receita')).toBeInTheDocument()
+    const next = screen.getByText('Próximo passo').closest('.readiness-next-step') as HTMLElement
+    expect(next).toHaveTextContent('Apresentação da receita')
+    expect(next).toHaveTextContent('Preencha e salve a aba Apresentação.')
 
     await user.click(within(next).getByRole('button', { name: 'Abrir Apresentação (Apresentação da receita)' }))
     expect(onOpen).toHaveBeenCalledWith('apresentacao')
+  })
+
+  it('opens the tab of a later pending step from the step itself', async () => {
+    const user = userEvent.setup()
+    const onOpen = vi.fn()
+    render(<ProductReadiness steps={productReadinessSteps(emptyBr)} onOpen={onOpen} canPublish />)
+
+    // Only the next step has a button with its detail; the others are links in the step line.
+    expect(screen.getAllByRole('button', { name: /^Abrir / })).toHaveLength(1)
+    await user.click(screen.getByRole('button', { name: /Ao menos uma variação \(tamanho de pack\)/ }))
+    expect(onOpen).toHaveBeenCalledWith('variacoes')
+  })
+
+  it('points to the header Publicar instead of repeating it', () => {
+    const steps = productReadinessSteps(emptyBr).map((step) => ({ ...step, done: step.id !== 'published' }))
+    render(<ProductReadiness steps={steps} onOpen={vi.fn()} canPublish />)
+    expect(screen.queryByRole('button', { name: /Publicar/ })).not.toBeInTheDocument()
+    expect(screen.getByText('Use Publicar no topo da página.')).toBeInTheDocument()
   })
 
   it('hides Publicar without write permission and shows the ready state', () => {

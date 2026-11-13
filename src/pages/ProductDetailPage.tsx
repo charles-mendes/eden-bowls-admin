@@ -315,7 +315,7 @@ function generalFailure(error: unknown) {
   if (error instanceof ApiRequestError) {
     if (error.code === 'product_name_invalid') return 'Informe um nome de até 120 caracteres.'
     if (error.code === 'product_aliases_invalid') return 'Os aliases passam de 512 caracteres.'
-    if (error.code === 'product_short_label_invalid') return 'O nome curto tem no máximo 64 caracteres.'
+    if (error.code === 'product_short_label_invalid') return 'O nome na fila de produção tem no máximo 64 caracteres.'
     if (error.code === 'product_life_stage_invalid') return 'Escolha a fase de vida.'
     if (error.code === 'product_identity_locked') return 'Código e mercado não mudam depois de criados.'
   }
@@ -669,7 +669,6 @@ export function ProductDetailPage() {
     }).join(', ')
     : ''
 
-  const activeCount = variants.filter((item) => item.active).length
   const pendingSyncCount = variants.filter((item) => item.requiresSync).length
   const content = data?.content ?? null
   const contentForSections = data ? sectionContent(data) : null
@@ -688,6 +687,9 @@ export function ProductDetailPage() {
       labelDataReady: item.labelDataReady,
     })),
   }) : []
+  const publishIsNext = readinessSteps.find((step) => !step.done)?.id === 'published'
+  // What each tab still lacks for the store, from the same steps as the checklist.
+  const tabPending = (id: TabId) => readinessSteps.some((step) => !step.done && step.target === id)
   const openReadiness = (target: ReadinessTarget) => {
     if (target === 'publicar') {
       void togglePublish(true)
@@ -701,65 +703,40 @@ export function ProductDetailPage() {
 
   return (
     <PageFrame
-      eyebrow="Catálogo · Produto"
+      eyebrow={<Link className="page-back-link" to="/catalog/products" onClick={leavePage}>← Produtos</Link>}
       title={data?.namePt ?? 'Produto'}
-      description={data ? `${content ? `Código ${content.code}` : `slug ${data.slug}`} · mercado ${planCountry}` : 'Carregando o produto.'}
-      actions={(
-        <div className="inline-actions">
-          {data ? (
-            <span className={data.active ? 'badge-success' : 'badge-warning'}>
-              {data.active ? 'Publicado' : 'Rascunho'}
+      description={data ? `${content ? `Código ${content.code}` : `slug ${data.slug}`} · mercado ${planCountry} · ${currency}` : 'Carregando o produto.'}
+      actions={data ? (
+        // Status and the actions that change it live in one place: the header.
+        <div className="inline-actions product-head-actions">
+          <span className={data.active ? 'badge-success' : 'badge-warning'}>
+            {data.active ? 'Publicado' : 'Rascunho'}
+          </span>
+          {pendingSyncCount ? (
+            <span className="badge-warning">
+              {pendingSyncCount === 1 ? '1 variação pendente no Stripe' : `${pendingSyncCount} variações pendentes no Stripe`}
             </span>
           ) : null}
-          <Link className="ghost-button" to="/catalog/products" onClick={leavePage}>Voltar</Link>
+          {canSync ? (
+            <button className="ghost-button" type="button" onClick={() => void sync()}>Sincronizar Stripe</button>
+          ) : null}
+          {canWrite ? (
+            <button
+              // Highlighted only when publishing is what is left to do.
+              className={!data.active && publishIsNext ? 'primary-button' : 'ghost-button'}
+              type="button"
+              title={data.active ? 'Tira da loja e mantém o cadastro.' : undefined}
+              onClick={() => void togglePublish(!data.active)}
+            >
+              {data.active ? 'Desativar' : 'Publicar'}
+            </button>
+          ) : null}
         </div>
-      )}
+      ) : null}
     >
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
       {gapText ? <div className="alert">Publicação bloqueada: faltam preços Stripe para {gapText}.</div> : null}
-
-      <Section
-        title="Publicação e sincronização"
-        description={data?.active
-          ? 'O produto está na loja. Desativar tira da loja e mantém o cadastro.'
-          : 'Rascunho: não aparece na loja. Publique quando as variações estiverem prontas.'}
-        actions={data && (canWrite || canSync) ? (
-          <div className="inline-actions">
-            {canSync ? (
-              <button className="ghost-button" type="button" onClick={() => void sync()}>Sincronizar Stripe</button>
-            ) : null}
-            {canWrite ? (
-              <button
-                className={data.active ? 'ghost-button' : 'primary-button'}
-                type="button"
-                onClick={() => void togglePublish(!data.active)}
-              >
-                {data.active ? 'Desativar' : 'Publicar'}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-      >
-        {data ? (
-          <dl className="meta-grid">
-            <div className="meta-item">
-              <dt>Variações ativas</dt>
-              <dd>{activeCount} de {variants.length}</dd>
-            </div>
-            <div className="meta-item">
-              <dt>Pendentes no Stripe</dt>
-              <dd className={pendingSyncCount ? 'warning-text' : undefined}>
-                {pendingSyncCount === 0 ? 'Nenhuma' : pendingSyncCount === 1 ? '1 variação' : `${pendingSyncCount} variações`}
-              </dd>
-            </div>
-            <div className="meta-item">
-              <dt>Moeda</dt>
-              <dd>{currency}</dd>
-            </div>
-          </dl>
-        ) : null}
-      </Section>
 
       {data ? <ProductReadiness steps={readinessSteps} onOpen={openReadiness} canPublish={canWrite} /> : null}
 
@@ -777,6 +754,10 @@ export function ProductDetailPage() {
             onClick={() => openTab(option.id)}
           >
             {option.label}
+            {/* The checklist already says it to screen readers; the tab name stays the label. */}
+            {data && tabPending(option.id) ? <span className="page-tab-flag" aria-hidden="true">pendente</span>
+              : data && option.id === 'variacoes' ? <span className="page-tab-count" aria-hidden="true">{variants.filter((item) => item.id).length}</span>
+                : null}
           </button>
         ))}
       </div>
@@ -786,7 +767,7 @@ export function ProductDetailPage() {
           <form onSubmit={saveGeneral}>
             <Section
               title="Dados gerais"
-              description="Nome, aliases, nome curto e fase valem para todas as variações deste produto."
+              description="Valem para todas as variações. Código e mercado são definidos na criação e não mudam."
               actions={canWrite && data ? (
                 <button className="primary-button" type="submit" disabled={savingGeneral || !generalDirty}>
                   {savingGeneral ? 'Salvando…' : 'Salvar'}
@@ -796,21 +777,6 @@ export function ProductDetailPage() {
               {generalError ? <div className="alert" role="alert">{generalError}</div> : null}
               {data ? (
                 <>
-                  <dl className="meta-grid">
-                    <div className="meta-item">
-                      <dt>Código</dt>
-                      <dd className="mono">{content?.code ?? '-'}</dd>
-                    </div>
-                    <div className="meta-item">
-                      <dt>Mercado</dt>
-                      <dd>{planCountry === 'US' ? 'US / USD' : 'BR / BRL'}</dd>
-                    </div>
-                    <div className="meta-item">
-                      <dt>Situação</dt>
-                      <dd>{data.active ? 'Publicado' : 'Rascunho'}</dd>
-                    </div>
-                  </dl>
-                  <p className="field-hint">Código e mercado são definidos na criação e não mudam.</p>
                   <div className="form-grid">
                     <label>
                       Nome
@@ -850,16 +816,15 @@ export function ProductDetailPage() {
                       <span className="access-hint">Opcional, separados por vírgula.</span>
                     </label>
                     <label>
-                      Nome curto
+                      Nome na fila de produção
                       <input
-                        aria-label="Nome curto"
+                        aria-label="Nome na fila de produção"
                         value={general.shortLabel}
                         maxLength={64}
                         readOnly={!canWrite}
                         placeholder="Ex.: Bovino · Sênior"
                         onChange={(event) => setGeneral((current) => ({ ...current, shortLabel: event.target.value }))}
                       />
-                      <span className="access-hint">Usado na fila de produção.</span>
                     </label>
                   </div>
                   <p className="field-hint">
@@ -937,7 +902,8 @@ export function ProductDetailPage() {
               </div>
             ) : null}
             <div className="table-shell table-scroll variation-table">
-              <table>
+              {/* One card per variation on phones (stack-table). */}
+              <table className="stack-table">
                 <thead>
                   <tr>
                     <th>Variação</th>
@@ -967,15 +933,15 @@ export function ProductDetailPage() {
                         id={item.id ? `variation-${item.id}` : undefined}
                         className={item.id && item.id === focusVariationId ? 'row-focused' : undefined}
                       >
-                        <td>
+                        <td className="stack-table-title">
                           <div className="cell-stack">
                             <strong>{item.name || 'Sem nome'}</strong>
                             <span className="cell-meta mono">{item.sku || 'Sem SKU'}</span>
                           </div>
                         </td>
-                        <td>{item.weight ? weightText(item.weight) : '-'}</td>
-                        <td className="numeric">{formatCurrency(item.regularPrice === '' ? null : Number(item.regularPrice), currency)}</td>
-                        <td>
+                        <td data-label="Peso">{item.weight ? weightText(item.weight) : '-'}</td>
+                        <td className="numeric" data-label={`Preço (${currency})`}>{formatCurrency(item.regularPrice === '' ? null : Number(item.regularPrice), currency)}</td>
+                        <td data-label="Stripe">
                           <div className="cell-stack">
                             <span className={item.syncStatus === 'synced' && !item.requiresSync ? 'badge-success' : 'badge-warning'}>
                               {syncStatusLabel(item.syncStatus)}
@@ -988,7 +954,7 @@ export function ProductDetailPage() {
                             ) : null}
                           </div>
                         </td>
-                        <td>
+                        <td data-label="Situação">
                           <div className="cell-stack">
                             <span className={item.active ? 'badge-success' : 'badge-neutral'}>{item.active ? 'Ativa' : 'Inativa'}</span>
                             {pending.length ? (
@@ -1099,7 +1065,7 @@ export function ProductDetailPage() {
                 <dd>{content ? LIFE_STAGE_LABELS[content.lifeStage] : '-'}</dd>
               </div>
             </dl>
-            <p className="access-hint">Sabor, código, fase e nome curto vêm do produto, em Dados gerais.</p>
+            <p className="access-hint">Sabor, código, fase e nome na fila de produção vêm do produto, em Dados gerais.</p>
             <fieldset className="access-group">
               <legend>Pack</legend>
               <div className="access-fields">

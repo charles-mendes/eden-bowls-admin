@@ -88,13 +88,13 @@ describe('ProductDetailPage', () => {
       installAdminFetchMock(operatorWriteUser)
       renderDetail()
 
-      await user.type(await screen.findByLabelText('Nome curto'), ' Light')
+      await user.type(await screen.findByLabelText('Nome na fila de produção'), ' Light')
       expect(screen.getByText('Dados gerais alterados. Salve antes de sair.')).toBeInTheDocument()
 
       // The typed field survives a tab switch: it lives on the page, not in the tab.
       await openTab(user, 'Variações')
       await openTab(user, 'Dados gerais')
-      expect(screen.getByLabelText('Nome curto')).toHaveValue('Peru Light')
+      expect(screen.getByLabelText('Nome na fila de produção')).toHaveValue('Peru Light')
 
       await user.click(screen.getByRole('button', { name: 'Salvar' }))
       await waitFor(() => {
@@ -120,8 +120,8 @@ describe('ProductDetailPage', () => {
       installAdminFetchMock(operatorWriteUser)
       renderDetail()
 
-      expect(await screen.findByText('turkey')).toBeInTheDocument()
-      expect(screen.getByText('BR / BRL')).toBeInTheDocument()
+      // Code and market are shown once, in the page header.
+      expect(await screen.findByText('Código turkey · mercado BR · BRL')).toBeInTheDocument()
       expect(screen.queryByLabelText('Código')).not.toBeInTheDocument()
       expect(screen.queryByLabelText('País do plano')).not.toBeInTheDocument()
       expect(screen.queryByRole('combobox', { name: /mercado/i })).not.toBeInTheDocument()
@@ -138,11 +138,11 @@ describe('ProductDetailPage', () => {
       })
       renderDetail()
 
-      await user.type(await screen.findByLabelText('Nome curto'), ' X')
+      await user.type(await screen.findByLabelText('Nome na fila de produção'), ' X')
       await user.click(screen.getByRole('button', { name: 'Salvar' }))
 
-      expect(await screen.findByText('O nome curto tem no máximo 64 caracteres.')).toBeInTheDocument()
-      expect(screen.getByLabelText('Nome curto')).toHaveValue('Peru X')
+      expect(await screen.findByText('O nome na fila de produção tem no máximo 64 caracteres.')).toBeInTheDocument()
+      expect(screen.getByLabelText('Nome na fila de produção')).toHaveValue('Peru X')
     })
   })
 
@@ -563,7 +563,7 @@ describe('ProductDetailPage', () => {
       renderDetail()
 
       expect(await screen.findByRole('heading', { name: 'O que falta para aparecer na loja' })).toBeInTheDocument()
-      expect(screen.getByText('Foto da receita na loja').closest('li')).toHaveTextContent('Próximo passo')
+      expect(screen.getByText('Próximo passo').closest('.readiness-next-step')).toHaveTextContent('Foto da receita na loja')
 
       await user.click(screen.getByRole('button', { name: 'Abrir Imagens (Foto da receita na loja)' }))
       expect(screen.getByRole('tab', { name: 'Imagens' })).toHaveAttribute('aria-selected', 'true')

@@ -113,20 +113,21 @@ export function productReadinessSteps({ published, planCountry, content, variati
     group: 'Publicação',
     title: 'Produto publicado',
     done: published,
-    detail: 'Use Publicar em Publicação e sincronização.',
+    detail: 'Use Publicar no topo da página.',
     target: 'publicar',
   })
   return steps
 }
 
-const TARGET_TEXT: Record<ReadinessTarget, string> = {
+const TARGET_TEXT: Record<Exclude<ReadinessTarget, 'publicar'>, string> = {
   imagens: 'Abrir Imagens',
   apresentacao: 'Abrir Apresentação',
   rotulo: 'Abrir Rótulo',
   variacoes: 'Abrir Variações',
-  publicar: 'Publicar',
 }
 
+// One line of steps and, below it, only the next one with what is missing and the button that solves it.
+// The other pending steps open their tab from the step itself.
 export function ProductReadiness({ steps, onOpen, canPublish }: {
   steps: ReadinessStep[]
   onOpen: (target: ReadinessTarget) => void
@@ -134,65 +135,76 @@ export function ProductReadiness({ steps, onOpen, canPublish }: {
 }) {
   const doneCount = steps.filter((step) => step.done).length
   const ready = doneCount === steps.length
-  const nextId = steps.find((step) => !step.done)?.id
-  const groups = [...new Set(steps.map((step) => step.group))]
+  const next = steps.find((step) => !step.done)
+  // Publicar stays in the page header, so the step only points to it.
+  const nextTarget = next?.target && next.target !== 'publicar' ? next.target : null
+  const nextDetail = next?.target === 'publicar' && !canPublish ? 'Falta publicar o produto.' : next?.detail
 
   return (
     <section className="section-card readiness-card" aria-labelledby="readiness-title">
-      <div className="section-head">
-        <div>
-          <h3 id="readiness-title">{ready ? 'Produto na loja' : 'O que falta para aparecer na loja'}</h3>
-          <p className="muted">
-            {ready
-              ? 'Tudo pronto: o produto está publicado e tem variação ativa.'
-              : 'Resolva os itens na ordem. A variação só ativa com o conteúdo pronto, e a loja só mostra produto publicado com variação ativa.'}
-          </p>
-        </div>
+      <div className="readiness-head">
+        <h3 id="readiness-title">{ready ? 'Produto na loja' : 'O que falta para aparecer na loja'}</h3>
         <span className={ready ? 'badge-success' : 'badge-warning'}>{doneCount} de {steps.length}</span>
+        <div
+          className="readiness-bar"
+          role="progressbar"
+          aria-label="Itens concluídos"
+          aria-valuemin={0}
+          aria-valuemax={steps.length}
+          aria-valuenow={doneCount}
+        >
+          <span style={{ width: `${(doneCount / steps.length) * 100}%` }} />
+        </div>
       </div>
-      <div
-        className="readiness-bar"
-        role="progressbar"
-        aria-label="Itens concluídos"
-        aria-valuemin={0}
-        aria-valuemax={steps.length}
-        aria-valuenow={doneCount}
-      >
-        <span style={{ width: `${(doneCount / steps.length) * 100}%` }} />
-      </div>
-      {ready ? null : groups.map((group) => (
-        <div key={group} className="readiness-group">
-          <h4>{group}</h4>
-          <ul className="readiness-list">
-            {steps.filter((step) => step.group === group).map((step) => {
-              const showAction = !step.done && step.target && (step.target !== 'publicar' || canPublish)
-              return (
-                <li key={step.id} className={step.done ? 'readiness-item done' : step.id === nextId ? 'readiness-item next' : 'readiness-item'}>
+      {ready ? (
+        <p className="muted readiness-ready">Tudo pronto: o produto está publicado e tem variação ativa.</p>
+      ) : (
+        <>
+          <ol className="readiness-steps">
+            {steps.map((step) => {
+              const state = step.done ? 'done' : step.id === next?.id ? 'next' : 'pending'
+              const body = (
+                <>
                   <span className="readiness-mark" aria-hidden="true">{step.done ? '✓' : ''}</span>
-                  <div className="readiness-text">
-                    <span className="readiness-title">
-                      {step.title}
-                      <span className="sr-only">{step.done ? ' (concluído)' : ' (pendente)'}</span>
-                      {step.id === nextId ? <span className="badge-info readiness-next">Próximo passo</span> : null}
-                    </span>
-                    {step.done ? null : <span className="readiness-detail">{step.detail}</span>}
-                  </div>
-                  {showAction ? (
-                    <button
-                      className={step.id === nextId ? 'primary-button readiness-action' : 'ghost-button readiness-action'}
-                      type="button"
-                      aria-label={`${TARGET_TEXT[step.target!]} (${step.title})`}
-                      onClick={() => onOpen(step.target!)}
-                    >
-                      {TARGET_TEXT[step.target!]}
+                  <span className="readiness-title">{step.title}</span>
+                  <span className="sr-only">{step.done ? ' (concluído)' : ' (pendente)'}</span>
+                </>
+              )
+              const opensTab = !step.done && step.target && step.target !== 'publicar' && step.id !== next?.id
+              return (
+                <li key={step.id} className={`readiness-step ${state}`}>
+                  {opensTab ? (
+                    <button className="readiness-step-inner" type="button" title={step.detail} onClick={() => onOpen(step.target!)}>
+                      {body}
                     </button>
-                  ) : null}
+                  ) : <span className="readiness-step-inner">{body}</span>}
                 </li>
               )
             })}
-          </ul>
-        </div>
-      ))}
+          </ol>
+          {next ? (
+            <div className="readiness-next-step">
+              <div className="readiness-text">
+                <span className="readiness-next-title">
+                  <span className="badge-info">Próximo passo</span>
+                  {next.title}
+                </span>
+                <span className="readiness-detail">{nextDetail}</span>
+              </div>
+              {nextTarget ? (
+                <button
+                  className="primary-button readiness-action"
+                  type="button"
+                  aria-label={`${TARGET_TEXT[nextTarget]} (${next.title})`}
+                  onClick={() => onOpen(nextTarget)}
+                >
+                  {TARGET_TEXT[nextTarget]}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+        </>
+      )}
     </section>
   )
 }
