@@ -1,10 +1,13 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 
+// `hint` is a short line under the label, read as the item's description. `separated` draws a line above the item.
+type RowMenuItemBase = { label: string; hint?: string; separated?: boolean }
+
 export type RowMenuItem =
-  | { label: string; to: string }
-  | { label: string; onSelect: () => void; danger?: boolean }
-  | { label: string; disabled: true }
+  | (RowMenuItemBase & { to: string })
+  | (RowMenuItemBase & { onSelect: () => void; danger?: boolean })
+  | (RowMenuItemBase & { disabled: true })
 
 // A "⋯" menu for a table row. The list is fixed-positioned so the table's scroll box does not clip it.
 export function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
@@ -27,7 +30,7 @@ export function RowMenu({ label, items }: { label: string; items: RowMenuItem[] 
     const rect = buttonRef.current?.getBoundingClientRect()
     if (!rect) return
     // Opens upward when the rows below the button leave no room for the list.
-    const height = items.length * 36 + 10
+    const height = items.reduce((sum, item) => sum + (item.hint ? 52 : 36) + (item.separated ? 9 : 0), 10)
     const below = rect.bottom + 4 + height <= window.innerHeight
     setPosition({
       top: below ? rect.bottom + 4 : Math.max(8, rect.top - 4 - height),
@@ -90,24 +93,36 @@ export function RowMenu({ label, items }: { label: string; items: RowMenuItem[] 
       </button>
       {open ? (
         <ul ref={menuRef} id={menuId} className="row-menu" role="menu" aria-label={label} style={position}>
-          {items.map((item) => (
-            <li key={item.label} role="none">
-              {'to' in item ? (
-                <Link role="menuitem" to={item.to} onClick={() => close()}>{item.label}</Link>
-              ) : 'onSelect' in item ? (
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={item.danger ? 'row-menu-danger' : undefined}
-                  onClick={() => { close(); item.onSelect() }}
-                >
-                  {item.label}
-                </button>
-              ) : (
-                <span role="menuitem" aria-disabled="true">{item.label}</span>
-              )}
-            </li>
-          ))}
+          {items.map((item, index) => {
+            const hintId = item.hint ? `${menuId}-hint-${index}` : undefined
+            const content = item.hint ? (
+              <>
+                <span className="row-menu-label">{item.label}</span>
+                <span id={hintId} className="row-menu-hint">{item.hint}</span>
+              </>
+            ) : item.label
+            return [
+              item.separated && index > 0 ? <li key={`${item.label}-separator`} role="separator" className="row-menu-separator" /> : null,
+              <li key={item.label} role="none">
+                {'to' in item ? (
+                  <Link role="menuitem" to={item.to} aria-label={item.hint ? item.label : undefined} aria-describedby={hintId} onClick={() => close()}>{content}</Link>
+                ) : 'onSelect' in item ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-label={item.hint ? item.label : undefined}
+                    aria-describedby={hintId}
+                    className={item.danger ? 'row-menu-danger' : undefined}
+                    onClick={() => { close(); item.onSelect() }}
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <span role="menuitem" aria-disabled="true" aria-label={item.hint ? item.label : undefined} aria-describedby={hintId}>{content}</span>
+                )}
+              </li>,
+            ]
+          })}
         </ul>
       ) : null}
     </>

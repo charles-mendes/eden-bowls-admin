@@ -48,12 +48,13 @@ import {
 } from '../lib/packStock'
 
 type ProductionForm = { flavorKey: string; packSizeGrams: string; quantity: string; note: string }
-type AdjustmentForm = { quantity: string; reason: StockAdjustmentReason; note: string }
+// The operator types how many packs; the sign comes from the reason (and from Baixar/Somar when the reason is Outro).
+type AdjustmentForm = { quantity: string; reason: StockAdjustmentReason; direction: 'out' | 'in'; note: string }
 type CountForm = { countedQuantity: string; note: string }
 type MinimumForm = { minLevel: string }
 
 const EMPTY_PRODUCTION: ProductionForm = { flavorKey: '', packSizeGrams: '', quantity: '', note: '' }
-const EMPTY_ADJUSTMENT: AdjustmentForm = { quantity: '', reason: 'loss', note: '' }
+const EMPTY_ADJUSTMENT: AdjustmentForm = { quantity: '', reason: 'loss', direction: 'out', note: '' }
 const EMPTY_COUNT: CountForm = { countedQuantity: '', note: '' }
 const PER_PAGE = 20
 
@@ -232,8 +233,8 @@ export function StockPage() {
   const submitAdjustment = async (event: FormEvent) => {
     event.preventDefault()
     if (!token || !adjustItem) return
-    if (Number(adjustment.quantity) === 0) {
-      setDialogError('Informe uma quantidade diferente de zero.')
+    if (!(adjustmentPacks > 0)) {
+      setDialogError('Informe uma quantidade maior que zero.')
       return
     }
     setDialogError('')
@@ -245,7 +246,7 @@ export function StockPage() {
           market: scopedMarket,
           flavorKey: adjustItem.flavorKey,
           packSizeGrams: adjustItem.packSizeGrams,
-          quantity: Number(adjustment.quantity),
+          quantity: adjustmentDelta,
           reason: adjustment.reason,
           note: adjustment.note.trim() || undefined,
         },
@@ -320,7 +321,11 @@ export function StockPage() {
       && withoutWeight.findIndex((other) => other.productId === item.productId) === index)
   const unsizedTotal = unsized.reduce((sum, line) => sum + line.quantity, 0)
   const columnCount = 9
-  const adjustmentDelta = Number(adjustment.quantity)
+  const adjustmentPacks = Math.abs(Number(adjustment.quantity))
+  const adjustmentAdds = adjustment.reason === 'other' && adjustment.direction === 'in'
+  const adjustmentDelta = adjustmentAdds ? adjustmentPacks : -adjustmentPacks
+  const countedTotal = count.countedQuantity.trim() === '' ? null : Number(count.countedQuantity)
+  const countDifference = countItem && countedTotal != null && Number.isFinite(countedTotal) ? countedTotal - countItem.onHand : null
 
   const productName = (flavorKey: string) => products.get(flavorKey)?.name ?? flavorKey
   // Product code and variation SKU under the name; the code is left out when it already is the name.
@@ -340,10 +345,10 @@ export function StockPage() {
 
   const rowActions = (item: StockItem): RowMenuItem[] => [
     ...(canWrite ? [
-      { label: 'Lançar produção', onSelect: () => openProduction(item) },
-      { label: 'Contagem', onSelect: () => { setDialogError(''); setCountItem(item); setCount(EMPTY_COUNT) } },
-      { label: 'Ajustar', onSelect: () => { setDialogError(''); setAdjustItem(item); setAdjustment(EMPTY_ADJUSTMENT) } },
-      { label: 'Definir mínimo', onSelect: () => { setDialogError(''); setMinimumItem(item); setMinimum({ minLevel: item.minLevel == null ? '' : String(item.minLevel) }) } },
+      { label: 'Lançar produção', hint: 'Soma os packs que a cozinha produziu', onSelect: () => openProduction(item) },
+      { label: 'Contar estoque', hint: 'Informe o total contado; o sistema acerta a diferença', onSelect: () => { setDialogError(''); setCountItem(item); setCount(EMPTY_COUNT) } },
+      { label: 'Registrar perda ou ajuste', hint: 'Perda, vencimento, amostra ou outro motivo', onSelect: () => { setDialogError(''); setAdjustItem(item); setAdjustment(EMPTY_ADJUSTMENT) } },
+      { label: 'Definir mínimo', hint: 'Alerta de reposição; não mexe no saldo', separated: true, onSelect: () => { setDialogError(''); setMinimumItem(item); setMinimum({ minLevel: item.minLevel == null ? '' : String(item.minLevel) }) } },
     ] : []),
     { label: 'Ver histórico', onSelect: () => openHistory(item) },
   ]
@@ -374,7 +379,7 @@ export function StockPage() {
           <div className="warning" role="status">
             <strong>Falta a contagem inicial.</strong>
             {' '}
-            Antes de lançar produção, conte os packs de cada item: no menu da linha, use Contagem com o total real.
+            Antes de lançar produção, conte os packs de cada item: no menu da linha, use Contar estoque com o total real.
           </div>
         ) : null}
 
@@ -724,8 +729,8 @@ export function StockPage() {
       </Dialog>
 
       <Dialog
-        title={adjustItem ? `Ajustar ${itemLabel(adjustItem)}` : 'Ajustar'}
-        description="Use número negativo para baixar e positivo para somar ao saldo."
+        title={adjustItem ? `Perda ou ajuste de ${itemLabel(adjustItem)}` : 'Perda ou ajuste'}
+        description="Perda, vencimento e amostra sempre baixam o saldo. Para corrigir o total depois de contar, use Contar estoque."
         open={Boolean(adjustItem)}
         onClose={closeDialogs}
         footer={(
@@ -738,23 +743,36 @@ export function StockPage() {
         <form id="stock-adjust-form" className="closure-form" onSubmit={submitAdjustment}>
           {dialogError ? <div className="alert" role="alert">{dialogError}</div> : null}
           <label className="closure-field">
-            Quantidade
-            <input required type="number" min={-10000} max={10000} value={adjustment.quantity} onChange={(event) => setAdjustment((current) => ({ ...current, quantity: event.target.value }))} />
-          </label>
-          {adjustItem ? (
-            <p className="muted">
-              Em estoque: {adjustItem.onHand}
-              {Number.isFinite(adjustmentDelta) && adjustmentDelta !== 0 ? ` → novo saldo: ${adjustItem.onHand + adjustmentDelta}` : ''}
-            </p>
-          ) : null}
-          <label className="closure-field">
             Motivo
-            <select aria-label="Motivo" value={adjustment.reason} onChange={(event) => setAdjustment((current) => ({ ...current, reason: event.target.value as StockAdjustmentReason }))}>
+            <select aria-label="Motivo" value={adjustment.reason} onChange={(event) => setAdjustment((current) => ({ ...current, reason: event.target.value as StockAdjustmentReason, direction: 'out' }))}>
               {MANUAL_ADJUSTMENT_REASONS.map((value) => (
                 <option key={value} value={value}>{ADJUSTMENT_REASON_LABELS[value]}</option>
               ))}
             </select>
           </label>
+          {adjustment.reason === 'other' ? (
+            <fieldset className="closure-field stock-direction">
+              <legend>Movimento</legend>
+              <label>
+                <input type="radio" name="stock-adjust-direction" value="out" checked={adjustment.direction === 'out'} onChange={() => setAdjustment((current) => ({ ...current, direction: 'out' }))} />
+                Baixar do saldo
+              </label>
+              <label>
+                <input type="radio" name="stock-adjust-direction" value="in" checked={adjustment.direction === 'in'} onChange={() => setAdjustment((current) => ({ ...current, direction: 'in' }))} />
+                Somar ao saldo
+              </label>
+            </fieldset>
+          ) : null}
+          <label className="closure-field">
+            {adjustmentAdds ? 'Packs a somar' : 'Packs a baixar'}
+            <input required type="number" min={1} max={10000} value={adjustment.quantity} onChange={(event) => setAdjustment((current) => ({ ...current, quantity: event.target.value }))} />
+          </label>
+          {adjustItem ? (
+            <p className="muted stock-balance-preview">
+              Em estoque: {adjustItem.onHand}
+              {adjustmentPacks > 0 ? ` → novo saldo: ${adjustItem.onHand + adjustmentDelta}` : ''}
+            </p>
+          ) : null}
           <ObservationField
             id="stock-adjustment-note"
             value={adjustment.note}
@@ -766,14 +784,14 @@ export function StockPage() {
       </Dialog>
 
       <Dialog
-        title={countItem ? `Contagem de ${itemLabel(countItem)}` : 'Contagem'}
-        description="Informe o total real de packs. O sistema lança só a diferença em relação ao saldo atual e a registra no histórico."
+        title={countItem ? `Contar estoque de ${itemLabel(countItem)}` : 'Contar estoque'}
+        description="Informe o total de packs que você contou. O sistema lança só a diferença em relação ao saldo atual."
         open={Boolean(countItem)}
         onClose={closeDialogs}
         footer={(
           <>
             <button className="ghost-button" type="button" onClick={closeDialogs}>Cancelar</button>
-            <button className="primary-button" type="submit" form="stock-count-form">Salvar</button>
+            <button className="primary-button" type="submit" form="stock-count-form">Salvar contagem</button>
           </>
         )}
       >
@@ -784,10 +802,20 @@ export function StockPage() {
             <input required type="number" min={0} max={10000} value={count.countedQuantity} onChange={(event) => setCount((current) => ({ ...current, countedQuantity: event.target.value }))} />
           </label>
           {countItem ? (
-            <p className="muted">
-              Em estoque: {countItem.onHand}
-              {count.countedQuantity.trim() !== '' ? ` → novo saldo: ${Number(count.countedQuantity)}` : ''}
-            </p>
+            <div className="stock-count-preview" role="status">
+              <p className="muted">
+                Saldo no sistema: {countItem.onHand}
+                {countedTotal != null ? ` → novo saldo: ${countedTotal}` : ''}
+              </p>
+              {countDifference === 0 ? (
+                <p>Confere com o saldo. Nada será registrado no histórico.</p>
+              ) : countDifference != null ? (
+                <p>
+                  <strong>{formatSignedQuantity(countDifference)} {Math.abs(countDifference) === 1 ? 'pack' : 'packs'}</strong>
+                  {' '}{countDifference > 0 ? 'a mais' : 'a menos'} que o sistema. Fica no histórico como Ajuste · Contagem.
+                </p>
+              ) : null}
+            </div>
           ) : null}
           <ObservationField
             id="stock-count-note"

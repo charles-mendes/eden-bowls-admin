@@ -151,6 +151,9 @@ export function stockErrorMessage(error: unknown) {
   if (code === 'stock_item_unknown') {
     return 'Esse produto não tem variação com esse tamanho neste mercado.'
   }
+  if (code === 'stock_adjustment_must_decrease') {
+    return 'Perda, vencimento e amostra só podem baixar o saldo. Para somar, use o motivo Outro.'
+  }
   if (code === 'market_forbidden') {
     return 'Este mercado está fora do seu escopo.'
   }

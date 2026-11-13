@@ -135,7 +135,7 @@ describe('StockPage', () => {
     expect(screen.queryByRole('button', { name: 'Lançar produção' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Ações de frango 300 g' }))
     expect(screen.getByRole('menuitem', { name: 'Ver histórico' })).toBeInTheDocument()
-    expect(screen.queryByRole('menuitem', { name: 'Ajustar' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Registrar perda ou ajuste' })).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Definir mínimo' })).not.toBeInTheDocument()
     expect(screen.queryByRole('menuitem', { name: 'Lançar produção' })).not.toBeInTheDocument()
   })
@@ -143,10 +143,10 @@ describe('StockPage', () => {
   it('requires a note when the reason is Outro', async () => {
     const { calls } = renderStock()
     fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Ajustar' }))
-    const dialog = await screen.findByRole('dialog', { name: /Ajustar/ })
-    fireEvent.change(within(dialog).getByLabelText('Quantidade'), { target: { value: '-1' } })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Registrar perda ou ajuste' }))
+    const dialog = await screen.findByRole('dialog', { name: /Perda ou ajuste/ })
     fireEvent.change(within(dialog).getByLabelText('Motivo'), { target: { value: 'other' } })
+    fireEvent.change(within(dialog).getByLabelText('Packs a baixar'), { target: { value: '1' } })
     expect(within(dialog).getByLabelText('Observação (obrigatória)')).toBeRequired()
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
     expect(findCall(calls, 'POST', '/admin/stock/adjustments')).toBeUndefined()
@@ -308,27 +308,67 @@ describe('StockPage', () => {
     expect(within(dialog).getByLabelText('Quantidade')).toHaveValue(15)
   })
 
-  it('previews the new balance and refuses a zero adjustment', async () => {
+  it('explains each row action and keeps the minimum apart from what moves stock', async () => {
+    renderStock()
+    fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
+    expect(screen.getByRole('menuitem', { name: 'Contar estoque' })).toHaveAccessibleDescription('Informe o total contado; o sistema acerta a diferença')
+    expect(screen.getByRole('menuitem', { name: 'Definir mínimo' })).toHaveAccessibleDescription('Alerta de reposição; não mexe no saldo')
+    expect(screen.getAllByRole('separator')).toHaveLength(1)
+  })
+
+  it('a loss always takes packs out, even when typed positive', async () => {
     const { calls } = renderStock()
     fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Ajustar' }))
-    const dialog = await screen.findByRole('dialog', { name: /Ajustar/ })
-    fireEvent.change(within(dialog).getByLabelText('Quantidade'), { target: { value: '-2' } })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Registrar perda ou ajuste' }))
+    const dialog = await screen.findByRole('dialog', { name: /Perda ou ajuste/ })
+    expect(within(dialog).queryByRole('radio')).not.toBeInTheDocument()
+    fireEvent.change(within(dialog).getByLabelText('Packs a baixar'), { target: { value: '2' } })
     expect(within(dialog).getByText('Em estoque: 40 → novo saldo: 38')).toBeInTheDocument()
-    fireEvent.change(within(dialog).getByLabelText('Quantidade'), { target: { value: '0' } })
     fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
-    expect(await within(dialog).findByText('Informe uma quantidade diferente de zero.')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(findCall(calls, 'POST', '/admin/stock/adjustments')?.body).toMatchObject({ quantity: -2, reason: 'loss' })
+    })
+  })
+
+  it('adds packs only through Outro with Somar ao saldo', async () => {
+    const { calls } = renderStock()
+    fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Registrar perda ou ajuste' }))
+    const dialog = await screen.findByRole('dialog', { name: /Perda ou ajuste/ })
+    fireEvent.change(within(dialog).getByLabelText('Motivo'), { target: { value: 'other' } })
+    fireEvent.click(within(dialog).getByRole('radio', { name: 'Somar ao saldo' }))
+    fireEvent.change(within(dialog).getByLabelText('Packs a somar'), { target: { value: '3' } })
+    fireEvent.change(within(dialog).getByLabelText('Observação (obrigatória)'), { target: { value: 'achado na câmara' } })
+    expect(within(dialog).getByText('Em estoque: 40 → novo saldo: 43')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+    await waitFor(() => {
+      expect(findCall(calls, 'POST', '/admin/stock/adjustments')?.body).toMatchObject({ quantity: 3, reason: 'other', note: 'achado na câmara' })
+    })
+  })
+
+  it('refuses an adjustment of zero packs', async () => {
+    const { calls } = renderStock()
+    fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Registrar perda ou ajuste' }))
+    const dialog = await screen.findByRole('dialog', { name: /Perda ou ajuste/ })
+    fireEvent.change(within(dialog).getByLabelText('Packs a baixar'), { target: { value: '0' } })
+    fireEvent.submit(dialog.querySelector('form') as HTMLFormElement)
+    expect(await within(dialog).findByText('Informe uma quantidade maior que zero.')).toBeInTheDocument()
     expect(findCall(calls, 'POST', '/admin/stock/adjustments')).toBeUndefined()
   })
 
   it('sends the counted total and previews the new balance', async () => {
     const { calls } = renderStock()
     fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Contagem' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Contagem de frango 300 g' })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Contar estoque' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Contar estoque de frango 300 g' })
     fireEvent.change(within(dialog).getByLabelText('Quantidade contada'), { target: { value: '120' } })
-    expect(within(dialog).getByText('Em estoque: 40 → novo saldo: 120')).toBeInTheDocument()
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar' }))
+    expect(within(dialog).getByText('Saldo no sistema: 40 → novo saldo: 120')).toBeInTheDocument()
+    expect(within(dialog).getByText(/a mais que o sistema/)).toHaveTextContent('+80 packs a mais que o sistema. Fica no histórico como Ajuste · Contagem.')
+    fireEvent.change(within(dialog).getByLabelText('Quantidade contada'), { target: { value: '40' } })
+    expect(within(dialog).getByText('Confere com o saldo. Nada será registrado no histórico.')).toBeInTheDocument()
+    fireEvent.change(within(dialog).getByLabelText('Quantidade contada'), { target: { value: '120' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Salvar contagem' }))
     await waitFor(() => {
       expect(findCall(calls, 'POST', '/admin/stock/counts')?.body).toEqual({
         market: 'BR',
@@ -345,8 +385,8 @@ describe('StockPage', () => {
   it('leaves Contagem out of the adjustment reasons', async () => {
     renderStock()
     fireEvent.click(await screen.findByRole('button', { name: 'Ações de frango 300 g' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Ajustar' }))
-    const dialog = await screen.findByRole('dialog', { name: /Ajustar/ })
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Registrar perda ou ajuste' }))
+    const dialog = await screen.findByRole('dialog', { name: /Perda ou ajuste/ })
     expect(within(dialog).queryByRole('option', { name: 'Contagem' })).not.toBeInTheDocument()
   })
 

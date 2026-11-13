@@ -1863,6 +1863,7 @@ button.table-link {
   position: fixed;
   z-index: 30;
   min-width: 190px;
+  max-width: 280px;
   margin: 0;
   padding: var(--space-1);
   list-style: none;
@@ -1888,6 +1889,24 @@ button.table-link {
 .row-menu [role="menuitem"]:focus-visible {
   background: var(--surface-muted);
   outline: none;
+}
+
+.row-menu .row-menu-label {
+  display: block;
+}
+
+.row-menu .row-menu-hint {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-soft);
+  font-size: var(--text-xs, 12px);
+  line-height: 1.3;
+}
+
+.row-menu .row-menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 
 .row-menu .row-menu-danger {
@@ -6146,4 +6165,44 @@ button.readiness-step-inner:hover .readiness-title {
   .readiness-action {
     min-height: 40px;
   }
+}
+
+/* Estoque: Baixar / Somar when the adjustment reason is Outro. */
+.stock-direction {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+}
+
+.stock-direction legend {
+  width: 100%;
+  margin-bottom: var(--space-1);
+  padding: 0;
+}
+
+.stock-direction label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 400;
+}
+
+.closure-field.stock-direction input[type="radio"] {
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.stock-count-preview {
+  display: grid;
+  gap: 4px;
+}
+
+.stock-count-preview p,
+.stock-balance-preview {
+  margin: 0;
 }
