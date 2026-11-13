@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, typ
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
 import { PageFrame } from '../components/PageFrame'
+import { ProductReadiness, productReadinessSteps, type ReadinessTarget } from '../components/ProductReadiness'
 import { RecipeContentSections, type ContentSection } from '../components/RecipeContentSections'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
@@ -674,6 +675,29 @@ export function ProductDetailPage() {
   const contentForSections = data ? sectionContent(data) : null
   const draft = variationDraft
   const tabSections = TAB_SECTIONS[tab]
+  const readinessSteps = data ? productReadinessSteps({
+    published: data.active,
+    planCountry,
+    content: content ? { imageUrl: content.imageUrl, presentationReady: content.presentationReady, labelStatus: content.labelStatus, labelMissing: content.labelMissing ?? [] } : null,
+    variations: variants.filter((item) => item.id).map((item) => ({
+      label: item.weight ? weightText(item.weight) : item.name || item.sku || 'variação',
+      active: item.active,
+      // The Stripe price is created when the variation activates, so it is not a step for the operator.
+      missing: pendingItems(item, planCountry).filter((entry) => !entry.section && entry.text !== 'Stripe').map((entry) => entry.text),
+      finalImageReady: item.finalImageReady,
+      labelDataReady: item.labelDataReady,
+    })),
+  }) : []
+  const openReadiness = (target: ReadinessTarget) => {
+    if (target === 'publicar') {
+      void togglePublish(true)
+      return
+    }
+    const anchor = target === 'imagens' ? 'imagem' : target === 'variacoes' ? undefined : target
+    if (openTab(target, anchor) && !anchor) {
+      requestAnimationFrame(() => document.getElementById(`product-tab-${target}`)?.scrollIntoView?.({ block: 'start' }))
+    }
+  }
 
   return (
     <PageFrame
@@ -736,6 +760,8 @@ export function ProductDetailPage() {
           </dl>
         ) : null}
       </Section>
+
+      {data ? <ProductReadiness steps={readinessSteps} onOpen={openReadiness} canPublish={canWrite} /> : null}
 
       <div className="page-tabs" role="tablist" aria-label="Produto" onKeyDown={moveTabFocus}>
         {TABS.map((option) => (

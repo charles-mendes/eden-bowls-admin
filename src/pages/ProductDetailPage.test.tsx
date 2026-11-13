@@ -554,6 +554,21 @@ describe('ProductDetailPage', () => {
       expect(screen.getByRole('tab', { name: 'Apresentação' })).toHaveAttribute('aria-selected', 'true')
     })
 
+    it('the checklist shows what keeps the product out of the store and opens the tab that solves it', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, {
+        product: { ...inactive, active: false, content: { ...inactive.content!, imageUrl: null, presentationReady: false } },
+      })
+      renderDetail()
+
+      expect(await screen.findByRole('heading', { name: 'O que falta para aparecer na loja' })).toBeInTheDocument()
+      expect(screen.getByText('Foto da receita na loja').closest('li')).toHaveTextContent('Próximo passo')
+
+      await user.click(screen.getByRole('button', { name: 'Abrir Imagens (Foto da receita na loja)' }))
+      expect(screen.getByRole('tab', { name: 'Imagens' })).toHaveAttribute('aria-selected', 'true')
+    })
+
     it('names the active subscriptions when deactivation is refused', async () => {
       const user = userEvent.setup()
       seedAuth()
