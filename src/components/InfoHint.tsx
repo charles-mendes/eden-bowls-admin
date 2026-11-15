@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 type InfoHintProps = {
   // The tip's element id: the field points aria-describedby here, so the text stays its description while closed.
   id: string
   // What the tip is about, for the button's accessible name.
   topic: string
-  text: string
+  // Plain text, or formatted lines (still read as the field's description).
+  text: ReactNode
 }
 
 // An "i" next to a field label that shows its help text on tap or click. Escape or a tap outside closes it; Escape

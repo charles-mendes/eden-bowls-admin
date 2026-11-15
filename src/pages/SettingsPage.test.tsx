@@ -165,6 +165,22 @@ describe('SettingsPage', () => {
     expect(screen.getByLabelText('Texto (Markdown)')).toHaveValue('# Termos\n\nTexto antigo.\nNova cláusula.')
   })
 
+  it('explains each automated email field in its tip', async () => {
+    const user = userEvent.setup()
+    renderPage(operator, '/config?aba=emails')
+
+    const batch = await screen.findByLabelText('Lote por execução')
+    expect(batch).toHaveAccessibleDescription(expect.stringContaining('espera 1 segundo'))
+    expect(screen.getByLabelText('Limite diário')).toHaveAccessibleDescription(expect.stringContaining('por dia (UTC)'))
+    expect(screen.getByLabelText('E-mail de mudança de fase')).toHaveAccessibleDescription(expect.stringContaining('Desligado: pausa de emergência'))
+    for (const topic of ['e-mail de mudança de fase', 'lote por execução', 'limite diário', 'aviso de renovação', 'aviso de fim de plano', 'dias de antecedência dos avisos']) {
+      expect(screen.getByRole('button', { name: `Sobre ${topic}` })).toBeInTheDocument()
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Sobre aviso de renovação' }))
+    expect(screen.getByRole('tooltip', { name: /de hora em hora/ })).toBeVisible()
+  })
+
   it('Cap lower than batch: marks the cap and sends nothing', async () => {
     const user = userEvent.setup()
     const { calls } = renderPage(operator, '/config?aba=emails')

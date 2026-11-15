@@ -2745,6 +2745,45 @@ button.table-link {
   grid-column: 1 / -1;
 }
 
+/* A settings field with its "i": the label reads like the other field labels, the tip in normal weight. */
+.ship-field .field-label-row {
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.ship-field .field-label-row .info-hint-text {
+  font-weight: 400;
+}
+
+/* Automated emails: columns of at least 300px, so the tip under each label is wide enough to read. */
+.email-fields {
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+}
+
+/* Each line of a field tip is its own paragraph. */
+.email-fields .info-hint-text {
+  padding: var(--space-3);
+  font-size: var(--text-md);
+  line-height: 1.5;
+}
+
+.email-fields .hint-line {
+  display: block;
+}
+
+.email-fields .hint-line + .hint-line {
+  margin-top: var(--space-2);
+}
+
+.email-fields .hint-line strong {
+  font-weight: 600;
+}
+
+.ship-field.field-with-hint input[type="checkbox"] {
+  width: auto;
+  justify-self: start;
+}
+
 .ship-field input,
 .ship-field select {
   width: 100%;

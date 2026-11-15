@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
+import { InfoHint } from '../components/InfoHint'
 import { NutritionEditLog } from '../components/NutritionEditLog'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
@@ -51,6 +52,73 @@ function emailsFormOf(settings: AutomatedEmailSettings | null): EmailsForm {
     endingNotice: Boolean(settings?.plan_ending_notice_enabled),
     noticeDays: settings ? String(settings.plan_notice_days) : '',
   }
+}
+
+// Help of each automated email field: what it does, on and off, and why the quantities.
+const EMAIL_HELP = {
+  enabled: [
+    'Avisa o cliente quando o cão muda de fase (filhote → adulto, adulto → sênior) e a receita do plano deixa de servir.',
+    'Quando: verificado 1 vez por dia. O e-mail sai 7 dias antes do prazo de edição da entrega, um por mudança. Só começa depois que o anúncio de lançamento do mercado terminou.',
+    'Ligado: envia.',
+    'Desligado: pausa de emergência, nada sai neste mercado. Ao religar, os e-mails que venceram durante a pausa saem na execução seguinte.',
+  ],
+  batch: [
+    'Vale só para o anúncio de lançamento das receitas de filhote e sênior (enviado à mão, uma vez por mercado). Não afeta os outros e-mails.',
+    'Como funciona: dentro de um envio, a cada N e-mails o sistema espera 1 segundo antes de seguir, para respeitar o limite de envios por segundo do provedor.',
+    'Não é intervalo de minutos: com lote 50 e limite 300, os 300 saem em 6 blocos de 50, em poucos segundos.',
+    'Aceita de 1 a 500.',
+  ],
+  cap: [
+    'Máximo de clientes que recebem o anúncio de lançamento por dia (UTC).',
+    'O que passar fica para um novo envio em outro dia: com 1.000 clientes e limite 300, são 4 dias.',
+    'Por quê: espalhar o envio protege a reputação do domínio (evita spam e bloqueio no provedor) e evita que o suporte receba todas as respostas no mesmo dia.',
+    'Aceita de 1 a 5.000, nunca menor que o lote.',
+  ],
+  renewalNotice: [
+    'Avisa que o plano vai renovar e começar um novo contrato, com o valor da próxima cobrança. Só para assinatura ativa com renovação automática.',
+    'Quando: verificado de hora em hora. Um aviso por assinatura a cada período, até 100 e-mails por hora somando os mercados; o resto sai na hora seguinte.',
+    'Ligado: envia quando a renovação entra na janela de dias de antecedência.',
+    'Desligado: não envia. O aviso continua no Meu plano do cliente.',
+  ],
+  endingNotice: [
+    'Avisa que o plano vai terminar porque o cliente desligou a renovação automática. Um cancelamento não gera este e-mail.',
+    'Quando: verificado de hora em hora, com o mesmo limite do aviso de renovação.',
+    'Ligado: envia quando a data de fim entra na janela de dias de antecedência.',
+    'Desligado: não envia. O aviso continua no Meu plano do cliente.',
+  ],
+  noticeDays: [
+    'Quantos dias antes da renovação ou do fim do plano os avisos começam.',
+    'Com 7, o e-mail sai na primeira verificação horária depois que faltam 7 dias.',
+    'O mesmo número define quando o aviso aparece no Meu plano do cliente, mesmo com os e-mails desligados.',
+    'Aceita de 1 a 30.',
+  ],
+} as const
+
+// An automated email field with its label, its "i" and the control, which the help text describes.
+const HELP_LEAD = /^(Quando|Ligado|Desligado|Por quê|Como funciona|Não é intervalo de minutos):/
+
+// One paragraph per line of `help`, its lead word ("Quando:", "Ligado:"…) in bold.
+function helpLines(help: readonly string[]) {
+  return help.map((line) => {
+    const lead = HELP_LEAD.exec(line)?.[0]
+    return (
+      <span key={line} className="hint-line">
+        {lead ? <><strong>{lead}</strong>{line.slice(lead.length)}</> : line}
+      </span>
+    )
+  })
+}
+
+function EmailField({ id, label, help, children }: { id: string; label: string; help: readonly string[]; children: ReactNode }) {
+  return (
+    <div className="ship-field field-with-hint">
+      <div className="field-label-row">
+        <label htmlFor={id}>{label}</label>
+        <InfoHint id={`${id}-hint`} topic={label.toLowerCase()} text={helpLines(help)} />
+      </div>
+      {children}
+    </div>
+  )
 }
 
 const kindLabel = (kind: LegalKind) => LEGAL_KINDS.find((item) => item.id === kind)?.label ?? kind
@@ -338,22 +406,24 @@ export function SettingsPage() {
         <form id="settings-panel-emails" role="tabpanel" aria-labelledby="settings-tab-emails" onSubmit={submitEmails}>
           <Section
             title={`E-mails automáticos em ${MARKET_LABELS[market]}`}
-            description="O e-mail de mudança de fase sai pelo job, em lotes, até o limite do dia. Uma mudança vale na próxima execução do job."
+            description="O e-mail de mudança de fase é verificado 1 vez por dia; os avisos de plano, de hora em hora. Lote e limite diário valem só para o anúncio de lançamento. Uma mudança vale na próxima execução de cada rotina."
           >
             {!emails ? <p className="muted" aria-busy="true">Carregando…</p> : (
-              <div className="ship-fields">
-                <label className="ship-field">
-                  <span>E-mail de mudança de fase</span>
+              <div className="ship-fields email-fields">
+                <EmailField id="email-enabled" label="E-mail de mudança de fase" help={EMAIL_HELP.enabled}>
                   <input
+                    id="email-enabled"
+                    aria-describedby="email-enabled-hint"
                     type="checkbox"
                     checked={emailsForm.enabled}
                     disabled={!canWriteEmails || busy}
                     onChange={(event) => setEmailsForm((current) => ({ ...current, enabled: event.target.checked }))}
                   />
-                </label>
-                <label className="ship-field">
-                  <span>Lote por execução</span>
+                </EmailField>
+                <EmailField id="email-batch" label="Lote por execução" help={EMAIL_HELP.batch}>
                   <input
+                    id="email-batch"
+                    aria-describedby="email-batch-hint"
                     type="number"
                     min={BATCH_RANGE.min}
                     max={BATCH_RANGE.max}
@@ -364,10 +434,11 @@ export function SettingsPage() {
                     aria-invalid={isInvalid('announcement_batch_size')}
                     onChange={(event) => setEmailsForm((current) => ({ ...current, batch: event.target.value }))}
                   />
-                </label>
-                <label className="ship-field">
-                  <span>Limite diário</span>
+                </EmailField>
+                <EmailField id="email-cap" label="Limite diário" help={EMAIL_HELP.cap}>
                   <input
+                    id="email-cap"
+                    aria-describedby="email-cap-hint"
                     type="number"
                     min={DAILY_CAP_RANGE.min}
                     max={DAILY_CAP_RANGE.max}
@@ -378,28 +449,31 @@ export function SettingsPage() {
                     aria-invalid={isInvalid('announcement_daily_cap')}
                     onChange={(event) => setEmailsForm((current) => ({ ...current, cap: event.target.value }))}
                   />
-                </label>
-                <label className="ship-field">
-                  <span>Aviso de renovação</span>
+                </EmailField>
+                <EmailField id="email-renewal" label="Aviso de renovação" help={EMAIL_HELP.renewalNotice}>
                   <input
+                    id="email-renewal"
+                    aria-describedby="email-renewal-hint"
                     type="checkbox"
                     checked={emailsForm.renewalNotice}
                     disabled={!canWriteEmails || busy}
                     onChange={(event) => setEmailsForm((current) => ({ ...current, renewalNotice: event.target.checked }))}
                   />
-                </label>
-                <label className="ship-field">
-                  <span>Aviso de fim de plano</span>
+                </EmailField>
+                <EmailField id="email-ending" label="Aviso de fim de plano" help={EMAIL_HELP.endingNotice}>
                   <input
+                    id="email-ending"
+                    aria-describedby="email-ending-hint"
                     type="checkbox"
                     checked={emailsForm.endingNotice}
                     disabled={!canWriteEmails || busy}
                     onChange={(event) => setEmailsForm((current) => ({ ...current, endingNotice: event.target.checked }))}
                   />
-                </label>
-                <label className="ship-field">
-                  <span>Dias de antecedência dos avisos</span>
+                </EmailField>
+                <EmailField id="email-notice-days" label="Dias de antecedência dos avisos" help={EMAIL_HELP.noticeDays}>
                   <input
+                    id="email-notice-days"
+                    aria-describedby="email-notice-days-hint"
                     type="number"
                     min={PLAN_NOTICE_DAYS_RANGE.min}
                     max={PLAN_NOTICE_DAYS_RANGE.max}
@@ -410,7 +484,7 @@ export function SettingsPage() {
                     aria-invalid={isInvalid('plan_notice_days')}
                     onChange={(event) => setEmailsForm((current) => ({ ...current, noticeDays: event.target.value }))}
                   />
-                </label>
+                </EmailField>
               </div>
             )}
             {canWriteEmails && emails ? (
