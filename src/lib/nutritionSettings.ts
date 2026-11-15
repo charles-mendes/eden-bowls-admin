@@ -222,12 +222,12 @@ export const HELP = {
   breedNames: 'O cliente pode escrever a raça em português ou em inglês. A comparação ignora acentos e maiúsculas.',
   breedStatus: 'Uma raça desativada continua na lista, mas deixa de valer na avaliação de fase. Reative para voltar a valer.',
   preview: 'Antes de salvar, a prévia conta quantos pets com assinatura ativa mudariam de fase. Se algum mudar, a alteração só é salva depois de confirmar.',
-  factor: 'Fator de energia (NRC 2006, FEDIAF 2020). A NEM (necessidade energética de manutenção, em kcal por dia) é o fator × peso elevado ao expoente. Cão usa peso^0,75. Gato usa peso^0,67, ou peso^0,4 quando está acima do peso.',
+  factor: 'Fator de energia (NRC 2006, FEDIAF 2020). A NEM (necessidade energética de manutenção, em kcal por dia) é o fator × peso elevado ao expoente. Cão usa peso^0,75.',
   base: 'Tabela 1: 60 para gato em ambiente interno (faixa 52 a 75) e 100 para gato ativo. O gato acima do peso mantém o fator e muda o expoente para 0,4.',
   state: 'Tabela 1: filhote pelo percentual do peso adulto (210, 175, 140), gestante nas primeiras 4 semanas (132) e sênior (95, faixa 80 a 120). Valem no lugar da matriz.',
   combination: 'Aba Constantes da planilha: o fator do cão adulto em manutenção pela combinação castrado × atividade × escore que o tutor informa.',
   combination_giant: 'Fatores da zootecnista Izabella para raças gigantes, que têm metabolismo mais lento. Valem acima de 40 kg e para as raças gigantes listadas, no lugar da matriz de manutenção.',
-  nem: 'EM (energia metabolizável) do alimento, em kcal por kg. Gramas por dia = NEM (kcal por dia) × 1000 ÷ EM. A recomendação usa a EM da receita, ou a média da linha do pet (adulto 1200, filhote 1500, sênior 1150); este valor só vale quando nenhuma receita informa a dela. Não há receita de gato, então o gato usa sempre este valor.',
+  nem: 'EM (energia metabolizável) do alimento, em kcal por kg. Gramas por dia = NEM (kcal por dia) × 1000 ÷ EM. A recomendação usa a EM da receita, ou a média da linha do pet (adulto 1200, filhote 1500, sênior 1150); este valor só vale quando nenhuma receita informa a dela.',
   breedGroups: 'Porte gigante é o cão adulto acima de 40 kg (documento da veterinária). As listas trazem as raças cujo adulto passa de 40 kg: as gigantes da aba Raças e as grandes acima de 40 kg pelo padrão da raça, como Rottweiler, Akita e Bloodhound. Assim uma fêmea ou um cão magro dessas raças também usa a matriz de raças gigantes. Greyhound e Borzoi ficam de fora (25 a 40 kg). A loja grava a raça como o cliente escolheu, em português no Brasil e em inglês nos EUA, por isso cada raça aparece nas duas línguas.',
   draft: 'As mudanças vão para um rascunho, que não afeta clientes. Teste no Simulador nutricional e publique: aí as próximas recomendações dos dois mercados passam a usá-lo.',
   history: 'Conjuntos publicados antes. Um conjunto antigo pode voltar como rascunho, para ser publicado de novo.',
@@ -369,11 +369,16 @@ export function describeAuditEvent(event: NutritionAuditEvent): { title: string;
 
 export type Species = 'dog' | 'cat'
 
+// Eden Bowls sells no cat food yet (no recipe, no pack): the admin hides the cat factors and the cat simulation.
+// The API keeps the cat factors of the vet's document, so turning this on brings them back as they were.
+export const CATS_ENABLED = false
+
 // The factors tab shows one species at a time; the URL names it as `especie=caes|gatos`.
-export const SPECIES_OPTIONS: Array<{ id: 'caes' | 'gatos'; species: Species; label: string }> = [
+const ALL_SPECIES_OPTIONS: Array<{ id: 'caes' | 'gatos'; species: Species; label: string }> = [
   { id: 'caes', species: 'dog', label: 'Cães' },
   { id: 'gatos', species: 'cat', label: 'Gatos' },
 ]
+export const SPECIES_OPTIONS = ALL_SPECIES_OPTIONS.filter((option) => CATS_ENABLED || option.species === 'dog')
 
 // Base factors are the cats' (indoor and active); every matrix, the stage factors and the breed groups are the dogs'.
 export function speciesOfKey(key: string): Species {

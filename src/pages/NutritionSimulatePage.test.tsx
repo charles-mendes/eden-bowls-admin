@@ -68,6 +68,9 @@ describe('NutritionSimulatePage', () => {
     expect(screen.getByLabelText('País')).toBeDisabled()
     expect(screen.queryByRole('option', { name: 'US' })).not.toBeInTheDocument()
     expect(screen.getByLabelText('Peso (kg)')).toBeInTheDocument()
+    // No cat food is sold: the simulator offers dogs only.
+    expect(screen.queryByLabelText('Espécie')).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Gato' })).not.toBeInTheDocument()
 
     expect(screen.getByRole('option', { name: 'BAIXO' })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: 'ADEQUADO' })).toBeInTheDocument()

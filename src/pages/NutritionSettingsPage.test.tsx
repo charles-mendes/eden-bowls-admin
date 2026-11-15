@@ -337,9 +337,9 @@ describe('NutritionSettingsPage', () => {
     expect(await screen.findByText('Raças com porte próprio em Brasil')).toBeInTheDocument()
   })
 
-  it('Fatores shows the dog stages, matrices and giant breeds, and the cats their own factors and exponent', async () => {
+  it('Fatores shows only the dogs: no cat food is sold, so the cat factors are hidden and kept as they are', async () => {
     const user = userEvent.setup()
-    const { calls } = renderPage(veterinarian, {}, '/nutrition/settings?aba=fatores')
+    const { calls } = renderPage(veterinarian, {}, '/nutrition/settings?aba=fatores&especie=gatos')
 
     expect(await screen.findByRole('heading', { name: 'Fatores de estágio' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Matriz de manutenção' })).toBeInTheDocument()
@@ -347,26 +347,21 @@ describe('NutritionSettingsPage', () => {
     expect(screen.getByLabelText('Gigante: Não castrado · atividade alta · abaixo do peso')).toHaveValue(115)
     expect(screen.getByRole('heading', { name: 'Raças gigantes' })).toBeInTheDocument()
     expect(screen.getByLabelText('EM do alimento para cães (kcal/kg)')).toHaveValue(1200)
+    expect(screen.queryByRole('group', { name: 'Espécie' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Gato em ambiente interno')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('EM do alimento para gatos (kcal/kg)')).not.toBeInTheDocument()
+    expect(screen.getByText(/NEM \(kcal\/dia\)/)).not.toHaveTextContent('gato')
 
-    await user.click(within(screen.getByRole('group', { name: 'Espécie' })).getByRole('button', { name: 'Gatos' }))
-
-    expect(await screen.findByLabelText('Gato em ambiente interno')).toHaveValue(60)
-    expect(screen.getByLabelText('Gato ativo (atividade alta)')).toHaveValue(100)
-    expect(screen.getByText(/Expoente do peso:/)).toHaveTextContent('0,67')
-    expect(screen.getByLabelText('EM do alimento para gatos (kcal/kg)')).toHaveValue(1200)
-    expect(screen.queryByRole('heading', { name: 'Matriz de manutenção' })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Sênior')).not.toBeInTheDocument()
-
-    // One parameter set for both species: saving from the cats view sends the dog values too.
-    const cat = screen.getByLabelText('Gato em ambiente interno')
-    await user.clear(cat)
-    await user.type(cat, '65')
+    // One parameter set for both species: saving the dogs keeps the hidden cat values.
+    const senior = screen.getByLabelText('Sênior')
+    await user.clear(senior)
+    await user.type(senior, '90')
     await user.click(screen.getByRole('button', { name: 'Salvar rascunho' }))
     await waitFor(() => expect(findCall(calls, 'PUT', '/api/v1/admin/nutrition/parameters/draft')).toBeTruthy())
     const saved = findCall(calls, 'PUT', '/api/v1/admin/nutrition/parameters/draft')?.body as { parameters: typeof PARAMETERS }
-    expect(saved.parameters.base).toEqual({ cat: 65, cat_active: 100 })
-    expect(saved.parameters.combination_giant).toEqual(PARAMETERS.combination_giant)
+    expect(saved.parameters.state.SENIOR).toBe(90)
+    expect(saved.parameters.base).toEqual(PARAMETERS.base)
+    expect(saved.parameters.nem).toEqual(PARAMETERS.nem)
   })
 
   it('a set from an older API without the giant matrix still opens', async () => {
@@ -379,19 +374,6 @@ describe('NutritionSettingsPage', () => {
     }, '/nutrition/settings?aba=fatores')
     expect(await screen.findByRole('heading', { name: 'Matriz de raças gigantes' })).toBeInTheDocument()
     expect(screen.getByLabelText('Gigante: Não castrado · atividade alta · abaixo do peso')).toHaveValue(null)
-  })
-
-  it('an invalid cat factor while on dogs switches to the cats view', async () => {
-    const user = userEvent.setup()
-    renderPage(veterinarian, {
-      respond: (call) => (call.path === '/api/v1/admin/nutrition/parameters/draft' && call.method === 'PUT'
-        ? jsonResponse({ success: false, message: 'Invalid', details: { code: 'nutrition_parameters_invalid', fields: ['nem.cat'] } }, 422)
-        : undefined),
-    }, '/nutrition/settings?aba=fatores')
-
-    await user.click(await screen.findByRole('button', { name: 'Salvar rascunho' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('EM do alimento para gatos (kcal/kg)')
-    expect(await screen.findByLabelText('EM do alimento para gatos (kcal/kg)')).toHaveAttribute('aria-invalid', 'true')
   })
 
   it('the publication made by the deploy shows the system and its reason', async () => {

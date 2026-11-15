@@ -5,6 +5,7 @@ import { MetricCard } from '../components/MetricCard'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { defaultMarket, hasBothMarkets, sessionMarkets, type MarketCode } from '../lib/markets'
+import { CATS_ENABLED } from '../lib/nutritionSettings'
 
 type Breed = { id?: number; name: string; slug?: string }
 type Country = 'BR' | 'US'
@@ -284,13 +285,15 @@ export function NutritionSimulatePage() {
             {copy.name}
             <input value={name} onChange={(event) => setName(event.target.value)} />
           </label>
-          <label>
-            {copy.type}
-            <select value={type} onChange={(event) => setType(event.target.value === 'cat' ? 'cat' : 'dog')}>
-              <option value="dog">{copy.dog}</option>
-              <option value="cat">{copy.cat}</option>
-            </select>
-          </label>
+          {CATS_ENABLED ? (
+            <label>
+              {copy.type}
+              <select value={type} onChange={(event) => setType(event.target.value === 'cat' ? 'cat' : 'dog')}>
+                <option value="dog">{copy.dog}</option>
+                <option value="cat">{copy.cat}</option>
+              </select>
+            </label>
+          ) : null}
           <label>
             {copy.stage}
             <select value={lifeStage} onChange={(event) => handleLifeStageChange(event.target.value as LifeStage)}>

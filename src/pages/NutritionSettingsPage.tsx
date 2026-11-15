@@ -21,6 +21,7 @@ import {
   SIZE_CLASSES,
   SIZE_CLASS_LABELS,
   HELP,
+  CATS_ENABLED,
   SPECIES_OPTIONS,
   cloneParameters,
   combinationRowLabel,
@@ -548,16 +549,18 @@ export function NutritionSettingsPage() {
                 {!canWrite ? <p className="readonly-note">Somente leitura: os fatores são definidos pela veterinária.</p> : null}
                 <p className="nutri-formula">
                   <Hinted id="help-factor" label="Como o fator vira gramas" text={HELP.factor} />
-                  <span>NEM (kcal/dia): cão = fator × peso<sup>0,75</sup> · gato = fator × peso<sup>0,67</sup> (acima do peso: peso<sup>0,4</sup>) · g/dia = NEM × 1000 ÷ EM do alimento</span>
+                  <span>NEM (kcal/dia): cão = fator × peso<sup>0,75</sup>{CATS_ENABLED ? <> · gato = fator × peso<sup>0,67</sup> (acima do peso: peso<sup>0,4</sup>)</> : null} · g/dia = NEM × 1000 ÷ EM do alimento</span>
                 </p>
               </Section>
-              <div className="segmented nutri-species" role="group" aria-label="Espécie">
-                {SPECIES_OPTIONS.map((option) => (
-                  <button key={option.id} type="button" aria-pressed={speciesOption.id === option.id} className={speciesOption.id === option.id ? 'active' : ''} onClick={() => setParam({ especie: option.id })}>
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+              {SPECIES_OPTIONS.length > 1 ? (
+                <div className="segmented nutri-species" role="group" aria-label="Espécie">
+                  {SPECIES_OPTIONS.map((option) => (
+                    <button key={option.id} type="button" aria-pressed={speciesOption.id === option.id} className={speciesOption.id === option.id ? 'active' : ''} onClick={() => setParam({ especie: option.id })}>
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               {species === 'dog' ? (
                 <>
                   {(['state', 'combination', 'combination_giant'] as const).map((sectionKey) => {
