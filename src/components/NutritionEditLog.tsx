@@ -12,7 +12,12 @@ function initialsOf(email: string | null) {
 }
 
 // The audit log of a nutrition settings tab: who changed what and when, newest first.
-export function NutritionEditLog({ events, empty }: { events: NutritionAuditEvent[] | undefined; empty: string }) {
+// `describe` turns an event into its title and lines; by default, the nutrition events.
+export function NutritionEditLog({ events, empty, describe = describeAuditEvent }: {
+  events: NutritionAuditEvent[] | undefined
+  empty: string
+  describe?: (event: NutritionAuditEvent) => { title: string; details: string[] }
+}) {
   const [expanded, setExpanded] = useState(false)
 
   if (events === undefined) {
@@ -27,7 +32,7 @@ export function NutritionEditLog({ events, empty }: { events: NutritionAuditEven
     <>
       <ol className="edit-log" aria-label="Histórico de edições">
         {visible.map((event) => {
-          const { title, details } = describeAuditEvent(event)
+          const { title, details } = describe(event)
           return (
             <li key={event.id} className="edit-log-item">
               <span className="edit-log-avatar" aria-hidden="true">{initialsOf(event.actorEmail)}</span>

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
+import { NutritionEditLog } from '../components/NutritionEditLog'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
@@ -12,6 +13,7 @@ import {
   DAILY_CAP_RANGE,
   LEGAL_KINDS,
   companyFieldLabel,
+  describeCompanyEvent,
   settingsErrorMessage,
   settingsInvalidFields,
   todayVersion,
@@ -254,6 +256,15 @@ export function SettingsPage() {
                 <button className="primary-button" type="submit" disabled={busy}>Salvar empresa</button>
               </div>
             ) : null}
+          </Section>
+          <Section title="Histórico de edições" description={`Quem alterou os dados da empresa de ${MARKET_LABELS[market]}, e o que mudou.`}>
+            {company ? (
+              <NutritionEditLog
+                events={company.history}
+                empty="Nenhuma alteração registrada."
+                describe={(event) => describeCompanyEvent(event, market)}
+              />
+            ) : <p className="muted" aria-busy="true">Carregando…</p>}
           </Section>
         </form>
       ) : null}

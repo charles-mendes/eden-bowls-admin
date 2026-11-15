@@ -11,7 +11,8 @@ const admin: AdminUser = {
   ...adminUser,
   permissions: [...adminUser.permissions, 'settings.read', 'settings.company.write', 'legal.write', 'settings.email.write'],
 }
-const operator: AdminUser = { ...operatorWriteUser, permissions: [...operatorWriteUser.permissions, 'settings.read', 'settings.email.write'] }
+const operator: AdminUser = { ...operatorWriteUser, permissions: [...operatorWriteUser.permissions, 'settings.read', 'settings.company.write', 'settings.email.write'] }
+const readonlyUser: AdminUser = { ...operatorWriteUser, roles: ['readonly'], permissions: ['settings.read', 'market.br'] }
 
 function company(market: string) {
   return {
@@ -68,12 +69,49 @@ describe('SettingsPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('Operator reads but cannot save the BR company profile', async () => {
-    renderPage(operator, '/config')
+  it('Readonly reads but cannot save the BR company profile', async () => {
+    renderPage(readonlyUser, '/config')
 
     expect(await screen.findByLabelText('CNPJ')).toHaveValue('65.291.985/0001-05')
     expect(screen.getByLabelText('CNPJ')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Salvar empresa' })).not.toBeInTheDocument()
+  })
+
+  it('the BR operator sees only Brazil and saves its company profile', async () => {
+    const user = userEvent.setup()
+    const { calls } = renderPage(operator, '/config?mercado=us')
+
+    const city = await screen.findByLabelText('Cidade')
+    expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
+    await user.clear(city)
+    await user.type(city, 'São Paulo')
+    await user.click(screen.getByRole('button', { name: 'Salvar empresa' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Dados da empresa de')
+    const body = findCall(calls, 'PUT', '/api/v1/admin/settings/company')?.body as { market: string; profile: { city: string } }
+    expect(body).toMatchObject({ market: 'BR', profile: { city: 'São Paulo' } })
+  })
+
+  it('shows who changed the company data and what changed', async () => {
+    renderPage(operator, '/config', (call) => (call.method === 'GET' && call.path === '/api/v1/admin/settings/company'
+      ? jsonResponse({
+        ...company('BR'),
+        history: [{
+          id: 4,
+          actorUserId: 8,
+          actorEmail: 'ops.write@edenbowls.com',
+          action: 'settings.company.update',
+          metadata: { market: 'BR', fields: ['city', 'tax_id'], before: { city: 'Curitiba', tax_id: '' }, after: { city: 'São Paulo', tax_id: '65.291.985/0001-05' } },
+          createdAt: '2026-11-15T12:00:00.000Z',
+        }],
+      })
+      : undefined))
+
+    const log = await screen.findByRole('list', { name: 'Histórico de edições' })
+    expect(within(log).getByText('Alterou os dados da empresa')).toBeInTheDocument()
+    expect(within(log).getByText('ops.write@edenbowls.com')).toBeInTheDocument()
+    expect(within(log).getByText('Cidade: Curitiba → São Paulo')).toBeInTheDocument()
+    expect(within(log).getByText('CNPJ: — → 65.291.985/0001-05')).toBeInTheDocument()
   })
 
   it('Invalid CNPJ: marks the field the API lists', async () => {

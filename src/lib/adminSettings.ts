@@ -1,5 +1,6 @@
 import { ApiRequestError } from './api'
 import type { MarketCode } from './markets'
+import type { NutritionAuditEvent } from './nutritionSettings'
 
 // Company profile, legal documents and automated emails as the API returns them (admin-settings).
 
@@ -16,6 +17,8 @@ export type CompanyProfile = {
   support_email: string
   store_url: string
   updated_at?: string | null
+  // Who saved the company data of the market, newest first. An older API sends no history.
+  history?: NutritionAuditEvent[]
 }
 
 export type CompanyField = Exclude<keyof CompanyProfile, 'market' | 'updated_at'>
@@ -38,6 +41,22 @@ export function companyFieldLabel(field: CompanyField, market: MarketCode) {
   if (field === 'tax_id') return market === 'BR' ? 'CNPJ' : 'EIN'
   if (field === 'postal_code') return market === 'BR' ? 'CEP' : 'ZIP code'
   return COMPANY_FIELDS.find((item) => item.key === field)?.label ?? field
+}
+
+const shownValue = (value: unknown) => (value === undefined || value === null || value === '' ? '—' : String(value))
+
+// One save of the company data: the fields that changed, before → after. An event saved before the API kept the
+// values lists only the field names.
+export function describeCompanyEvent(event: NutritionAuditEvent, market: MarketCode): { title: string; details: string[] } {
+  const meta = (event.metadata ?? {}) as { fields?: unknown; before?: Record<string, unknown>; after?: Record<string, unknown> }
+  const fields = (Array.isArray(meta.fields) ? meta.fields : []).filter((field): field is CompanyField => COMPANY_FIELDS.some((item) => item.key === field))
+  if (!fields.length) return { title: 'Salvou os dados da empresa sem alterações', details: [] }
+  const before = meta.before ?? {}
+  const after = meta.after ?? {}
+  const details = fields.map((field) => (field in after
+    ? `${companyFieldLabel(field, market)}: ${shownValue(before[field])} → ${shownValue(after[field])}`
+    : companyFieldLabel(field, market)))
+  return { title: 'Alterou os dados da empresa', details }
 }
 
 export type LegalKind = 'privacy' | 'terms'
