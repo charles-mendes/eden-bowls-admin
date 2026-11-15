@@ -149,7 +149,7 @@ const COMBINATION_WORDS: Record<string, string> = {
 }
 
 export const BREED_GROUP_LABELS: Record<BreedGroup, string> = {
-  dogue: 'Dogue e similares',
+  dogue: 'Dogue e demais gigantes',
   slow_metabolism: 'São Bernardo',
   terranova: 'Terra Nova',
 }
@@ -228,7 +228,7 @@ export const HELP = {
   combination: 'Aba Constantes da planilha: o fator do cão adulto em manutenção pela combinação castrado × atividade × escore que o tutor informa.',
   combination_giant: 'Fatores da zootecnista Izabella para raças gigantes, que têm metabolismo mais lento. Valem acima de 40 kg e para as raças gigantes listadas, no lugar da matriz de manutenção.',
   nem: 'EM (energia metabolizável) do alimento, em kcal por kg. Gramas por dia = NEM (kcal por dia) × 1000 ÷ EM. A recomendação usa a EM da receita, ou a média da linha do pet (adulto 1200, filhote 1500, sênior 1150); este valor só vale quando nenhuma receita informa a dela. Não há receita de gato, então o gato usa sempre este valor.',
-  breedGroups: 'Raças que usam a matriz de raças gigantes mesmo com 40 kg ou menos, por orientação da zootecnista (Dogue Alemão, Terra Nova, São Bernardo e similares).',
+  breedGroups: 'Porte gigante é o cão adulto acima de 40 kg (documento da veterinária). As listas trazem as raças cujo adulto passa de 40 kg: as gigantes da aba Raças e as grandes acima de 40 kg pelo padrão da raça, como Rottweiler, Akita e Bloodhound. Assim uma fêmea ou um cão magro dessas raças também usa a matriz de raças gigantes. Greyhound e Borzoi ficam de fora (25 a 40 kg). A loja grava a raça como o cliente escolheu, em português no Brasil e em inglês nos EUA, por isso cada raça aparece nas duas línguas.',
   draft: 'As mudanças vão para um rascunho, que não afeta clientes. Teste no Simulador nutricional e publique: aí as próximas recomendações dos dois mercados passam a usá-lo.',
   history: 'Conjuntos publicados antes. Um conjunto antigo pode voltar como rascunho, para ser publicado de novo.',
   editLog: 'Cada alteração salva fica registrada com quem fez, quando e o que mudou.',
@@ -280,9 +280,41 @@ function capped(lines: string[]) {
   return [...lines.slice(0, AUDIT_DETAIL_LIMIT), `e mais ${lines.length - AUDIT_DETAIL_LIMIT} alterações`]
 }
 
+const BREED_SAMPLE = 4
+
+function breedList(value: unknown) {
+  return String(value ?? '').split(',').map((breed) => breed.trim()).filter(Boolean)
+}
+
+function sample(breeds: string[]) {
+  const head = breeds.slice(0, BREED_SAMPLE).join(', ')
+  return breeds.length > BREED_SAMPLE ? `${head} e mais ${breeds.length - BREED_SAMPLE}` : head
+}
+
+// A breed list is stored as one comma-separated text; the log says which breeds came in and went out.
+function breedGroupChange(change: FieldChange) {
+  const from = breedList(change.from)
+  const to = breedList(change.to)
+  const added = to.filter((breed) => !from.includes(breed))
+  const removed = from.filter((breed) => !to.includes(breed))
+  const parts: string[] = []
+  if (added.length) parts.push(`incluiu ${added.length} (${sample(added)})`)
+  if (removed.length) parts.push(`removeu ${removed.length} (${sample(removed)})`)
+  return `${changeLabel(change.field)}: ${parts.length ? parts.join('; ') : 'mudou a ordem'}`
+}
+
 function factorChanges(metadata: Record<string, unknown>) {
   const changes = Array.isArray(metadata.changes) ? metadata.changes as FieldChange[] : []
-  return capped(changes.map((change) => `${changeLabel(change.field)}: ${shown(change.from)} → ${shown(change.to)}`))
+  return capped(changes.map((change) => (change.field.startsWith('breed_groups.')
+    ? breedGroupChange(change)
+    : `${changeLabel(change.field)}: ${shown(change.from)} → ${shown(change.to)}`)))
+}
+
+// Sets the system published on deploy, by the reason it recorded.
+const PUBLISH_REASONS: Record<string, string> = {
+  requerimento_energetico: 'Cálculo ajustado ao documento da veterinária: matriz de raças gigantes e fatores de gatos 60 e 100.',
+  em_alimento_fresco: 'EM do alimento padrão trocada pelo valor de comida fresca (1200 kcal/kg).',
+  racas_gigantes: 'Listas de raças gigantes completadas com as raças de adulto acima de 40 kg.',
 }
 
 // An audit event as a title and the lines of what changed, in Portuguese.
@@ -329,9 +361,7 @@ export function describeAuditEvent(event: NutritionAuditEvent): { title: string;
     return { title: `Copiou o conjunto #${shown(meta.from_set_id)} para o rascunho`, details: [] }
   }
   if (event.action === 'nutrition.parameters.publish') {
-    const reason = meta.reason === 'requerimento_energetico'
-      ? ['Cálculo ajustado ao documento da veterinária: matriz de raças gigantes e fatores de gatos 60 e 100.']
-      : []
+    const reason = typeof meta.reason === 'string' && PUBLISH_REASONS[meta.reason] ? [PUBLISH_REASONS[meta.reason]] : []
     return { title: `Publicou o conjunto #${shown(meta.to_set_id)}`, details: [`Substituiu o conjunto #${shown(meta.from_set_id)}.`, ...reason, ...factorChanges(meta)] }
   }
   return { title: event.action, details: [] }

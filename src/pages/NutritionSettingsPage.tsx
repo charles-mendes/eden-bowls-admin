@@ -604,12 +604,13 @@ export function NutritionSettingsPage() {
                       </Section>
                     )
                   })}
-                  <Section title="Raças gigantes" hint={<InfoHint id="help-groups" topic="raças gigantes" text={HELP.breedGroups} />} description="Usam a matriz de raças gigantes mesmo com 40 kg ou menos. Uma raça por linha, sem acento; uma raça só pode estar numa lista.">
+                  <Section title="Raças gigantes" hint={<InfoHint id="help-groups" topic="raças gigantes" text={HELP.breedGroups} />} description="Raças de adulto acima de 40 kg. O cão dessas raças usa a matriz de raças gigantes mesmo com 40 kg ou menos; qualquer cão acima de 40 kg já a usa pelo peso. Uma raça por linha, em português e em inglês, sem acento; uma raça só pode estar numa lista.">
                     <div className="ship-fields">
                       {BREED_GROUPS.map((group) => (
                         <label key={group} className="ship-field">
-                          <span>{BREED_GROUP_LABELS[group]}</span>
+                          <span>{BREED_GROUP_LABELS[group]} ({shown.breed_groups[group].filter((breed) => breed.trim()).length})</span>
                           <textarea
+                            aria-label={BREED_GROUP_LABELS[group]}
                             className="nutri-textarea"
                             rows={6}
                             value={shown.breed_groups[group].join('\n')}
