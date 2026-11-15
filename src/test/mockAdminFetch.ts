@@ -1051,17 +1051,6 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(firstPurchasePromoHealth)
     }
 
-    if (path === '/api/v1/admin/stripe/first-purchase-promos' && method === 'PUT') {
-      return jsonResponse({
-        ...firstPurchasePromoHealth,
-        mapping: {
-          1: body?.[1] || firstPurchasePromoHealth.mapping[1],
-          3: body?.[3] || firstPurchasePromoHealth.mapping[3],
-          6: body?.[6] || firstPurchasePromoHealth.mapping[6],
-        },
-      })
-    }
-
     if (path === '/api/v1/admin/stripe/first-purchase-promos/sync' && method === 'POST') {
       return jsonResponse({
         ...firstPurchasePromoHealth,

@@ -1096,16 +1096,6 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
-    if (path === '/api/v1/admin/stripe/first-purchase-promos' && method === 'PUT') {
-      await fulfillJson(route, {
-        complete: true,
-        missing_terms: [],
-        mapping: body || { 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m' },
-        misconfig_count: 0,
-      })
-      return
-    }
-
     if (path === '/api/v1/admin/stripe/first-purchase-promos/sync' && method === 'POST') {
       await fulfillJson(route, {
         complete: true,
