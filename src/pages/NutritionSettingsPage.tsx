@@ -94,7 +94,8 @@ export function NutritionSettingsPage() {
   // The operator creates and edits breeds only in the market assigned to them; the veterinarian and the admin in any.
   const userReady = Boolean(user)
   const canWriteBreeds = canWrite || (hasPermission('nutrition.breeds.write') && assigned.includes(market))
-  const canWriteLimits = canWrite || (hasPermission('nutrition.limits.write') && assigned.includes(market))
+  // Life-stage limits are clinical: only the veterinarian changes them, in any market.
+  const canWriteLimits = hasPermission('nutrition.limits.write')
   const speciesOption = SPECIES_OPTIONS.find((option) => option.id === searchParams.get('especie')) ?? SPECIES_OPTIONS[0]
   const species = speciesOption.species
   const requestedTab = searchParams.get('aba')
@@ -391,9 +392,7 @@ export function NutritionSettingsPage() {
               hint={<InfoHint id="help-preview" topic="a prévia" text={HELP.preview} />}
               description="Idade, em meses, em que o cão passa a adulto e a sênior, por porte."
             >
-              {canWriteLimits && !canWrite ? <p className="readonly-note">Você pode alterar os limites de {MARKET_LABELS[market]}, o mercado em que é operador. A prévia mostra os pets afetados antes de salvar.</p> : null}
-              {!canWriteLimits && hasPermission('nutrition.limits.write') ? <p className="readonly-note">Somente leitura: você não é operador de {MARKET_LABELS[market]}.</p> : null}
-              {!canWriteLimits && !hasPermission('nutrition.limits.write') ? <p className="readonly-note">Somente leitura: os limites de fase são definidos pela veterinária e pelos operadores de cada mercado.</p> : null}
+              {!canWriteLimits ? <p className="readonly-note">Somente leitura: só a veterinária altera os limites de fase.</p> : null}
               <dl className="nutri-legend">
                 <div><dt><Hinted id="help-adult-m" label="Adulto a partir de" text={HELP.adultFrom} /></dt></div>
                 <div><dt><Hinted id="help-senior-m" label="Sênior a partir de" text={HELP.seniorFrom} end /></dt></div>

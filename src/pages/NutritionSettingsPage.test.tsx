@@ -3,18 +3,18 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NutritionSettingsPage } from './NutritionSettingsPage'
 import type { AdminUser } from '../contexts/AuthContext'
-import { jsonResponse, operatorUsWriteUser, operatorWriteUser, veterinarianUser } from '../test/fixtures'
+import { adminUser, jsonResponse, operatorUsWriteUser, operatorWriteUser, veterinarianUser } from '../test/fixtures'
 import { findCall, installAdminFetchMock, type FetchCall } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
-// The veterinarian with the new permission and no assigned market: the API accepts both markets.
-const veterinarian: AdminUser = { ...veterinarianUser, markets: [], permissions: ['nutrition.simulate', 'nutrition.settings.write'] }
+// The veterinarian with the permissions the API gives the role and no assigned market: the API accepts both markets.
+const veterinarian: AdminUser = { ...veterinarianUser, markets: [], permissions: ['nutrition.simulate', 'nutrition.settings.write', 'nutrition.breeds.write', 'nutrition.limits.write'] }
+// The admin writes factors and breeds, but not the life-stage limits.
+const admin: AdminUser = { ...adminUser, permissions: [...adminUser.permissions, 'nutrition.simulate', 'nutrition.settings.write', 'nutrition.breeds.write'] }
 
 // The operator of one market with the breed permission the API gives the role.
 const operatorBr: AdminUser = { ...operatorWriteUser, permissions: [...operatorWriteUser.permissions, 'nutrition.breeds.write'] }
 const operatorUs: AdminUser = { ...operatorUsWriteUser, permissions: [...operatorUsWriteUser.permissions, 'nutrition.breeds.write'] }
-const operatorBrLimits: AdminUser = { ...operatorBr, permissions: [...operatorBr.permissions, 'nutrition.limits.write'] }
-const operatorUsLimits: AdminUser = { ...operatorUs, permissions: [...operatorUs.permissions, 'nutrition.limits.write'] }
 
 const BREED_HISTORY = [
   { id: 12, action: 'life_stage.breed.update', actorUserId: 9, actorEmail: 'ana.souza@edenbowls.com', createdAt: '2026-11-13T09:10:00.000Z', metadata: { market: 'BR', breed_id: 7, before: null, after: { namePt: 'Mastim Tibetano', nameEn: 'Tibetan Mastiff', sizeClass: 'giant', active: true } } },
@@ -312,37 +312,22 @@ describe('NutritionSettingsPage', () => {
     expect(screen.queryByRole('button', { name: 'Incluir raça' })).not.toBeInTheDocument()
   })
 
-  it('the BR operator changes the limits of Brasil after the preview', async () => {
-    const user = userEvent.setup()
-    const { calls } = renderPage(operatorBrLimits, { preview: { pets_evaluated: 40, pets_changing: 3, transitions: [{ from: 'adult', to: 'senior', count: 3 }] } })
-
-    expect(await screen.findByText(/Você pode alterar os limites de Brasil/)).toBeInTheDocument()
-    const senior = await screen.findByLabelText('Médio: sênior a partir de')
-    expect(senior).toBeEnabled()
-    await user.clear(senior)
-    await user.type(senior, '84')
-    await user.click(screen.getByRole('button', { name: 'Salvar limites' }))
-
-    const dialog = await screen.findByRole('dialog', { name: 'Salvar limites' })
-    expect(within(dialog).getByText('3 de 40 pets mudariam de fase em Brasil:')).toBeInTheDocument()
-    await user.click(within(dialog).getByRole('button', { name: 'Confirmar' }))
-
-    expect(await screen.findByText('Limites de Brasil salvos.')).toBeInTheDocument()
-    expect(findCall(calls, 'PUT', '/api/v1/admin/life-stage/limits')?.body).toEqual({ market: 'BR', limits: { medium: { adult_from_months: 12, senior_from_months: 84 } } })
+  it.each([
+    ['the BR operator', operatorBr],
+    ['the US operator', operatorUs],
+    ['the admin', admin],
+  ])('only the veterinarian changes the limits: %s reads them', async (_name, viewer) => {
+    renderPage(viewer)
+    expect(await screen.findByText('Somente leitura: só a veterinária altera os limites de fase.')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Médio: sênior a partir de')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Salvar limites' })).not.toBeInTheDocument()
   })
 
-  it('the US operator changes only the limits of Estados Unidos', async () => {
-    renderPage(operatorUsLimits, {}, '/nutrition/settings?aba=fases&mercado=br')
-    expect(await screen.findByText('Limites de Estados Unidos')).toBeInTheDocument()
+  it('the veterinarian edits the limits with no read-only note', async () => {
+    renderPage(veterinarian)
     expect(await screen.findByLabelText('Médio: sênior a partir de')).toBeEnabled()
     expect(screen.getByRole('button', { name: 'Salvar limites' })).toBeInTheDocument()
-    expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
-  })
-
-  it('the limits stay read-only for an operator without the permission', async () => {
-    renderPage(operatorBr)
-    expect(await screen.findByText(/definidos pela veterinária e pelos operadores/)).toBeInTheDocument()
-    expect(await screen.findByLabelText('Médio: sênior a partir de')).toBeDisabled()
+    expect(screen.queryByText(/Somente leitura/)).not.toBeInTheDocument()
   })
 
   it('opens on Raças, with the tabs in the order Raças, Fases da vida, Fatores', async () => {
