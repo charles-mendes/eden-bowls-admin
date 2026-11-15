@@ -6,7 +6,7 @@ import { Dialog } from '../components/Dialog'
 import { AccountSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
-import { formatTermMonths } from '../lib/format'
+import { formatDate, formatTermMonths } from '../lib/format'
 import { defaultStripeAccount, hasBothMarkets, type StripeAccount } from '../lib/markets'
 
 type PromoSlot = {
@@ -22,7 +22,9 @@ type PromoHealth = {
   complete: boolean
   missing_terms: number[]
   mapping: Record<string, string | null>
+  // Checkouts of this account blocked by a term with no coupon, since its three terms were last saved.
   misconfig_count: number
+  misconfig_last_at?: string | null
   slots?: Record<string, PromoSlot>
   missing_in_stripe?: number[]
   inactive?: number[]
@@ -291,7 +293,11 @@ export function CouponsPage() {
         <div className="alert">Faltam cupons para {health.missing_terms.map((item) => formatTermMonths(item)).join(', ')}. O checkout de cliente elegível fica bloqueado até cada prazo ter um cupom.</div>
       ) : null}
       {health && health.misconfig_count > 0 ? (
-        <div className="warning">Configurações inconsistentes: {health.misconfig_count}</div>
+        <div className="warning">
+          Checkouts de primeira compra bloqueados por falta de cupom: {health.misconfig_count}
+          {health.misconfig_last_at ? ` (último em ${formatDate(health.misconfig_last_at)})` : ''}.
+          {health.complete ? ' O aviso some no próximo salvamento ou sincronização dos três prazos.' : ''}
+        </div>
       ) : null}
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{noticeCopy[message] || message}</div> : null}

@@ -735,6 +735,7 @@ export const firstPurchasePromoHealth = {
     { subscription_term_months: 6, discount_percent: 40 },
   ],
   misconfig_count: 0,
+  misconfig_last_at: null as string | null,
 }
 
 export const promotionCodesList = {

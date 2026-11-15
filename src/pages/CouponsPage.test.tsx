@@ -46,6 +46,21 @@ describe('CouponsPage', () => {
     expect(sync?.body).toMatchObject({ account: 'br' })
   })
 
+  it('shows the blocked checkouts of the account with the date of the last one', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      routes: (call) => call.method === 'GET' && call.path === '/api/v1/admin/stripe/first-purchase-promos'
+        ? jsonResponse({ ...firstPurchasePromoHealth, misconfig_count: 2, misconfig_last_at: '2026-09-29T05:42:49.000Z' })
+        : undefined,
+    })
+    renderAuthedPage(<CouponsPage />, '/billing/coupons')
+
+    const warning = await screen.findByText(/Checkouts de primeira compra bloqueados por falta de cupom: 2/)
+    expect(warning).toHaveTextContent('último em')
+    expect(warning).toHaveTextContent('O aviso some no próximo salvamento ou sincronização dos três prazos.')
+    expect(screen.queryByText(/Configurações inconsistentes/)).not.toBeInTheDocument()
+  })
+
   it('creates a coupon in Stripe from a term card', async () => {
     const user = userEvent.setup()
     seedAuth()
