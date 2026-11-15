@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { Suspense, lazy, useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
 import { InfoHint } from '../components/InfoHint'
@@ -18,6 +18,8 @@ import {
   settingsErrorMessage,
   settingsInvalidFields,
   todayVersion,
+  versionFromLabel,
+  versionLabel,
   type AutomatedEmailSettings,
   type CompanyField,
   type CompanyProfile,
@@ -27,6 +29,36 @@ import {
 } from '../lib/adminSettings'
 import { formatDate } from '../lib/format'
 import { MARKET_LABELS, sessionMarkets, type MarketCode } from '../lib/markets'
+
+// The visual editor is heavy: it loads only when the legal documents tab opens.
+const LegalEditor = lazy(() => import('../components/LegalEditor'))
+const LegalPreview = lazy(() => import('../components/LegalEditor').then((module) => ({ default: module.LegalPreview })))
+
+type LegalView = 'visual' | 'markdown'
+
+// A legal text to read: formatted as the store shows it, or its Markdown.
+function LegalReader({ id, markdown }: { id: string; markdown: string }) {
+  const [view, setView] = useState<LegalView>('visual')
+  const labelId = `${id}-label`
+  return (
+    <div className="legal-reader">
+      <div className="legal-reader-bar">
+        <span id={labelId} className="legal-reader-label">Texto</span>
+        <div className="segmented" role="group" aria-label="Visualização">
+          <button type="button" aria-pressed={view === 'visual'} className={view === 'visual' ? 'active' : ''} onClick={() => setView('visual')}>Visual</button>
+          <button type="button" aria-pressed={view === 'markdown'} className={view === 'markdown' ? 'active' : ''} onClick={() => setView('markdown')}>Markdown</button>
+        </div>
+      </div>
+      {/* Both stay mounted, with the same height: switching only hides one, so nothing is rebuilt or resized. */}
+      <div className="legal-reader-view" hidden={view !== 'visual'}>
+        <Suspense fallback={<p className="muted legal-reader-loading" aria-busy="true">Carregando…</p>}>
+          <LegalPreview markdown={markdown} labelId={labelId} />
+        </Suspense>
+      </div>
+      <pre className="legal-text legal-reader-view" hidden={view !== 'markdown'} aria-labelledby={labelId}>{markdown}</pre>
+    </div>
+  )
+}
 
 type Tab = 'empresa' | 'legal' | 'emails'
 
@@ -218,10 +250,16 @@ export function SettingsPage() {
 
   const publishLegal = () => run(async () => {
     setPublishing(false)
-    const overview = await apiRequest<LegalOverview>(`/admin/legal/${kind}`, { token, method: 'POST', body: { market, version: version.trim(), body_markdown: body } })
+    const id = versionFromLabel(version)
+    if (!id) {
+      setInvalid(['version'])
+      setError('Data da versão inválida. Use DD/MM/AAAA, por exemplo 15/11/2026.')
+      return
+    }
+    const overview = await apiRequest<LegalOverview>(`/admin/legal/${kind}`, { token, method: 'POST', body: { market, version: id, body_markdown: body } })
     setLegal(overview)
     setBody(overview.current?.body_markdown ?? body)
-    setMessage(`${kindLabel(kind)} ${overview.current?.version ?? version} publicada em ${MARKET_LABELS[market]}.`)
+    setMessage(`${kindLabel(kind)} de ${overview.current ? versionLabel(overview.current.version) : version} publicada em ${MARKET_LABELS[market]}.`)
   }, 'Falha ao publicar o documento')
 
   const readVersion = (id: string) => run(async () => {
@@ -351,7 +389,7 @@ export function SettingsPage() {
               <Section
                 title={`${kindLabel(kind)} · ${MARKET_LABELS[market]}`}
                 description={legal.current
-                  ? `Versão atual ${legal.current.version}${legal.current.published_at ? `, publicada em ${formatDate(legal.current.published_at)}` : ''}. A loja mostra esta versão e o cadastro registra o aceite dela.`
+                  ? `Versão atual de ${versionLabel(legal.current.version)}${legal.current.published_at ? `, publicada em ${formatDate(legal.current.published_at)}` : ''}. A loja mostra esta versão e o cadastro registra o aceite dela.`
                   : 'Nenhuma versão publicada neste mercado.'}
               >
                 {canWriteLegal ? (
@@ -360,19 +398,28 @@ export function SettingsPage() {
                     onSubmit={(event) => { event.preventDefault(); setPublishing(true) }}
                   >
                     <label className="ship-field">
-                      <span>Versão (AAAA-MM-DD)</span>
-                      <input value={version} required pattern="\d{4}-\d{2}-\d{2}" disabled={busy} aria-invalid={isInvalid('version')} onChange={(event) => setVersion(event.target.value)} />
+                      <span>Versão (DD/MM/AAAA)</span>
+                      <input value={version} required inputMode="numeric" placeholder="15/11/2026" pattern="\d{2}/\d{2}/\d{4}" title="Data no formato DD/MM/AAAA" disabled={busy} aria-invalid={isInvalid('version')} onChange={(event) => setVersion(event.target.value)} />
                     </label>
-                    <label className="ship-field">
-                      <span>Texto (Markdown)</span>
-                      <textarea rows={18} value={body} required disabled={busy} aria-invalid={isInvalid('body_markdown')} onChange={(event) => setBody(event.target.value)} />
-                    </label>
-                    <div className="table-actions">
+                    <div className="ship-field ship-field-wide">
+                      <span id="legal-body-label">Texto</span>
+                      <Suspense fallback={<p className="muted" aria-busy="true">Carregando editor…</p>}>
+                        <LegalEditor
+                          key={`${market}-${kind}-${legal.current?.version ?? 'nenhuma'}`}
+                          markdown={body}
+                          labelId="legal-body-label"
+                          disabled={busy}
+                          onChange={setBody}
+                        />
+                      </Suspense>
+                      {isInvalid('body_markdown') ? <p className="ship-field-error">O texto não pode ficar vazio.</p> : null}
+                    </div>
+                    <div className="table-actions ship-field-wide">
                       <button className="primary-button" type="submit" disabled={busy || !body.trim()}>Publicar versão</button>
                     </div>
                   </form>
                 ) : legal.current ? (
-                  <pre className="legal-text">{legal.current.body_markdown}</pre>
+                  <LegalReader id={`legal-current-${market}-${kind}`} markdown={legal.current.body_markdown} />
                 ) : null}
               </Section>
               <Section title="Versões anteriores" description="Uma versão publicada não muda. Para corrigir, publique outra.">
@@ -385,10 +432,10 @@ export function SettingsPage() {
                       <tbody>
                         {legal.versions.map((item) => (
                           <tr key={item.version}>
-                            <td>{item.version}{item.version === legal.current?.version ? <span className="badge badge-success"> atual</span> : null}</td>
+                            <td>{versionLabel(item.version)}{item.version === legal.current?.version ? <span className="badge badge-success"> atual</span> : null}</td>
                             <td>{item.published_at ? formatDate(item.published_at) : '—'}</td>
                             <td>
-                              <button className="ghost-button" type="button" disabled={busy} onClick={() => void readVersion(item.version)} aria-label={`Ler versão ${item.version}`}>Ler</button>
+                              <button className="ghost-button" type="button" disabled={busy} onClick={() => void readVersion(item.version)} aria-label={`Ler versão de ${versionLabel(item.version)}`}>Ler</button>
                             </td>
                           </tr>
                         ))}
@@ -498,7 +545,7 @@ export function SettingsPage() {
 
       <Dialog
         title={`Publicar ${kindLabel(kind).toLowerCase()}`}
-        description={`A versão ${version} passa a ser a atual em ${MARKET_LABELS[market]}. Os próximos cadastros registram o aceite dela. Uma versão publicada não pode ser editada.`}
+        description={`A versão de ${version} passa a ser a atual em ${MARKET_LABELS[market]}. Os próximos cadastros registram o aceite dela. Uma versão publicada não pode ser editada.`}
         open={publishing}
         onClose={() => setPublishing(false)}
         footer={(
@@ -511,13 +558,14 @@ export function SettingsPage() {
         <p>{`${body.trim().split('\n').length} linhas de texto.`}</p>
       </Dialog>
       <Dialog
-        title={reading ? `${kindLabel(kind)} ${reading.version}` : ''}
+        title={reading ? `${kindLabel(kind)} de ${versionLabel(reading.version)}` : ''}
         description={reading?.published_at ? `Publicada em ${formatDate(reading.published_at)}.` : undefined}
         open={Boolean(reading)}
+        wide
         onClose={() => setReading(null)}
         footer={<button className="ghost-button" type="button" onClick={() => setReading(null)}>Fechar</button>}
       >
-        {reading ? <pre className="legal-text">{reading.body_markdown}</pre> : null}
+        {reading ? <LegalReader key={reading.version} id="legal-reading" markdown={reading.body_markdown} /> : null}
       </Dialog>
     </PageFrame>
   )

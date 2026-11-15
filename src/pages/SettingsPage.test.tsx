@@ -7,6 +7,17 @@ import { adminUser, jsonResponse, operatorWriteUser } from '../test/fixtures'
 import { findCall, installAdminFetchMock, type FetchCall } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
+// The visual editor (MDXEditor) does not run in jsdom: here it is a plain field with the same contract, Markdown in
+// and out. The real editor is covered by e2e/specs/admin-settings-legal.spec.ts.
+vi.mock('../components/LegalEditor', () => ({
+  default: ({ markdown, onChange, labelId, disabled }: { markdown: string; onChange: (value: string) => void; labelId: string; disabled?: boolean }) => (
+    <textarea aria-labelledby={labelId} defaultValue={markdown} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+  ),
+  LegalPreview: ({ markdown, labelId }: { markdown: string; labelId: string }) => (
+    <div role="document" aria-labelledby={labelId} data-testid="legal-preview">{markdown}</div>
+  ),
+}))
+
 const admin: AdminUser = {
   ...adminUser,
   permissions: [...adminUser.permissions, 'settings.read', 'settings.company.write', 'legal.write', 'settings.email.write'],
@@ -137,16 +148,17 @@ describe('SettingsPage', () => {
     const user = userEvent.setup()
     const { calls } = renderPage(admin, '/config?aba=legal&mercado=us&documento=terms')
 
-    const version = await screen.findByLabelText('Versão (AAAA-MM-DD)')
+    const version = await screen.findByLabelText('Versão (DD/MM/AAAA)')
     await user.clear(version)
-    await user.type(version, '2026-11-01')
-    const text = screen.getByLabelText('Texto (Markdown)')
+    await user.type(version, '01/11/2026')
+    const text = screen.getByLabelText('Texto')
     await user.clear(text)
     await user.type(text, '# Terms of use')
     await user.click(screen.getByRole('button', { name: 'Publicar versão' }))
     await user.click(within(await screen.findByRole('dialog', { name: 'Publicar termos de uso' })).getByRole('button', { name: 'Confirmar publicação' }))
 
-    expect(await screen.findByText(/Versão atual 2026-11-01/)).toBeInTheDocument()
+    expect(await screen.findByText(/Versão atual de 01\/11\/2026/)).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Termos de uso de 01/11/2026 publicada em Estados Unidos.')
     expect(findCall(calls, 'POST', '/api/v1/admin/legal/terms')?.body).toEqual({ market: 'US', version: '2026-11-01', body_markdown: '# Terms of use' })
   })
 
@@ -154,7 +166,7 @@ describe('SettingsPage', () => {
     const user = userEvent.setup()
     const { calls } = renderPage(operator, '/config?aba=legal&mercado=us&documento=terms')
 
-    const text = await screen.findByLabelText('Texto (Markdown)')
+    const text = await screen.findByLabelText('Texto')
     expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
     await user.clear(text)
     await user.type(text, '# Termos novos')
@@ -168,8 +180,52 @@ describe('SettingsPage', () => {
   it('readonly sees the legal text without the publish form', async () => {
     renderPage(readonlyUser, '/config?aba=legal&documento=terms')
     expect(await screen.findByText(/Texto antigo/)).toBeInTheDocument()
-    expect(screen.queryByLabelText('Texto (Markdown)')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Texto' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('document', { name: 'Texto' })).toHaveTextContent('Texto antigo.')
+    expect(screen.getByRole('button', { name: 'Markdown' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.queryByRole('button', { name: 'Publicar versão' })).not.toBeInTheDocument()
+  })
+
+  it('shows the versions as DD/MM/AAAA and refuses a day that does not exist', async () => {
+    const user = userEvent.setup()
+    const { calls } = renderPage(admin, '/config?aba=legal&documento=terms')
+
+    expect(await screen.findByText(/Versão atual de 15\/01\/2026/)).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: /^15\/01\/2026/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ler versão de 15/01/2026' })).toBeInTheDocument()
+
+    const version = screen.getByLabelText('Versão (DD/MM/AAAA)')
+    await user.clear(version)
+    await user.type(version, '31/02/2026')
+    await user.click(screen.getByRole('button', { name: 'Publicar versão' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirmar publicação' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Data da versão inválida. Use DD/MM/AAAA')
+    expect(screen.getByLabelText('Versão (DD/MM/AAAA)')).toHaveAttribute('aria-invalid', 'true')
+    expect(calls.some((call) => call.method === 'POST')).toBe(false)
+  })
+
+  it('reads an earlier version formatted, or as Markdown', async () => {
+    const user = userEvent.setup()
+    renderPage(admin, '/config?aba=legal&documento=terms', (call) => (call.path === '/api/v1/admin/legal/terms/versions/2026-01-15'
+      ? jsonResponse({ market: 'BR', kind: 'terms', version: '2026-01-15', published_at: '2026-01-15T12:00:00.000Z', body_markdown: '# Termos\n\nTexto antigo.' })
+      : undefined))
+
+    await user.click(await screen.findByRole('button', { name: 'Ler versão de 15/01/2026' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Termos de uso de 15/01/2026' })
+
+    expect(within(dialog).getByRole('button', { name: 'Visual' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(dialog).getByTestId('legal-preview')).toHaveTextContent('Texto antigo.')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Markdown' }))
+    expect(within(dialog).getByRole('button', { name: 'Markdown' })).toHaveAttribute('aria-pressed', 'true')
+    // The visual view stays mounted but hidden, so switching back does not rebuild it.
+    expect(within(dialog).getByTestId('legal-preview')).not.toBeVisible()
+    expect(within(dialog).getByText(/# Termos/, { selector: 'pre' })).toBeVisible()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Visual' }))
+    expect(within(dialog).getByTestId('legal-preview')).toBeVisible()
+    expect(within(dialog).getByText(/# Termos/, { selector: 'pre' })).not.toBeVisible()
   })
 
   it('Version id already used: says so and keeps the typed text', async () => {
@@ -178,13 +234,13 @@ describe('SettingsPage', () => {
       ? jsonResponse({ success: false, message: 'Taken', details: { code: 'legal_version_taken' } }, 409)
       : undefined))
 
-    const text = await screen.findByLabelText('Texto (Markdown)')
+    const text = await screen.findByLabelText('Texto')
     await user.type(text, '\nNova cláusula.')
     await user.click(screen.getByRole('button', { name: 'Publicar versão' }))
     await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirmar publicação' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Essa versão já existe. Escolha outra data.')
-    expect(screen.getByLabelText('Texto (Markdown)')).toHaveValue('# Termos\n\nTexto antigo.\nNova cláusula.')
+    expect(screen.getByLabelText('Texto')).toHaveValue('# Termos\n\nTexto antigo.\nNova cláusula.')
   })
 
   it('explains each automated email field in its tip', async () => {

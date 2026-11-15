@@ -861,6 +861,116 @@ pre.legal-text {
   overflow-wrap: anywhere;
 }
 
+/* Visual editor of the privacy policy and terms of use (LegalEditor): a bordered box, the toolbar stays on top
+   while the text scrolls inside it. */
+.legal-editor {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  min-width: 0;
+}
+
+.legal-editor .legal-editor-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-wrap: wrap;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  overflow-x: auto;
+}
+
+.legal-editor .legal-editor-content {
+  min-height: 360px;
+  max-height: 65vh;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  line-height: 1.6;
+}
+
+.legal-editor .legal-editor-content h1 { font-size: 1.5rem; margin: 1rem 0 0.5rem; }
+.legal-editor .legal-editor-content h2 { font-size: 1.25rem; margin: 1rem 0 0.5rem; }
+.legal-editor .legal-editor-content h3 { font-size: 1.1rem; margin: 0.75rem 0 0.4rem; }
+.legal-editor .legal-editor-content p { margin: 0 0 0.75rem; }
+.legal-editor .legal-editor-content ul,
+.legal-editor .legal-editor-content ol { margin: 0 0 0.75rem; padding-left: 1.5rem; }
+.legal-editor .legal-editor-content a { color: var(--accent); }
+
+.legal-editor .legal-editor-content table {
+  width: auto;
+  min-width: 0;
+  border-collapse: collapse;
+}
+
+.legal-editor .legal-editor-content th,
+.legal-editor .legal-editor-content td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  vertical-align: top;
+}
+
+/* Source mode (Markdown): the code view gets the same height as the visual editor. */
+.legal-editor .cm-editor {
+  max-height: 65vh;
+}
+
+.legal-editor-fallback textarea {
+  width: 100%;
+}
+
+/* Reading a legal version: Visual | Markdown above the text. */
+.legal-reader {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.legal-reader-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.legal-reader-label {
+  color: var(--text-strong);
+  font-weight: 500;
+  font-size: var(--text-sm);
+}
+
+/* Visual and Markdown share one fixed height, so switching does not resize the dialog. */
+.legal-reader {
+  --legal-reader-height: min(60vh, 640px);
+}
+
+.legal-reader .legal-preview .legal-editor-content,
+.legal-reader pre.legal-text,
+.legal-reader .legal-reader-loading {
+  box-sizing: border-box;
+  height: var(--legal-reader-height);
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  overflow-y: auto;
+}
+
+/* The Markdown box gets the visual box's border, so both measure the same. */
+.legal-reader pre.legal-text {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  height: calc(var(--legal-reader-height) + 2px);
+}
+
+.legal-reader .legal-reader-view[hidden] {
+  display: none;
+}
+
+.dialog-panel.dialog-panel-wide {
+  width: min(880px, 100%);
+}
+
 .table-actions {
   display: flex;
   flex-wrap: wrap;
