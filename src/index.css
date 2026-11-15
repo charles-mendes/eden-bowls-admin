@@ -1709,6 +1709,15 @@ button.table-link {
   font-size: var(--text-sm);
 }
 
+.feedback-store-note {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.feedback-store-note p {
+  margin: 0;
+}
+
 /* Shared controls */
 .page-eyebrow {
   margin: 0 0 var(--space-1);

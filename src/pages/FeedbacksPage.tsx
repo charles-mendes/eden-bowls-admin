@@ -10,6 +10,7 @@ import { apiRequest, buildQueryString } from '../lib/api'
 import { formatCountry, formatDate, formatFeedbackCategory } from '../lib/format'
 import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import { type FeedbackItem, type FeedbacksResponse } from '../lib/feedbacks'
+import { STORE_ENVIRONMENT_LABELS, resolveStoreEnvironment, storeTestimonialsLinks } from '../lib/storeLinks'
 
 function FilterClearButton({ label, onClear }: { label: string; onClear: () => void }) {
   return (
@@ -33,6 +34,8 @@ export function FeedbacksPage() {
   const [busyId, setBusyId] = useState<number | null>(null)
   const canWrite = hasPermission('feedbacks.write')
   const scopedCountry = bothMarkets ? country : (defaultMarket(user) ?? '')
+  const storeEnvironment = resolveStoreEnvironment()
+  const storeLinks = storeTestimonialsLinks(storeEnvironment, scopedCountry)
 
   const load = async () => {
     if (!token || !user) return
@@ -75,8 +78,8 @@ export function FeedbacksPage() {
 
   return (
     <PageFrame
-      title="Feedbacks"
-      description="Depoimentos publicados na loja, filtrados por país da versão do ecommerce."
+      title="Feedbacks manuais"
+      description="Depoimentos cadastrados à mão pela equipe. A loja não coleta feedback de cliente: só aparece o que for criado aqui."
       actions={canWrite ? <Link className="primary-button" to="/feedbacks/new">Novo feedback</Link> : null}
     >
       {error ? <div className="alert">{error}</div> : null}
@@ -130,6 +133,24 @@ export function FeedbacksPage() {
       </Section>
 
       <Section title="Feedbacks cadastrados" description={`Total: ${data?.total ?? '—'}`}>
+        <div className="muted-panel feedback-store-note">
+          <p>
+            O preenchimento é manual: nome, foto, lugar e comentário são digitados aqui pela equipe, a partir do
+            depoimento recebido do cliente. Os feedbacks <strong>ativos</strong> aparecem na página inicial
+            da loja, na seção de depoimentos, filtrados pelo país da versão do ecommerce.
+          </p>
+          <p>
+            {storeLinks.map((link, index) => (
+              <span key={link.url}>
+                {index > 0 ? ' · ' : null}
+                <a className="table-link" href={link.url} target="_blank" rel="noreferrer">
+                  {link.country ? `Clique aqui para verificar o resultado na loja ${link.country}` : 'Clique aqui para verificar o resultado na loja'}
+                </a>
+              </span>
+            ))}
+            {` (ambiente ${STORE_ENVIRONMENT_LABELS[storeEnvironment]}${storeLinks.length === 1 && !storeLinks[0].country ? '; escolha a região BR ou US na loja' : ''}).`}
+          </p>
+        </div>
         <div className="table-shell table-scroll">
           <table>
             <thead>

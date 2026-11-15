@@ -32,7 +32,7 @@ export const adminMenu: MenuItem[] = [
   { label: 'Produtos', href: '/catalog/products', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
   { label: 'Plano', href: '/catalog/plan', roles: ['admin', 'operator', 'readonly'], group: 'Loja', permission: 'catalog.read' },
   { label: 'Cupons 1ª compra', href: '/billing/coupons', roles: ['admin', 'operator'], group: 'Loja' },
-  { label: 'Feedbacks', href: '/feedbacks', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
+  { label: 'Feedbacks manuais', href: '/feedbacks', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
   { label: 'Visão do negócio', href: '/insights', roles: ['admin', 'operator', 'readonly'], group: 'Negócio', permission: 'reports.read' },
   { label: 'Relatórios', href: '/reports', roles: ['admin', 'operator', 'readonly'], group: 'Negócio', permission: 'reports.read' },
   { label: 'Simulador nutricional', href: '/nutrition/simulate', roles: ['admin', 'operator', 'veterinarian'], group: 'Ferramentas' },
