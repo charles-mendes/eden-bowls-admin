@@ -6310,3 +6310,444 @@ button.readiness-step-inner:hover .readiness-title {
 .charge-other-invoice {
   margin-top: 4px;
 }
+
+/* Nutrition settings (fases, raças, fatores): tables that stack into cards on a phone, "i" hints and edit log. */
+.section-title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.section-title-row h3 {
+  margin: 0;
+}
+
+.section-title-row,
+.label-with-hint {
+  position: relative;
+}
+
+.label-with-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.label-with-hint .info-hint-button {
+  width: 28px;
+  height: 28px;
+}
+
+.section-title-row .info-hint-text,
+.label-with-hint .info-hint-text {
+  left: 0;
+  right: auto;
+  width: min(300px, calc(100vw - 64px));
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+  text-align: left;
+}
+
+.label-with-hint.end .info-hint-text {
+  left: auto;
+  right: 0;
+}
+
+.readonly-note {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.nutri-legend {
+  display: none;
+}
+
+/* The tips must overflow the table, so the shell does not clip; the stacked layout keeps phones from scrolling. */
+.nutri-table-shell {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.nutri-table {
+  min-width: 0;
+}
+
+.nutri-table th[scope="col"] {
+  position: static;
+  vertical-align: middle;
+}
+
+.nutri-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.nutri-table tbody th[scope="row"] {
+  background: transparent;
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+.nutri-table td {
+  vertical-align: middle;
+}
+
+.nutri-cell-label {
+  display: none;
+}
+
+.nutri-number {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 220px;
+}
+
+.nutri-table input,
+.nutri-select {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text-strong);
+  padding: 6px 10px;
+  font: inherit;
+}
+
+.nutri-table input:disabled,
+.nutri-select:disabled,
+.nutri-factor-grid input:disabled,
+.nutri-textarea:disabled {
+  background: var(--surface-muted);
+  color: var(--text-strong);
+  cursor: not-allowed;
+}
+
+.nutri-select {
+  max-width: 180px;
+}
+
+.nutri-unit {
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+}
+
+.nutri-limits .ship-hint {
+  display: block;
+  min-height: 1.2em;
+  margin-top: 2px;
+}
+
+.nutri-breeds tr.is-inactive .nutri-breed-name,
+.nutri-breeds tr.is-inactive .nutri-breed-en {
+  color: var(--text-soft);
+}
+
+.nutri-breed-action {
+  text-align: right;
+}
+
+.nutri-matrix input {
+  max-width: 120px;
+}
+
+.nutri-textarea {
+  width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  padding: 8px 10px;
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.nutri-formula {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+}
+
+.nutri-formula > span:last-child {
+  font-variant-numeric: tabular-nums;
+}
+
+.edit-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.edit-log-item {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.edit-log-item:first-child {
+  padding-top: 0;
+}
+
+.edit-log-item:last-child {
+  border-bottom: 0;
+}
+
+.edit-log-avatar {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.edit-log-body {
+  min-width: 0;
+}
+
+.edit-log-title {
+  margin: 0;
+  color: var(--text-strong);
+  font-weight: 500;
+}
+
+.edit-log-meta {
+  margin: 2px 0 0;
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+.edit-log-details {
+  margin: var(--space-2) 0 0;
+  padding-left: 1.1rem;
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+  display: grid;
+  gap: 2px;
+}
+
+.edit-log-more {
+  margin-top: var(--space-3);
+}
+
+@media (max-width: 1100px) {
+  .nutri-factor-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .nutri-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-sm);
+    color: var(--text-strong);
+    font-weight: 500;
+  }
+
+  .nutri-legend dt {
+    margin: 0;
+  }
+
+  .nutri-table-shell {
+    border: 0;
+  }
+
+  .nutri-table,
+  .nutri-table tbody {
+    display: block;
+  }
+
+  .nutri-table thead {
+    display: none;
+  }
+
+  .nutri-table tbody tr {
+    display: grid;
+    gap: var(--space-2) var(--space-3);
+    padding: var(--space-3);
+    margin-bottom: var(--space-3);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+
+  .nutri-table tbody tr:hover {
+    background: var(--surface);
+  }
+
+  .nutri-table tbody tr > * {
+    display: block;
+    padding: 0;
+    border: 0;
+    min-width: 0;
+  }
+
+  .nutri-table tbody th[scope="row"] {
+    grid-column: 1 / -1;
+    font-size: var(--text-md);
+  }
+
+  .nutri-cell-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-soft);
+    font-size: var(--text-xs);
+  }
+
+  .nutri-table input,
+  .nutri-select {
+    min-height: 42px;
+    font-size: 16px;
+  }
+
+  .nutri-number,
+  .nutri-select,
+  .nutri-matrix input {
+    max-width: none;
+  }
+
+  .nutri-limits tbody tr {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nutri-matrix tbody tr {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .nutri-breeds tbody tr {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .nutri-breeds .nutri-breed-name {
+    font-weight: 600;
+    font-size: var(--text-md);
+  }
+
+  .nutri-breeds .nutri-breed-en {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .nutri-breeds .nutri-breed-en .nutri-cell-label {
+    display: inline;
+    margin-right: var(--space-1);
+  }
+
+  .nutri-breeds .nutri-breed-status {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .nutri-breeds .nutri-breed-size {
+    grid-column: 1 / -1;
+  }
+
+  .nutri-breeds .nutri-breed-action {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+
+  .nutri-breeds .nutri-breed-action .ghost-button {
+    width: 100%;
+    min-height: 42px;
+  }
+
+  .nutri-sets tbody tr {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .nutri-sets tbody tr > td:nth-of-type(2),
+  .nutri-sets tbody tr > td:nth-of-type(3) {
+    grid-column: 1 / -1;
+  }
+
+  .nutri-factor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .nutri-factor-grid input {
+    min-height: 42px;
+    font-size: 16px;
+  }
+
+  .nutri-draft-actions {
+    width: 100%;
+  }
+
+  .nutri-draft-actions > button {
+    flex: 1 1 auto;
+  }
+}
+
+/* On a phone the legend tips span the legend, so none runs off the screen edge. */
+@media (max-width: 640px) {
+  .nutri-legend {
+    position: relative;
+  }
+
+  .nutri-legend .label-with-hint {
+    position: static;
+  }
+
+  .nutri-legend .label-with-hint .info-hint-text,
+  .nutri-legend .label-with-hint.end .info-hint-text {
+    left: 0;
+    right: 0;
+    width: auto;
+  }
+}
+
+.nutri-add-breed {
+  white-space: nowrap;
+}
+
+.nutri-breed-form {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 640px) {
+  .nutri-breed-form input,
+  .nutri-breed-form select {
+    min-height: 42px;
+    font-size: 16px;
+  }
+}
+
+/* Fatores: Cães | Gatos switch. */
+.nutri-species {
+  align-self: flex-start;
+  margin: var(--space-2) 0;
+}
+
+.nutri-species button {
+  min-width: 96px;
+}
+

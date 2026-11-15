@@ -22,6 +22,8 @@ type SimulateResult = {
     refeicoes: number
     quantidade_por_refeicao: number
     fator_aplicado: number
+    // Exponent of the weight: 0.75 for dogs, 0.67 or 0.4 for cats. An older API does not send it.
+    expoente_peso?: number
     porte: string
     especie: string
     nem_kcal_kg: number
@@ -389,7 +391,7 @@ export function NutritionSimulatePage() {
             <MetricCard label="Energia" value={`${result.energia_kcal_dia} kcal`} />
             <MetricCard label="Gramas / dia" value={result.display.daily} />
             <MetricCard label="Por refeição" value={`${result.quantidade_por_refeicao} × ${result.refeicoes}`} />
-            <MetricCard label="Fator" value={result.fator_aplicado} hint={`NEM ${result.nem_kcal_kg} · ${result.porte} · ${result.especie}`} />
+            <MetricCard label="Fator" value={result.fator_aplicado} hint={`${result.expoente_peso ? `peso^${String(result.expoente_peso).replace('.', ',')} · ` : ''}NEM ${result.nem_kcal_kg} · ${result.porte} · ${result.especie}`} />
           </div>
           {result.parameter_set ? <p className="muted">{copy.parameterSet(result.parameter_set)}</p> : null}
         </Section>
