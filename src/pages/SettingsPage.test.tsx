@@ -11,7 +11,7 @@ const admin: AdminUser = {
   ...adminUser,
   permissions: [...adminUser.permissions, 'settings.read', 'settings.company.write', 'legal.write', 'settings.email.write'],
 }
-const operator: AdminUser = { ...operatorWriteUser, permissions: [...operatorWriteUser.permissions, 'settings.read', 'settings.company.write', 'settings.email.write'] }
+const operator: AdminUser = { ...operatorWriteUser, permissions: [...operatorWriteUser.permissions, 'settings.read', 'settings.company.write', 'settings.email.write', 'legal.write'] }
 const readonlyUser: AdminUser = { ...operatorWriteUser, roles: ['readonly'], permissions: ['settings.read', 'market.br'] }
 
 function company(market: string) {
@@ -148,6 +148,28 @@ describe('SettingsPage', () => {
 
     expect(await screen.findByText(/Versão atual 2026-11-01/)).toBeInTheDocument()
     expect(findCall(calls, 'POST', '/api/v1/admin/legal/terms')?.body).toEqual({ market: 'US', version: '2026-11-01', body_markdown: '# Terms of use' })
+  })
+
+  it('the BR operator publishes the BR terms of use', async () => {
+    const user = userEvent.setup()
+    const { calls } = renderPage(operator, '/config?aba=legal&mercado=us&documento=terms')
+
+    const text = await screen.findByLabelText('Texto (Markdown)')
+    expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
+    await user.clear(text)
+    await user.type(text, '# Termos novos')
+    await user.click(screen.getByRole('button', { name: 'Publicar versão' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirmar publicação' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('publicada em Brasil')
+    expect(findCall(calls, 'POST', '/api/v1/admin/legal/terms')?.body).toMatchObject({ market: 'BR', body_markdown: '# Termos novos' })
+  })
+
+  it('readonly sees the legal text without the publish form', async () => {
+    renderPage(readonlyUser, '/config?aba=legal&documento=terms')
+    expect(await screen.findByText(/Texto antigo/)).toBeInTheDocument()
+    expect(screen.queryByLabelText('Texto (Markdown)')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Publicar versão' })).not.toBeInTheDocument()
   })
 
   it('Version id already used: says so and keeps the typed text', async () => {
