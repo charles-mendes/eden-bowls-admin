@@ -40,6 +40,28 @@ describe('ShippingPage', () => {
     expect(put?.body).not.toHaveProperty('us')
   })
 
+  it('lets the operator pick the Brazil delivery time in business days and saves it', async () => {
+    seedAuth()
+    const user = userEvent.setup()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderAuthedPage(<ShippingPage />, '/config/shipping')
+
+    const select = await screen.findByRole('combobox', { name: 'Prazo de entrega' })
+    expect(select).toHaveValue('0')
+    expect(within(select).getAllByRole('option').map((option) => option.textContent))
+      .toEqual(['Mesmo dia', '1 dia útil', '2 dias úteis', '3 dias úteis'])
+    expect(select).toHaveAccessibleDescription(expect.stringContaining('pula sábado, domingo'))
+    expect(screen.getByText('Mesmo dia', { selector: '.ship-summary strong' })).toBeInTheDocument()
+
+    await user.selectOptions(select, '2')
+    expect(screen.getByText('2 dias úteis', { selector: '.ship-summary strong' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Salvar regras do Brasil' }))
+    await screen.findByText('Regras do Brasil salvas.')
+    const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
+    expect(put?.body).toMatchObject({ br: { rule: { delivery_days: 2 } } })
+  })
+
   it('explains every Brazil rule in its tip, and the tip opens on click', async () => {
     const user = userEvent.setup()
     seedAuth()

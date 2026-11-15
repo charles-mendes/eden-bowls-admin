@@ -52,6 +52,8 @@ export type ShippingSettings = {
       km_per_day: number
       min_days: number
       max_days: number
+      // Business days from preparation to delivery, 0 (same day) to 3.
+      delivery_days: number
     }
   }
   us: {
@@ -124,7 +126,7 @@ export const emptySettings = (): ShippingSettings => ({
     enabled: true,
     label: 'Entrega Eden Bowl',
     center: { name: 'CD', street: '', number: '', complement: '', neighborhood: '', city: '', state: '', zipcode: '', lat: 0, lng: 0 },
-    rule: { per_km: 0.95, road_factor: 1.3, min_fee: 0, max_fee: null, max_distance_km: 50, km_per_day: 80, min_days: 2, max_days: 10 },
+    rule: { per_km: 0.95, road_factor: 1.3, min_fee: 0, max_fee: null, max_distance_km: 50, km_per_day: 80, min_days: 2, max_days: 10, delivery_days: 0 },
   },
   us: {
     enabled: true,
@@ -145,6 +147,14 @@ export const emptySettings = (): ShippingSettings => ({
     max_transit_days: 1,
   },
 })
+
+// The Brazil delivery times the API accepts: the same day as preparation, or 1 to 3 business days after it.
+export const BR_DELIVERY_DAYS = [0, 1, 2, 3] as const
+
+export function brDeliveryLabel(days: number): string {
+  if (!days) return 'Mesmo dia'
+  return days === 1 ? '1 dia útil' : `${days} dias úteis`
+}
 
 export function mergeSettings(input: Partial<ShippingSettings> | undefined): ShippingSettings {
   const base = emptySettings()

@@ -1005,7 +1005,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         data: {
           distance: 8.2,
           shipping: 12.5,
-          delivery_days: 1,
+          delivery_days: 0,
           distance_source: 'osrm',
           destination: { city: 'São Paulo', state: 'SP', zipcode: '01310-100' },
           breakdown: { minimum_applied: false },

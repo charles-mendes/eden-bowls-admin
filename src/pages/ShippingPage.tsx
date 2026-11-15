@@ -11,8 +11,10 @@ import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import {
+  BR_DELIVERY_DAYS,
   SHIPPING_BOX_KEYS,
   UPS_SERVICES,
+  brDeliveryLabel,
   brHeadquartersReady,
   emptySettings,
   formatMoney,
@@ -31,6 +33,7 @@ type BrQuote = {
   distance: number
   shipping: number
   distance_source?: string
+  delivery_days?: number
   breakdown?: { minimum_applied?: boolean; maximum_applied?: boolean }
   destination?: { city?: string; state?: string; zipcode?: string }
 }
@@ -98,6 +101,21 @@ function TextField({ label, hint, help, value, onChange, disabled }: { label: st
     </div>
   )
 }
+
+function SelectField({ label, hint, help, value, options, onChange, disabled }: { label: string; hint?: string; help?: readonly string[]; value: string; options: ReadonlyArray<{ value: string; label: string }>; onChange: (value: string) => void; disabled?: boolean }) {
+  const id = useId()
+  return (
+    <div className="ship-field">
+      <HelpLabel htmlFor={id} label={label} help={help} />
+      <select id={id} value={value} disabled={disabled} aria-describedby={help ? `${id}-help` : undefined} onChange={(event) => onChange(event.target.value)}>
+        {options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+      </select>
+      {hint ? <small className="ship-hint">{hint}</small> : null}
+    </div>
+  )
+}
+
+const BR_DELIVERY_OPTIONS = BR_DELIVERY_DAYS.map((days) => ({ value: String(days), label: brDeliveryLabel(days) }))
 
 function Toggle({ checked, onChange, label, description, help, disabled }: { checked: boolean; onChange: (value: boolean) => void; label: string; description?: string; help?: readonly string[]; disabled?: boolean }) {
   const id = useId()
@@ -403,16 +421,25 @@ export function ShippingPage() {
       {tab === 'regras' && loaded ? (
         <form id="shipping-panel-regras" role="tabpanel" aria-labelledby="shipping-tab-regras" className="ship-rules" onSubmit={save}>
           {market === 'BR' ? (
-            <Section title="Entrega local" description="Entrega própria, avulsa, no mesmo dia do preparo.">
+            <Section title="Entrega local" description="Entrega própria, avulsa, a partir do dia do preparo.">
               <div className="ship-summary">
                 <div><small>Raio</small><strong>{br.rule.max_distance_km} km</strong></div>
                 <div><small>Valor por km</small><strong>{formatMoney(br.rule.per_km, 'BRL')}</strong></div>
-                <div><small>Prazo</small><strong>Mesmo dia</strong></div>
+                <div><small>Prazo</small><strong>{brDeliveryLabel(br.rule.delivery_days)}</strong></div>
               </div>
               <Toggle checked={br.enabled} disabled={!canWrite} onChange={(enabled) => updateBr({ enabled })} label="Entrega no Brasil ativa" help={SHIPPING_HELP.br.enabled} description="Desligada, a loja não cota frete para CEPs brasileiros." />
               <div className="ship-fields">
                 <NumberField label="Raio de entrega" help={SHIPPING_HELP.br.radius} suffix="km" step="1" disabled={!canWrite} value={br.rule.max_distance_km} onChange={(value) => updateBrRule({ max_distance_km: value ?? 0 })} hint="Clientes mais longe que isso da sede não conseguem assinar." />
                 <NumberField label="Valor por km" help={SHIPPING_HELP.br.perKm} prefix="R$" disabled={!canWrite} value={br.rule.per_km} onChange={(value) => updateBrRule({ per_km: value ?? 0 })} hint={`Ex.: 10 km custam ${formatMoney(br.rule.per_km * 10, 'BRL')}.`} />
+                <SelectField
+                  label="Prazo de entrega"
+                  help={SHIPPING_HELP.br.deliveryDays}
+                  disabled={!canWrite}
+                  value={String(br.rule.delivery_days || 0)}
+                  options={BR_DELIVERY_OPTIONS}
+                  onChange={(value) => updateBrRule({ delivery_days: Number(value) })}
+                  hint={br.rule.delivery_days ? 'Conta só dias úteis depois do preparo.' : 'Entrega no dia do preparo.'}
+                />
                 <TextField label="Nome exibido na loja" help={SHIPPING_HELP.br.label} disabled={!canWrite} value={br.label} onChange={(label) => updateBr({ label })} />
               </div>
               <details className="ship-advanced">
@@ -624,7 +651,7 @@ export function ShippingPage() {
                     <dl className="ship-result-list">
                       <dt>Destino</dt><dd>{[brResult.destination?.city, brResult.destination?.state].filter(Boolean).join('/') || '—'}</dd>
                       <dt>Distância</dt><dd>{brResult.distance} km {brResult.distance_source === 'osrm' ? 'de rota' : '(linha reta corrigida)'}</dd>
-                      <dt>Entrega</dt><dd>No mesmo dia do preparo</dd>
+                      <dt>Entrega</dt><dd>{brResult.delivery_days ? `${brDeliveryLabel(brResult.delivery_days)} depois do preparo` : 'No mesmo dia do preparo'}</dd>
                     </dl>
                   </div>
                 ) : null}

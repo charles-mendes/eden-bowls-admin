@@ -15,7 +15,12 @@ export const SHIPPING_HELP = {
     perKm: [
       'Quanto se cobra por km entre a sede e o cliente.',
       'Cálculo: distância × valor por km. Depois valem a taxa mínima e a taxa máxima, se houver.',
-      'Prazo: a entrega local sai no mesmo dia do preparo.',
+    ],
+    deliveryDays: [
+      'Quantos dias úteis depois do preparo a entrega chega ao cliente. Vale para todo CEP dentro do raio.',
+      'Dias úteis: pula sábado, domingo e os dias marcados como fechados para entrega em Feriados e fechamentos. Ex.: preparo na sexta com 2 dias úteis entrega na terça.',
+      'Onde aparece: a data de entrega do checkout, do e-mail do pedido, da fila de produção e do painel do cliente.',
+      'Mesmo dia: a entrega sai no dia do preparo.',
     ],
     label: [
       'Nome do frete que a loja mostra ao cliente quando calcula o frete, por exemplo "Entrega Eden Bowls".',
