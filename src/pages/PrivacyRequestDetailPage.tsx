@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
-import { ApiRequestError, apiRequest } from '../lib/api'
+import { ApiRequestError, apiRequest, getApiBaseUrl } from '../lib/api'
 import { formatDate } from '../lib/format'
 import {
   formatPrivacyIdentity,
@@ -13,6 +13,80 @@ import {
   needsIdentityToComplete,
   type PrivacyRequestItem,
 } from '../lib/privacy'
+
+function hasExportPackage(item: PrivacyRequestItem) {
+  return item.type === 'access' || item.type === 'portability'
+}
+
+// Which file the operator hands over, and when (privacy-admin-requests).
+function packageUseText(item: PrivacyRequestItem) {
+  const portability = item.type === 'portability'
+  if (item.channel === 'email') {
+    return portability
+      ? 'Quando é útil: esta solicitação chegou por e-mail, então o cliente ainda não tem os arquivos. Baixe o PDF, para o cliente ler, e o JSON, para ele levar a outra empresa, e envie os dois pelo e-mail da conta. Só envie depois de confirmar a identidade.'
+      : 'Quando é útil: esta solicitação chegou por e-mail, então o cliente ainda não tem o arquivo. Baixe o PDF e envie ao cliente pelo e-mail da conta. Só envie depois de confirmar a identidade.'
+  }
+  return portability
+    ? 'Quando é útil: esta solicitação foi feita no perfil da loja, e o cliente já recebeu o PDF e o JSON por lá. Baixe de novo só para reenviar ao cliente ou conferir o que foi entregue.'
+    : 'Quando é útil: esta solicitação foi feita no perfil da loja, e o cliente já recebeu o PDF por lá. Baixe de novo só para reenviar ao cliente ou conferir o que foi entregue.'
+}
+
+// Why "Pacote de dados do cliente" exists: access and portability are answered with a copy of the customer's data.
+function PackageSection({ item, closed, identityPending, onDownloadPdf, onDownloadJson }: {
+  item: PrivacyRequestItem
+  closed: boolean
+  identityPending: boolean
+  onDownloadPdf: () => void
+  onDownloadJson: () => void
+}) {
+  return (
+    <Section
+      title="Pacote de dados do cliente"
+      description={item.type === 'portability'
+        ? 'Portabilidade: o cliente quer levar os dados dele para outra empresa.'
+        : 'Acesso: o cliente quer saber quais dados dele a Eden Bowls guarda.'}
+    >
+      <div className="stack">
+        <p>
+          O pacote reúne o que a Eden Bowls tem sobre o cliente: perfil, endereço de entrega, pets, consentimentos,
+          assinaturas, contatos feitos pelo WhatsApp e avisos de endereço. A lei (LGPD no Brasil, CCPA nos EUA) obriga a
+          entregar essa cópia quando o cliente pede acesso ou portabilidade.
+        </p>
+        <p>
+          Ele sai em dois arquivos. O <strong>PDF</strong> é para o cliente ler: mostra cada dado, de onde veio, para que
+          é usado e com quem a Eden Bowls compartilha. O <strong>JSON</strong> é um formato para sistemas, que o cliente
+          leva quando quer passar os dados para outra empresa.
+        </p>
+        <p className="muted">{packageUseText(item)}</p>
+        <p className="muted">
+          {closed
+            ? 'A solicitação está concluída: os arquivos mostram os dados como estavam na conclusão.'
+            : 'Ao concluir a solicitação, os dados ficam salvos como estavam naquele momento.'}
+        </p>
+        {identityPending ? (
+          <p className="muted">Os arquivos ficam disponíveis depois que a identidade do cliente for confirmada.</p>
+        ) : (
+          <div className="inline-actions">
+            <button className="primary-button" type="button" onClick={onDownloadPdf}>
+              Baixar PDF
+            </button>
+            <button className="ghost-button" type="button" onClick={onDownloadJson}>
+              Baixar JSON
+            </button>
+          </div>
+        )}
+      </div>
+    </Section>
+  )
+}
+
+// payload.openedBy is set when an operator opened the request in the panel (createAdminRequest).
+function openingNote(item: PrivacyRequestItem) {
+  const payload = item.payload || {}
+  const note = typeof payload.note === 'string' ? payload.note.trim() : ''
+  if (!note) return null
+  return { note, author: payload.openedBy ? 'operador' : 'cliente' }
+}
 
 const NOT_FOUND_MESSAGE = 'Solicitação não encontrada ou fora dos mercados do seu acesso.'
 
@@ -93,6 +167,31 @@ export function PrivacyRequestDetailPage() {
     }
   }
 
+  // privacy-data-export: the readable PDF, saved under the name the API sends.
+  const downloadPdf = async () => {
+    if (!token || !id) return
+    try {
+      setError('')
+      const response = await fetch(`${getApiBaseUrl()}/admin/privacy/requests/${id}/export/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const body = await response.json().catch(() => null) as { message?: string } | null
+        throw new Error(body?.message || 'Falha ao baixar o PDF')
+      }
+      const blob = await response.blob()
+      const match = /filename="?([^";]+)"?/i.exec(response.headers.get('Content-Disposition') || '')
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = match?.[1] || `privacy-${id}.pdf`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao baixar o PDF')
+    }
+  }
+
   const completeBlocked = Boolean(item && needsIdentityToComplete(item))
   const closed = isTerminalPrivacyStatus(item?.status)
 
@@ -125,7 +224,10 @@ export function PrivacyRequestDetailPage() {
             <p>Prazo: {formatDate(item?.dueAt)} {item?.overdue ? <span className="badge-warning">Atrasado</span> : null}</p>
             <p>Identidade: {formatPrivacyIdentity(item?.identityStatus)}</p>
             {item?.userId ? <p><Link className="table-link" to={`/users/${item.userId}`}>Cliente #{item.userId}</Link></p> : <p className="muted">Sem user_id vinculado.</p>}
-            {item?.resultNote ? <p>Nota: {item.resultNote}</p> : null}
+            {item && openingNote(item) ? (
+              <p>Nota da abertura ({openingNote(item)?.author}): {openingNote(item)?.note}</p>
+            ) : null}
+            {item?.resultNote ? <p>Nota do resultado: {item.resultNote}</p> : null}
             {item?.extensionReason ? <p className="muted">Prorrogação: {item.extensionReason}</p> : null}
           </Section>
 
@@ -159,11 +261,6 @@ export function PrivacyRequestDetailPage() {
                       Marcar identidade verificada
                     </button>
                   </>
-                ) : null}
-                {(item?.type === 'access' || item?.type === 'portability') && !completeBlocked ? (
-                  <button className="ghost-button" type="button" onClick={() => void downloadPackage()}>
-                    Baixar pacote
-                  </button>
                 ) : null}
               </div>
 
@@ -210,16 +307,20 @@ export function PrivacyRequestDetailPage() {
               </form>
             </Section>
           ) : (
-            <Section title="Pacote">
-              {(item?.type === 'access' || item?.type === 'portability') && !completeBlocked ? (
-                <button className="ghost-button" type="button" onClick={() => void downloadPackage()}>
-                  Baixar pacote
-                </button>
-              ) : (
-                <p className="muted">Somente leitura. Mutações ficam ocultas sem permissão de escrita.</p>
-              )}
-            </Section>
+            !canWrite && !closed ? (
+              <p className="muted">Somente leitura. Mutações ficam ocultas sem permissão de escrita.</p>
+            ) : null
           )}
+
+          {item && hasExportPackage(item) ? (
+            <PackageSection
+              item={item}
+              closed={closed}
+              identityPending={completeBlocked}
+              onDownloadPdf={() => void downloadPdf()}
+              onDownloadJson={() => void downloadPackage()}
+            />
+          ) : null}
         </>
       )}
     </PageFrame>
