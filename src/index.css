@@ -6751,3 +6751,122 @@ button.readiness-step-inner:hover .readiness-title {
   min-width: 96px;
 }
 
+
+/* Privacidade: busca de cliente por nome ou e-mail dentro do formulário. */
+.customer-search {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.customer-search-label {
+  font-size: var(--text-sm);
+  color: var(--text-soft);
+}
+
+.customer-search-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.customer-search-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.customer-search-selected > div,
+.customer-search-results button {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.customer-search-results {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.customer-search-results > p {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
+.customer-search-results ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.customer-search-results li + li {
+  border-top: 1px solid var(--border);
+}
+
+.customer-search-results button {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-strong);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.customer-search-results button:hover,
+.customer-search-results button:focus-visible {
+  background: var(--accent-soft);
+}
+
+.customer-search .muted {
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.privacy-create-note {
+  grid-column: 1 / -1;
+}
+
+/* Filtro de cliente: a lista flutua sobre a página em vez de empurrar a barra de filtros. */
+.customer-search-filter {
+  grid-column: auto;
+  position: relative;
+  gap: var(--space-1);
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.customer-search-filter .customer-search-results {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  margin-top: var(--space-1);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.customer-search-chip {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
+  padding: 8px var(--space-3);
+  line-height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text-strong);
+  font-size: var(--text-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

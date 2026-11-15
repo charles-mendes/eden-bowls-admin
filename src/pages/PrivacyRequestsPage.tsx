@@ -1,6 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
+import { Dialog } from '../components/Dialog'
+import { InfoHint } from '../components/InfoHint'
+import { CustomerSearchField, type CustomerOption } from '../components/CustomerSearchField'
 import { Section } from '../components/Section'
 import { Pager } from '../components/Pager'
 import { FiltersBar } from '../components/FiltersBar'
@@ -13,9 +16,15 @@ import {
   formatPrivacyIdentity,
   formatPrivacyStatus,
   formatPrivacyType,
+  isTerminalPrivacyStatus,
   type PrivacyRequestType,
   type PrivacyRequestsResponse,
 } from '../lib/privacy'
+
+// payload.note: the customer reads it in Perfil > Privacidade and can reword it while the request is open.
+const NOTE_HELP = 'Opcional. Resuma o que o cliente solicitou no e-mail, por exemplo o dado a corrigir. '
+  + 'O cliente vê esta nota no perfil, em Privacidade, e pode editá-la enquanto a solicitação estiver aberta. '
+  + 'Não escreva observações internas aqui.'
 
 function FilterClearButton({ label, onClear }: { label: string; onClear: () => void }) {
   return (
@@ -36,15 +45,18 @@ export function PrivacyRequestsPage() {
   const [identityStatus, setIdentityStatus] = useState('')
   const [overdue, setOverdue] = useState('')
   const [userId, setUserId] = useState(initialUserId)
+  const [filterCustomer, setFilterCustomer] = useState<CustomerOption | null>(null)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(20)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [createUserId, setCreateUserId] = useState(initialUserId)
+  const [createCustomer, setCreateCustomer] = useState<CustomerOption | null>(null)
   const [createType, setCreateType] = useState<PrivacyRequestType>('correction')
   const [createMarket, setCreateMarket] = useState('')
   const [createNote, setCreateNote] = useState('')
   const [creating, setCreating] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createError, setCreateError] = useState('')
   const canWrite = hasPermission('privacy.requests.write')
   const scopedCreateMarket = bothMarkets ? (createMarket || defaultMarket(user) || 'BR') : (defaultMarket(user) ?? 'BR')
 
@@ -71,36 +83,80 @@ export function PrivacyRequestsPage() {
     void load()
   }, [token, status, type, identityStatus, overdue, userId, page, perPage])
 
+  const chooseFilterCustomer = (customer: CustomerOption | null) => {
+    setFilterCustomer(customer)
+    setUserId(customer ? customer.id : '')
+    setPage(1)
+  }
+
+  // Coming from the customer screen (?userId=), the filter shows that customer's name instead of the id.
+  useEffect(() => {
+    if (!token || !initialUserId) return
+    let cancelled = false
+    apiRequest<CustomerOption>(`/admin/users/${encodeURIComponent(initialUserId)}`, { token })
+      .then((customer) => { if (!cancelled) setFilterCustomer(customer) })
+      .catch(() => { if (!cancelled) setFilterCustomer({ id: initialUserId, email: '' }) })
+    return () => { cancelled = true }
+  }, [token, initialUserId])
+
+  const chooseCustomer = (customer: CustomerOption | null) => {
+    setCreateCustomer(customer)
+    if (bothMarkets && (customer?.country === 'BR' || customer?.country === 'US')) {
+      setCreateMarket(customer.country)
+    }
+  }
+
   const createRequest = async (event: FormEvent) => {
     event.preventDefault()
     if (!token || !canWrite) return
+    if (!createCustomer) {
+      setCreateError('Escolha o cliente.')
+      return
+    }
     try {
       setCreating(true)
-      setError('')
+      setCreateError('')
       await apiRequest('/admin/privacy/requests', {
         token,
         method: 'POST',
         body: {
-          userId: Number(createUserId),
+          userId: Number(createCustomer.id),
           type: createType,
           market: scopedCreateMarket,
           note: createNote || undefined,
         },
       })
-      setMessage('Solicitação aberta.')
+      setMessage('Solicitação registrada.')
       setCreateNote('')
+      setCreateOpen(false)
       await load()
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao abrir solicitação')
+      setCreateError(requestError instanceof Error ? requestError.message : 'Falha ao abrir solicitação')
     } finally {
       setCreating(false)
     }
   }
 
+  const openCreate = () => {
+    setCreateError('')
+    setMessage('')
+    setCreateOpen(true)
+    // The customer in the filter (or the one from the customer screen) comes already chosen.
+    if (!createCustomer && filterCustomer) chooseCustomer(filterCustomer)
+  }
+
+  const closeCreate = () => {
+    if (creating) return
+    setCreateOpen(false)
+  }
+
   return (
     <PageFrame
       title="Privacidade"
-      description="Pedidos de clientes sobre os próprios dados (acesso, correção, exclusão). Pedidos por e-mail só avançam depois de confirmar a identidade."
+      description="Solicitações de clientes sobre os próprios dados (acesso, correção, exclusão). Solicitações por e-mail só avançam depois de confirmar a identidade."
+      actions={canWrite ? (
+        <button className="primary-button" type="button" onClick={openCreate}>Nova solicitação</button>
+      ) : null}
     >
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{message}</div> : null}
@@ -180,20 +236,12 @@ export function PrivacyRequestsPage() {
               ) : null}
             </span>
           </label>
-          <label>
-            User ID
-            <span className="filter-field">
-              <input
-                aria-label="User ID"
-                value={userId}
-                onChange={(event) => { setUserId(event.target.value); setPage(1) }}
-                placeholder="id interno"
-              />
-              {userId ? (
-                <FilterClearButton label="Limpar user id" onClear={() => { setUserId(''); setPage(1) }} />
-              ) : null}
-            </span>
-          </label>
+          <CustomerSearchField
+            token={token}
+            variant="filter"
+            value={filterCustomer}
+            onChange={chooseFilterCustomer}
+          />
           <label>
             Por página
             <input type="number" min={1} max={100} value={perPage} onChange={(event) => { setPerPage(Number(event.target.value)); setPage(1) }} />
@@ -201,42 +249,59 @@ export function PrivacyRequestsPage() {
         </FiltersBar>
       </Section>
 
-      {canWrite ? (
-        <Section title="Abrir pedido por e-mail" description="Registre um pedido recebido por e-mail. Informe o ID do cliente, que aparece na tela do cliente.">
-          <form className="form-grid" onSubmit={createRequest}>
-            <label>
-              User ID
-              <input
-                required
-                value={createUserId}
-                onChange={(event) => setCreateUserId(event.target.value)}
-                placeholder="77"
-              />
-            </label>
-            <label>
-              Tipo
-              <select aria-label="Tipo do pedido" value={createType} onChange={(event) => setCreateType(event.target.value as PrivacyRequestType)}>
-                <option value="access">Acesso</option>
-                <option value="deletion">Exclusão</option>
-                <option value="correction">Correção</option>
-                <option value="portability">Portabilidade</option>
-                <option value="opt_out_share">Não compartilhar dados</option>
-              </select>
-            </label>
-            <MarketSelect
-              user={user}
-              value={scopedCreateMarket}
-              onChange={setCreateMarket}
-            />
-            <p className="muted">{scopedCreateMarket === 'US' ? 'Prazo EUA: 45 dias' : 'Prazo Brasil: 15 dias'}</p>
-            <label>
+      <Dialog
+        title="Registrar solicitação recebida por e-mail"
+        description="Use quando o cliente fizer a solicitação por e-mail, e não pelo perfil na loja. Busque o cliente pelo nome ou pelo e-mail."
+        open={createOpen && canWrite}
+        onClose={closeCreate}
+        footer={(
+          <>
+            <button className="ghost-button" type="button" onClick={closeCreate} disabled={creating}>Cancelar</button>
+            <button className="primary-button" type="submit" form="privacy-create-form" disabled={creating}>
+              {creating ? 'Registrando…' : 'Registrar solicitação'}
+            </button>
+          </>
+        )}
+      >
+        <form id="privacy-create-form" className="form-grid" onSubmit={createRequest}>
+          {createError ? <div className="alert" role="alert">{createError}</div> : null}
+          <CustomerSearchField
+            token={token}
+            value={createCustomer}
+            onChange={chooseCustomer}
+            disabled={creating}
+          />
+          <label className="privacy-create-note">
+            <span className="label-with-hint">
               Nota
-              <input value={createNote} onChange={(event) => setCreateNote(event.target.value)} placeholder="origem do e-mail" />
-            </label>
-            <button className="primary-button" type="submit" disabled={creating}>Abrir solicitação</button>
-          </form>
-        </Section>
-      ) : null}
+              <InfoHint id="privacy-create-note-help" topic="nota" text={NOTE_HELP} />
+            </span>
+            <textarea
+              rows={2}
+              value={createNote}
+              aria-describedby="privacy-create-note-help"
+              onChange={(event) => setCreateNote(event.target.value)}
+              placeholder="Ex.: corrigir o sobrenome para Mendes"
+            />
+          </label>
+          <label>
+            Tipo
+            <select aria-label="Tipo da solicitação" value={createType} onChange={(event) => setCreateType(event.target.value as PrivacyRequestType)}>
+              <option value="access">Acesso</option>
+              <option value="deletion">Exclusão</option>
+              <option value="correction">Correção</option>
+              <option value="portability">Portabilidade</option>
+              <option value="opt_out_share">Não compartilhar dados</option>
+            </select>
+          </label>
+          <MarketSelect
+            user={user}
+            value={scopedCreateMarket}
+            onChange={setCreateMarket}
+          />
+          <p className="muted">{scopedCreateMarket === 'US' ? 'Prazo EUA: 45 dias' : 'Prazo Brasil: 15 dias'}</p>
+        </form>
+      </Dialog>
 
       <Section title="Solicitações" description={`Total: ${data?.total ?? '—'}`}>
         <div className="table-shell table-scroll">
@@ -274,13 +339,16 @@ export function PrivacyRequestsPage() {
                     {item.overdue ? <span className="badge-warning">Atrasado</span> : '—'}
                   </td>
                   <td>
-                    <Link
-                      className="ghost-button"
-                      to={`/privacy/requests/${item.id}`}
-                      aria-label={canWrite ? `Tratar solicitação ${item.id}` : `Ver solicitação ${item.id}`}
-                    >
-                      {canWrite ? 'Tratar' : 'Ver'}
-                    </Link>
+                    {/* A closed request has nothing left to handle: it only opens to be read. */}
+                    {canWrite && !isTerminalPrivacyStatus(item.status) ? (
+                      <Link className="ghost-button" to={`/privacy/requests/${item.id}`} aria-label={`Tratar solicitação ${item.id}`}>
+                        Tratar
+                      </Link>
+                    ) : (
+                      <Link className="ghost-button" to={`/privacy/requests/${item.id}`} aria-label={`Ver solicitação ${item.id}`}>
+                        Ver
+                      </Link>
+                    )}
                   </td>
                 </tr>
               ))}
