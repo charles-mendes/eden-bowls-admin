@@ -549,7 +549,7 @@ export function NutritionSettingsPage() {
                 {!canWrite ? <p className="readonly-note">Somente leitura: os fatores são definidos pela veterinária.</p> : null}
                 <p className="nutri-formula">
                   <Hinted id="help-factor" label="Como o fator vira gramas" text={HELP.factor} />
-                  <span>Cão: kcal/dia = fator × peso<sup>0,75</sup> · Gato: fator × peso<sup>0,67</sup> (acima do peso: peso<sup>0,4</sup>) · g/dia = kcal/dia ÷ NEM × 1000</span>
+                  <span>NEM (kcal/dia): cão = fator × peso<sup>0,75</sup> · gato = fator × peso<sup>0,67</sup> (acima do peso: peso<sup>0,4</sup>) · g/dia = NEM × 1000 ÷ EM do alimento</span>
                 </p>
               </Section>
               <div className="segmented nutri-species" role="group" aria-label="Espécie">
@@ -639,8 +639,8 @@ export function NutritionSettingsPage() {
                 </Section>
               )}
               <Section
-                title={`NEM padrão de ${speciesOption.label.toLowerCase()}`}
-                hint={<InfoHint id="help-nem" topic={`nem padrão de ${speciesOption.label.toLowerCase()}`} text={HELP.nem} />}
+                title={`EM do alimento para ${speciesOption.label.toLowerCase()}`}
+                hint={<InfoHint id="help-nem" topic={`em do alimento para ${speciesOption.label.toLowerCase()}`} text={HELP.nem} />}
                 description="Energia metabolizável do alimento, em kcal/kg, quando a receita não informa a dela."
               >
                 <div className="ship-fields ship-fields-4 nutri-factor-grid">

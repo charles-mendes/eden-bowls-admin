@@ -105,7 +105,8 @@ export type ParametersOverview = {
 }
 
 export const FACTOR_RANGE = { min: 1, max: 400 }
-export const NEM_RANGE = { min: 1000, max: 8000 }
+// EM of the food: fresh food sits around 950 to 1500 kcal/kg.
+export const NEM_RANGE = { min: 500, max: 8000 }
 export const MONTHS_RANGE = { min: 1, max: 240 }
 
 export type FactorSection = 'combination' | 'combination_giant' | 'state' | 'base' | 'nem'
@@ -115,7 +116,7 @@ export const FACTOR_SECTIONS: Array<{ key: FactorSection; title: string; descrip
   { key: 'combination_giant', title: 'Matriz de raças gigantes', description: 'Cão adulto em manutenção acima de 40 kg, ou de uma raça gigante (lista abaixo), mesmo mais leve.' },
   { key: 'state', title: 'Fatores de estágio', description: 'Filhote, gestante e sênior usam o fator do estágio, não a matriz.' },
   { key: 'base', title: 'Fatores de gatos', description: 'Gato em ambiente interno, ou ativo quando a atividade é alta.' },
-  { key: 'nem', title: 'NEM padrão', description: 'Energia metabolizável do alimento, em kcal/kg.' },
+  { key: 'nem', title: 'EM do alimento', description: 'Energia metabolizável do alimento, em kcal/kg.' },
 ]
 
 const BASE_LABELS: Record<string, string> = {
@@ -131,7 +132,8 @@ const STATE_LABELS: Record<string, string> = {
   CRESCIMENTO_81_100: 'Crescimento de 81% a 100%',
 }
 
-const NEM_LABELS: Record<string, string> = { dog: 'NEM de cão (kcal/kg)', cat: 'NEM de gato (kcal/kg)' }
+// The API calls this `nem`; the veterinarian's document calls it EM da dieta (NEM there is the kcal per day).
+const NEM_LABELS: Record<string, string> = { dog: 'EM do alimento para cães (kcal/kg)', cat: 'EM do alimento para gatos (kcal/kg)' }
 
 const GIANT_PREFIX = 'Gigante: '
 
@@ -202,7 +204,7 @@ export function nutritionErrorMessage(error: unknown, fallback: string) {
     if (error.code === 'life_stage_breed_invalid') return `Raça inválida (${list}).`
     if (error.code === 'life_stage_breed_exists') return 'Essa raça já está na lista deste mercado.'
     if (error.code === 'life_stage_breed_not_found') return 'Raça não encontrada neste mercado.'
-    if (error.code === 'nutrition_parameters_invalid') return `Parâmetros inválidos: ${list}. Fatores vão de 1 a 400 e NEM de 1000 a 8000.`
+    if (error.code === 'nutrition_parameters_invalid') return `Parâmetros inválidos: ${list}. Fatores vão de 1 a 400 e EM do alimento de 500 a 8000 kcal/kg.`
     if (error.code === 'nutrition_draft_missing') return 'Não há rascunho. Salve um rascunho antes.'
     if (error.code === 'nutrition_parameter_set_not_found') return 'Conjunto não encontrado.'
     if (error.code === 'market_required') return 'Escolha um mercado.'
@@ -220,12 +222,12 @@ export const HELP = {
   breedNames: 'O cliente pode escrever a raça em português ou em inglês. A comparação ignora acentos e maiúsculas.',
   breedStatus: 'Uma raça desativada continua na lista, mas deixa de valer na avaliação de fase. Reative para voltar a valer.',
   preview: 'Antes de salvar, a prévia conta quantos pets com assinatura ativa mudariam de fase. Se algum mudar, a alteração só é salva depois de confirmar.',
-  factor: 'Fator de energia (NRC 2006, FEDIAF 2020): as kcal por dia são o fator × peso elevado ao expoente. Cão usa peso^0,75. Gato usa peso^0,67, ou peso^0,4 quando está acima do peso.',
+  factor: 'Fator de energia (NRC 2006, FEDIAF 2020). A NEM (necessidade energética de manutenção, em kcal por dia) é o fator × peso elevado ao expoente. Cão usa peso^0,75. Gato usa peso^0,67, ou peso^0,4 quando está acima do peso.',
   base: 'Tabela 1: 60 para gato em ambiente interno (faixa 52 a 75) e 100 para gato ativo. O gato acima do peso mantém o fator e muda o expoente para 0,4.',
   state: 'Tabela 1: filhote pelo percentual do peso adulto (210, 175, 140), gestante nas primeiras 4 semanas (132) e sênior (95, faixa 80 a 120). Valem no lugar da matriz.',
   combination: 'Aba Constantes da planilha: o fator do cão adulto em manutenção pela combinação castrado × atividade × escore que o tutor informa.',
   combination_giant: 'Fatores da zootecnista Izabella para raças gigantes, que têm metabolismo mais lento. Valem acima de 40 kg e para as raças gigantes listadas, no lugar da matriz de manutenção.',
-  nem: 'Energia Metabolizável do alimento, em kcal por kg. Gramas por dia = kcal por dia ÷ NEM × 1000. Uma receita com NEM próprio usa o dela.',
+  nem: 'EM (energia metabolizável) do alimento, em kcal por kg. Gramas por dia = NEM (kcal por dia) × 1000 ÷ EM. A recomendação usa a EM da receita, ou a média da linha do pet (adulto 1200, filhote 1500, sênior 1150); este valor só vale quando nenhuma receita informa a dela. Não há receita de gato, então o gato usa sempre este valor.',
   breedGroups: 'Raças que usam a matriz de raças gigantes mesmo com 40 kg ou menos, por orientação da zootecnista (Dogue Alemão, Terra Nova, São Bernardo e similares).',
   draft: 'As mudanças vão para um rascunho, que não afeta clientes. Teste no Simulador nutricional e publique: aí as próximas recomendações dos dois mercados passam a usá-lo.',
   history: 'Conjuntos publicados antes. Um conjunto antigo pode voltar como rascunho, para ser publicado de novo.',

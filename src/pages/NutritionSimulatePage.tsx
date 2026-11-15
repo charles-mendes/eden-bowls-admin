@@ -391,7 +391,7 @@ export function NutritionSimulatePage() {
             <MetricCard label="Energia" value={`${result.energia_kcal_dia} kcal`} />
             <MetricCard label="Gramas / dia" value={result.display.daily} />
             <MetricCard label="Por refeição" value={`${result.quantidade_por_refeicao} × ${result.refeicoes}`} />
-            <MetricCard label="Fator" value={result.fator_aplicado} hint={`${result.expoente_peso ? `peso^${String(result.expoente_peso).replace('.', ',')} · ` : ''}NEM ${result.nem_kcal_kg} · ${result.porte} · ${result.especie}`} />
+            <MetricCard label="Fator" value={result.fator_aplicado} hint={`${result.expoente_peso ? `peso^${String(result.expoente_peso).replace('.', ',')} · ` : ''}EM ${result.nem_kcal_kg} kcal/kg · ${result.porte} · ${result.especie}`} />
           </div>
           {result.parameter_set ? <p className="muted">{copy.parameterSet(result.parameter_set)}</p> : null}
         </Section>

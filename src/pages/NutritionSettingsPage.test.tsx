@@ -27,7 +27,7 @@ const PARAMETERS = {
   combination_giant: { 'SIM-BAIXO-ADEQUADO': 85, 'NAO-ALTO-ABAIXO': 115 },
   state: { SENIOR: 95, GESTANTE: 132 },
   base: { cat: 60, cat_active: 100 },
-  nem: { dog: 3600, cat: 3800 },
+  nem: { dog: 1200, cat: 1200 },
   breed_groups: { dogue: ['dogue alemao', 'great dane'], slow_metabolism: ['sao bernardo'], terranova: ['terra nova'] },
 }
 
@@ -361,7 +361,7 @@ describe('NutritionSettingsPage', () => {
     expect(screen.getByRole('heading', { name: 'Matriz de raças gigantes' })).toBeInTheDocument()
     expect(screen.getByLabelText('Gigante: Não castrado · atividade alta · abaixo do peso')).toHaveValue(115)
     expect(screen.getByRole('heading', { name: 'Raças gigantes' })).toBeInTheDocument()
-    expect(screen.getByLabelText('NEM de cão (kcal/kg)')).toHaveValue(3600)
+    expect(screen.getByLabelText('EM do alimento para cães (kcal/kg)')).toHaveValue(1200)
     expect(screen.queryByLabelText('Gato em ambiente interno')).not.toBeInTheDocument()
 
     await user.click(within(screen.getByRole('group', { name: 'Espécie' })).getByRole('button', { name: 'Gatos' }))
@@ -369,7 +369,7 @@ describe('NutritionSettingsPage', () => {
     expect(await screen.findByLabelText('Gato em ambiente interno')).toHaveValue(60)
     expect(screen.getByLabelText('Gato ativo (atividade alta)')).toHaveValue(100)
     expect(screen.getByText(/Expoente do peso:/)).toHaveTextContent('0,67')
-    expect(screen.getByLabelText('NEM de gato (kcal/kg)')).toHaveValue(3800)
+    expect(screen.getByLabelText('EM do alimento para gatos (kcal/kg)')).toHaveValue(1200)
     expect(screen.queryByRole('heading', { name: 'Matriz de manutenção' })).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Sênior')).not.toBeInTheDocument()
 
@@ -405,8 +405,8 @@ describe('NutritionSettingsPage', () => {
     }, '/nutrition/settings?aba=fatores')
 
     await user.click(await screen.findByRole('button', { name: 'Salvar rascunho' }))
-    expect(await screen.findByRole('alert')).toHaveTextContent('NEM de gato (kcal/kg)')
-    expect(await screen.findByLabelText('NEM de gato (kcal/kg)')).toHaveAttribute('aria-invalid', 'true')
+    expect(await screen.findByRole('alert')).toHaveTextContent('EM do alimento para gatos (kcal/kg)')
+    expect(await screen.findByLabelText('EM do alimento para gatos (kcal/kg)')).toHaveAttribute('aria-invalid', 'true')
   })
 
   it('the publication made by the deploy shows the system and its reason', async () => {
