@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
+import { helpText } from '../components/HelpText'
 import { InfoHint } from '../components/InfoHint'
 import { NutritionEditLog } from '../components/NutritionEditLog'
 import { PageFrame } from '../components/PageFrame'
@@ -127,26 +128,12 @@ const EMAIL_HELP = {
 } as const
 
 // An automated email field with its label, its "i" and the control, which the help text describes.
-const HELP_LEAD = /^(Quando|Ligado|Desligado|Por quê|Como funciona|Não é intervalo de minutos):/
-
-// One paragraph per line of `help`, its lead word ("Quando:", "Ligado:"…) in bold.
-function helpLines(help: readonly string[]) {
-  return help.map((line) => {
-    const lead = HELP_LEAD.exec(line)?.[0]
-    return (
-      <span key={line} className="hint-line">
-        {lead ? <><strong>{lead}</strong>{line.slice(lead.length)}</> : line}
-      </span>
-    )
-  })
-}
-
 function EmailField({ id, label, help, children }: { id: string; label: string; help: readonly string[]; children: ReactNode }) {
   return (
     <div className="ship-field field-with-hint">
       <div className="field-label-row">
         <label htmlFor={id}>{label}</label>
-        <InfoHint id={`${id}-hint`} topic={label.toLowerCase()} text={helpLines(help)} />
+        <InfoHint id={`${id}-hint`} topic={label.toLowerCase()} text={helpText(help)} />
       </div>
       {children}
     </div>

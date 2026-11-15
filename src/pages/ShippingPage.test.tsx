@@ -40,6 +40,53 @@ describe('ShippingPage', () => {
     expect(put?.body).not.toHaveProperty('us')
   })
 
+  it('explains every Brazil rule in its tip, and the tip opens on click', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(adminUser)
+    renderAuthedPage(<ShippingPage />, '/config/shipping')
+
+    const radius = await screen.findByRole('spinbutton', { name: 'Raio de entrega' })
+    expect(radius).toHaveAccessibleDescription(expect.stringContaining('Distância máxima entre a sede e o endereço do cliente'))
+    expect(screen.getByRole('switch', { name: /Entrega no Brasil ativa/ })).toHaveAccessibleDescription(expect.stringContaining('Desligado: a loja não cota frete'))
+    expect(screen.getByRole('spinbutton', { name: 'Valor por km' })).toHaveAccessibleDescription(expect.stringContaining('distância × valor por km'))
+    expect(screen.getByRole('textbox', { name: 'Nome exibido na loja' })).toHaveAccessibleDescription(expect.stringContaining('Nome do frete'))
+    expect(screen.getByRole('spinbutton', { name: 'Taxa mínima' })).toHaveAccessibleDescription(expect.stringContaining('Menor valor de frete'))
+    expect(screen.getByRole('spinbutton', { name: 'Taxa máxima' })).toHaveAccessibleDescription(expect.stringContaining('Vazio: sem limite'))
+    expect(screen.getByRole('spinbutton', { name: 'Fator de correção' })).toHaveAccessibleDescription(expect.stringContaining('Plano B do cálculo de distância'))
+
+    await user.click(screen.getByRole('button', { name: 'Sobre raio de entrega' }))
+    expect(screen.getByRole('tooltip', { name: /Acima do raio/ })).toBeVisible()
+  })
+
+  it('explains every United States rule, box and simulator field in its tip', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    installAdminFetchMock(adminUser)
+    renderAuthedPage(<ShippingPage />, '/config/shipping?mercado=us', '/config/shipping')
+
+    await user.click(await screen.findByRole('radio', { name: /UPS/ }))
+    expect(screen.getByRole('button', { name: 'Sobre o modo de cotação' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sobre serviços aceitos' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sobre caixa da cotação do checkout' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Sobre as caixas de envio' })).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: 'Peso' })).toHaveAccessibleDescription(expect.stringContaining('1 kg ≈ 2,2 lb'))
+    expect(screen.getByRole('spinbutton', { name: 'Gelo seco por caixa' })).toHaveAccessibleDescription(expect.stringContaining('UN1845'))
+    expect(screen.getByRole('spinbutton', { name: 'Prazo máximo de trânsito' })).toHaveAccessibleDescription(expect.stringContaining('Maior número de dias úteis'))
+    expect(screen.getByRole('switch', { name: /Se a UPS falhar/ })).toHaveAccessibleDescription(expect.stringContaining('Plano B para quando a UPS não responde'))
+    expect(screen.getByRole('spinbutton', { name: 'Valor' })).toHaveAccessibleDescription(expect.stringContaining('Valor de reserva: cobrado só quando a UPS não responde'))
+    expect(screen.getByRole('textbox', { name: 'Prazo exibido' })).toHaveAccessibleDescription(expect.stringContaining('o prazo vem da própria UPS'))
+    for (const field of screen.getAllByRole('spinbutton', { name: 'Máximo de pacotes' })) {
+      expect(field).toHaveAccessibleDescription(expect.stringContaining('Pacotes de 300 g e de 500 g contam igual'))
+    }
+    for (const field of screen.getAllByRole('spinbutton', { name: 'Peso vazio' })) {
+      expect(field).toHaveAccessibleDescription(expect.stringContaining('com o isolamento térmico'))
+    }
+
+    await user.click(screen.getByRole('tab', { name: /Simulador/ }))
+    expect(await screen.findByRole('textbox', { name: 'ZIP code' })).toHaveAccessibleDescription(expect.stringContaining('sandbox da UPS'))
+  })
+
   it('opens on Regras for readonly accounts and hides every mutation', async () => {
     const user = userEvent.setup()
     seedAuth()
@@ -86,6 +133,8 @@ describe('ShippingPage', () => {
     const card = await screen.findByRole('article', { name: 'Sede Brasil' })
     expect(screen.queryByRole('article', { name: 'Sede Estados Unidos' })).not.toBeInTheDocument()
     await user.click(within(card).getByRole('button', { name: 'Cadastrar endereço' }))
+    expect(within(card).getByRole('textbox', { name: 'CEP' })).toHaveAccessibleDescription(expect.stringContaining('a distância de cada cliente, e o frete, são medidos a partir deste endereço'))
+    expect(within(card).getByRole('combobox', { name: 'UF' })).toHaveAccessibleDescription(expect.stringContaining('Vem do CEP'))
 
     const save = within(card).getByRole('button', { name: 'Salvar sede' })
     expect(save).toBeDisabled()
@@ -213,7 +262,7 @@ describe('ShippingPage', () => {
     // The settings response has no max_transit_days, so the field starts at the value before the setting.
     const transit = screen.getByRole('spinbutton', { name: /Prazo máximo de trânsito/ })
     expect(transit).toHaveValue(1)
-    expect(screen.queryByText(/caixa térmica/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Confirme que ela aguenta/)).not.toBeInTheDocument()
 
     await user.clear(transit)
     await user.type(transit, '2')

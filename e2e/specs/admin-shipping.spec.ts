@@ -33,7 +33,7 @@ test.describe('Admin shipping', () => {
   test('asks before switching market with unsaved rules', async ({ page }) => {
     const { captured } = await openAuthed(page, '/config/shipping?aba=regras', e2eProfiles.admin)
 
-    await page.getByLabel('Raio de entrega').fill('50')
+    await page.getByLabel('Raio de entrega', { exact: true }).fill('50')
     await expect(page.getByRole('tab', { name: /^Regras/ })).toContainText('não salvo')
 
     await page.getByRole('group', { name: 'Mercado' }).getByRole('button', { name: 'EUA' }).click()
@@ -41,7 +41,7 @@ test.describe('Admin shipping', () => {
     await expect(dialog).toContainText('regras do Brasil')
 
     await dialog.getByRole('button', { name: 'Continuar editando' }).click()
-    await expect(page.getByLabel('Raio de entrega')).toHaveValue('50')
+    await expect(page.getByLabel('Raio de entrega', { exact: true })).toHaveValue('50')
 
     await page.getByRole('group', { name: 'Mercado' }).getByRole('button', { name: 'EUA' }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Descartar e trocar' }).click()

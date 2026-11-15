@@ -1,6 +1,9 @@
-import { useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
+import { HelpLabel } from '../components/HelpLabel'
+import { helpText } from '../components/HelpText'
+import { InfoHint } from '../components/InfoHint'
 import { HeadquartersCard } from '../components/shipping/HeadquartersCard'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
@@ -20,6 +23,7 @@ import {
   type ShippingSettings,
   type UpsSimulation,
 } from '../lib/shippingSettings'
+import { SHIPPING_HELP } from '../lib/shippingHelp'
 
 type SettingsResponse = { success: boolean; data: { settings: Partial<ShippingSettings> } }
 
@@ -40,6 +44,7 @@ const STEP_ICON: Record<string, string> = { ok: '✓', error: '✕', warning: '!
 function NumberField({
   label,
   hint,
+  help,
   value,
   onChange,
   step = '0.01',
@@ -50,6 +55,7 @@ function NumberField({
 }: {
   label: string
   hint?: ReactNode
+  help?: readonly string[]
   value: number | null
   onChange: (value: number | null) => void
   step?: string
@@ -58,47 +64,67 @@ function NumberField({
   allowEmpty?: boolean
   disabled?: boolean
 }) {
+  const id = useId()
   return (
-    <label className="ship-field">
-      <span>{label}</span>
+    <div className="ship-field">
+      <HelpLabel htmlFor={id} label={label} help={help} />
       <span className="ship-affix">
         {prefix ? <em>{prefix}</em> : null}
         <input
+          id={id}
           type="number"
           step={step}
           min="0"
           value={value ?? ''}
           disabled={disabled}
+          aria-describedby={help ? `${id}-help` : undefined}
           placeholder={allowEmpty ? 'Sem limite' : undefined}
           onChange={(event) => onChange(event.target.value === '' ? (allowEmpty ? null : 0) : Number(event.target.value))}
         />
         {suffix ? <em>{suffix}</em> : null}
       </span>
       {hint ? <small className="ship-hint">{hint}</small> : null}
-    </label>
+    </div>
   )
 }
 
-function TextField({ label, hint, value, onChange, disabled }: { label: string; hint?: string; value: string; onChange: (value: string) => void; disabled?: boolean }) {
+function TextField({ label, hint, help, value, onChange, disabled }: { label: string; hint?: string; help?: readonly string[]; value: string; onChange: (value: string) => void; disabled?: boolean }) {
+  const id = useId()
   return (
-    <label className="ship-field">
-      <span>{label}</span>
-      <input value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+    <div className="ship-field">
+      <HelpLabel htmlFor={id} label={label} help={help} />
+      <input id={id} value={value} disabled={disabled} aria-describedby={help ? `${id}-help` : undefined} onChange={(event) => onChange(event.target.value)} />
       {hint ? <small className="ship-hint">{hint}</small> : null}
-    </label>
+    </div>
   )
 }
 
-function Toggle({ checked, onChange, label, description, disabled }: { checked: boolean; onChange: (value: boolean) => void; label: string; description?: string; disabled?: boolean }) {
+function Toggle({ checked, onChange, label, description, help, disabled }: { checked: boolean; onChange: (value: boolean) => void; label: string; description?: string; help?: readonly string[]; disabled?: boolean }) {
+  const id = useId()
   return (
-    <label className="ship-toggle">
-      <input type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
-      <span className="ship-toggle-track" aria-hidden="true" />
-      <span>
-        <strong>{label}</strong>
-        {description ? <small className="ship-hint">{description}</small> : null}
+    <div className="ship-toggle-row">
+      <label className="ship-toggle">
+        <input type="checkbox" role="switch" checked={checked} disabled={disabled} aria-describedby={help ? `${id}-help` : undefined} onChange={(event) => onChange(event.target.checked)} />
+        <span className="ship-toggle-track" aria-hidden="true" />
+        <span>
+          <strong>{label}</strong>
+          {description ? <small className="ship-hint">{description}</small> : null}
+        </span>
+      </label>
+      {help ? <InfoHint id={`${id}-help`} topic={label.toLowerCase()} text={helpText(help)} wide /> : null}
+    </div>
+  )
+}
+
+// A fieldset legend with its "i".
+function HelpLegend({ id, label, help }: { id: string; label: string; help: readonly string[] }) {
+  return (
+    <legend>
+      <span className="field-label-row">
+        <span>{label}</span>
+        <InfoHint id={id} topic={label.toLowerCase()} text={helpText(help)} wide />
       </span>
-    </label>
+    </legend>
   )
 }
 
@@ -383,25 +409,25 @@ export function ShippingPage() {
                 <div><small>Valor por km</small><strong>{formatMoney(br.rule.per_km, 'BRL')}</strong></div>
                 <div><small>Prazo</small><strong>Mesmo dia</strong></div>
               </div>
-              <Toggle checked={br.enabled} disabled={!canWrite} onChange={(enabled) => updateBr({ enabled })} label="Entrega no Brasil ativa" description="Desligada, a loja não cota frete para CEPs brasileiros." />
+              <Toggle checked={br.enabled} disabled={!canWrite} onChange={(enabled) => updateBr({ enabled })} label="Entrega no Brasil ativa" help={SHIPPING_HELP.br.enabled} description="Desligada, a loja não cota frete para CEPs brasileiros." />
               <div className="ship-fields">
-                <NumberField label="Raio de entrega" suffix="km" step="1" disabled={!canWrite} value={br.rule.max_distance_km} onChange={(value) => updateBrRule({ max_distance_km: value ?? 0 })} hint="Clientes mais longe que isso da sede não conseguem assinar." />
-                <NumberField label="Valor por km" prefix="R$" disabled={!canWrite} value={br.rule.per_km} onChange={(value) => updateBrRule({ per_km: value ?? 0 })} hint={`Ex.: 10 km custam ${formatMoney(br.rule.per_km * 10, 'BRL')}.`} />
-                <TextField label="Nome exibido na loja" disabled={!canWrite} value={br.label} onChange={(label) => updateBr({ label })} />
+                <NumberField label="Raio de entrega" help={SHIPPING_HELP.br.radius} suffix="km" step="1" disabled={!canWrite} value={br.rule.max_distance_km} onChange={(value) => updateBrRule({ max_distance_km: value ?? 0 })} hint="Clientes mais longe que isso da sede não conseguem assinar." />
+                <NumberField label="Valor por km" help={SHIPPING_HELP.br.perKm} prefix="R$" disabled={!canWrite} value={br.rule.per_km} onChange={(value) => updateBrRule({ per_km: value ?? 0 })} hint={`Ex.: 10 km custam ${formatMoney(br.rule.per_km * 10, 'BRL')}.`} />
+                <TextField label="Nome exibido na loja" help={SHIPPING_HELP.br.label} disabled={!canWrite} value={br.label} onChange={(label) => updateBr({ label })} />
               </div>
               <details className="ship-advanced">
                 <summary>Ajustes avançados</summary>
                 <div className="ship-fields">
-                  <NumberField label="Taxa mínima" prefix="R$" disabled={!canWrite} value={br.rule.min_fee} onChange={(value) => updateBrRule({ min_fee: value ?? 0 })} hint="Cobrada em entregas muito perto, quando km × valor fica abaixo dela. 0 desliga." />
-                  <NumberField label="Taxa máxima" prefix="R$" allowEmpty disabled={!canWrite} value={br.rule.max_fee} onChange={(value) => updateBrRule({ max_fee: value })} hint="Limite de frete. Vazio = sem limite." />
-                  <NumberField label="Fator de correção" suffix="×" disabled={!canWrite} value={br.rule.road_factor} onChange={(value) => updateBrRule({ road_factor: value ?? 1 })} hint="Usado só quando o cálculo de rota falha: distância em linha reta × fator." />
+                  <NumberField label="Taxa mínima" help={SHIPPING_HELP.br.minFee} prefix="R$" disabled={!canWrite} value={br.rule.min_fee} onChange={(value) => updateBrRule({ min_fee: value ?? 0 })} hint="Cobrada em entregas muito perto, quando km × valor fica abaixo dela. 0 desliga." />
+                  <NumberField label="Taxa máxima" help={SHIPPING_HELP.br.maxFee} prefix="R$" allowEmpty disabled={!canWrite} value={br.rule.max_fee} onChange={(value) => updateBrRule({ max_fee: value })} hint="Limite de frete. Vazio = sem limite." />
+                  <NumberField label="Fator de correção" help={SHIPPING_HELP.br.roadFactor} suffix="×" disabled={!canWrite} value={br.rule.road_factor} onChange={(value) => updateBrRule({ road_factor: value ?? 1 })} hint="Usado só quando o cálculo de rota falha: distância em linha reta × fator." />
                 </div>
               </details>
             </Section>
           ) : (
-            <>
-              <Section title="Modo de cotação" description="Como a loja calcula o frete para os Estados Unidos.">
-                <Toggle checked={us.enabled} disabled={!canWrite} onChange={(enabled) => updateUs({ enabled })} label="Entrega nos EUA ativa" />
+            <div className="ship-rules-columns">
+              <Section title="Modo de cotação" hint={<InfoHint id="help-quote-mode" topic="o modo de cotação" text={helpText(SHIPPING_HELP.us.quoteMode)} wide />} description="Como a loja calcula o frete para os Estados Unidos.">
+                <Toggle checked={us.enabled} disabled={!canWrite} onChange={(enabled) => updateUs({ enabled })} label="Entrega nos EUA ativa" help={SHIPPING_HELP.us.enabled} />
                 <div className="ship-mode-grid" role="radiogroup" aria-label="Modo de cotação">
                   <label className={upsMode ? 'ship-mode active' : 'ship-mode'}>
                     <input type="radio" name="quote_mode" checked={upsMode} disabled={!canWrite} onChange={() => updateUs({ quote_mode: 'ups' })} />
@@ -419,7 +445,7 @@ export function ShippingPage() {
               {upsMode ? (
                 <Section title="UPS" description="A UPS calcula valor e prazo pelo endereço. Credenciais ficam no servidor.">
                   <fieldset className="ship-fieldset">
-                    <legend>Serviços aceitos</legend>
+                    <HelpLegend id="help-ups-services" label="Serviços aceitos" help={SHIPPING_HELP.us.services} />
                     <div className="ship-chips">
                       {UPS_SERVICES.map(([code, label]) => (
                         <label key={code} className={us.allowed_service_codes.includes(code) ? 'ship-chip active' : 'ship-chip'}>
@@ -431,17 +457,18 @@ export function ShippingPage() {
                     <small className="ship-hint">O checkout usa UPS Ground quando aceito; senão, o serviço aceito mais barato.</small>
                   </fieldset>
                   <fieldset className="ship-fieldset">
-                    <legend>Caixa da cotação do checkout</legend>
+                    <HelpLegend id="help-quote-box" label="Caixa da cotação do checkout" help={SHIPPING_HELP.us.quoteBox} />
                     <small className="ship-hint">Só calcula o frete do checkout e do simulador. As etiquetas usam as caixas de envio.</small>
                     <div className="ship-fields ship-fields-4">
-                      <NumberField label="Peso" suffix="lb" step="0.1" disabled={!canWrite} value={us.package.weight_lb} onChange={(value) => updatePackage({ weight_lb: value ?? 0 })} />
-                      <NumberField label="Comprimento" suffix="in" step="0.1" disabled={!canWrite} value={us.package.length_in} onChange={(value) => updatePackage({ length_in: value ?? 0 })} />
-                      <NumberField label="Largura" suffix="in" step="0.1" disabled={!canWrite} value={us.package.width_in} onChange={(value) => updatePackage({ width_in: value ?? 0 })} />
-                      <NumberField label="Altura" suffix="in" step="0.1" disabled={!canWrite} value={us.package.height_in} onChange={(value) => updatePackage({ height_in: value ?? 0 })} />
+                      <NumberField label="Peso" help={SHIPPING_HELP.us.weight} suffix="lb" step="0.1" disabled={!canWrite} value={us.package.weight_lb} onChange={(value) => updatePackage({ weight_lb: value ?? 0 })} />
+                      <NumberField label="Comprimento" help={SHIPPING_HELP.us.dimension} suffix="in" step="0.1" disabled={!canWrite} value={us.package.length_in} onChange={(value) => updatePackage({ length_in: value ?? 0 })} />
+                      <NumberField label="Largura" help={SHIPPING_HELP.us.dimension} suffix="in" step="0.1" disabled={!canWrite} value={us.package.width_in} onChange={(value) => updatePackage({ width_in: value ?? 0 })} />
+                      <NumberField label="Altura" help={SHIPPING_HELP.us.dimension} suffix="in" step="0.1" disabled={!canWrite} value={us.package.height_in} onChange={(value) => updatePackage({ height_in: value ?? 0 })} />
                     </div>
                     <div className="ship-fields">
                       <NumberField
                         label="Gelo seco por caixa"
+                        help={SHIPPING_HELP.us.dryIce}
                         suffix="kg"
                         step="0.1"
                         disabled={!canWrite}
@@ -456,6 +483,7 @@ export function ShippingPage() {
                     <div className="ship-fields">
                       <NumberField
                         label="Prazo máximo de trânsito"
+                        help={SHIPPING_HELP.us.transitDays}
                         suffix="dias úteis"
                         step="1"
                         disabled={!canWrite}
@@ -468,43 +496,43 @@ export function ShippingPage() {
                       <small className="ship-hint warning-text">A caixa térmica foi pensada para cerca de 48 horas. Confirme que ela aguenta {us.max_transit_days} dias úteis de trânsito.</small>
                     ) : null}
                   </fieldset>
-                  <Toggle checked={us.fallback_enabled} disabled={!canWrite} onChange={(fallback_enabled) => updateUs({ fallback_enabled })} label="Se a UPS falhar, cobrar valor fixo" description="Sem isso, o cliente não consegue fechar o pedido enquanto a UPS estiver fora." />
+                  <Toggle checked={us.fallback_enabled} disabled={!canWrite} onChange={(fallback_enabled) => updateUs({ fallback_enabled })} label="Se a UPS falhar, cobrar valor fixo" help={SHIPPING_HELP.us.fallback} description="Sem isso, o cliente não consegue fechar o pedido enquanto a UPS estiver fora." />
                 </Section>
               ) : null}
 
               {!upsMode || us.fallback_enabled ? (
                 <Section title={upsMode ? 'Valor de reserva' : 'Valor fixo'} description={upsMode ? 'Usado só quando a UPS não responde.' : 'Cobrado em todo pedido dos Estados Unidos.'}>
                   <div className="ship-fields">
-                    <NumberField label="Valor" prefix="US$" disabled={!canWrite} value={us.cost} onChange={(value) => updateUs({ cost: value ?? 0 })} />
-                    <TextField label="Transportadora" disabled={!canWrite} value={us.carrier} onChange={(carrier) => updateUs({ carrier })} />
-                    <TextField label="Prazo exibido" hint="Ex.: 3–5 business days" disabled={!canWrite} value={us.delivery} onChange={(delivery) => updateUs({ delivery })} />
-                    <TextField label="Nome exibido na loja" disabled={!canWrite} value={us.label} onChange={(label) => updateUs({ label })} />
+                    <NumberField label="Valor" help={SHIPPING_HELP.us.cost} prefix="US$" disabled={!canWrite} value={us.cost} onChange={(value) => updateUs({ cost: value ?? 0 })} />
+                    <TextField label="Transportadora" help={SHIPPING_HELP.us.carrier} disabled={!canWrite} value={us.carrier} onChange={(carrier) => updateUs({ carrier })} />
+                    <TextField label="Prazo exibido" help={SHIPPING_HELP.us.delivery} hint="Ex.: 3–5 business days" disabled={!canWrite} value={us.delivery} onChange={(delivery) => updateUs({ delivery })} />
+                    <TextField label="Nome exibido na loja" help={SHIPPING_HELP.us.label} disabled={!canWrite} value={us.label} onChange={(label) => updateUs({ label })} />
                   </div>
                 </Section>
               ) : null}
 
               {/* shipping-boxes: labels use these boxes in either quote mode, so they show outside the UPS block. */}
-              <Section title="Caixas de envio" description="A API divide cada pedido nestas caixas pela quantidade de pacotes. A etiqueta UPS leva uma embalagem por caixa.">
+              <Section title="Caixas de envio" hint={<InfoHint id="help-boxes" topic="as caixas de envio" text={helpText(SHIPPING_HELP.boxes.section)} wide />} description="A API divide cada pedido nestas caixas pela quantidade de pacotes. A etiqueta UPS leva uma embalagem por caixa.">
                 {SHIPPING_BOX_KEYS.map((key) => {
                   const box = us.boxes[key]
                   return (
                     <fieldset key={key} className="ship-fieldset">
                       <legend>{box.label}</legend>
                       <div className="ship-fields ship-fields-4">
-                        <NumberField label="Comprimento" suffix="in" step="0.1" disabled={!canWrite} value={box.length_in} onChange={(value) => updateBox(key, { length_in: value ?? 0 })} />
-                        <NumberField label="Largura" suffix="in" step="0.1" disabled={!canWrite} value={box.width_in} onChange={(value) => updateBox(key, { width_in: value ?? 0 })} />
-                        <NumberField label="Altura" suffix="in" step="0.1" disabled={!canWrite} value={box.height_in} onChange={(value) => updateBox(key, { height_in: value ?? 0 })} />
-                        <NumberField label="Peso vazio" suffix="kg" step="0.1" disabled={!canWrite} value={box.empty_weight_kg} onChange={(value) => updateBox(key, { empty_weight_kg: value ?? 0 })} />
+                        <NumberField label="Comprimento" help={SHIPPING_HELP.boxes.dimension} suffix="in" step="0.1" disabled={!canWrite} value={box.length_in} onChange={(value) => updateBox(key, { length_in: value ?? 0 })} />
+                        <NumberField label="Largura" help={SHIPPING_HELP.boxes.dimension} suffix="in" step="0.1" disabled={!canWrite} value={box.width_in} onChange={(value) => updateBox(key, { width_in: value ?? 0 })} />
+                        <NumberField label="Altura" help={SHIPPING_HELP.boxes.dimension} suffix="in" step="0.1" disabled={!canWrite} value={box.height_in} onChange={(value) => updateBox(key, { height_in: value ?? 0 })} />
+                        <NumberField label="Peso vazio" help={SHIPPING_HELP.boxes.emptyWeight} suffix="kg" step="0.1" disabled={!canWrite} value={box.empty_weight_kg} onChange={(value) => updateBox(key, { empty_weight_kg: value ?? 0 })} />
                       </div>
-                      <div className="ship-fields">
-                        <NumberField label="Máximo de pacotes" step="1" disabled={!canWrite} value={box.max_packs} onChange={(value) => updateBox(key, { max_packs: value ?? 0 })} hint="Pacotes de 300 g ou 500 g contam igual." />
+                      <div className="ship-fields ship-fields-4">
+                        <NumberField label="Máximo de pacotes" help={SHIPPING_HELP.boxes.maxPacks} step="1" disabled={!canWrite} value={box.max_packs} onChange={(value) => updateBox(key, { max_packs: value ?? 0 })} hint="Pacotes de 300 g ou 500 g contam igual." />
                       </div>
                     </fieldset>
                   )
                 })}
                 <small className="ship-hint">Peso vazio inclui o isolamento. O gelo seco é somado só nas caixas dos EUA.</small>
               </Section>
-            </>
+            </div>
           )}
           {canWrite ? (
             <div className="ship-actions ship-save-bar">
@@ -562,89 +590,101 @@ export function ShippingPage() {
                 <button type="button" className="link-button" onClick={() => selectTab('sede')}>{canWrite ? 'Cadastrar sede' : 'Ver sede'}</button>
               </div>
             ) : null}
-            <form className="ship-sim-form" onSubmit={testZip}>
-              <input
-                aria-label={market === 'US' ? 'ZIP code' : 'CEP'}
-                value={zipCode}
-                onChange={(event) => setZipCode(event.target.value)}
-                placeholder={market === 'US' ? '94105' : '01310-100'}
-                inputMode="numeric"
-              />
-              <button className="primary-button" type="submit" disabled={testing || !zipCode.trim()}>{testing ? 'Simulando…' : 'Simular'}</button>
-            </form>
+            <div className="ship-sim-layout">
+              <div className="ship-sim-query">
+                <HelpLabel htmlFor="ship-sim-zip" label={market === 'US' ? 'ZIP code' : 'CEP'} help={SHIPPING_HELP.simulator[market]} />
+                <form className="ship-sim-form" onSubmit={testZip}>
+                  <input
+                    id="ship-sim-zip"
+                    aria-describedby="ship-sim-zip-help"
+                    value={zipCode}
+                    onChange={(event) => setZipCode(event.target.value)}
+                    placeholder={market === 'US' ? '94105' : '01310-100'}
+                    inputMode="numeric"
+                  />
+                  <button className="primary-button" type="submit" disabled={testing || !zipCode.trim()}>{testing ? 'Simulando…' : 'Simular'}</button>
+                </form>
 
-            {testError ? <div className="alert ship-sim-alert">{testError}</div> : null}
-
-            {brResult ? (
-              <div className="ship-result">
-                <div className="ship-result-total">
-                  <small>Frete</small>
-                  <strong>{formatMoney(brResult.shipping, 'BRL')}</strong>
-                  {brResult.breakdown?.minimum_applied ? <span className="badge-warning">taxa mínima aplicada</span> : null}
-                  {brResult.breakdown?.maximum_applied ? <span className="badge-warning">taxa máxima aplicada</span> : null}
-                </div>
-                <dl className="ship-result-list">
-                  <dt>Destino</dt><dd>{[brResult.destination?.city, brResult.destination?.state].filter(Boolean).join('/') || '—'}</dd>
-                  <dt>Distância</dt><dd>{brResult.distance} km {brResult.distance_source === 'osrm' ? 'de rota' : '(linha reta corrigida)'}</dd>
-                  <dt>Entrega</dt><dd>No mesmo dia do preparo</dd>
-                </dl>
+                {testError ? <div className="alert ship-sim-alert">{testError}</div> : null}
               </div>
-            ) : null}
 
-            {usResult ? (
-              <div className="ship-result">
-                {usResult.fixed ? (
-                  <div className="ship-result-total">
-                    <small>Checkout (valor fixo)</small>
-                    <strong>{formatMoney(usResult.fixed.shipping, 'USD')}</strong>
-                    <span className="ship-hint">A loja usa valor fixo; a UPS abaixo é só comparação.</span>
-                  </div>
-                ) : usResult.ups.selected ? (
-                  <div className="ship-result-total">
-                    <small>Checkout (UPS)</small>
-                    <strong>{formatMoney(usResult.ups.selected.amount, 'USD')}</strong>
-                    <span className="ship-hint">{usResult.ups.selected.label}{usResult.ups.selected.delivery_days ? ` · ${usResult.ups.selected.delivery_days} dia(s) úteis` : ''}</span>
+              <div className="ship-sim-output" aria-live="polite">
+                {!brResult && !usResult ? (
+                  <p className="ship-sim-empty">Digite {market === 'US' ? 'um ZIP' : 'um CEP'} e clique em Simular. O resultado aparece aqui.</p>
+                ) : null}
+
+                {brResult ? (
+                  <div className="ship-result">
+                    <div className="ship-result-total">
+                      <small>Frete</small>
+                      <strong>{formatMoney(brResult.shipping, 'BRL')}</strong>
+                      {brResult.breakdown?.minimum_applied ? <span className="badge-warning">taxa mínima aplicada</span> : null}
+                      {brResult.breakdown?.maximum_applied ? <span className="badge-warning">taxa máxima aplicada</span> : null}
+                    </div>
+                    <dl className="ship-result-list">
+                      <dt>Destino</dt><dd>{[brResult.destination?.city, brResult.destination?.state].filter(Boolean).join('/') || '—'}</dd>
+                      <dt>Distância</dt><dd>{brResult.distance} km {brResult.distance_source === 'osrm' ? 'de rota' : '(linha reta corrigida)'}</dd>
+                      <dt>Entrega</dt><dd>No mesmo dia do preparo</dd>
+                    </dl>
                   </div>
                 ) : null}
 
-                <ol className="ship-steps" aria-label="Chamadas UPS">
-                  {usResult.ups.steps.map((step) => (
-                    <li key={step.key} className={`ship-step ship-step-${step.status}`}>
-                      <span className="ship-step-icon" aria-hidden="true">{STEP_ICON[step.status]}</span>
-                      <div>
-                        <strong>{step.label}</strong>
-                        {step.detail ? <small>{step.detail}</small> : null}
+                {usResult ? (
+                  <div className="ship-result">
+                    {usResult.fixed ? (
+                      <div className="ship-result-total">
+                        <small>Checkout (valor fixo)</small>
+                        <strong>{formatMoney(usResult.fixed.shipping, 'USD')}</strong>
+                        <span className="ship-hint">A loja usa valor fixo; a UPS abaixo é só comparação.</span>
                       </div>
-                      {step.ms != null ? <small className="ship-step-ms">{step.ms} ms</small> : null}
-                    </li>
-                  ))}
-                </ol>
+                    ) : usResult.ups.selected ? (
+                      <div className="ship-result-total">
+                        <small>Checkout (UPS)</small>
+                        <strong>{formatMoney(usResult.ups.selected.amount, 'USD')}</strong>
+                        <span className="ship-hint">{usResult.ups.selected.label}{usResult.ups.selected.delivery_days ? ` · ${usResult.ups.selected.delivery_days} dia(s) úteis` : ''}</span>
+                      </div>
+                    ) : null}
 
-                {usResult.ups.rates.length ? (
-                  <table className="ship-rates">
-                    <thead>
-                      <tr><th>Serviço</th><th>Valor</th><th>Prazo</th></tr>
-                    </thead>
-                    <tbody>
-                      {usResult.ups.rates.map((rate) => {
-                        const used = !usResult.fixed && usResult.ups.selected?.service_code === rate.service_code
-                        return (
-                        <tr key={rate.service_code} className={used ? 'selected' : rate.allowed ? '' : 'disabled'}>
-                          <td>
-                            {rate.label}
-                            {used ? <span className="badge-success">checkout</span> : null}
-                            {!rate.allowed ? <span className="ship-hint"> não aceito</span> : null}
-                          </td>
-                          <td>{formatMoney(rate.amount, 'USD')}</td>
-                          <td>{rate.delivery_days ? `${rate.delivery_days} d` : '—'}</td>
-                        </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
+                    <ol className="ship-steps" aria-label="Chamadas UPS">
+                      {usResult.ups.steps.map((step) => (
+                        <li key={step.key} className={`ship-step ship-step-${step.status}`}>
+                          <span className="ship-step-icon" aria-hidden="true">{STEP_ICON[step.status]}</span>
+                          <div>
+                            <strong>{step.label}</strong>
+                            {step.detail ? <small>{step.detail}</small> : null}
+                          </div>
+                          {step.ms != null ? <small className="ship-step-ms">{step.ms} ms</small> : null}
+                        </li>
+                      ))}
+                    </ol>
+
+                    {usResult.ups.rates.length ? (
+                      <table className="ship-rates">
+                        <thead>
+                          <tr><th>Serviço</th><th>Valor</th><th>Prazo</th></tr>
+                        </thead>
+                        <tbody>
+                          {usResult.ups.rates.map((rate) => {
+                            const used = !usResult.fixed && usResult.ups.selected?.service_code === rate.service_code
+                            return (
+                            <tr key={rate.service_code} className={used ? 'selected' : rate.allowed ? '' : 'disabled'}>
+                              <td>
+                                {rate.label}
+                                {used ? <span className="badge-success">checkout</span> : null}
+                                {!rate.allowed ? <span className="ship-hint"> não aceito</span> : null}
+                              </td>
+                              <td>{formatMoney(rate.amount, 'USD')}</td>
+                              <td>{rate.delivery_days ? `${rate.delivery_days} d` : '—'}</td>
+                            </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
-            ) : null}
+            </div>
           </Section>
         </div>
       ) : null}

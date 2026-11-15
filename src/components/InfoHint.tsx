@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 
 type InfoHintProps = {
   // The tip's element id: the field points aria-describedby here, so the text stays its description while closed.
@@ -7,13 +7,26 @@ type InfoHintProps = {
   topic: string
   // Plain text, or formatted lines (still read as the field's description).
   text: ReactNode
+  // A wider tip (up to 380px) than the field under it, for long explanations next to narrow fields.
+  wide?: boolean
 }
 
 // An "i" next to a field label that shows its help text on tap or click. Escape or a tap outside closes it; Escape
 // while it is open does not close the dialog around it.
-export function InfoHint({ id, topic, text }: InfoHintProps) {
+export function InfoHint({ id, topic, text, wide = false }: InfoHintProps) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLSpanElement>(null)
+  const tipRef = useRef<HTMLSpanElement>(null)
+
+  // A tip that would pass the right edge of the screen moves left, so it never adds a horizontal scroll.
+  useLayoutEffect(() => {
+    const tip = tipRef.current
+    if (!open || !tip) return
+    tip.style.transform = ''
+    const box = tip.getBoundingClientRect()
+    const overflow = box.right - (document.documentElement.clientWidth - 8)
+    if (overflow > 0) tip.style.transform = `translateX(-${Math.min(overflow, Math.max(0, box.left - 8))}px)`
+  }, [open])
 
   useEffect(() => {
     if (!open) return undefined
@@ -48,7 +61,7 @@ export function InfoHint({ id, topic, text }: InfoHintProps) {
           <circle cx="8" cy="4.75" r="0.9" fill="currentColor" />
         </svg>
       </button>
-      <span id={id} role="tooltip" className="info-hint-text" hidden={!open}>{text}</span>
+      <span ref={tipRef} id={id} role="tooltip" className={wide ? 'info-hint-text info-hint-wide' : 'info-hint-text'} hidden={!open}>{text}</span>
     </span>
   )
 }

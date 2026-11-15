@@ -1,5 +1,7 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { cloneElement, useId, useState, type FormEvent, type ReactElement } from 'react'
+import { HelpLabel } from '../HelpLabel'
 import { ApiRequestError, apiRequest } from '../../lib/api'
+import { SHIPPING_HELP } from '../../lib/shippingHelp'
 import {
   BR_STATES,
   US_PHONE_INVALID_TEXT,
@@ -51,13 +53,17 @@ function usLines(shipFrom: UsShipFrom) {
   ].filter(Boolean)
 }
 
-function Field({ label, error, hint, wide, children }: { label: string; error?: string; hint?: string; wide?: boolean; children: ReactNode }) {
+// A field of the address with its "i": the label is tied to the control, the tip is the control's description.
+// `wide` takes the whole row on a narrow form; `span` is how many of the 4 columns it takes on a wide one.
+function Field({ label, error, hint, help, wide, span, children }: { label: string; error?: string; hint?: string; help?: readonly string[]; wide?: boolean; span?: 2 | 3; children: ReactElement<{ id?: string; 'aria-describedby'?: string }> }) {
+  const id = useId()
+  const className = ['ship-field', wide ? 'ship-field-wide' : '', span ? `ship-span-${span}` : ''].filter(Boolean).join(' ')
   return (
-    <label className={wide ? 'ship-field ship-field-wide' : 'ship-field'}>
-      <span>{label}</span>
-      {children}
+    <div className={className}>
+      <HelpLabel htmlFor={id} label={label} help={help} />
+      {cloneElement(children, { id, 'aria-describedby': help ? `${id}-help` : undefined })}
       {error ? <small className="ship-field-error">{error}</small> : hint ? <small className="ship-hint">{hint}</small> : null}
-    </label>
+    </div>
   )
 }
 
@@ -217,12 +223,12 @@ export function HeadquartersCard({
       ) : (
         <form className="ship-hq-form" onSubmit={save} noValidate>
           <div className="ship-fields">
-            <Field label={isBr ? 'Nome da sede' : 'Company / location name'} wide>
+            <Field label={isBr ? 'Nome da sede' : 'Company / location name'} help={isBr ? SHIPPING_HELP.hq.brName : SHIPPING_HELP.hq.usName} wide span={isBr ? 3 : 2}>
               <input value={draft.name || ''} onChange={(event) => set('name', event.target.value)} placeholder={isBr ? 'Cozinha Curitiba' : 'Eden Bowls Kitchen'} />
             </Field>
             {isBr ? (
               <>
-                <Field label="CEP" error={errors.zipcode} hint="Rua, bairro e cidade são preenchidos pelo CEP.">
+                <Field label="CEP" help={SHIPPING_HELP.hq.brZip} error={errors.zipcode} hint="Rua, bairro e cidade são preenchidos pelo CEP.">
                   <input
                     value={draft.zipcode || ''}
                     onChange={(event) => set('zipcode', event.target.value)}
@@ -232,22 +238,22 @@ export function HeadquartersCard({
                     autoComplete="postal-code"
                   />
                 </Field>
-                <Field label="Rua / logradouro" error={errors.street} wide>
+                <Field label="Rua / logradouro" help={SHIPPING_HELP.hq.brStreet} error={errors.street} wide span={3}>
                   <input value={draft.street || ''} onChange={(event) => set('street', event.target.value)} autoComplete="address-line1" />
                 </Field>
-                <Field label="Número" error={errors.number} hint="Use S/N se não houver.">
+                <Field label="Número" help={SHIPPING_HELP.hq.brNumber} error={errors.number} hint="Use S/N se não houver.">
                   <input value={draft.number || ''} onChange={(event) => set('number', event.target.value)} />
                 </Field>
-                <Field label="Complemento (opcional)">
+                <Field label="Complemento (opcional)" help={SHIPPING_HELP.hq.brComplement}>
                   <input value={draft.complement || ''} onChange={(event) => set('complement', event.target.value)} placeholder="Galpão 2" />
                 </Field>
-                <Field label="Bairro" error={errors.neighborhood}>
+                <Field label="Bairro" help={SHIPPING_HELP.hq.brNeighborhood} error={errors.neighborhood}>
                   <input value={draft.neighborhood || ''} onChange={(event) => set('neighborhood', event.target.value)} />
                 </Field>
-                <Field label="Cidade" error={errors.city}>
+                <Field label="Cidade" help={SHIPPING_HELP.hq.brCity} error={errors.city}>
                   <input value={draft.city || ''} onChange={(event) => set('city', event.target.value)} autoComplete="address-level2" />
                 </Field>
-                <Field label="UF" error={errors.state}>
+                <Field label="UF" help={SHIPPING_HELP.hq.brState} error={errors.state}>
                   <select value={draft.state || ''} onChange={(event) => set('state', event.target.value)}>
                     <option value="">Selecione</option>
                     {BR_STATES.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
@@ -256,22 +262,22 @@ export function HeadquartersCard({
               </>
             ) : (
               <>
-                <Field label="Address line 1" error={errors.street} hint="Street number and name, e.g. 350 5th Ave" wide>
+                <Field label="Address line 1" help={SHIPPING_HELP.hq.usStreet} error={errors.street} hint="Street number and name, e.g. 350 5th Ave" wide span={2}>
                   <input value={draft.street || ''} onChange={(event) => set('street', event.target.value)} autoComplete="address-line1" />
                 </Field>
-                <Field label="Address line 2 (optional)" hint="Apt, suite, unit, building, floor" wide>
+                <Field label="Address line 2 (optional)" help={SHIPPING_HELP.hq.usStreet2} hint="Apt, suite, unit, building, floor" wide span={2}>
                   <input value={draft.street2 || ''} onChange={(event) => set('street2', event.target.value)} autoComplete="address-line2" />
                 </Field>
-                <Field label="City" error={errors.city}>
+                <Field label="City" help={SHIPPING_HELP.hq.usCity} error={errors.city}>
                   <input value={draft.city || ''} onChange={(event) => set('city', event.target.value)} autoComplete="address-level2" />
                 </Field>
-                <Field label="State" error={errors.state}>
+                <Field label="State" help={SHIPPING_HELP.hq.usState} error={errors.state}>
                   <select value={draft.state || ''} onChange={(event) => set('state', event.target.value)}>
                     <option value="">Select</option>
                     {US_STATES.map(([code, label]) => <option key={code} value={code}>{label} ({code})</option>)}
                   </select>
                 </Field>
-                <Field label="ZIP code" error={errors.zipcode} hint="5 digits or ZIP+4">
+                <Field label="ZIP code" help={SHIPPING_HELP.hq.usZip} error={errors.zipcode} hint="5 digits or ZIP+4">
                   <input
                     value={draft.zipcode || ''}
                     onChange={(event) => set('zipcode', event.target.value)}
@@ -281,7 +287,7 @@ export function HeadquartersCard({
                     autoComplete="postal-code"
                   />
                 </Field>
-                <Field label="Telefone" error={phoneInvalid ? US_PHONE_INVALID_TEXT : undefined} hint="A UPS pede o telefone para buscar as caixas.">
+                <Field label="Telefone" help={SHIPPING_HELP.hq.phone} error={phoneInvalid ? US_PHONE_INVALID_TEXT : undefined} hint="A UPS pede o telefone para buscar as caixas.">
                   <input value={draft.phone || ''} onChange={(event) => set('phone', event.target.value)} placeholder="305 555 0100" inputMode="tel" autoComplete="tel" />
                 </Field>
               </>

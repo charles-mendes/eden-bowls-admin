@@ -2877,15 +2877,15 @@ button.table-link {
   line-height: 1.5;
 }
 
-.email-fields .hint-line {
+.info-hint-text .hint-line {
   display: block;
 }
 
-.email-fields .hint-line + .hint-line {
+.info-hint-text .hint-line + .hint-line {
   margin-top: var(--space-2);
 }
 
-.email-fields .hint-line strong {
+.info-hint-text .hint-line strong {
   font-weight: 600;
 }
 
@@ -2993,12 +2993,95 @@ button.table-link {
   margin-bottom: 0;
 }
 
-/* Each Frete tab is one column, kept to a readable width. */
+/* The Frete tabs use the width of the screen, up to a limit where lines still read well. Wide enough, the US rules
+   split into two balanced columns (reading order goes down the first, then the second) and the simulator puts the
+   result beside the query. */
 .ship-panel,
 .ship-rules {
-  max-width: 880px;
+  max-width: 1600px;
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.ship-rules-columns {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ship-sim-layout {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.ship-sim-query {
   min-width: 0;
 }
+
+.ship-sim-output {
+  min-width: 0;
+}
+
+/* Only beside the query: under it, on a narrow screen, the empty result would just repeat the field. */
+.ship-sim-empty {
+  display: none;
+  margin: 0;
+  padding: var(--space-5) var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text-soft);
+  text-align: center;
+}
+
+@container (min-width: 1100px) {
+  .ship-rules-columns {
+    display: block;
+    columns: 2;
+    column-gap: var(--space-4);
+  }
+
+  .ship-rules-columns > * {
+    break-inside: avoid;
+    margin-bottom: var(--space-4);
+  }
+
+  .ship-rules-columns > *:last-child {
+    margin-bottom: 0;
+  }
+
+  .ship-sim-layout {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    align-items: start;
+  }
+
+  .ship-sim-layout .ship-result {
+    margin-top: 0;
+  }
+
+  .ship-sim-empty {
+    display: block;
+  }
+
+}
+
+/* The headquarters address in 4 columns: long fields take 2 or 3 of them instead of the whole row. */
+@container (min-width: 760px) {
+  .ship-hq-form .ship-fields {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .ship-hq-form .ship-field-wide {
+    grid-column: auto;
+  }
+
+  .ship-hq-form .ship-span-2 {
+    grid-column: span 2;
+  }
+
+  .ship-hq-form .ship-span-3 {
+    grid-column: span 3;
+  }
+}
+
 
 .ship-notice {
   display: flex;
@@ -3054,6 +3137,18 @@ button.table-link {
 .ship-summary strong {
   font-size: var(--text-xl);
   color: var(--text-strong);
+}
+
+/* A switch with its "i" beside the label; the tip opens under the row. */
+.ship-toggle-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.ship-toggle-row .info-hint-button {
+  margin-top: -6px;
 }
 
 .ship-toggle {
@@ -5821,6 +5916,18 @@ label.ghost-button {
   font-size: var(--text-sm);
   line-height: 1.4;
   overflow-wrap: anywhere;
+}
+
+/* A long explanation next to a narrow field: wider than the field, same reading size as the settings tips. */
+.info-hint-text.info-hint-wide {
+  right: auto;
+  width: min(380px, calc(100vw - 32px));
+  padding: var(--space-3);
+  font-size: var(--text-md);
+  font-weight: 400;
+  line-height: 1.5;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .info-hint-text[hidden] {
