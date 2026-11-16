@@ -170,8 +170,8 @@ test.describe('Admin catalog', () => {
     const panel = page.getByRole('tabpanel')
     await expect(panel.getByRole('heading', { name: 'Imagem da tela inicial' })).toBeVisible()
 
-    await panel.getByLabel('Escolher imagem').setInputFiles({ name: 'grande.png', mimeType: 'image/png', buffer: solidPng(1200, 800) })
-    await expect(panel.getByText('A imagem tem 1200 × 800 px e precisa ter 1024 × 636 px.')).toBeVisible()
+    await panel.getByLabel('Escolher imagem').setInputFiles({ name: 'pequena.png', mimeType: 'image/png', buffer: solidPng(600, 400) })
+    await expect(panel.getByText('A imagem tem 600 × 400 px e precisa ter 1024 × 636 px')).toBeVisible()
     expect(captured.some((item) => item.method === 'PUT')).toBe(false)
 
     await panel.getByLabel('Escolher imagem').setInputFiles({ name: 'banner.png', mimeType: 'image/png', buffer: solidPng(1024, 636) })
