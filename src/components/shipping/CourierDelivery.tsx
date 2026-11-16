@@ -21,7 +21,6 @@ import {
   type FailureKind,
   type ReadinessReason,
 } from '../../lib/courierDeliveries'
-import { formatDate } from '../../lib/format'
 
 // customerShipping: what the customer paid at checkout, shown read-only and never copied into the courier cost.
 type DispatchTarget = { subscriptionId: string; invoiceId: string; name: string; customerShipping?: CustomerShipping | null }
@@ -333,11 +332,4 @@ export function CourierSummary({ delivery }: { delivery: CourierDelivery }) {
       {delivery.status === 'failed' && delivery.failure_reason ? <div className="muted">Motivo: {delivery.failure_reason}</div> : null}
     </div>
   )
-}
-
-export function courierStageText(delivery: CourierDelivery): string {
-  if (delivery.status === 'delivered') return `Entregue em ${formatDate(delivery.delivered_at)}`
-  if (delivery.status === 'failed') return `Falhou em ${formatDate(delivery.failed_at)}`
-  if (delivery.status === 'canceled') return `Cancelada em ${formatDate(delivery.canceled_at)}`
-  return `Saiu em ${formatDate(delivery.out_for_delivery_at)}`
 }

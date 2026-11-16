@@ -4,6 +4,7 @@ import { ApiRequestError } from './api'
 import { issueCodeText, type AddressIssue } from './addressIssues'
 import { PRODUCTION_STATUS_LABELS, isProductionStatus } from './productionQueue'
 import type { NfeStatus } from './nfe'
+import { formatDate } from './format'
 
 // Brazil courier deliveries (courier-delivery): recorded by hand, no courier API.
 export type CourierMethod = 'uber' | 'motoboy' | 'own_driver' | 'other'
@@ -296,4 +297,11 @@ export function instructionsLine(item: { delivery_instructions?: string | null; 
   return item.delivery_instructions_source === 'profile'
     ? `Instruções (do perfil): ${item.delivery_instructions}`
     : `Instruções: ${item.delivery_instructions}`
+}
+
+export function courierStageText(delivery: CourierDelivery): string {
+  if (delivery.status === 'delivered') return `Entregue em ${formatDate(delivery.delivered_at)}`
+  if (delivery.status === 'failed') return `Falhou em ${formatDate(delivery.failed_at)}`
+  if (delivery.status === 'canceled') return `Cancelada em ${formatDate(delivery.canceled_at)}`
+  return `Saiu em ${formatDate(delivery.out_for_delivery_at)}`
 }

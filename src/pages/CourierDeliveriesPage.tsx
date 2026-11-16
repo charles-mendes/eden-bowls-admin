@@ -15,8 +15,8 @@ import {
   CourierRowActions,
   CourierStatusBadge,
   CourierSummary,
-  courierStageText,
 } from '../components/shipping/CourierDelivery'
+import { courierStageText } from '../lib/courierDeliveries'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { DeliveryRangeFilter } from '../components/shipping/DeliveryRangeFilter'

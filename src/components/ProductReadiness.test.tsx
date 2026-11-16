@@ -1,7 +1,8 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
-import { ProductReadiness, productReadinessSteps, type ReadinessInput } from './ProductReadiness'
+import { ProductReadiness } from './ProductReadiness'
+import { productReadinessSteps, type ReadinessInput } from '../lib/productReadiness'
 
 const emptyBr: ReadinessInput = { published: false, planCountry: 'BR', content: { imageUrl: null, presentationReady: false, labelStatus: 'missing', labelMissing: [] }, variations: [] }
 
