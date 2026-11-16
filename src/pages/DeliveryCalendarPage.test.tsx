@@ -52,11 +52,16 @@ function calendarRoutes(server: CalendarServer = {}) {
     if (call.path === '/api/v1/admin/delivery-calendar/history') return jsonResponse({ market, year: YEAR, items: server.history ?? [] })
     if (call.path === '/api/v1/admin/delivery-calendar/syncs') return jsonResponse({ market, delayMinutes: 15, delayed: server.syncs?.delayed ?? [], problems: server.syncs?.problems ?? [] })
     if (call.path === '/api/v1/admin/delivery-calendar/alerts') return jsonResponse(server.alerts ?? { market, upsCalendar: null })
+    if (call.path === '/api/v1/admin/delivery-calendar/week' && call.method === 'GET') {
+      return jsonResponse({ market, timeZone: market === 'BR' ? 'America/Sao_Paulo' : 'America/New_York', days: weekOf(market === 'BR' ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5]) })
+    }
     return undefined
   }
 }
 
-function renderCalendar(profile = operatorWriteUser, server: CalendarServer = {}, route = '/operations/delivery-calendar') {
+const weekOf = (open: number[]) => [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ weekday, open: open.includes(weekday), opensAt: '09:00', closesAt: '20:00' }))
+
+function renderCalendar(profile = operatorWriteUser, server: CalendarServer = {}, route = '/operations/delivery-calendar?aba=dias') {
   seedAuth()
   const mock = installAdminFetchMock(profile, { routes: calendarRoutes(server) })
   renderAuthedPage(<DeliveryCalendarPage />, route, '/operations/delivery-calendar')
@@ -162,7 +167,8 @@ async function openCreate() {
 
 function fillDraft(dialog: HTMLElement, { type = 'adhoc', date = `${YEAR}-03-30`, label = 'Manutenção' } = {}) {
   fireEvent.change(within(dialog).getByLabelText('Tipo'), { target: { value: type } })
-  fireEvent.change(within(dialog).getByLabelText('Data'), { target: { value: date } })
+  // The day is typed as dd/mm/aaaa (BrDateInput); the draft keeps it as ISO.
+  fireEvent.change(within(dialog).getByLabelText('Data'), { target: { value: date.split('-').reverse().join('/') } })
   fireEvent.change(within(dialog).getByLabelText('Rótulo'), { target: { value: label } })
 }
 
@@ -392,14 +398,14 @@ describe('DeliveryCalendarPage history', () => {
 
   it('keeps the history in its own tab, out of the closed days view', async () => {
     renderCalendar(readonlyUser, { rows: BR_ROWS, history: HISTORY })
-    const daysTab = await screen.findByRole('tab', { name: /Dias fechados/ })
+    const daysTab = await screen.findByRole('tab', { name: /Feriados e fechamentos/ })
     expect(daysTab).toHaveAttribute('aria-selected', 'true')
     await screen.findByText('Natal')
     expect(screen.queryByText('Falta de energia')).not.toBeInTheDocument()
     await openHistoryTab()
     expect(screen.getByRole('tab', { name: /Histórico/ })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByText('Falta de energia')).toBeInTheDocument()
-    expect(screen.queryByRole('tabpanel', { name: /Dias fechados/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tabpanel', { name: /Feriados e fechamentos/ })).not.toBeInTheDocument()
   })
 
   it('opens straight on the history tab from the URL', async () => {
@@ -561,5 +567,227 @@ describe('DeliveryCalendarPage resend', () => {
     const dialog = await screen.findByRole('dialog')
     fireEvent.click(within(dialog).getByRole('button', { name: 'Reenviar' }))
     expect(await within(dialog).findByText('A data alvo já passou; a cobrança que ela movia já aconteceu.')).toBeInTheDocument()
+  })
+})
+
+describe('DeliveryCalendarPage standard week', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  const WEEK_ROUTE = '/operations/delivery-calendar'
+  const weekPreview = (impact: unknown[], confirmedMoves: unknown[] = []) => ({
+    market: 'BR', timeZone: 'America/Sao_Paulo', before: weekOf([1, 2, 3, 4, 5, 6]), after: weekOf([1, 2, 3, 4, 5]), impact, confirmedMoves,
+  })
+  const IMPACT = [
+    { stripeSubscriptionId: 'sub_sync', deliveryId: 'current', preparationDay: '2026-11-21', newPreparationDay: '2026-11-23', outcome: 'moved', move: 'stripe_sync' },
+    { stripeSubscriptionId: 'sub_late', deliveryId: 'current', preparationDay: '2026-11-21', newPreparationDay: '2026-11-23', outcome: 'moved_charge_kept', move: 'projection_only' },
+    { stripeSubscriptionId: 'sub_paid', deliveryId: 'current', preparationDay: '2026-11-21', newPreparationDay: '2026-11-21', outcome: 'kept', move: 'projection_only' },
+  ]
+  const MOVES = [
+    { stripeSubscriptionId: 'sub_sync', deliveryId: 'current', newPreparationDay: '2026-11-23' },
+    { stripeSubscriptionId: 'sub_late', deliveryId: 'current', newPreparationDay: '2026-11-23' },
+  ]
+
+  it('opens first on Semana padrão, before Feriados e fechamentos and Histórico', async () => {
+    renderCalendar(operatorWriteUser, {}, WEEK_ROUTE)
+    expect(screen.getByRole('heading', { name: 'Calendário de operação' })).toBeInTheDocument()
+    const tabs = await screen.findAllByRole('tab')
+    expect(tabs.map((tab) => tab.textContent?.replace(/\d+$/, ''))).toEqual(['Semana padrão', 'Feriados e fechamentos', 'Histórico'])
+    expect(tabs[0]).toHaveAttribute('aria-selected', 'true')
+    const panel = await screen.findByRole('tabpanel', { name: 'Semana padrão' })
+    const rows = await within(panel).findAllByRole('rowheader')
+    expect(rows.map((cell) => cell.textContent)).toEqual(['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'])
+    expect(within(panel).getByRole('switch', { name: 'Sábado aberto' })).toBeChecked()
+    expect(within(panel).getByRole('switch', { name: 'Domingo aberto' })).not.toBeChecked()
+    expect(within(panel).getByRole('textbox', { name: 'Segunda fecha' })).toHaveValue('20:00')
+  })
+
+  it('the help of the hours and of an open day is the fields\' description', async () => {
+    renderCalendar(operatorWriteUser, {}, WEEK_ROUTE)
+    const closes = await screen.findByRole('textbox', { name: 'Terça fecha' })
+    expect(closes).toHaveAccessibleDescription(/Pago em dia aberto antes do fechamento: prepara no mesmo dia/)
+    expect(screen.getByRole('switch', { name: 'Terça aberto' })).toHaveAccessibleDescription(/Aberto vale só para o preparo/)
+  })
+
+  it('readonly sees the week without edit controls', async () => {
+    renderCalendar(readonlyUser, {}, WEEK_ROUTE)
+    const panel = await screen.findByRole('tabpanel', { name: 'Semana padrão' })
+    expect(await within(panel).findByRole('switch', { name: 'Segunda aberto' })).toBeDisabled()
+    expect(within(panel).getByRole('textbox', { name: 'Segunda abre' })).toBeDisabled()
+    expect(within(panel).queryByRole('button', { name: 'Salvar semana' })).not.toBeInTheDocument()
+    expect(within(panel).getByText(/Somente leitura/)).toBeInTheDocument()
+  })
+
+  it('the United States week explains Friday, Saturday and Sunday', async () => {
+    renderCalendar(adminUser, {}, WEEK_ROUTE)
+    fireEvent.change(await screen.findByLabelText('Mercado'), { target: { value: 'US' } })
+    expect(await screen.findByText(/sexta e sábado nunca preparam/)).toBeInTheDocument()
+    expect(screen.getByText(/Domingo aberto prepara, com coleta na segunda/)).toBeInTheDocument()
+  })
+
+  it('saving needs a preview of the current draft, then sends the moves it showed', async () => {
+    const mock = renderCalendar(operatorWriteUser, {
+      respond: (call) => {
+        if (call.path === '/api/v1/admin/delivery-calendar/week/preview') return jsonResponse(weekPreview(IMPACT, MOVES))
+        if (call.path === '/api/v1/admin/delivery-calendar/week' && call.method === 'PUT') {
+          return jsonResponse({ market: 'BR', timeZone: 'America/Sao_Paulo', days: weekOf([1, 2, 3, 4, 5]), impact: IMPACT, syncIds: [501], auditEventId: 9 })
+        }
+        return undefined
+      },
+    }, WEEK_ROUTE)
+    const save = await screen.findByRole('button', { name: 'Salvar semana' })
+    expect(save).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Sábado aberto' }))
+    expect(save).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Ver impacto' }))
+
+    const table = await screen.findByRole('table', { name: 'Entregas afetadas' })
+    expect(within(table).getByText(/^Muda para 23\/11\/2026/)).toBeInTheDocument()
+    expect(within(table).getByText(/Cobrança mantida, preparo muda para 23\/11\/2026/)).toBeInTheDocument()
+    expect(within(table).getByText('Mantém a data')).toBeInTheDocument()
+    await waitFor(() => expect(save).toBeEnabled())
+
+    // A change after the preview needs a new one.
+    fireEvent.change(screen.getByRole('textbox', { name: 'Segunda fecha' }), { target: { value: '18:00' } })
+    expect(save).toBeDisabled()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Segunda fecha' }), { target: { value: '20:00' } })
+    await waitFor(() => expect(save).toBeEnabled())
+
+    fireEvent.click(save)
+    expect(await screen.findByText('Semana padrão salva.')).toBeInTheDocument()
+    const put = findCall(mock.calls, 'PUT', '/api/v1/admin/delivery-calendar/week')
+    expect(put?.body).toMatchObject({ market: 'BR', days: weekOf([1, 2, 3, 4, 5]), confirmedMoves: MOVES })
+  })
+
+  it('a preview with nothing to move says the week applies from then on', async () => {
+    renderCalendar(operatorWriteUser, {
+      respond: (call) => (call.path === '/api/v1/admin/delivery-calendar/week/preview' ? jsonResponse(weekPreview([])) : undefined),
+    }, WEEK_ROUTE)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Segunda fecha' }), { target: { value: '18:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ver impacto' }))
+    expect(await screen.findByText(/Nenhuma entrega agendada muda/)).toBeInTheDocument()
+  })
+
+  it('a changed impact at save asks for a new preview', async () => {
+    renderCalendar(operatorWriteUser, {
+      respond: (call) => {
+        if (call.path === '/api/v1/admin/delivery-calendar/week/preview') return jsonResponse(weekPreview(IMPACT, MOVES))
+        if (call.path === '/api/v1/admin/delivery-calendar/week' && call.method === 'PUT') {
+          return jsonResponse({ message: 'As entregas afetadas mudaram desde a prévia. Veja o impacto de novo.', details: { code: 'week_impact_changed', confirmedMoves: [] } }, 409)
+        }
+        return undefined
+      },
+    }, WEEK_ROUTE)
+    fireEvent.click(await screen.findByRole('switch', { name: 'Sábado aberto' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Ver impacto' }))
+    const save = screen.getByRole('button', { name: 'Salvar semana' })
+    await waitFor(() => expect(save).toBeEnabled())
+    fireEvent.click(save)
+    expect(await screen.findByText(/As entregas afetadas mudaram desde a prévia/)).toBeInTheDocument()
+    expect(save).toBeDisabled()
+    expect(screen.queryByRole('table', { name: 'Entregas afetadas' })).not.toBeInTheDocument()
+  })
+
+  it('an open day closing before it opens cannot be previewed', async () => {
+    renderCalendar(operatorWriteUser, {}, WEEK_ROUTE)
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Segunda abre' }), { target: { value: '21:00' } })
+    expect(screen.getByRole('alert')).toHaveTextContent('Segunda: a abertura precisa ser antes do fechamento.')
+    expect(screen.getByRole('button', { name: 'Ver impacto' })).toBeDisabled()
+  })
+})
+
+describe('DeliveryCalendarPage history of the week', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows a week change with the week before and after and each delivery outcome', async () => {
+    const weekEvent = {
+      id: 40, actorUserId: 7, actorEmail: 'op.br@edenbowls.com', action: 'delivery_calendar.week_update', createdAt: `${YEAR}-11-17T15:00:00.000Z`,
+      metadata: {
+        market: 'BR', closedOn: null, before: weekOf([1, 2, 3, 4, 5, 6]), after: weekOf([1, 2, 3, 4, 5]), syncIds: [501],
+        impact: [{ stripeSubscriptionId: 'sub_late', deliveryId: 'current', previousPreparationDay: `${YEAR}-11-21`, newPreparationDay: `${YEAR}-11-23`, outcome: 'moved_charge_kept', move: 'projection_only' }],
+      },
+    }
+    renderCalendar(readonlyUser, { history: [weekEvent] }, '/operations/delivery-calendar?aba=historico')
+    const panel = await screen.findByRole('tabpanel', { name: /Histórico/ })
+    const table = await within(panel).findByRole('table')
+    const row = within(table).getAllByRole('row')[1]
+    expect(within(row).getByText('op.br@edenbowls.com')).toBeInTheDocument()
+    expect(within(row).getByText('Semana padrão')).toBeInTheDocument()
+    expect(within(row).getByText('Toda semana')).toBeInTheDocument()
+    expect(within(row).getByText('seg–sáb 09:00–20:00')).toBeInTheDocument()
+    expect(within(row).getByText('seg–sex 09:00–20:00')).toBeInTheDocument()
+    expect(within(row).getByText('1 entrega afetada')).toBeInTheDocument()
+    expect(within(row).getByText(/sub_late: .* · Cobrança mantida, preparo muda/)).toBeInTheDocument()
+  })
+})
+
+describe('DeliveryCalendarPage tabs', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('the standard week tab shows neither the closed days nor the history', async () => {
+    renderCalendar(operatorWriteUser, { history: [] }, '/operations/delivery-calendar')
+    await screen.findByRole('tabpanel', { name: 'Semana padrão' })
+    expect(screen.queryByRole('tabpanel', { name: /Histórico/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tabpanel', { name: /Feriados e fechamentos/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Novo fechamento' })).not.toBeInTheDocument()
+  })
+})
+
+describe('DeliveryCalendarPage week shortcuts', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows the week in force and copies the first open day hours to every open day', async () => {
+    renderCalendar(operatorWriteUser, {}, '/operations/delivery-calendar')
+    expect(await screen.findByText('seg–sáb 09:00–20:00')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /em todos os dias abertos/ })).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Terça fecha' }), { target: { value: '18:00' } })
+    expect(screen.getByText('Alterações não salvas')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Usar 09:00–20:00 (segunda) em todos os dias abertos' }))
+    expect(screen.getByRole('textbox', { name: 'Terça fecha' })).toHaveValue('20:00')
+    expect(screen.queryByText('Alterações não salvas')).not.toBeInTheDocument()
+  })
+
+  it('a closed day shows no hours to edit', async () => {
+    renderCalendar(operatorWriteUser, {}, '/operations/delivery-calendar')
+    await screen.findByRole('switch', { name: 'Domingo aberto' })
+    expect(screen.queryByRole('textbox', { name: 'Domingo abre' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('Sem preparo')).toHaveLength(1)
+  })
+})
+
+describe('DeliveryCalendarPage United States hours', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows and edits the hours in 12 hours with AM/PM, and sends 24-hour times', async () => {
+    const mock = renderCalendar(adminUser, {
+      respond: (call) => (call.path === '/api/v1/admin/delivery-calendar/week/preview'
+        ? jsonResponse({ market: 'US', timeZone: 'America/New_York', before: weekOf([1, 2, 3, 4, 5]), after: weekOf([1, 2, 3, 4, 5]), impact: [], confirmedMoves: [] })
+        : undefined),
+    }, '/operations/delivery-calendar')
+    fireEvent.change(await screen.findByLabelText('Mercado'), { target: { value: 'US' } })
+
+    const closes = await screen.findByRole('textbox', { name: 'Segunda fecha' })
+    expect(closes).toHaveValue('08:00')
+    expect(within(screen.getByRole('radiogroup', { name: 'Segunda fecha, AM ou PM' })).getByRole('radio', { name: 'PM' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('textbox', { name: 'Segunda abre' })).toHaveValue('09:00')
+    expect(within(screen.getByRole('radiogroup', { name: 'Segunda abre, AM ou PM' })).getByRole('radio', { name: 'AM' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByText('seg–sex 9:00 AM–8:00 PM')).toBeInTheDocument()
+
+    // 06:00 PM closes Monday at 18:00.
+    fireEvent.change(closes, { target: { value: '06:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ver impacto' }))
+    await screen.findByText(/Nenhuma entrega agendada muda/)
+    const preview = findCall(mock.calls, 'POST', '/api/v1/admin/delivery-calendar/week/preview')
+    expect((preview?.body as { days: Array<{ weekday: number; closesAt: string }> }).days[0]).toMatchObject({ weekday: 1, opensAt: '09:00', closesAt: '18:00' })
+  })
+
+  it('switching PM to AM keeps the digits and moves the time by 12 hours', async () => {
+    renderCalendar(adminUser, {}, '/operations/delivery-calendar')
+    fireEvent.change(await screen.findByLabelText('Mercado'), { target: { value: 'US' } })
+    const group = await screen.findByRole('radiogroup', { name: 'Terça fecha, AM ou PM' })
+    fireEvent.click(within(group).getByRole('radio', { name: 'AM' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Terça: a abertura precisa ser antes do fechamento.')
+    fireEvent.click(within(group).getByRole('radio', { name: 'PM' }))
+    expect(screen.queryByText('Terça: a abertura precisa ser antes do fechamento.')).not.toBeInTheDocument()
   })
 })

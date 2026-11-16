@@ -1,11 +1,11 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Section } from './Section'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import {
   PRESENTATION_COLOR_FIELDS,
   PRESENTATION_LIMITS,
   recipeContentFailure,
-  recipeContentPath,
+  productContentPath,
   type PresentationColor,
   type RecipeContent,
   type RecipePresentation,
@@ -30,15 +30,23 @@ function presentationForm(presentation: RecipePresentation | null | undefined): 
 
 // Store page of the recipe (title, tagline, resume, highlights and colors), in the market language and saved
 // whole. The store has no other source, so activation waits for it.
-export function RecipePresentationSection({ token, market, recipeKey, content, canWrite, onSaved }: {
+export function RecipePresentationSection({ token, productId, market, content, canWrite, onSaved, onDirtyChange }: {
   token: string | null
+  productId: string
   market: string
-  recipeKey: string
   content: RecipeContent
   canWrite: boolean
   onSaved: (content: RecipeContent) => void
+  onDirtyChange?: (dirty: boolean) => void
 }) {
   const [form, setForm] = useState(() => presentationForm(content.presentation))
+  // The form differing from the saved presentation is an unsaved change.
+  const dirty = canWrite && JSON.stringify(form) !== JSON.stringify(presentationForm(content.presentation))
+
+  useEffect(() => {
+    onDirtyChange?.(dirty)
+  }, [dirty, onDirtyChange])
+
   const [invalid, setInvalid] = useState<string[]>([])
   const [notice, setNotice] = useState<Notice>(null)
   const [saving, setSaving] = useState(false)
@@ -54,7 +62,7 @@ export function RecipePresentationSection({ token, market, recipeKey, content, c
     if (!token || !canWrite || saving) return
     try {
       setSaving(true)
-      const saved = await apiRequest<RecipeContent>(recipeContentPath(recipeKey, market, '/presentation'), {
+      const saved = await apiRequest<RecipeContent>(productContentPath(productId, '/presentation'), {
         token,
         method: 'PUT',
         body: { presentation: { ...form, highlights: form.highlights.filter((item) => item.trim()) } },
@@ -76,6 +84,7 @@ export function RecipePresentationSection({ token, market, recipeKey, content, c
 
   return (
     <Section
+      id="apresentacao"
       title="Apresentação na loja"
       description={`${language}. Nome curto, título, chamada, resumo, destaques e cores da página da receita, do carrossel da tela inicial e do plano.`}
       actions={<span className={content.presentation ? 'badge-success' : 'badge-warning'}>{content.presentation ? 'Cadastrada' : 'Sem apresentação'}</span>}

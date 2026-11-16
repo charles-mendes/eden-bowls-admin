@@ -8,7 +8,7 @@ Gives kitchen operators a queue of Stripe subscriptions due soon, with pack/flav
 
 ### Requirement: Queue membership follows live Stripe ledger status
 
-The production queue SHALL list production cycles, not subscriptions. A cycle is keyed by `(subscription_id, period_end)`, where `period_end` is the charge the cycle belongs to. The queue MUST include two kinds of cycle. An unpaid cycle is the ledger's next renewal (`current_period_end`), or for a `past_due` subscription the renewal that failed (`current_period_start`), when no paid cycle exists for that key; it MUST require Stripe status `active`, `trialing`, or `past_due`, and `cancel_at_period_end` false unless the status is `past_due`. A paid cycle is any cycle whose invoice was paid; it MUST stay listed whatever the subscription status or `cancel_at_period_end`, until it is marked ready. The first delivery MUST be listed: the paid `subscription_create` invoice records it as a paid cycle. One subscription MAY appear twice, once for a paid cycle and once for its next renewal. The system MUST exclude unpaid cycles of `paused`, `canceled`, `incomplete`, and `incomplete_expired` subscriptions.
+The production queue SHALL list production cycles, not subscriptions. A cycle is keyed by `(subscription_id, period_end)`, where `period_end` is the charge the cycle belongs to. The queue MUST include two kinds of cycle. An unpaid cycle is the ledger's next renewal (`current_period_end`), or for a `past_due` subscription the renewal that failed (`current_period_start`), when no paid cycle exists for that key; it MUST require Stripe status `active`, `trialing`, or `past_due`, and `cancel_at_period_end` false unless the status is `past_due`. A paid cycle is any cycle whose invoice was paid; it MUST stay listed whatever the subscription status or `cancel_at_period_end`, until it is marked ready. A ready paid cycle of the Brazil shipping market whose preparation day passed, no more than 30 days ago, MUST stay listed until a courier delivery is registered for its invoice, as the API returns it. The first delivery MUST be listed: the paid `subscription_create` invoice records it as a paid cycle. One subscription MAY appear twice, once for a paid cycle and once for its next renewal. The system MUST exclude unpaid cycles of `paused`, `canceled`, `incomplete`, and `incomplete_expired` subscriptions.
 
 #### Scenario: Active subscription with a period end is queued
 
@@ -39,6 +39,11 @@ The production queue SHALL list production cycles, not subscriptions. A cycle is
 
 - **WHEN** a subscription is `canceled`, `paused`, `incomplete`, or `incomplete_expired` and has no paid cycle waiting
 - **THEN** it is absent from the queue even if `current_period_end` falls in the window
+
+#### Scenario: Late Brazil order marked ready
+
+- **WHEN** an operator marks ready a paid Brazil cycle prepared 24 days ago that has not left
+- **THEN** the row stays in the queue, now ready, until a delivery is registered for its invoice
 
 ### Requirement: Civil window includes today even after the UTC timestamp
 
@@ -244,12 +249,22 @@ The admin app MUST expose **Produção** at `/operations/production` in the Oper
 
 ### Requirement: Queue shows stock coverage
 
-For each item whose `stockCoverage` is not null, the Produção column MUST show a coverage badge: `covered` → "Coberto", `short` → "Falta estoque" in the warning colour, `unknown` → "Sem tamanho". Items with null coverage MUST show no badge.
+For each item whose `stockCoverage` is not null, the Produção column MUST show a coverage badge: `covered` → "Coberto", `short` → "Falta estoque" in the warning colour, `unknown` → "Sem tamanho". Items with null coverage MUST show no badge. The "Falta estoque" badge MUST be a link to Estoque filtered by `situacao=short` and, when the session has both markets, by the item's market. When `stockShortages` has a single entry, the link MUST also search for that recipe name.
 
 #### Scenario: Later delivery is short
 
 - **WHEN** the queue returns a `to_prepare` cycle with `stockCoverage` `short`
 - **THEN** its Produção column shows "Falta estoque"
+
+#### Scenario: One recipe short
+
+- **WHEN** a short cycle has one shortage, "Frango", and the session has both markets
+- **THEN** "Falta estoque" links to `/operations/stock?mercado=BR&situacao=short&busca=Frango`
+
+#### Scenario: Two recipes short
+
+- **WHEN** a short cycle has two shortages
+- **THEN** the link filters by `situacao=short` without a search
 
 #### Scenario: Ready cycle has no badge
 
@@ -264,3 +279,164 @@ After a successful update to `ready` whose response has a non-empty `stock.short
 
 - **WHEN** an operator marks a cycle ready and the response lists `frango / 300 g` at -2
 - **THEN** the row shows `ready` and a warning reads "Separado com estoque negativo: frango 300 g (-2)."
+
+### Requirement: Ready row points to fulfillment
+
+A `ready` row MUST replace "Concluído" with "Expedir". When the item's `stripeAccount` is `br` and its `country` is `BR`, it MUST link to `/operations/courier?fatura={paidInvoiceId}&assinatura={id}` using that item's `paidInvoiceId` and its subscription `id`. When the item's `deliveryDate` is after tomorrow (civil days in `America/Sao_Paulo`), the link MUST also carry `de={today}&ate={deliveryDate}`, so Entregas Brasil loads a range that holds that order; when `deliveryDate` is tomorrow or earlier, or absent, the link MUST NOT carry `de` or `ate`. When the item has no `paidInvoiceId`, it MUST link to `/operations/courier` with no query. When the `stripeAccount` is `us` and the `country` is `US`, it MUST link to `/operations/labels`. Otherwise it MUST show "Mercado divergente" without a link. When a Brazil row's `courierIssues` is not empty, the row MUST show "Travado: " followed by what is missing, in the same words as Entregas Brasil, instead of "Expedir", with a link "Ver na entrega" to the same courier path; when `courierIssues` is empty, null or absent, the row MUST show "Expedir" as above. The top of the queue MUST link to the fulfillment screens of the session's markets.
+
+#### Scenario: Brazilian ready order
+
+- **WHEN** a ready row has `id` 42, `stripeAccount: "br"`, `country: "BR"` and `paidInvoiceId: "in_123"`
+- **THEN** it shows "Expedir" linking to `/operations/courier?fatura=in_123&assinatura=42`
+
+#### Scenario: US ready order
+
+- **WHEN** a ready row has `stripeAccount: "us"` and `country: "US"`
+- **THEN** it shows "Expedir" linking to `/operations/labels`
+
+#### Scenario: Account and address in different countries
+
+- **WHEN** a ready row has `stripeAccount: "us"` and `country: "BR"`
+- **THEN** it shows "Mercado divergente" and no fulfillment link
+
+#### Scenario: Ready ahead of the delivery day
+
+- **WHEN** on 2026-11-08 a ready Brazil row has `id` 42, `paidInvoiceId: "in_123"` and `deliveryDate: "2026-11-11"`
+- **THEN** "Expedir" links to `/operations/courier?fatura=in_123&assinatura=42&de=2026-11-08&ate=2026-11-11`
+
+#### Scenario: No delivery date
+
+- **WHEN** a ready Brazil row has `id` 42, `paidInvoiceId: "in_123"` and no `deliveryDate`
+- **THEN** "Expedir" links to `/operations/courier?fatura=in_123&assinatura=42` with no range
+
+#### Scenario: No paid invoice on the item
+
+- **WHEN** a ready Brazil row has no `paidInvoiceId`, as with an API that does not send it yet
+- **THEN** "Expedir" links to `/operations/courier`
+
+#### Scenario: Ready order held by the address
+
+- **WHEN** a ready Brazil row has `id` 42, `paidInvoiceId: "in_123"` and `courierIssues: ["recipient_name_missing"]`
+- **THEN** it shows "Travado: Falta o nome de quem recebe" and a link "Ver na entrega" to `/operations/courier?fatura=in_123&assinatura=42`, and no "Expedir"
+
+#### Scenario: API without courierIssues
+
+- **WHEN** a ready Brazil row has no `courierIssues`
+- **THEN** it shows "Expedir" as before
+
+### Requirement: Blocking an unpaid cycle warns about the charge
+
+When the cycle being blocked is not paid (`paymentState` is `awaiting_payment` or `past_due`), the "Bloquear pedido" dialog MUST ask for the block preview of that cycle and state that blocking postpones the charge and that reopening may charge the customer at once. When the preview answers a `chargeMovesTo`, the text MUST give that date, in the market's timezone, as "Bloquear adia a cobrança para {dd/mm}". While the preview loads, when it fails, or when it has no date, the text MUST stay without a date. For a paid cycle the dialog MUST NOT ask for the preview nor show this text.
+
+#### Scenario: Block an unpaid cycle
+
+- **WHEN** the operator opens "Bloquear pedido" on a row with `paymentState: "awaiting_payment"` and the preview answers `chargeMovesTo` on 12 November
+- **THEN** the dialog says "Bloquear adia a cobrança para 12/11" and that reopening may charge at once
+
+#### Scenario: Preview fails
+
+- **WHEN** the preview answers an error
+- **THEN** the dialog says the charge is postponed, without a date, and the block can still be confirmed
+
+#### Scenario: Block a paid cycle
+
+- **WHEN** the operator opens "Bloquear pedido" on a paid row
+- **THEN** no preview is requested and the dialog shows no charge warning
+
+### Requirement: Queue search matches the name the queue shows
+
+The queue search (`q`) MUST also match, case-insensitively and as a substring, the subscription address keys the queue reads the customer name from: `recipient_name`, `name`, `full_name` and `recipient`, and the account name the queue shows when the address has none. It MUST keep matching email, Stripe ids and user id. The search field placeholder MUST read "Nome ou e-mail".
+
+#### Scenario: Search by recipient
+
+- **WHEN** a subscription address has `recipient_name: "Ana Souza"` and the operator searches "souza"
+- **THEN** the queue lists that cycle
+
+#### Scenario: Search by a legacy name key
+
+- **WHEN** an older subscription address has only `full_name: "Bruno Lima"` and the operator searches "bruno"
+- **THEN** the queue lists that cycle
+
+#### Scenario: Search by account name
+
+- **WHEN** a subscription address has no recipient, the account name is "Carla Dias" and the operator searches "dias"
+- **THEN** the queue lists that cycle, showing "Carla Dias"
+
+### Requirement: Marking a short order ready asks first
+
+"Marcar como pronto" on a row with `stockCoverage: "short"` MUST open a confirmation before the status change. The confirmation MUST say "Pela ordem da fila, falta estoque de {recipes} para este pedido. Marcar como pronto pode deixar o saldo negativo.", listing the `stockShortages` recipes and pack sizes. It MUST offer "Marcar como pronto", which sends the change, "Abrir estoque", which opens the badge's link, and cancel. Other rows MUST change at once, as today.
+
+#### Scenario: Short order
+
+- **WHEN** the operator clicks "Marcar como pronto" on a short row missing Frango 300 g
+- **THEN** a confirmation names "Frango 300 g" and nothing is sent until they confirm
+
+#### Scenario: Covered order
+
+- **WHEN** the operator clicks "Marcar como pronto" on a covered row
+- **THEN** the change is sent with no confirmation
+
+### Requirement: Ready orders past their day have their own group
+
+Rows whose `dueBucket` is `overdue` and whose production status is ready MUST be shown in a group "Prontos para expedir", placed before the "Atrasados" group, and MUST NOT be shown under "Atrasados". The "Atrasados" metric card MUST keep showing the API's `overdue` metric, which counts only overdue rows not ready. The card MUST carry the text "Só o que a cozinha não terminou. Pronto esperando saída não conta." and MUST NOT show a second number. Under `?prazo=atrasados` without a status filter, the list MUST hold only what the API returns for `due=overdue`, which leaves out ready rows. When a single or batch status change sets ready while `?prazo=atrasados` is active, the panel MUST show a notice with role `status` saying the order left Atrasados and waits in "Prontos para expedir" (for a batch, how many), with a link to the queue filtered by status Pronto that keeps the market filter. A row under "Prontos para expedir" MUST NOT show the red "Atrasado N dias" badge; it MUST show a warning badge "Aguardando saída há N dias" ("há 1 dia"), N being how many days ago its preparation day was. Rows under "Atrasados" MUST keep the red "Atrasado N dias" badge.
+
+#### Scenario: One late order ready and one still in the kitchen
+
+- **WHEN** the queue without a due filter lists two overdue rows, one ready and one to prepare, and the metric `overdue` is 1
+- **THEN** the ready row is under "Prontos para expedir", the other under "Atrasados", and the card shows Atrasados 1
+
+#### Scenario: A ready row says how long it waits to leave
+
+- **WHEN** the queue lists a ready row prepared 24 days ago and a row to prepare from the same day
+- **THEN** the ready row shows "Aguardando saída há 24 dias" as a warning badge, and the other shows "Atrasado 24 dias" in red
+
+#### Scenario: Marked ready from the overdue filter
+
+- **WHEN** an operator on `?prazo=atrasados&mercado=br` marks an overdue Brazil row ready
+- **THEN** after the refresh the row is no longer in the list, and a notice says it left Atrasados and waits in "Prontos para expedir", with a link to `?status=ready&mercado=br`
+
+#### Scenario: Batch marked ready from the overdue filter
+
+- **WHEN** an operator on `?prazo=atrasados` marks two overdue rows ready in a batch
+- **THEN** after the refresh neither row is in the list, and the notice says 2 orders went to "Prontos para expedir"
+
+#### Scenario: Marked ready without the overdue filter
+
+- **WHEN** an operator on the queue without a due filter marks an overdue Brazil row ready
+- **THEN** after the refresh the row is under "Prontos para expedir" with its fulfillment action, and no notice is shown
+
+#### Scenario: The card says what it counts
+
+- **WHEN** the queue shows the "Atrasados" card
+- **THEN** the card shows the `overdue` number and the text "Só o que a cozinha não terminou. Pronto esperando saída não conta.", and no other number
+
+### Requirement: A ready row locked by the recipient name can be filled here
+A row locked by `recipient_name_missing` MUST offer "Informar quem recebe" to a user with `users.delivery.write`. It MUST open a dialog with one empty field, "Nome de quem recebe", the text "Fica nesta assinatura e vale para os próximos pedidos. O nome da conta não muda. Se for presente, confirme com o cliente." and "Salvar nome". When the item has `account_name`, the dialog MUST offer "Usar nome da conta ({account_name})", which fills the field without saving. A 409 `recipient_name_present` MUST say "Esta assinatura já tem nome de quem recebe." and reload. Saving MUST send the name to the subscription's recipient-name route and reload the list; a 422 MUST show under the field.
+
+#### Scenario: Fill the suggested name
+
+- **WHEN** a ready Brazil row has `courierIssues: ["recipient_name_missing"]` and `accountName: "Ana Costa"`, and an operator with `users.delivery.write` clicks "Informar quem recebe", "Usar nome da conta (Ana Costa)" and "Salvar nome"
+- **THEN** the panel sends "Ana Costa" for that subscription, reloads the queue, and the row offers "Expedir"
+
+#### Scenario: Without the permission
+
+- **WHEN** the operator lacks `users.delivery.write`
+- **THEN** the row shows the lock and "Ver na entrega" only
+
+### Requirement: A name taken from the account is marked
+
+When a queue item has `nameSource: "account"`, the row MUST show the name followed by "(conta)" in muted text, so it does not read as the recipient. With `recipient` or `email` the row MUST show the name as today.
+
+#### Scenario: Account name beside the lock
+
+- **WHEN** a ready row has `displayName: "Ana Costa"`, `nameSource: "account"` and `courierIssues: ["recipient_name_missing"]`
+- **THEN** the row shows "Ana Costa (conta)" and "Travado: Falta o nome de quem recebe"
+
+### Requirement: Queue shows each order's boxes
+
+Each production queue item MUST show its `boxes` from the API, by box name and pack count, for example "Caixa mensal · 30 pacotes + Caixa mensal · 15 pacotes", so the kitchen packs the right boxes. An item without `boxes` MUST show nothing extra.
+
+#### Scenario: Order with two boxes
+
+- **WHEN** an item has two monthly boxes with 30 and 15 packs
+- **THEN** the item shows both boxes with their pack counts

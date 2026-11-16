@@ -4,9 +4,12 @@ import { formatDate } from '../lib/format'
 import {
   ACTION_LABELS,
   describeValues,
+  describeWeek,
   formatDay,
   MOVE_LABELS,
+  OUTCOME_LABELS,
   type CalendarHistoryItem,
+  type OperatingDay,
 } from '../lib/deliveryCalendar'
 
 const PAGE_SIZE = 20
@@ -25,6 +28,7 @@ function searchableText(item: CalendarHistoryItem) {
     item.actorEmail,
     meta.stripeSubscriptionId,
     ...(meta.moved ?? []).map((moved) => moved.stripeSubscriptionId),
+    ...(meta.impact ?? []).map((item) => item.stripeSubscriptionId),
   ].filter(Boolean).join(' ').toLowerCase()
 }
 
@@ -109,7 +113,7 @@ export function DeliveryCalendarHistory({ items, timeZone }: { items: CalendarHi
         </div>
       ) : (
         <div className="table-shell table-scroll">
-          <table className="history-table">
+          <table className="history-table stack-table">
             <thead>
               <tr>
                 <th>Quando</th>
@@ -125,23 +129,32 @@ export function DeliveryCalendarHistory({ items, timeZone }: { items: CalendarHi
               {visible.map((item) => {
                 const meta = item.metadata
                 const resend = item.action === 'delivery_calendar.sync_resend'
-                const moved = meta.moved ?? []
+                const week = item.action === 'delivery_calendar.week_update'
+                // A closed-day change lists what it moved; a week change lists each delivery with its outcome.
+                const moved = week
+                  ? (meta.impact ?? []).map((entry) => ({ ...entry, label: OUTCOME_LABELS[entry.outcome], pendingTrialEnd: undefined }))
+                  : (meta.moved ?? []).map((entry) => ({ ...entry, label: MOVE_LABELS[entry.move] }))
+                const valuesOf = (values: typeof meta.before) => (week
+                  ? describeWeek(values as OperatingDay[] | null, meta.market)
+                  : describeValues(Array.isArray(values) ? null : values))
                 return (
                   <tr key={item.id}>
-                    <td className="nowrap">{formatDate(item.createdAt)}</td>
-                    <td>{item.actorEmail || '—'}</td>
-                    <td><span className="history-action">{ACTION_LABELS[item.action] || item.action}</span></td>
-                    <td className="nowrap">{formatDay(meta.closedOn)}{meta.label ? <div className="muted">{meta.label}</div> : null}</td>
-                    <td>{resend ? `Esperada ${formatDate(meta.expectedTrialEnd, timeZone)} · encontrada ${formatDate(meta.foundTrialEnd, timeZone)}` : describeValues(meta.before)}</td>
-                    <td>{resend ? `Alvo ${formatDate(meta.targetTrialEnd, timeZone)}` : describeValues(meta.after)}</td>
-                    <td>
+                    <td className="stack-table-title nowrap">{formatDate(item.createdAt)}</td>
+                    <td data-label="Quem">{item.actorEmail || '—'}</td>
+                    <td data-label="Ação"><span className="history-action">{ACTION_LABELS[item.action] || item.action}</span></td>
+                    <td data-label="Data" className="nowrap">{week ? 'Toda semana' : formatDay(meta.closedOn)}{meta.label ? <div className="muted">{meta.label}</div> : null}</td>
+                    <td data-label="Antes">{resend ? `Esperada ${formatDate(meta.expectedTrialEnd, timeZone)} · encontrada ${formatDate(meta.foundTrialEnd, timeZone)}` : valuesOf(meta.before)}</td>
+                    <td data-label="Depois">{resend ? `Alvo ${formatDate(meta.targetTrialEnd, timeZone)}` : valuesOf(meta.after)}</td>
+                    <td data-label="Assinaturas">
                       {resend ? meta.stripeSubscriptionId : moved.length > 0 ? (
                         <details className="history-moved">
-                          <summary>{moved.length === 1 ? '1 assinatura remarcada' : `${moved.length} assinaturas remarcadas`}</summary>
+                          <summary>{week
+                            ? (moved.length === 1 ? '1 entrega afetada' : `${moved.length} entregas afetadas`)
+                            : (moved.length === 1 ? '1 assinatura remarcada' : `${moved.length} assinaturas remarcadas`)}</summary>
                           <ul className="plain-list">
                             {moved.map((entry) => (
                               <li key={`${entry.stripeSubscriptionId}-${entry.deliveryId}`}>
-                                {entry.stripeSubscriptionId}: {formatDay(entry.previousPreparationDay)} → {formatDay(entry.newPreparationDay)} · {MOVE_LABELS[entry.move]}
+                                {entry.stripeSubscriptionId}: {formatDay(entry.previousPreparationDay)} → {formatDay(entry.newPreparationDay)} · {entry.label}
                                 {entry.pendingTrialEnd ? ` (${formatDate(entry.pendingTrialEnd.previous, timeZone)} → ${formatDate(entry.pendingTrialEnd.next, timeZone)})` : ''}
                               </li>
                             ))}

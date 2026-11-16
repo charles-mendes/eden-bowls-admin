@@ -22,9 +22,9 @@ test.describe('Admin stock', () => {
   test('records production and reloads the row', async ({ page }) => {
     const { captured } = await openAuthed(page, '/operations/stock', e2eProfiles.operatorWrite)
 
-    await page.getByRole('button', { name: 'Adicionar estoque' }).click()
-    const dialog = page.getByRole('dialog', { name: 'Adicionar estoque' })
-    await dialog.getByLabel('Receita').fill('carne')
+    await page.getByRole('button', { name: 'Lançar produção' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Lançar produção' })
+    await dialog.getByLabel('Código do produto').fill('carne')
     await dialog.getByLabel('Tamanho (g)').fill('500')
     await dialog.getByLabel('Quantidade').fill('30')
     await dialog.getByRole('button', { name: 'Adicionar' }).click()
@@ -44,10 +44,10 @@ test.describe('Admin stock', () => {
 
     const packs = page.locator('.section-card').filter({ has: page.getByRole('heading', { name: 'Packs' }) })
     await packs.getByRole('button', { name: 'Ações de frango 300 g' }).click()
-    await page.getByRole('menuitem', { name: 'Contagem' }).click()
-    const dialog = page.getByRole('dialog', { name: /Contagem de frango/ })
+    await page.getByRole('menuitem', { name: /Contar estoque/ }).click()
+    const dialog = page.getByRole('dialog', { name: /Contar estoque de/ })
     await dialog.getByLabel('Quantidade contada').fill('120')
-    await dialog.getByRole('button', { name: 'Salvar' }).click()
+    await page.getByRole('button', { name: 'Salvar contagem' }).click()
 
     await expect.poll(() => captured.some((item) => (
       item.method === 'POST'
@@ -62,10 +62,10 @@ test.describe('Admin stock', () => {
 
     const packs = page.locator('.section-card').filter({ has: page.getByRole('heading', { name: 'Packs' }) })
     await packs.getByRole('button', { name: 'Ações de frango 300 g' }).click()
-    await page.getByRole('menuitem', { name: 'Ajustar' }).click()
-    const dialog = page.getByRole('dialog', { name: /Ajustar frango/ })
-    await dialog.getByLabel('Quantidade').fill('-2')
+    await page.getByRole('menuitem', { name: /Registrar perda ou ajuste/ }).click()
+    const dialog = page.getByRole('dialog', { name: /Perda ou ajuste de/ })
     await dialog.getByLabel('Motivo').selectOption('loss')
+    await dialog.getByLabel('Packs a baixar').fill('2')
     await dialog.getByRole('button', { name: 'Salvar' }).click()
 
     await expect.poll(() => captured.some((item) => (

@@ -1,6 +1,8 @@
 import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
+import { InfoHint } from '../components/InfoHint'
+import { NutritionEditLog } from '../components/NutritionEditLog'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
@@ -10,18 +12,27 @@ import { MARKET_LABELS, sessionMarkets, type MarketCode } from '../lib/markets'
 import {
   BREED_GROUPS,
   BREED_GROUP_LABELS,
+  COMBINATION_ROWS,
+  COMBINATION_SCORES,
   FACTOR_RANGE,
   FACTOR_SECTIONS,
   MONTHS_RANGE,
   NEM_RANGE,
   SIZE_CLASSES,
   SIZE_CLASS_LABELS,
+  HELP,
+  CATS_ENABLED,
+  SPECIES_OPTIONS,
   cloneParameters,
+  combinationRowLabel,
   factorLabel,
   invalidFields,
   nutritionErrorMessage,
+  speciesOfField,
+  speciesOfKey,
   transitionLabel,
   type BreedGroup,
+  type FactorSection,
   type BreedInput,
   type LifeStageBreed,
   type LifeStageOverview,
@@ -35,8 +46,8 @@ import {
 type Tab = 'fases' | 'racas' | 'fatores'
 
 const TABS: Array<{ id: Tab; label: string }> = [
-  { id: 'fases', label: 'Fases da vida' },
   { id: 'racas', label: 'Raças' },
+  { id: 'fases', label: 'Fases da vida' },
   { id: 'fatores', label: 'Fatores' },
 ]
 
@@ -61,6 +72,16 @@ function monthsLabel(value: string) {
   return rest ? `${years} a ${rest} m` : `${years} ${years === 1 ? 'ano' : 'anos'}`
 }
 
+// A label with its "i". `end` opens the tip leftwards, for the last columns.
+function Hinted({ id, label, text, end = false }: { id: string; label: string; text: string; end?: boolean }) {
+  return (
+    <span className={end ? 'label-with-hint end' : 'label-with-hint'}>
+      {label}
+      <InfoHint id={id} topic={label.toLowerCase()} text={text} />
+    </span>
+  )
+}
+
 // Life-stage limits, giant breeds and energy factors of the recommendation (nutrition-settings).
 export function NutritionSettingsPage() {
   const { token, user, hasPermission } = useAuth()
@@ -71,8 +92,15 @@ export function NutritionSettingsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedMarket = String(searchParams.get('mercado') || '').toUpperCase() as MarketCode
   const market: MarketCode = markets.includes(requestedMarket) ? requestedMarket : markets[0]
+  // The operator creates and edits breeds only in the market assigned to them; the veterinarian and the admin in any.
+  const userReady = Boolean(user)
+  const canWriteBreeds = canWrite || (hasPermission('nutrition.breeds.write') && assigned.includes(market))
+  // Life-stage limits are clinical: only the veterinarian changes them, in any market.
+  const canWriteLimits = hasPermission('nutrition.limits.write')
+  const speciesOption = SPECIES_OPTIONS.find((option) => option.id === searchParams.get('especie')) ?? SPECIES_OPTIONS[0]
+  const species = speciesOption.species
   const requestedTab = searchParams.get('aba')
-  const tab: Tab = TABS.some((option) => option.id === requestedTab) ? requestedTab as Tab : 'fases'
+  const tab: Tab = TABS.some((option) => option.id === requestedTab) ? requestedTab as Tab : TABS[0].id
 
   const [overview, setOverview] = useState<LifeStageOverview | null>(null)
   const [limits, setLimits] = useState<LimitsForm>(limitsFormOf(null))
@@ -81,13 +109,15 @@ export function NutritionSettingsPage() {
   const [parameters, setParameters] = useState<ParametersOverview | null>(null)
   const [draft, setDraft] = useState<NutritionParameters | null>(null)
   const [pending, setPending] = useState<PendingSave | null>(null)
+  const [creatingBreed, setCreatingBreed] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
   const loadLifeStage = async () => {
-    if (!token) return
+    // The market depends on the session's markets: wait for them so no request names a market outside the scope.
+    if (!token || !userReady) return
     try {
       const next = await apiRequest<LifeStageOverview>(`/admin/life-stage${buildQueryString({ market })}`, { token })
       setOverview(next)
@@ -112,7 +142,7 @@ export function NutritionSettingsPage() {
     setOverview(null)
     setInvalid([])
     void loadLifeStage()
-  }, [token, market])
+  }, [token, userReady, market])
 
   useEffect(() => {
     void loadParameters()
@@ -135,8 +165,17 @@ export function NutritionSettingsPage() {
   }
 
   const fail = (requestError: unknown, fallback: string) => {
-    setInvalid(invalidFields(requestError))
+    const fields = invalidFields(requestError)
+    setInvalid(fields)
     setError(nutritionErrorMessage(requestError, fallback))
+    // A factor of the other species is invalid and none of this one: show the species with the marked fields.
+    const owners = fields.map(speciesOfField)
+    const other = SPECIES_OPTIONS.find((option) => option.species !== species)
+    if (tab === 'fatores' && other && owners.length && owners.every((owner) => owner === other.species)) {
+      const next = new URLSearchParams(searchParams)
+      next.set('especie', other.id)
+      setSearchParams(next, { replace: true })
+    }
   }
 
   // Asks the API how many pets change stage; with none it saves at once, otherwise it waits for "Confirmar".
@@ -151,6 +190,7 @@ export function NutritionSettingsPage() {
       if (preview.pets_changing === 0) {
         await save()
       } else {
+        setCreatingBreed(false)
         setPending({ title, preview, save })
       }
     } catch (requestError) {
@@ -209,6 +249,19 @@ export function NutritionSettingsPage() {
     })
   }
 
+  const openNewBreed = () => {
+    setMessage('')
+    setError('')
+    setInvalid([])
+    setCreatingBreed(true)
+  }
+
+  const closeNewBreed = () => {
+    setCreatingBreed(false)
+    setError('')
+    setInvalid([])
+  }
+
   const submitNewBreed = async (event: FormEvent) => {
     event.preventDefault()
     const breed = { ...newBreed, name_pt: newBreed.name_pt.trim(), name_en: newBreed.name_en.trim() }
@@ -216,6 +269,7 @@ export function NutritionSettingsPage() {
       await apiRequest<LifeStageBreed>('/admin/life-stage/breeds', { token, method: 'POST', body: { market, ...breed } })
       await loadLifeStage()
       setNewBreed({ name_pt: '', name_en: '', size_class: 'giant' })
+      setCreatingBreed(false)
       setMessage(`${breed.name_pt} incluída.`)
     })
   }
@@ -262,7 +316,7 @@ export function NutritionSettingsPage() {
     setMessage(`Conjunto #${id} copiado para o rascunho.`)
   }, 'Falha ao copiar o conjunto')
 
-  const updateFactor = (section: 'combination' | 'state' | 'base' | 'nem', key: string, value: string) => {
+  const updateFactor = (section: FactorSection, key: string, value: string) => {
     setDraft((current) => (current ? { ...current, [section]: { ...current[section], [key]: value === '' ? Number.NaN : Number(value) } } : current))
   }
 
@@ -273,6 +327,27 @@ export function NutritionSettingsPage() {
   const isInvalid = (field: string) => invalid.some((item) => item === field || item.startsWith(`${field}:`))
   const shown = canWrite ? draft : parameters?.published.parameters ?? null
   const draftReadOnly = !canWrite || busy
+  const limitHistory = overview?.history?.filter((event) => event.action === 'life_stage.limits.update')
+  const breedHistory = overview?.history?.filter((event) => event.action.startsWith('life_stage.breed.'))
+
+  const factorInput = (sectionKey: FactorSection, key: string, label: string) => {
+    const range = sectionKey === 'nem' ? NEM_RANGE : FACTOR_RANGE
+    const value = shown?.[sectionKey]?.[key]
+    return (
+      <input
+        aria-label={label}
+        type="number"
+        inputMode="decimal"
+        min={range.min}
+        max={range.max}
+        step="0.01"
+        value={value === undefined || Number.isNaN(value) ? '' : value}
+        disabled={draftReadOnly}
+        aria-invalid={isInvalid(`${sectionKey}.${key}`) || undefined}
+        onChange={(event) => updateFactor(sectionKey, key, event.target.value)}
+      />
+    )
+  }
 
   return (
     <PageFrame
@@ -288,7 +363,7 @@ export function NutritionSettingsPage() {
         </div>
       ) : undefined}
     >
-      {error ? <div className="alert" role="alert">{error}</div> : null}
+      {error && !creatingBreed ? <div className="alert" role="alert">{error}</div> : null}
       {message ? <div className="success" role="status">{message}</div> : null}
 
       <div className="page-tabs" role="tablist" aria-label="Parâmetros nutricionais" onKeyDown={moveTabFocus}>
@@ -311,78 +386,119 @@ export function NutritionSettingsPage() {
       </div>
 
       {tab === 'fases' ? (
-        <form id="nutrition-panel-fases" role="tabpanel" aria-labelledby="nutrition-tab-fases" onSubmit={submitLimits}>
-          <Section
-            title={`Limites de ${MARKET_LABELS[market]}`}
-            description="Idade, em meses, em que o cão passa a adulto e a sênior, por porte. Antes de salvar, a prévia mostra quantos pets com assinatura ativa mudariam de fase."
-          >
-            {!overview ? <p className="muted" aria-busy="true">Carregando…</p> : (
-              <div className="table-shell">
-                <table>
-                  <thead>
-                    <tr><th>Porte</th><th>Adulto a partir de (meses)</th><th>Sênior a partir de (meses)</th></tr>
-                  </thead>
-                  <tbody>
-                    {SIZE_CLASSES.map((sizeClass) => (
-                      <tr key={sizeClass}>
-                        <th scope="row">{SIZE_CLASS_LABELS[sizeClass]}</th>
-                        {(['adult', 'senior'] as const).map((stage) => {
-                          const field = `${sizeClass}.${stage === 'adult' ? 'adult_from_months' : 'senior_from_months'}`
-                          return (
-                            <td key={stage}>
-                              <div className="ship-field">
-                                <input
-                                  aria-label={`${SIZE_CLASS_LABELS[sizeClass]}: ${stage === 'adult' ? 'adulto' : 'sênior'} a partir de`}
-                                  aria-describedby={`limit-hint-${field}`}
-                                  type="number"
-                                  min={MONTHS_RANGE.min}
-                                  max={MONTHS_RANGE.max}
-                                  step="1"
-                                  value={limits[sizeClass][stage]}
-                                  disabled={!canWrite || busy}
-                                  aria-invalid={isInvalid(field) || undefined}
-                                  onChange={(event) => setLimits((current) => ({ ...current, [sizeClass]: { ...current[sizeClass], [stage]: event.target.value } }))}
-                                />
-                                <small id={`limit-hint-${field}`} className="ship-hint">{monthsLabel(limits[sizeClass][stage])}</small>
-                              </div>
-                            </td>
-                          )
-                        })}
+        <div id="nutrition-panel-fases" role="tabpanel" aria-labelledby="nutrition-tab-fases">
+          <form onSubmit={submitLimits}>
+            <Section
+              title={`Limites de ${MARKET_LABELS[market]}`}
+              hint={<InfoHint id="help-preview" topic="a prévia" text={HELP.preview} />}
+              description="Idade, em meses, em que o cão passa a adulto e a sênior, por porte."
+            >
+              {!canWriteLimits ? <p className="readonly-note">Somente leitura: só a veterinária altera os limites de fase.</p> : null}
+              <dl className="nutri-legend">
+                <div><dt><Hinted id="help-adult-m" label="Adulto a partir de" text={HELP.adultFrom} /></dt></div>
+                <div><dt><Hinted id="help-senior-m" label="Sênior a partir de" text={HELP.seniorFrom} end /></dt></div>
+              </dl>
+              {!overview ? <p className="muted" aria-busy="true">Carregando…</p> : (
+                <div className="nutri-table-shell">
+                  <table className="nutri-table nutri-limits">
+                    <thead>
+                      <tr>
+                        <th scope="col"><Hinted id="help-size" label="Porte" text={HELP.sizeClass} /></th>
+                        <th scope="col"><Hinted id="help-adult" label="Adulto a partir de (meses)" text={HELP.adultFrom} /></th>
+                        <th scope="col"><Hinted id="help-senior" label="Sênior a partir de (meses)" text={HELP.seniorFrom} end /></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            {canWrite && overview ? (
-              <div className="table-actions">
-                <button className="primary-button" type="submit" disabled={busy}>Salvar limites</button>
-              </div>
-            ) : null}
+                    </thead>
+                    <tbody>
+                      {SIZE_CLASSES.map((sizeClass) => (
+                        <tr key={sizeClass}>
+                          <th scope="row">{SIZE_CLASS_LABELS[sizeClass]}</th>
+                          {(['adult', 'senior'] as const).map((stage) => {
+                            const field = `${sizeClass}.${stage === 'adult' ? 'adult_from_months' : 'senior_from_months'}`
+                            return (
+                              <td key={stage}>
+                                <span className="nutri-cell-label" aria-hidden="true">{stage === 'adult' ? 'Adulto a partir de' : 'Sênior a partir de'}</span>
+                                <div className="nutri-number">
+                                  <input
+                                    aria-label={`${SIZE_CLASS_LABELS[sizeClass]}: ${stage === 'adult' ? 'adulto' : 'sênior'} a partir de`}
+                                    aria-describedby={`limit-hint-${field}`}
+                                    type="number"
+                                    inputMode="numeric"
+                                    min={MONTHS_RANGE.min}
+                                    max={MONTHS_RANGE.max}
+                                    step="1"
+                                    value={limits[sizeClass][stage]}
+                                    disabled={!canWriteLimits || busy}
+                                    aria-invalid={isInvalid(field) || undefined}
+                                    onChange={(event) => setLimits((current) => ({ ...current, [sizeClass]: { ...current[sizeClass], [stage]: event.target.value } }))}
+                                  />
+                                  <span className="nutri-unit" aria-hidden="true">meses</span>
+                                </div>
+                                <small id={`limit-hint-${field}`} className="ship-hint">{monthsLabel(limits[sizeClass][stage])}</small>
+                              </td>
+                            )
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {canWriteLimits && overview ? (
+                <div className="table-actions">
+                  <button className="primary-button" type="submit" disabled={busy}>Salvar limites</button>
+                </div>
+              ) : null}
+            </Section>
+          </form>
+          <Section title="Histórico de edições" hint={<InfoHint id="help-log-fases" topic="o histórico de edições" text={HELP.editLog} />} description={`Quem alterou os limites de ${MARKET_LABELS[market]}.`}>
+            {overview ? <NutritionEditLog events={limitHistory} empty="Nenhuma alteração de limites registrada." /> : <p className="muted" aria-busy="true">Carregando…</p>}
           </Section>
-        </form>
+        </div>
       ) : null}
 
       {tab === 'racas' ? (
         <div id="nutrition-panel-racas" role="tabpanel" aria-labelledby="nutrition-tab-racas">
           <Section
             title={`Raças com porte próprio em ${MARKET_LABELS[market]}`}
-            description="Uma raça listada aqui usa o porte da tabela, qualquer que seja o porte informado pelo cliente. Os nomes são comparados sem acento e sem maiúsculas."
+            hint={<InfoHint id="help-breeds" topic="raças com porte próprio" text={HELP.breedsTable} />}
+            description="O porte desta tabela substitui o porte informado pelo cliente. Os nomes são comparados sem acento e sem maiúsculas."
+            actions={canWriteBreeds ? (
+              <button className="primary-button nutri-add-breed" type="button" disabled={busy || !overview} onClick={openNewBreed}>
+                <span aria-hidden="true">+</span> Incluir raça
+              </button>
+            ) : undefined}
           >
-            {!overview ? <p className="muted" aria-busy="true">Carregando…</p> : (
-              <div className="table-shell table-scroll">
-                <table>
+            {canWriteBreeds && !canWrite ? <p className="readonly-note">Você pode incluir e editar raças de {MARKET_LABELS[market]}, o mercado em que é operador.</p> : null}
+            {!canWriteBreeds && hasPermission('nutrition.breeds.write') ? <p className="readonly-note">Somente leitura: você não é operador de {MARKET_LABELS[market]}.</p> : null}
+            <dl className="nutri-legend">
+              <div><dt><Hinted id="help-names-m" label="Nomes" text={HELP.breedNames} /></dt></div>
+              <div><dt><Hinted id="help-size-m" label="Porte" text={HELP.sizeClass} /></dt></div>
+              <div><dt><Hinted id="help-status-m" label="Situação" text={HELP.breedStatus} end /></dt></div>
+            </dl>
+            {!overview ? <p className="muted" aria-busy="true">Carregando…</p> : overview.breeds.length === 0 ? (
+              <p className="muted">Nenhuma raça cadastrada em {MARKET_LABELS[market]}.</p>
+            ) : (
+              <div className="nutri-table-shell">
+                <table className="nutri-table nutri-breeds">
                   <thead>
-                    <tr><th>Nome em português</th><th>Nome em inglês</th><th>Porte</th><th>Situação</th>{canWrite ? <th>Ações</th> : null}</tr>
+                    <tr>
+                      <th scope="col"><Hinted id="help-names" label="Nome em português" text={HELP.breedNames} /></th>
+                      <th scope="col">Nome em inglês</th>
+                      <th scope="col"><Hinted id="help-size-b" label="Porte" text={HELP.sizeClass} /></th>
+                      <th scope="col"><Hinted id="help-status" label="Situação" text={HELP.breedStatus} end={!canWriteBreeds} /></th>
+                      {canWriteBreeds ? <th scope="col"><span className="visually-hidden">Ações</span></th> : null}
+                    </tr>
                   </thead>
                   <tbody>
                     {overview.breeds.map((breed) => (
-                      <tr key={breed.id}>
-                        <td>{breed.namePt}</td>
-                        <td>{breed.nameEn}</td>
-                        <td>
-                          {canWrite ? (
+                      <tr key={breed.id} className={breed.active ? undefined : 'is-inactive'}>
+                        <td className="nutri-breed-name">{breed.namePt}</td>
+                        <td className="nutri-breed-en"><span className="nutri-cell-label" aria-hidden="true">Inglês</span>{breed.nameEn}</td>
+                        <td className="nutri-breed-size">
+                          <span className="nutri-cell-label" aria-hidden="true">Porte</span>
+                          {canWriteBreeds ? (
                             <select
+                              className="nutri-select"
                               aria-label={`Porte de ${breed.namePt}`}
                               value={breed.sizeClass}
                               disabled={busy}
@@ -392,10 +508,10 @@ export function NutritionSettingsPage() {
                             </select>
                           ) : SIZE_CLASS_LABELS[breed.sizeClass]}
                         </td>
-                        <td><span className={breed.active ? 'badge-success' : 'badge-warning'}>{breed.active ? 'Ativa' : 'Desativada'}</span></td>
-                        {canWrite ? (
-                          <td>
-                            <button className="ghost-button" type="button" disabled={busy} onClick={() => void saveBreed(breed, { active: !breed.active }, breed.active ? 'Desativada' : 'Reativada')}>
+                        <td className="nutri-breed-status"><span className={breed.active ? 'badge-success' : 'badge-warning'}>{breed.active ? 'Ativa' : 'Desativada'}</span></td>
+                        {canWriteBreeds ? (
+                          <td className="nutri-breed-action">
+                            <button className="ghost-button" type="button" disabled={busy} aria-label={`${breed.active ? 'Desativar' : 'Reativar'} ${breed.namePt}`} onClick={() => void saveBreed(breed, { active: !breed.active }, breed.active ? 'Desativada' : 'Reativada')}>
                               {breed.active ? 'Desativar' : 'Reativar'}
                             </button>
                           </td>
@@ -407,31 +523,9 @@ export function NutritionSettingsPage() {
               </div>
             )}
           </Section>
-          {canWrite ? (
-            <form onSubmit={submitNewBreed}>
-              <Section title="Incluir raça" description="Os dois nomes são obrigatórios: o cliente pode escrever a raça em qualquer um dos idiomas.">
-                <div className="ship-fields">
-                  <label className="ship-field">
-                    <span>Nome em português</span>
-                    <input value={newBreed.name_pt} maxLength={120} required disabled={busy} aria-invalid={isInvalid('name_pt') || undefined} onChange={(event) => setNewBreed((current) => ({ ...current, name_pt: event.target.value }))} />
-                  </label>
-                  <label className="ship-field">
-                    <span>Nome em inglês</span>
-                    <input value={newBreed.name_en} maxLength={120} required disabled={busy} aria-invalid={isInvalid('name_en') || undefined} onChange={(event) => setNewBreed((current) => ({ ...current, name_en: event.target.value }))} />
-                  </label>
-                  <label className="ship-field">
-                    <span>Porte</span>
-                    <select value={newBreed.size_class} disabled={busy} onChange={(event) => setNewBreed((current) => ({ ...current, size_class: event.target.value as SizeClass }))}>
-                      {SIZE_CLASSES.map((sizeClass) => <option key={sizeClass} value={sizeClass}>{SIZE_CLASS_LABELS[sizeClass]}</option>)}
-                    </select>
-                  </label>
-                </div>
-                <div className="table-actions">
-                  <button className="primary-button" type="submit" disabled={busy}>Incluir raça</button>
-                </div>
-              </Section>
-            </form>
-          ) : null}
+          <Section title="Histórico de edições" hint={<InfoHint id="help-log-racas" topic="o histórico de edições" text={HELP.editLog} />} description={`Quem incluiu, alterou ou desativou raças de ${MARKET_LABELS[market]}.`}>
+            {overview ? <NutritionEditLog events={breedHistory} empty="Nenhuma alteração de raça registrada." /> : <p className="muted" aria-busy="true">Carregando…</p>}
+          </Section>
         </div>
       ) : null}
 
@@ -441,9 +535,10 @@ export function NutritionSettingsPage() {
             <>
               <Section
                 title={canWrite ? (parameters.draft ? `Rascunho #${parameters.draft.id}` : 'Novo rascunho') : 'Conjunto publicado'}
+                hint={<InfoHint id="help-draft" topic="rascunho e publicação" text={HELP.draft} />}
                 description={`Publicado${parameters.published.id ? ` (#${parameters.published.id})` : ''} em ${parameters.published.publishedAt ? formatDate(parameters.published.publishedAt) : '—'}. Vale para os dois mercados.${canWrite && !parameters.draft ? ' O rascunho começa com os valores publicados.' : ''}`}
                 actions={canWrite ? (
-                  <div className="table-actions">
+                  <div className="table-actions nutri-draft-actions">
                     {parameters.draft ? <button className="ghost-button" type="button" disabled={busy} onClick={() => void discardDraft()}>Descartar rascunho</button> : null}
                     <button className="ghost-button" type="button" disabled={busy} onClick={() => void saveDraft()}>Salvar rascunho</button>
                     {parameters.draft ? <button className="primary-button" type="button" disabled={busy} onClick={() => setPublishing(true)}>Publicar</button> : null}
@@ -451,59 +546,127 @@ export function NutritionSettingsPage() {
                 ) : undefined}
               >
                 {canWrite && parameters.draft ? <p className="muted">Teste o rascunho no Simulador nutricional, com "Simular com o rascunho", antes de publicar.</p> : null}
+                {!canWrite ? <p className="readonly-note">Somente leitura: os fatores são definidos pela veterinária.</p> : null}
+                <p className="nutri-formula">
+                  <Hinted id="help-factor" label="Como o fator vira gramas" text={HELP.factor} />
+                  <span>NEM (kcal/dia): cão = fator × peso<sup>0,75</sup>{CATS_ENABLED ? <> · gato = fator × peso<sup>0,67</sup> (acima do peso: peso<sup>0,4</sup>)</> : null} · g/dia = NEM × 1000 ÷ EM do alimento</span>
+                </p>
               </Section>
-              {FACTOR_SECTIONS.map((section) => {
-                const range = section.key === 'nem' ? NEM_RANGE : FACTOR_RANGE
-                return (
-                  <Section key={section.key} title={section.title} description={section.description}>
-                    <div className="ship-fields ship-fields-4">
-                      {Object.entries(shown[section.key]).map(([key, value]) => (
-                        <label key={key} className="ship-field">
-                          <span>{factorLabel(section.key, key)}</span>
-                          <input
-                            type="number"
-                            min={range.min}
-                            max={range.max}
-                            step="0.01"
-                            value={Number.isNaN(value) ? '' : value}
+              {SPECIES_OPTIONS.length > 1 ? (
+                <div className="segmented nutri-species" role="group" aria-label="Espécie">
+                  {SPECIES_OPTIONS.map((option) => (
+                    <button key={option.id} type="button" aria-pressed={speciesOption.id === option.id} className={speciesOption.id === option.id ? 'active' : ''} onClick={() => setParam({ especie: option.id })}>
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {species === 'dog' ? (
+                <>
+                  {(['state', 'combination', 'combination_giant'] as const).map((sectionKey) => {
+                    const section = FACTOR_SECTIONS.find((item) => item.key === sectionKey)!
+                    return (
+                      <Section key={sectionKey} title={section.title} hint={<InfoHint id={`help-${sectionKey}`} topic={section.title.toLowerCase()} text={HELP[sectionKey]} />} description={section.description}>
+                        {sectionKey === 'state' ? (
+                          <div className="ship-fields ship-fields-4 nutri-factor-grid">
+                            {Object.keys(shown.state).map((key) => (
+                              <label key={key} className="ship-field">
+                                <span>{factorLabel('state', key)}</span>
+                                {factorInput('state', key, factorLabel('state', key))}
+                              </label>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="nutri-table-shell">
+                            <table className="nutri-table nutri-matrix">
+                              <thead>
+                                <tr>
+                                  <th scope="col">Castração e atividade</th>
+                                  {COMBINATION_SCORES.map((score) => <th key={score.key} scope="col">{score.label}</th>)}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {COMBINATION_ROWS.map((row) => (
+                                  <tr key={`${row.castrado}-${row.activity}`}>
+                                    <th scope="row">{combinationRowLabel(row)}</th>
+                                    {COMBINATION_SCORES.map((score) => {
+                                      const key = `${row.castrado}-${row.activity}-${score.key}`
+                                      return (
+                                        <td key={score.key}>
+                                          <span className="nutri-cell-label" aria-hidden="true">{score.short}</span>
+                                          {factorInput(sectionKey, key, factorLabel(sectionKey, key))}
+                                        </td>
+                                      )
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </Section>
+                    )
+                  })}
+                  <Section title="Raças gigantes" hint={<InfoHint id="help-groups" topic="raças gigantes" text={HELP.breedGroups} />} description="Raças de adulto acima de 40 kg. O cão dessas raças usa a matriz de raças gigantes mesmo com 40 kg ou menos; qualquer cão acima de 40 kg já a usa pelo peso. Uma raça por linha, em português e em inglês, sem acento; uma raça só pode estar numa lista.">
+                    <div className="ship-fields">
+                      {BREED_GROUPS.map((group) => (
+                        <label key={group} className="ship-field">
+                          <span>{BREED_GROUP_LABELS[group]} ({shown.breed_groups[group].filter((breed) => breed.trim()).length})</span>
+                          <textarea
+                            aria-label={BREED_GROUP_LABELS[group]}
+                            className="nutri-textarea"
+                            rows={6}
+                            value={shown.breed_groups[group].join('\n')}
                             disabled={draftReadOnly}
-                            aria-invalid={isInvalid(`${section.key}.${key}`) || undefined}
-                            onChange={(event) => updateFactor(section.key, key, event.target.value)}
+                            aria-invalid={isInvalid(`breed_groups.${group}`) || undefined}
+                            onChange={(event) => updateGroup(group, event.target.value)}
                           />
                         </label>
                       ))}
                     </div>
                   </Section>
-                )
-              })}
-              <Section title="Grupos de raça" description="Uma raça por linha, sem acento. Uma raça só pode estar num grupo.">
-                <div className="ship-fields">
-                  {BREED_GROUPS.map((group) => (
-                    <label key={group} className="ship-field">
-                      <span>{BREED_GROUP_LABELS[group]}</span>
-                      <textarea
-                        rows={6}
-                        value={shown.breed_groups[group].join('\n')}
-                        disabled={draftReadOnly}
-                        aria-invalid={isInvalid(`breed_groups.${group}`) || undefined}
-                        onChange={(event) => updateGroup(group, event.target.value)}
-                      />
+                </>
+              ) : (
+                <Section title="Fatores de gatos" hint={<InfoHint id="help-base" topic="fatores de gatos" text={HELP.base} />} description="Gato com atividade alta usa o fator de gato ativo; os demais, o de ambiente interno. A matriz de castração × atividade × escore não vale para gatos.">
+                  <div className="ship-fields ship-fields-4 nutri-factor-grid">
+                    {Object.keys(shown.base).map((key) => (
+                      <label key={key} className="ship-field">
+                        <span>{factorLabel('base', key)}</span>
+                        {factorInput('base', key, factorLabel('base', key))}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="nutri-formula">
+                    <span>Expoente do peso: <strong>0,67</strong>; gato acima do peso: <strong>0,4</strong>, com o mesmo fator.</span>
+                  </p>
+                </Section>
+              )}
+              <Section
+                title={`EM do alimento para ${speciesOption.label.toLowerCase()}`}
+                hint={<InfoHint id="help-nem" topic={`em do alimento para ${speciesOption.label.toLowerCase()}`} text={HELP.nem} />}
+                description="Energia metabolizável do alimento, em kcal/kg, quando a receita não informa a dela."
+              >
+                <div className="ship-fields ship-fields-4 nutri-factor-grid">
+                  {Object.keys(shown.nem).filter((key) => speciesOfKey(key) === species).map((key) => (
+                    <label key={key} className="ship-field">
+                      <span>{factorLabel('nem', key)}</span>
+                      {factorInput('nem', key, factorLabel('nem', key))}
                     </label>
                   ))}
                 </div>
               </Section>
-              <Section title="Histórico" description="Conjuntos publicados antes. Um conjunto antigo volta como rascunho, para ser publicado de novo.">
-                <div className="table-shell">
-                  <table>
+              <Section title="Conjuntos publicados" hint={<InfoHint id="help-history" topic="conjuntos publicados" text={HELP.history} />} description="Um conjunto antigo volta como rascunho, para ser publicado de novo.">
+                <div className="nutri-table-shell">
+                  <table className="nutri-table nutri-sets">
                     <thead>
-                      <tr><th>Conjunto</th><th>Situação</th><th>Publicado em</th>{canWrite ? <th>Ações</th> : null}</tr>
+                      <tr><th scope="col">Conjunto</th><th scope="col">Situação</th><th scope="col">Publicado em</th>{canWrite ? <th scope="col"><span className="visually-hidden">Ações</span></th> : null}</tr>
                     </thead>
                     <tbody>
                       {parameters.history.map((set) => (
                         <tr key={set.id}>
-                          <td>#{set.id}</td>
+                          <th scope="row">#{set.id}</th>
                           <td><span className={set.status === 'published' ? 'badge-success' : 'badge-info'}>{set.status === 'published' ? 'Publicado' : 'Anterior'}</span></td>
-                          <td>{set.publishedAt ? formatDate(set.publishedAt) : '—'}</td>
+                          <td><span className="nutri-cell-label" aria-hidden="true">Publicado em</span>{set.publishedAt ? formatDate(set.publishedAt) : '—'}</td>
                           {canWrite ? (
                             <td>
                               {set.status === 'retired' ? (
@@ -517,10 +680,44 @@ export function NutritionSettingsPage() {
                   </table>
                 </div>
               </Section>
+              <Section title="Histórico de edições" hint={<InfoHint id="help-log-fatores" topic="o histórico de edições" text={HELP.editLog} />} description="Quem salvou, descartou ou publicou rascunhos dos fatores.">
+                <NutritionEditLog events={parameters.audit} empty="Nenhuma edição de fatores registrada." />
+              </Section>
             </>
           )}
         </div>
       ) : null}
+
+      <Dialog
+        title={`Incluir raça em ${MARKET_LABELS[market]}`}
+        description="Os dois nomes são obrigatórios: o cliente pode escrever a raça em qualquer um dos idiomas."
+        open={creatingBreed && canWriteBreeds}
+        onClose={closeNewBreed}
+        footer={(
+          <>
+            <button className="ghost-button" type="button" onClick={closeNewBreed}>Cancelar</button>
+            <button className="primary-button" type="submit" form="new-breed-form" disabled={busy}>{busy ? 'Incluindo…' : 'Incluir raça'}</button>
+          </>
+        )}
+      >
+        <form id="new-breed-form" className="ship-fields nutri-breed-form" onSubmit={submitNewBreed}>
+          {error ? <div className="alert ship-field-wide" role="alert">{error}</div> : null}
+          <label className="ship-field ship-field-wide">
+            <span>Nome em português</span>
+            <input value={newBreed.name_pt} maxLength={120} required disabled={busy} placeholder="Ex.: Mastim Napolitano" aria-invalid={isInvalid('name_pt') || undefined} onChange={(event) => setNewBreed((current) => ({ ...current, name_pt: event.target.value }))} />
+          </label>
+          <label className="ship-field ship-field-wide">
+            <span>Nome em inglês</span>
+            <input value={newBreed.name_en} maxLength={120} required disabled={busy} placeholder="Ex.: Neapolitan Mastiff" aria-invalid={isInvalid('name_en') || undefined} onChange={(event) => setNewBreed((current) => ({ ...current, name_en: event.target.value }))} />
+          </label>
+          <label className="ship-field ship-field-wide">
+            <span className="label-with-hint">Porte<InfoHint id="help-new-size" topic="porte" text={HELP.sizeClass} /></span>
+            <select value={newBreed.size_class} disabled={busy} onChange={(event) => setNewBreed((current) => ({ ...current, size_class: event.target.value as SizeClass }))}>
+              {SIZE_CLASSES.map((sizeClass) => <option key={sizeClass} value={sizeClass}>{SIZE_CLASS_LABELS[sizeClass]}</option>)}
+            </select>
+          </label>
+        </form>
+      </Dialog>
 
       <Dialog
         title={pending?.title ?? ''}

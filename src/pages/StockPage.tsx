@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
 import { FiltersBar } from '../components/FiltersBar'
+import { InfoHint } from '../components/InfoHint'
 import { MarketSelect } from '../components/MarketSelect'
 import { MetricCard } from '../components/MetricCard'
 import { PageFrame } from '../components/PageFrame'
@@ -11,6 +12,7 @@ import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { formatDate } from '../lib/format'
+import { LIFE_STAGE_LABELS } from '../lib/recipeContent'
 import { defaultMarket, hasBothMarkets } from '../lib/markets'
 import {
   ADJUSTMENT_REASON_LABELS,
@@ -21,16 +23,22 @@ import {
   STOCK_WINDOWS,
   filterStockItems,
   formatSignedQuantity,
+  isStockStatus,
   isStockWindow,
   sortStockItems,
+  stockHref,
   stockErrorMessage,
   stockItemKey,
   stockItemLabel,
   stockPackSize,
-  stockRecipeNames,
-  stockRecipeOptions,
+  stockProductOptions,
+  stockProducts,
+  sortVariationsWithoutWeight,
+  stockVariationSkus,
+  variationWeightHref,
   stockStatus,
   type StockAdjustmentReason,
+  type StockFilters,
   type StockItem,
   type StockMovement,
   type StockMovementType,
@@ -40,14 +48,37 @@ import {
 } from '../lib/packStock'
 
 type ProductionForm = { flavorKey: string; packSizeGrams: string; quantity: string; note: string }
-type AdjustmentForm = { quantity: string; reason: StockAdjustmentReason; note: string }
+// The operator types how many packs; the sign comes from the reason (and from Baixar/Somar when the reason is Outro).
+type AdjustmentForm = { quantity: string; reason: StockAdjustmentReason; direction: 'out' | 'in'; note: string }
 type CountForm = { countedQuantity: string; note: string }
 type MinimumForm = { minLevel: string }
 
 const EMPTY_PRODUCTION: ProductionForm = { flavorKey: '', packSizeGrams: '', quantity: '', note: '' }
-const EMPTY_ADJUSTMENT: AdjustmentForm = { quantity: '', reason: 'loss', note: '' }
+const EMPTY_ADJUSTMENT: AdjustmentForm = { quantity: '', reason: 'loss', direction: 'out', note: '' }
 const EMPTY_COUNT: CountForm = { countedQuantity: '', note: '' }
 const PER_PAGE = 20
+
+// Free text kept with the movement and shown in Histórico. Not an invoice: "Nota" read as nota fiscal, so it is
+// named Observação, with its meaning behind the "i".
+function ObservationField({ id, value, onChange, required = false, hint }: {
+  id: string
+  value: string
+  onChange: (value: string) => void
+  required?: boolean
+  hint: string
+}) {
+  return (
+    <div className="closure-field field-with-hint stock-observation-field">
+      <div className="field-label-row">
+        <label htmlFor={id}>{required ? 'Observação (obrigatória)' : 'Observação (opcional)'}</label>
+        <InfoHint id={`${id}-hint`} topic="a observação" text={hint} />
+      </div>
+      <input id={id} value={value} maxLength={255} required={required} aria-describedby={`${id}-hint`} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  )
+}
+
+const OBSERVATION_HINT = 'Texto livre que fica no Histórico do Estoque junto com este movimento. Não é nota fiscal.'
 
 function highlighted(item: StockItem) {
   return stockStatus(item) !== 'ok'
@@ -59,13 +90,25 @@ export function StockPage() {
   const bothMarkets = hasBothMarkets(user)
   const lockedMarket = defaultMarket(user) ?? 'BR'
 
-  const [market, setMarket] = useState(lockedMarket)
-  const [windowDays, setWindowDays] = useState(7)
+  // Window, admin market, status and search live in the URL. A value out of range or out of scope falls back.
+  const [searchParams, setSearchParams] = useSearchParams()
+  const urlMarket = searchParams.get('mercado')
+  const market = urlMarket === 'BR' || urlMarket === 'US' ? urlMarket : lockedMarket
+  const urlWindow = Number(searchParams.get('janela'))
+  const windowDays = isStockWindow(urlWindow) ? urlWindow : 7
+  const search = searchParams.get('busca') ?? ''
+  const statusFilter: StockStatus | '' = isStockStatus(searchParams.get('situacao')) ? searchParams.get('situacao') as StockStatus : ''
+  const setFilters = (next: StockFilters) => {
+    const merged: StockFilters = { mercado: bothMarkets && urlMarket ? market : undefined, janela: windowDays, situacao: statusFilter, busca: search, ...next }
+    setSearchParams(new URLSearchParams(stockHref(merged).split('?')[1] ?? ''), { replace: true })
+  }
+  const setSearch = (value: string) => setFilters({ busca: value })
+  const setStatusFilter = (value: StockStatus | '') => setFilters({ situacao: value })
+  const setWindowDays = (value: number) => setFilters({ janela: value })
+  const setMarket = (value: 'BR' | 'US') => setFilters({ mercado: value })
   const [overview, setOverview] = useState<StockOverview | null>(null)
   const [movements, setMovements] = useState<StockMovementsResponse | null>(null)
   const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<StockStatus | ''>('')
   const [filterItem, setFilterItem] = useState<StockItem | null>(null)
   const [filterType, setFilterType] = useState<StockMovementType | ''>('')
   const [error, setError] = useState('')
@@ -190,8 +233,8 @@ export function StockPage() {
   const submitAdjustment = async (event: FormEvent) => {
     event.preventDefault()
     if (!token || !adjustItem) return
-    if (Number(adjustment.quantity) === 0) {
-      setDialogError('Informe uma quantidade diferente de zero.')
+    if (!(adjustmentPacks > 0)) {
+      setDialogError('Informe uma quantidade maior que zero.')
       return
     }
     setDialogError('')
@@ -203,7 +246,7 @@ export function StockPage() {
           market: scopedMarket,
           flavorKey: adjustItem.flavorKey,
           packSizeGrams: adjustItem.packSizeGrams,
-          quantity: Number(adjustment.quantity),
+          quantity: adjustmentDelta,
           reason: adjustment.reason,
           note: adjustment.note.trim() || undefined,
         },
@@ -262,17 +305,37 @@ export function StockPage() {
 
   const allItems = sortStockItems(overview?.items ?? [])
   const catalog = overview?.catalog ?? []
-  const names = stockRecipeNames(catalog)
-  const items = filterStockItems(allItems, { search, status: statusFilter, names })
-  const recipeOptions = stockRecipeOptions(catalog, allItems)
-  const selectedRecipe = recipeOptions.find((option) => option.flavorKey === production.flavorKey)
+  const products = stockProducts(catalog)
+  const skus = stockVariationSkus(catalog)
+  const items = filterStockItems(allItems, { search, status: statusFilter, products, skus })
+  const productOptions = stockProductOptions(catalog, allItems)
+  const selectedProduct = productOptions.find((option) => option.flavorKey === production.flavorKey)
   const unsized = overview?.unsizedLines ?? []
+  const withoutWeight = sortVariationsWithoutWeight(overview?.variationsWithoutWeight ?? [])
+  // Products on sale with no variation weighed yet: listed disabled, so whoever registers them sees what is missing.
+  const sellableProductIds = new Set(
+    productOptions.map((option) => products.get(option.flavorKey)?.productId).filter((id): id is string => Boolean(id)),
+  )
+  const productsWithoutWeight = withoutWeight
+    .filter((item, index) => !sellableProductIds.has(item.productId)
+      && withoutWeight.findIndex((other) => other.productId === item.productId) === index)
   const unsizedTotal = unsized.reduce((sum, line) => sum + line.quantity, 0)
   const columnCount = 9
-  const adjustmentDelta = Number(adjustment.quantity)
+  const adjustmentPacks = Math.abs(Number(adjustment.quantity))
+  const adjustmentAdds = adjustment.reason === 'other' && adjustment.direction === 'in'
+  const adjustmentDelta = adjustmentAdds ? adjustmentPacks : -adjustmentPacks
+  const countedTotal = count.countedQuantity.trim() === '' ? null : Number(count.countedQuantity)
+  const countDifference = countItem && countedTotal != null && Number.isFinite(countedTotal) ? countedTotal - countItem.onHand : null
 
-  const recipeName = (flavorKey: string) => names.get(flavorKey) ?? flavorKey
-  const itemLabel = (item: { flavorKey: string; packSizeGrams: number }) => stockItemLabel(recipeName(item.flavorKey), item.packSizeGrams, scopedMarket)
+  const productName = (flavorKey: string) => products.get(flavorKey)?.name ?? flavorKey
+  // Product code and variation SKU under the name; the code is left out when it already is the name.
+  const productMeta = (item: StockItem) => {
+    const sku = skus.get(stockItemKey(item))
+    return [productName(item.flavorKey) === item.flavorKey ? '' : item.flavorKey, sku ? `SKU ${sku}` : '']
+      .filter(Boolean)
+      .join(' · ')
+  }
+  const itemLabel = (item: { flavorKey: string; packSizeGrams: number }) => stockItemLabel(productName(item.flavorKey), item.packSizeGrams, scopedMarket)
 
   const emptyPacksMessage = () => {
     if (!overview) return error ? 'Estoque indisponível.' : 'Carregando estoque...'
@@ -282,10 +345,10 @@ export function StockPage() {
 
   const rowActions = (item: StockItem): RowMenuItem[] => [
     ...(canWrite ? [
-      { label: 'Adicionar estoque', onSelect: () => openProduction(item) },
-      { label: 'Contagem', onSelect: () => { setDialogError(''); setCountItem(item); setCount(EMPTY_COUNT) } },
-      { label: 'Ajustar', onSelect: () => { setDialogError(''); setAdjustItem(item); setAdjustment(EMPTY_ADJUSTMENT) } },
-      { label: 'Definir mínimo', onSelect: () => { setDialogError(''); setMinimumItem(item); setMinimum({ minLevel: item.minLevel == null ? '' : String(item.minLevel) }) } },
+      { label: 'Lançar produção', hint: 'Soma os packs que a cozinha produziu', onSelect: () => openProduction(item) },
+      { label: 'Contar estoque', hint: 'Informe o total contado; o sistema acerta a diferença', onSelect: () => { setDialogError(''); setCountItem(item); setCount(EMPTY_COUNT) } },
+      { label: 'Registrar perda ou ajuste', hint: 'Perda, vencimento, amostra ou outro motivo', onSelect: () => { setDialogError(''); setAdjustItem(item); setAdjustment(EMPTY_ADJUSTMENT) } },
+      { label: 'Definir mínimo', hint: 'Alerta de reposição; não mexe no saldo', separated: true, onSelect: () => { setDialogError(''); setMinimumItem(item); setMinimum({ minLevel: item.minLevel == null ? '' : String(item.minLevel) }) } },
     ] : []),
     { label: 'Ver histórico', onSelect: () => openHistory(item) },
   ]
@@ -296,7 +359,7 @@ export function StockPage() {
       description="Packs prontos contra as entregas da janela. A cozinha registra entradas, contagens e ajustes aqui."
       actions={canWrite ? (
         <button className="primary-button" type="button" onClick={() => openProduction()}>
-          Adicionar estoque
+          Lançar produção
         </button>
       ) : null}
     >
@@ -306,10 +369,48 @@ export function StockPage() {
           {' '}
           O estoque não bloqueia vendas nem renovações e não aparece na loja: um sabor com saldo zero continua à venda.
           {' '}
-          Cada pack é uma receita e um tamanho neste mercado, então variações com a mesma receita e gramas dividem o mesmo saldo.
+          Cada linha é uma variação de produto deste mercado: o produto (a receita) e o tamanho do pack.
         </div>
 
         {error ? <div className="alert" role="alert">{error}</div> : null}
+
+        {canWrite && !filterItem && !filterType && movements && movements.total === 0 ? (
+          // Without a first count the on-hand numbers start at zero and production alone cannot be trusted.
+          <div className="warning" role="status">
+            <strong>Falta a contagem inicial.</strong>
+            {' '}
+            Antes de lançar produção, conte os packs de cada item: no menu da linha, use Contar estoque com o total real.
+          </div>
+        ) : null}
+
+        {withoutWeight.length > 0 ? (
+          <div className="warning stock-weight-missing" role="status">
+            <p>
+              <strong>
+                {withoutWeight.length === 1 ? '1 variação à venda está sem peso' : `${withoutWeight.length} variações à venda estão sem peso`}
+              </strong>
+              {' '}e fica{withoutWeight.length === 1 ? '' : 'm'} fora do estoque. Informe o peso de cada uma:
+            </p>
+            <ul aria-label="Variações sem peso">
+              {withoutWeight.map((item) => {
+                const stage = item.lifeStage ? LIFE_STAGE_LABELS[item.lifeStage] : ''
+                return (
+                  <li key={item.variationId}>
+                    <Link
+                      to={variationWeightHref(item)}
+                      aria-label={`Informar peso de ${[item.productName, stage, item.sku ? `SKU ${item.sku}` : ''].filter(Boolean).join(', ')}`}
+                    >
+                      <span className="weight-missing-name" title={item.productName}>{item.productName}</span>
+                      <span className="weight-missing-stage">{stage || '—'}</span>
+                      <span className="weight-missing-sku mono">{item.sku ? `SKU ${item.sku}` : 'Sem SKU'}</span>
+                      <span className="weight-missing-action">Informar peso<span aria-hidden="true"> →</span></span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        ) : null}
 
         {unsized.length > 0 ? (
           <div className="warning stock-unsized" role="status">
@@ -320,7 +421,7 @@ export function StockPage() {
                 className="table-link"
                 to={`/billing/subscriptions/${line.subscriptionId}`}
               >
-                {line.label || line.flavorKey || 'pack'} × {line.quantity}
+                {(line.flavorKey && products.get(line.flavorKey)?.name) || line.label || line.flavorKey || 'pack'} × {line.quantity}
               </Link>
             ))}
           </div>
@@ -355,7 +456,7 @@ export function StockPage() {
         >
           <FiltersBar>
             <label>
-              Buscar receita
+              Buscar produto
               <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} />
             </label>
             <label>
@@ -383,7 +484,7 @@ export function StockPage() {
             <table className="stock-table">
               <thead>
                 <tr>
-                  <th>Receita</th>
+                  <th>Produto</th>
                   <th>Tamanho</th>
                   <th className="stock-number">Em estoque</th>
                   <th className="stock-number">Comprometido</th>
@@ -403,7 +504,18 @@ export function StockPage() {
                   const status = stockStatus(item)
                   return (
                     <tr key={stockItemKey(item)} className={highlighted(item) ? 'stock-row-warning' : undefined}>
-                      <td className="stock-table-title">{recipeName(item.flavorKey)}</td>
+                      <td className="stock-table-title">
+                        <div className="queue-cell-stack">
+                          {products.get(item.flavorKey)?.productId ? (
+                            <Link className="table-link" to={`/catalog/products/${products.get(item.flavorKey)?.productId}`}>
+                              {productName(item.flavorKey)}
+                            </Link>
+                          ) : (
+                            <span>{productName(item.flavorKey)}</span>
+                          )}
+                          {productMeta(item) ? <span className="cell-meta mono">{productMeta(item)}</span> : null}
+                        </div>
+                      </td>
                       <td data-label="Tamanho">{stockPackSize(item.packSizeGrams, scopedMarket)}</td>
                       <td className="stock-number" data-label="Em estoque">{item.onHand}</td>
                       <td className="stock-number" data-label="Comprometido">
@@ -523,7 +635,7 @@ export function StockPage() {
       </div>
 
       <Dialog
-        title="Adicionar estoque"
+        title="Lançar produção"
         description="Soma os packs que entraram ao saldo atual."
         open={productionOpen}
         onClose={closeDialogs}
@@ -536,15 +648,16 @@ export function StockPage() {
       >
         <form id="stock-production-form" className="closure-form" onSubmit={submitProduction}>
           {dialogError ? <div className="alert" role="alert">{dialogError}</div> : null}
-          {recipeOptions.length > 0 && catalog.length > 0 ? (
+          {productOptions.length > 0 && catalog.length > 0 ? (
             <>
               <label className="closure-field">
-                Receita
+                Produto
                 <select
                   required
+                  aria-describedby={productsWithoutWeight.length && !production.flavorKey ? 'stock-production-without-weight' : undefined}
                   value={production.flavorKey}
                   onChange={(event) => {
-                    const sizes = recipeOptions.find((option) => option.flavorKey === event.target.value)?.sizes ?? []
+                    const sizes = productOptions.find((option) => option.flavorKey === event.target.value)?.sizes ?? []
                     setProduction((current) => ({
                       ...current,
                       flavorKey: event.target.value,
@@ -553,21 +666,38 @@ export function StockPage() {
                   }}
                 >
                   <option value="">Selecione</option>
-                  {recipeOptions.map((option) => (
+                  {productOptions.map((option) => (
                     <option key={option.flavorKey} value={option.flavorKey}>{option.label}</option>
                   ))}
+                  {productsWithoutWeight.length ? (
+                    <optgroup label="Sem peso cadastrado">
+                      {productsWithoutWeight.map((item) => (
+                        <option key={item.productId} value={`sem-peso-${item.productId}`} disabled>
+                          {[item.productName, item.lifeStage ? LIFE_STAGE_LABELS[item.lifeStage] : ''].filter(Boolean).join(' · ')} (sem peso)
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
                 </select>
               </label>
+              {productsWithoutWeight.length && !production.flavorKey ? (
+                <p id="stock-production-without-weight" className="field-hint warning-text">
+                  {productsWithoutWeight.length === 1
+                    ? '1 produto está desabilitado porque não tem peso na variação.'
+                    : `${productsWithoutWeight.length} produtos estão desabilitados porque não têm peso na variação.`}
+                  {' '}Informe o peso pelo aviso no topo do Estoque para lançar.
+                </p>
+              ) : null}
               <label className="closure-field">
                 Tamanho
                 <select
                   required
-                  disabled={!selectedRecipe}
+                  disabled={!selectedProduct}
                   value={production.packSizeGrams}
                   onChange={(event) => setProduction((current) => ({ ...current, packSizeGrams: event.target.value }))}
                 >
                   <option value="">Selecione</option>
-                  {(selectedRecipe?.sizes ?? []).map((grams) => (
+                  {(selectedProduct?.sizes ?? []).map((grams) => (
                     <option key={grams} value={grams}>{stockPackSize(grams, scopedMarket)}</option>
                   ))}
                 </select>
@@ -576,7 +706,7 @@ export function StockPage() {
           ) : (
             <>
               <label className="closure-field">
-                Receita
+                Código do produto
                 <input required value={production.flavorKey} onChange={(event) => setProduction((current) => ({ ...current, flavorKey: event.target.value }))} />
               </label>
               <label className="closure-field">
@@ -589,16 +719,18 @@ export function StockPage() {
             Quantidade
             <input required type="number" min={1} max={10000} value={production.quantity} onChange={(event) => setProduction((current) => ({ ...current, quantity: event.target.value }))} />
           </label>
-          <label className="closure-field">
-            Nota
-            <input value={production.note} onChange={(event) => setProduction((current) => ({ ...current, note: event.target.value }))} />
-          </label>
+          <ObservationField
+            id="stock-production-note"
+            value={production.note}
+            onChange={(note) => setProduction((current) => ({ ...current, note }))}
+            hint={`${OBSERVATION_HINT} Use para o lote, a data de fabricação ou quem produziu.`}
+          />
         </form>
       </Dialog>
 
       <Dialog
-        title={adjustItem ? `Ajustar ${itemLabel(adjustItem)}` : 'Ajustar'}
-        description="Use número negativo para baixar e positivo para somar ao saldo."
+        title={adjustItem ? `Perda ou ajuste de ${itemLabel(adjustItem)}` : 'Perda ou ajuste'}
+        description="Perda, vencimento e amostra sempre baixam o saldo. Para corrigir o total depois de contar, use Contar estoque."
         open={Boolean(adjustItem)}
         onClose={closeDialogs}
         footer={(
@@ -611,43 +743,55 @@ export function StockPage() {
         <form id="stock-adjust-form" className="closure-form" onSubmit={submitAdjustment}>
           {dialogError ? <div className="alert" role="alert">{dialogError}</div> : null}
           <label className="closure-field">
-            Quantidade
-            <input required type="number" min={-10000} max={10000} value={adjustment.quantity} onChange={(event) => setAdjustment((current) => ({ ...current, quantity: event.target.value }))} />
-          </label>
-          {adjustItem ? (
-            <p className="muted">
-              Em estoque: {adjustItem.onHand}
-              {Number.isFinite(adjustmentDelta) && adjustmentDelta !== 0 ? ` → novo saldo: ${adjustItem.onHand + adjustmentDelta}` : ''}
-            </p>
-          ) : null}
-          <label className="closure-field">
             Motivo
-            <select aria-label="Motivo" value={adjustment.reason} onChange={(event) => setAdjustment((current) => ({ ...current, reason: event.target.value as StockAdjustmentReason }))}>
+            <select aria-label="Motivo" value={adjustment.reason} onChange={(event) => setAdjustment((current) => ({ ...current, reason: event.target.value as StockAdjustmentReason, direction: 'out' }))}>
               {MANUAL_ADJUSTMENT_REASONS.map((value) => (
                 <option key={value} value={value}>{ADJUSTMENT_REASON_LABELS[value]}</option>
               ))}
             </select>
           </label>
+          {adjustment.reason === 'other' ? (
+            <fieldset className="closure-field stock-direction">
+              <legend>Movimento</legend>
+              <label>
+                <input type="radio" name="stock-adjust-direction" value="out" checked={adjustment.direction === 'out'} onChange={() => setAdjustment((current) => ({ ...current, direction: 'out' }))} />
+                Baixar do saldo
+              </label>
+              <label>
+                <input type="radio" name="stock-adjust-direction" value="in" checked={adjustment.direction === 'in'} onChange={() => setAdjustment((current) => ({ ...current, direction: 'in' }))} />
+                Somar ao saldo
+              </label>
+            </fieldset>
+          ) : null}
           <label className="closure-field">
-            Nota
-            <input
-              required={adjustment.reason === 'other'}
-              value={adjustment.note}
-              onChange={(event) => setAdjustment((current) => ({ ...current, note: event.target.value }))}
-            />
+            {adjustmentAdds ? 'Packs a somar' : 'Packs a baixar'}
+            <input required type="number" min={1} max={10000} value={adjustment.quantity} onChange={(event) => setAdjustment((current) => ({ ...current, quantity: event.target.value }))} />
           </label>
+          {adjustItem ? (
+            <p className="muted stock-balance-preview">
+              Em estoque: {adjustItem.onHand}
+              {adjustmentPacks > 0 ? ` → novo saldo: ${adjustItem.onHand + adjustmentDelta}` : ''}
+            </p>
+          ) : null}
+          <ObservationField
+            id="stock-adjustment-note"
+            value={adjustment.note}
+            required={adjustment.reason === 'other'}
+            onChange={(note) => setAdjustment((current) => ({ ...current, note }))}
+            hint={`${OBSERVATION_HINT} Explique o que aconteceu; é obrigatória quando o motivo é Outro.`}
+          />
         </form>
       </Dialog>
 
       <Dialog
-        title={countItem ? `Contagem de ${itemLabel(countItem)}` : 'Contagem'}
-        description="Informe o total real de packs. O sistema registra a diferença no histórico."
+        title={countItem ? `Contar estoque de ${itemLabel(countItem)}` : 'Contar estoque'}
+        description="Informe o total de packs que você contou. O sistema lança só a diferença em relação ao saldo atual."
         open={Boolean(countItem)}
         onClose={closeDialogs}
         footer={(
           <>
             <button className="ghost-button" type="button" onClick={closeDialogs}>Cancelar</button>
-            <button className="primary-button" type="submit" form="stock-count-form">Salvar</button>
+            <button className="primary-button" type="submit" form="stock-count-form">Salvar contagem</button>
           </>
         )}
       >
@@ -658,15 +802,27 @@ export function StockPage() {
             <input required type="number" min={0} max={10000} value={count.countedQuantity} onChange={(event) => setCount((current) => ({ ...current, countedQuantity: event.target.value }))} />
           </label>
           {countItem ? (
-            <p className="muted">
-              Em estoque: {countItem.onHand}
-              {count.countedQuantity.trim() !== '' ? ` → novo saldo: ${Number(count.countedQuantity)}` : ''}
-            </p>
+            <div className="stock-count-preview" role="status">
+              <p className="muted">
+                Saldo no sistema: {countItem.onHand}
+                {countedTotal != null ? ` → novo saldo: ${countedTotal}` : ''}
+              </p>
+              {countDifference === 0 ? (
+                <p>Confere com o saldo. Nada será registrado no histórico.</p>
+              ) : countDifference != null ? (
+                <p>
+                  <strong>{formatSignedQuantity(countDifference)} {Math.abs(countDifference) === 1 ? 'pack' : 'packs'}</strong>
+                  {' '}{countDifference > 0 ? 'a mais' : 'a menos'} que o sistema. Fica no histórico como Ajuste · Contagem.
+                </p>
+              ) : null}
+            </div>
           ) : null}
-          <label className="closure-field">
-            Nota
-            <input value={count.note} onChange={(event) => setCount((current) => ({ ...current, note: event.target.value }))} />
-          </label>
+          <ObservationField
+            id="stock-count-note"
+            value={count.note}
+            onChange={(note) => setCount((current) => ({ ...current, note }))}
+            hint={`${OBSERVATION_HINT} Use para registrar onde ou por quem a contagem foi feita.`}
+          />
         </form>
       </Dialog>
 

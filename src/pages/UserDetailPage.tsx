@@ -2,13 +2,17 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AccessFields } from '../components/AccessFields'
 import { accessFormError, accessFormFrom, accessRoleBody, emptyAccessForm, inviteNeedsResend, type AccessForm } from '../lib/accessForm'
+import { CheckoutHistory, type CheckoutHistoryEntry } from '../components/CheckoutHistory'
 import { CheckoutSnapshotPanels } from '../components/CheckoutSnapshotPanels'
+import { CustomerSubscriptionCard } from '../components/CustomerSubscriptionCard'
+import { Dialog } from '../components/Dialog'
 import { MetaGrid } from '../components/MetaGrid'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
 import { parseCheckoutSnapshots } from '../lib/checkoutSnapshot'
+import { subscriptionBadgeClass, type CustomerSubscription } from '../lib/customerSubscriptions'
 import { formatDate, formatStripeStatus } from '../lib/format'
 import {
   accountStatusBadgeClass,
@@ -19,6 +23,15 @@ import {
 } from '../lib/accountStatus'
 import { MARKET_LABELS, type MarketCode } from '../lib/markets'
 import { BR_STATES, maskCpf } from '../lib/nfe'
+import { deliveryBody, type DeliveryForm } from '../lib/userDelivery'
+import {
+  DELIVERY_INSTRUCTIONS_ERROR,
+  DELIVERY_INSTRUCTIONS_MAX_LENGTH,
+  deliveryInstructionsLength,
+  isValidDeliveryInstructions,
+  normalizeDeliveryInstructions,
+  oneLineInstructions,
+} from '../lib/deliveryInstructions'
 import { formatConsentSource, formatConsentStatus, formatConsentType, formatPrivacyIdentity, formatPrivacyStatus, formatPrivacyType, type UserPrivacySnapshot } from '../lib/privacy'
 
 type UserDetail = {
@@ -46,15 +59,19 @@ type UserDetail = {
     state: string
     zipCode: string
     deliveryInstructions: string
+    recipientName?: string
   } | null
-  subscriptions?: Array<{ id: string; stripeSubscriptionId: string; status: string; currentPeriodEnd: string | null; cancelAtPeriodEnd: boolean; planLabel: string | null }>
+  subscriptions?: CustomerSubscription[]
 }
+
+// A subscription that still owns the pet, newest first (backend: customer-pets-subscription-link).
+type PetSubscription = { id: string; stripeSubscriptionId: string; status: string; planLabel: string | null }
 
 // Pets and checkout come from the onboarding record; it is fetched only when one of those tabs opens.
 type OnboardingDetail = {
   empty: boolean
   updatedAt: string | null
-  pets: Array<{ id: string; name: string; breed: string; ageYears: number; ageMonths: number; weightInput: number; weightUnit: string; activityLevel: string; neutered?: boolean; simplified?: { daily?: { formatted?: string } } | null }>
+  pets: Array<{ id: string; name: string; breed: string; ageYears: number; ageMonths: number; weightInput: number; weightUnit: string; activityLevel: string; neutered?: boolean; simplified?: { daily?: { formatted?: string } } | null; subscriptions?: PetSubscription[] }>
   recurrence: unknown
   planSelection: unknown
   address: unknown
@@ -63,6 +80,7 @@ type OnboardingDetail = {
   lineItems: unknown[]
   checkoutReference: unknown
   paymentReference: unknown
+  checkouts?: CheckoutHistoryEntry[]
 }
 
 type OnboardingState =
@@ -73,13 +91,6 @@ type OnboardingState =
 type CustomerTab = 'cadastro' | 'pets' | 'assinaturas' | 'checkout'
 
 // Stripe status → semantic badge; anything unknown stays neutral.
-function subscriptionBadgeClass(status: string) {
-  if (status === 'active' || status === 'trialing') return 'badge-success'
-  if (status === 'past_due' || status === 'unpaid' || status === 'incomplete') return 'badge-warning'
-  if (status === 'canceled' || status === 'incomplete_expired') return 'badge-neutral'
-  return 'badge-info'
-}
-
 function formatPetAge(years: number, months: number) {
   if (!years && !months) return '-'
   const parts = []
@@ -95,18 +106,8 @@ const TABS: Array<{ id: CustomerTab; label: string }> = [
   { id: 'checkout', label: 'Checkout' },
 ]
 
-type DeliveryForm = {
-  address: string
-  number: string
-  neighborhood: string
-  complement: string
-  city: string
-  state: string
-  zipCode: string
-  deliveryInstructions: string
-}
-
 const emptyDelivery = (): DeliveryForm => ({
+  recipientName: '',
   address: '',
   number: '',
   neighborhood: '',
@@ -119,6 +120,7 @@ const emptyDelivery = (): DeliveryForm => ({
 
 function deliveryFromUser(user: UserDetail | null): DeliveryForm {
   return {
+    recipientName: user?.delivery?.recipientName || '',
     address: user?.delivery?.address || '',
     number: user?.delivery?.number || '',
     neighborhood: user?.delivery?.neighborhood || '',
@@ -128,13 +130,6 @@ function deliveryFromUser(user: UserDetail | null): DeliveryForm {
     zipCode: user?.delivery?.zipCode || '',
     deliveryInstructions: user?.delivery?.deliveryInstructions || '',
   }
-}
-
-function deliveryWithoutBrazilFields(delivery: DeliveryForm) {
-  const body: Partial<DeliveryForm> = { ...delivery }
-  delete body.number
-  delete body.neighborhood
-  return body
 }
 
 export function UserDetailPage() {
@@ -154,6 +149,10 @@ export function UserDetailPage() {
   const [fiscal, setFiscal] = useState({ fullName: '', cpf: '' })
   const [access, setAccess] = useState<AccessForm>(emptyAccessForm)
   const [message, setMessage] = useState('')
+  const [instructionsError, setInstructionsError] = useState('')
+  // Saving the account's copy of the address asks first: the box follows the subscription address, not this one.
+  const [confirmDelivery, setConfirmDelivery] = useState(false)
+  const [deliveryReason, setDeliveryReason] = useState('')
   const [error, setError] = useState('')
   const canWriteDelivery = hasPermission('users.delivery.write')
   const isBrazil = data?.delivery?.country === 'BR'
@@ -221,6 +220,7 @@ export function UserDetailPage() {
     setSearchParams((params) => {
       if (next === 'cadastro') params.delete('aba')
       else params.set('aba', next)
+      if (next !== 'checkout') params.delete('assinatura')
       return params
     })
   }
@@ -234,16 +234,26 @@ export function UserDetailPage() {
     document.getElementById(`customer-tab-${next}`)?.focus()
   }
 
+  const askDelivery = (event: FormEvent) => {
+    event.preventDefault()
+    if (!canWriteDelivery) return
+    setDeliveryReason('')
+    setConfirmDelivery(true)
+  }
+
+  const deliveryReasonValid = deliveryReason.trim().length >= 3 && deliveryReason.trim().length <= 255
+
   const saveDelivery = async (event: FormEvent) => {
     event.preventDefault()
-    if (!token || !userId || !canWriteDelivery) return
+    if (!token || !userId || !canWriteDelivery || !deliveryReasonValid) return
     try {
       setError('')
       await apiRequest(`/admin/users/${userId}/delivery`, {
         token,
         method: 'PATCH',
-        body: isBrazil ? delivery : deliveryWithoutBrazilFields(delivery),
+        body: { ...deliveryBody(delivery, isBrazil, data?.delivery?.recipientName || ''), reason: deliveryReason.trim() },
       })
+      setConfirmDelivery(false)
       setMessage('Endereço salvo.')
       await load()
     } catch (requestError) {
@@ -267,16 +277,25 @@ export function UserDetailPage() {
   const saveInstructions = async (event: FormEvent) => {
     event.preventDefault()
     if (!token || !userId || !canWriteDelivery) return
+    if (!isValidDeliveryInstructions(delivery.deliveryInstructions)) {
+      setInstructionsError(DELIVERY_INSTRUCTIONS_ERROR)
+      return
+    }
     try {
       setError('')
+      setInstructionsError('')
       await apiRequest(`/admin/users/${userId}/delivery-instructions`, {
         token,
         method: 'PATCH',
-        body: { deliveryInstructions: delivery.deliveryInstructions },
+        body: { deliveryInstructions: normalizeDeliveryInstructions(delivery.deliveryInstructions) },
       })
       setMessage('Instruções salvas.')
       await load()
     } catch (requestError) {
+      if (requestError instanceof ApiRequestError && requestError.status === 422) {
+        setInstructionsError(DELIVERY_INSTRUCTIONS_ERROR)
+        return
+      }
       setError(requestError instanceof Error ? requestError.message : 'Falha ao salvar instruções')
     }
   }
@@ -354,6 +373,7 @@ export function UserDetailPage() {
 
   const subscriptions = data?.subscriptions ?? []
   const activeSubscriptions = subscriptions.filter((item) => item.status === 'active' || item.status === 'trialing').length
+  const withAlerts = subscriptions.filter((item) => item.alerts?.length).length
   const roleLabel = data?.roles?.filter((role) => role !== 'customer').join(', ') || 'Cliente'
 
   return (
@@ -418,6 +438,7 @@ export function UserDetailPage() {
           >
             {option.label}
             {option.id === 'assinaturas' && data ? <span className="page-tab-count">{subscriptions.length}</span> : null}
+            {option.id === 'assinaturas' && withAlerts ? <span className="warning-text page-tab-alerts">{withAlerts} com alerta</span> : null}
           </button>
         ))}
       </div>
@@ -469,9 +490,23 @@ export function UserDetailPage() {
               </Section>
             ) : null}
 
-            <Section title="Endereço de entrega" description="O mesmo endereço do app do cliente.">
-              <form onSubmit={saveDelivery}>
+            <Section
+              title="Endereço de entrega"
+              description="Cópia do endereço guardada na conta. Não muda para onde vai a caixa: a entrega usa o endereço da assinatura, que o cliente edita em Meu Plano, na loja."
+            >
+              <form onSubmit={askDelivery}>
                 <div className="address-fields">
+                  <label className="address-street">
+                    Nome de quem recebe (cópia da conta)
+                    <input
+                      value={delivery.recipientName}
+                      autoComplete="off"
+                      maxLength={60}
+                      placeholder="Vazio usa o nome da conta"
+                      onChange={(event) => setDelivery((current) => ({ ...current, recipientName: event.target.value }))}
+                      disabled={!canWriteDelivery}
+                    />
+                  </label>
                   <label className="address-street">
                     Endereço
                     <input
@@ -563,17 +598,55 @@ export function UserDetailPage() {
               </form>
             </Section>
 
+            <Dialog
+              title="Salvar a cópia do endereço?"
+              description="Esta cópia fica na conta. O endereço da assinatura, usado na etiqueta e na entrega, não muda: o cliente o edita em Meu Plano, na loja."
+              open={confirmDelivery}
+              onClose={() => setConfirmDelivery(false)}
+              footer={(
+                <>
+                  <button className="ghost-button" type="button" onClick={() => setConfirmDelivery(false)}>Cancelar</button>
+                  <button className="primary-button" type="submit" form="delivery-confirm-form" disabled={!deliveryReasonValid}>Salvar endereço</button>
+                </>
+              )}
+            >
+              <form id="delivery-confirm-form" className="stack" onSubmit={saveDelivery}>
+                <label>
+                  Motivo
+                  <textarea
+                    required
+                    minLength={3}
+                    maxLength={255}
+                    value={deliveryReason}
+                    onChange={(event) => setDeliveryReason(event.target.value)}
+                  />
+                </label>
+              </form>
+            </Dialog>
+
             <Section title="Instruções de entrega" description="Portão, local de entrega ou cuidados com o pet, para quem entrega.">
               <form className="stack" onSubmit={saveInstructions}>
                 <label>
                   Instruções
-                  <textarea
-                    rows={4}
+                  <input
                     value={delivery.deliveryInstructions}
-                    onChange={(event) => setDelivery((current) => ({ ...current, deliveryInstructions: event.target.value }))}
+                    aria-invalid={instructionsError ? true : undefined}
+                    aria-describedby={instructionsError ? 'profile-instructions-error' : undefined}
+                    onChange={(event) => {
+                      setInstructionsError('')
+                      setDelivery((current) => ({ ...current, deliveryInstructions: oneLineInstructions(event.target.value) }))
+                    }}
                     disabled={!canWriteDelivery}
                   />
                 </label>
+                <p
+                  className={deliveryInstructionsLength(delivery.deliveryInstructions) > DELIVERY_INSTRUCTIONS_MAX_LENGTH ? 'form-error' : 'muted'}
+                  data-testid="profile-instructions-counter"
+                >
+                  {deliveryInstructionsLength(delivery.deliveryInstructions)}/{DELIVERY_INSTRUCTIONS_MAX_LENGTH}
+                </p>
+                {instructionsError ? <p id="profile-instructions-error" className="form-error" role="alert">{instructionsError}</p> : null}
+                <p className="muted">Vale para o perfil. Cada assinatura guarda as suas instruções, editadas no detalhe da assinatura.</p>
                 {canWriteDelivery ? (
                   <div className="form-footer">
                     <button className="primary-button" type="submit">Salvar instruções</button>
@@ -629,32 +702,11 @@ export function UserDetailPage() {
 
       {tab === 'assinaturas' ? (
         <div id="customer-panel-assinaturas" role="tabpanel" aria-labelledby="customer-tab-assinaturas">
-          <Section title="Assinaturas Stripe" description="Assinaturas deste cliente na Stripe.">
+          <Section title="Assinaturas Stripe" description="Contrato e último ciclo pago de cada assinatura, com produção, entrega e NF-e.">
             {data && !subscriptions.length ? <p className="empty-note">Nenhuma assinatura.</p> : (
-              <div className="table-shell">
-                <table className="stack-table">
-                  <thead>
-                    <tr>
-                      <th>Assinatura</th>
-                      <th>Status</th>
-                      <th>Plano</th>
-                      <th>Fim do período</th>
-                      <th>Cancelando</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {subscriptions.map((item) => (
-                      <tr key={item.id}>
-                        <td className="stack-table-title"><Link className="table-link" to={`/billing/subscriptions/${item.id}`}>{item.stripeSubscriptionId}</Link></td>
-                        <td data-label="Status"><span className={subscriptionBadgeClass(item.status)}>{formatStripeStatus(item.status)}</span></td>
-                        <td data-label="Plano">{item.planLabel ?? '-'}</td>
-                        <td data-label="Fim do período" className="nowrap">{formatDate(item.currentPeriodEnd)}</td>
-                        <td data-label="Cancelando">{item.cancelAtPeriodEnd ? 'Sim' : 'Não'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ul className="subscription-cards">
+                {subscriptions.map((item) => <CustomerSubscriptionCard key={item.id} item={item} />)}
+              </ul>
             )}
           </Section>
         </div>
@@ -662,14 +714,14 @@ export function UserDetailPage() {
 
       {needsOnboarding ? (
         <div id={`customer-panel-${tab}`} role="tabpanel" aria-labelledby={`customer-tab-${tab}`} className="page-stack">
-          <OnboardingPanel tab={tab} state={onboarding} />
+          <OnboardingPanel tab={tab} state={onboarding} focusSubscriptionId={searchParams.get('assinatura')} />
         </div>
       ) : null}
     </PageFrame>
   )
 }
 
-function OnboardingPanel({ tab, state }: { tab: CustomerTab; state: OnboardingState }) {
+function OnboardingPanel({ tab, state, focusSubscriptionId }: { tab: CustomerTab; state: OnboardingState; focusSubscriptionId: string | null }) {
   if (state.status === 'forbidden') {
     return <div className="warning">Seu papel não tem acesso aos dados de onboarding deste cliente.</div>
   }
@@ -692,6 +744,20 @@ function OnboardingPanel({ tab, state }: { tab: CustomerTab; state: OnboardingSt
                   <h4>{item.name}</h4>
                   <span className="muted">{item.breed || 'Raça não informada'}</span>
                 </div>
+                {item.subscriptions !== undefined ? (
+                  item.subscriptions.length ? (
+                    <ul className="pet-card-subscriptions" aria-label="Assinaturas do pet">
+                      {item.subscriptions.map((subscription) => (
+                        <li key={subscription.id}>
+                          <Link className="table-link" to={`/billing/subscriptions/${subscription.id}`} title={subscription.planLabel ?? undefined}>
+                            {subscription.stripeSubscriptionId}
+                          </Link>
+                          <span className={subscriptionBadgeClass(subscription.status)}>{formatStripeStatus(subscription.status)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : <p className="pet-card-subscriptions muted">Sem assinatura</p>
+                ) : null}
                 <dl className="pet-card-meta">
                   <div><dt>Idade</dt><dd>{formatPetAge(item.ageYears, item.ageMonths)}</dd></div>
                   <div><dt>Peso</dt><dd>{item.weightInput} {item.weightUnit}</dd></div>
@@ -708,6 +774,11 @@ function OnboardingPanel({ tab, state }: { tab: CustomerTab; state: OnboardingSt
         ) : <p className="empty-note">Nenhum pet cadastrado.</p>}
       </Section>
     )
+  }
+
+  const history = data.checkouts ?? []
+  if (history.length) {
+    return <CheckoutHistory entries={history} focusSubscriptionId={focusSubscriptionId} />
   }
 
   if (data.empty) {

@@ -32,10 +32,26 @@ describe('readonly admin shell', () => {
     expect(screen.getByRole('link', { name: 'Privacidade' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Onboarding 360' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Checkouts' })).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Frete' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Regras de frete' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Cupons 1ª compra' })).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Equipe e papéis' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sincronizar catálogo' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Sincronizar agora' })).not.toBeInTheDocument()
+  })
+
+  it('highlights only Regras de frete on the shipping page, not Configurações above it', async () => {
+    localStorage.setItem(TOKEN_KEY, 'readonly-token')
+    installAdminFetchMock(readonlyUser)
+
+    render(
+      <MemoryRouter initialEntries={['/config/shipping']}>
+        <App />
+      </MemoryRouter>,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'Regras de frete' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Regras de frete' })).toHaveClass('active')
+    expect(screen.getByRole('link', { name: 'Configurações' })).not.toHaveClass('active')
+    expect(screen.getByRole('link', { name: 'Configurações' })).not.toHaveAttribute('aria-current')
   })
 })

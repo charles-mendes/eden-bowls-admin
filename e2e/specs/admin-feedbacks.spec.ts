@@ -5,7 +5,7 @@ test.describe('Admin feedbacks', () => {
   test('loads the feedback list scoped to the operator country', async ({ page }) => {
     const { captured } = await openAuthed(page, '/feedbacks', e2eProfiles.operator)
 
-    await expect(page.getByRole('heading', { name: 'Feedbacks', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Feedbacks manuais', exact: true })).toBeVisible()
     await expect(page.getByRole('link', { name: 'João Silva', exact: true })).toBeVisible()
     await expect(page.getByRole('combobox', { name: 'País' })).toHaveValue('BR')
     await expect(page.getByRole('combobox', { name: 'País' })).toBeDisabled()
@@ -52,7 +52,7 @@ test.describe('Admin feedbacks', () => {
         active: true,
       },
     })
-    await expect(page.getByRole('heading', { name: 'Feedbacks', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Feedbacks manuais', exact: true })).toBeVisible()
   })
 
   test('edits and deactivates a feedback', async ({ page }) => {

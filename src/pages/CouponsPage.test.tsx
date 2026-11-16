@@ -46,6 +46,21 @@ describe('CouponsPage', () => {
     expect(sync?.body).toMatchObject({ account: 'br' })
   })
 
+  it('shows the blocked checkouts of the account with the date of the last one', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorWriteUser, {
+      routes: (call) => call.method === 'GET' && call.path === '/api/v1/admin/stripe/first-purchase-promos'
+        ? jsonResponse({ ...firstPurchasePromoHealth, misconfig_count: 2, misconfig_last_at: '2026-09-29T05:42:49.000Z' })
+        : undefined,
+    })
+    renderAuthedPage(<CouponsPage />, '/billing/coupons')
+
+    const warning = await screen.findByText(/Checkouts de primeira compra bloqueados por falta de cupom: 2/)
+    expect(warning).toHaveTextContent('último em')
+    expect(warning).toHaveTextContent('O aviso some ao criar um cupom ou sincronizar com a Stripe.')
+    expect(screen.queryByText(/Configurações inconsistentes/)).not.toBeInTheDocument()
+  })
+
   it('creates a coupon in Stripe from a term card', async () => {
     const user = userEvent.setup()
     seedAuth()
@@ -105,25 +120,16 @@ describe('CouponsPage', () => {
     expect(within(screen.getByRole('dialog')).queryByRole('alert')).not.toBeInTheDocument()
   })
 
-  it('saves a manual promo map with PUT', async () => {
-    const user = userEvent.setup()
+  it('offers no manual link of a promotion code ID', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(operatorWriteUser)
     renderAuthedPage(<CouponsPage />, '/billing/coupons')
 
-    await waitFor(() => {
-      expect(screen.getByDisplayValue('promo_1m')).toBeInTheDocument()
-    })
-
-    await user.click(screen.getByText('Vincular ID manualmente'))
-    await user.click(screen.getByRole('button', { name: 'Salvar mapa' }))
-
-    await waitFor(() => {
-      expect(screen.getByText('Mapa salvo no banco.')).toBeInTheDocument()
-    })
-
-    const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/stripe/first-purchase-promos')
-    expect(put?.body).toMatchObject({ 1: 'promo_1m', 3: 'promo_3m', 6: 'promo_6m', account: 'br' })
+    await screen.findByText('promo_1m')
+    expect(screen.queryByText('Vincular ID manualmente')).not.toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('promo_...')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Salvar mapa' })).not.toBeInTheDocument()
+    expect(calls.some((call) => call.method === 'PUT')).toBe(false)
   })
 
   it('defaults the coupon account to the operator market', async () => {
@@ -132,7 +138,7 @@ describe('CouponsPage', () => {
     renderAuthedPage(<CouponsPage />, '/billing/coupons')
 
     await waitFor(() => {
-      expect(screen.getByDisplayValue('promo_1m')).toBeInTheDocument()
+      expect(screen.getByText('promo_1m')).toBeInTheDocument()
     })
 
     const account = screen.getByLabelText('Conta')

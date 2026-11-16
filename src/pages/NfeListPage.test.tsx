@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NfeListPage } from './NfeListPage'
-import { adminUser, readonlyUser } from '../test/fixtures'
+import { adminUser, readonlyUser, operatorUsUser } from '../test/fixtures'
 import { blingConnectionState, findCall, installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -42,7 +42,7 @@ describe('NfeListPage', () => {
     const row = (await screen.findByRole('link', { name: 'Ana Souza' })).closest('tr') as HTMLElement
     expect(within(row).getByText('Rejeitada')).toHaveClass('badge-error')
     expect(within(row).queryByText('Criada no Bling')).not.toBeInTheDocument()
-    expect(screen.getByRole('columnheader', { name: 'Bling' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Bling' })).not.toBeInTheDocument()
   })
 
   it('opens the note from a visible action and from anywhere on the row', async () => {
@@ -99,5 +99,71 @@ describe('NfeListPage', () => {
     renderAuthedPage(<NfeListPage />, '/operations/nfe')
     expect(await screen.findByText('Sem conexão')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Autorizar Bling' })).not.toBeInTheDocument()
+  })
+
+  it('opens a link with the status already filtered', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeListPage />, '/operations/nfe?status=rejected&busca=Ana', '/operations/nfe')
+
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === '/api/v1/admin/nfe' && call.search.includes('status=rejected') && call.search.includes('search=Ana'))).toBe(true)
+    })
+    expect(screen.getByLabelText('Status')).toHaveValue('rejected')
+    expect(screen.getByLabelText('Busca')).toHaveValue('Ana')
+  })
+
+  it('clears status, dates and search in one click', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeListPage />, '/operations/nfe?status=error&de=2026-11-11&ate=2026-11-11&busca=Ana', '/operations/nfe')
+
+    await user.click(await screen.findByRole('button', { name: 'Limpar filtros' }))
+
+    await waitFor(() => {
+      const last = calls.filter((call) => call.path === '/api/v1/admin/nfe').at(-1)
+      expect(last?.search).not.toMatch(/status=|from=|to=|search=/)
+    })
+    expect(screen.getByLabelText('Status')).toHaveValue('')
+    expect(screen.getByLabelText('Busca')).toHaveValue('')
+    expect(screen.queryByRole('button', { name: 'Limpar filtros' })).not.toBeInTheDocument()
+  })
+
+  it('offers no clear button while nothing is filtered', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeListPage />, '/operations/nfe')
+
+    await screen.findByRole('link', { name: 'Ana Souza' })
+    expect(screen.queryByRole('button', { name: 'Limpar filtros' })).not.toBeInTheDocument()
+  })
+
+  it('asks for the three statuses that need action', async () => {
+    const user = userEvent.setup()
+    seedAuth()
+    const { calls } = installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<NfeListPage />, '/operations/nfe')
+
+    await screen.findByRole('link', { name: 'Ana Souza' })
+    await user.selectOptions(screen.getByLabelText('Status'), 'Precisam de ação')
+
+    await waitFor(() => {
+      expect(calls.some((call) => (
+        call.path === '/api/v1/admin/nfe'
+        && new URLSearchParams(call.search).get('status') === 'blocked_missing_document,rejected,error'
+      ))).toBe(true)
+    })
+    expect(screen.getByLabelText('Status')).toHaveValue('needs_action')
+  })
+
+  it('says the screen belongs to the Brasil market and skips the list for a session outside it', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorUsUser)
+    renderAuthedPage(<NfeListPage />, '/operations/nfe')
+
+    expect(await screen.findByText(/Esta tela é do mercado Brasil e sua conta não trabalha nele/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Voltar para Hoje' })).toHaveAttribute('href', '/dashboard')
+    expect(calls.some((call) => call.path === '/api/v1/admin/nfe')).toBe(false)
   })
 })

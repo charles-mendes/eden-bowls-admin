@@ -1,20 +1,26 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { JsonDetails } from '../components/JsonDetails'
 import { MetaGrid } from '../components/MetaGrid'
 import { NfeCustomerDialog } from '../components/NfeCustomerDialog'
+import { AddressIssueStatus } from '../components/AddressIssueStatus'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
+import { useShowsTechnicalJson } from '../hooks/useShowsTechnicalJson'
 import { apiRequest } from '../lib/api'
+import { billingHref } from '../lib/billing'
 import {
   blingNfeUrl,
+  blingProblemGuide,
   blingSituacaoTone,
+  splitNfeError,
   formatNfeAmount,
   NFE_EMAIL_LABELS,
   formatNfeDate,
   formatNfeNumber,
   formatTaxDocument,
+  missingFieldLabel,
   nfeStatusLabel,
   nfeStatusTone,
   type NfeDetail,
@@ -22,6 +28,8 @@ import {
 
 // The API reads Bling every 5 minutes. The page only has to pick that up without a reload.
 const DETAIL_REFRESH_MS = 60 * 1000
+// While the job is sending the note, the outcome shows up within seconds instead of a minute.
+const IN_FLIGHT_REFRESH_MS = 5 * 1000
 
 type Field = { label: string; value: string | number | null | undefined }
 
@@ -30,6 +38,111 @@ function filled(fields: Field[]) {
   return fields
     .filter((field) => field.value !== null && field.value !== undefined && field.value !== '')
     .map((field) => ({ label: field.label, value: String(field.value) }))
+}
+
+// The refusal, split into a headline and its details, and then what to fix, where and how.
+function NfeError({ item }: { item: NfeDetail }) {
+  const { title, details } = splitNfeError(item.last_error ?? '')
+  const problems = item.bling_problems ?? []
+  const shown = new Set(problems.map((problem) => problem.message))
+  const extra = details.filter((detail) => !shown.has(detail))
+
+  return (
+    <>
+      <div className="nfe-alert nfe-alert-error nfe-refusal" role="alert">
+        <p className="nfe-refusal-title">{title}</p>
+        {extra.map((detail) => <p key={detail}>{detail}</p>)}
+      </div>
+      {problems.length ? (
+        <section className="nfe-fix" aria-label="O que corrigir">
+          <h3>O que corrigir</h3>
+          <ol className="nfe-fix-list">
+            {problems.map((problem, index) => {
+              const guide = blingProblemGuide(problem)
+              return (
+                <li key={`${problem.element}-${index}`}>
+                  <p className="nfe-fix-message">{problem.message}</p>
+                  {problem.element ? <p className="nfe-fix-field">Campo no Bling: <code>{problem.element}</code></p> : null}
+                  <dl className="nfe-fix-guide">
+                    <div><dt>Onde</dt><dd>{guide.where}</dd></div>
+                    <div><dt>Como</dt><dd>{guide.how}</dd></div>
+                  </dl>
+                </li>
+              )
+            })}
+          </ol>
+        </section>
+      ) : item.status === 'error' && item.bling_nfe_id && !item.imported ? (
+        <section className="nfe-fix" aria-label="Como descobrir o campo">
+          <h3>O Bling não disse qual campo falta</h3>
+          <ol className="nfe-fix-list nfe-fix-steps">
+            <li>
+              <a href={blingNfeUrl(item.bling_nfe_id)} target="_blank" rel="noreferrer">Abra a nota no Bling</a>
+              {' '}e clique em <strong>Enviar</strong>. O Bling destaca o campo que falta.
+            </li>
+            <li>Corrija onde o Bling indicar: em geral o cadastro do produto (aba Tributação), a natureza de operação ou os dados do cliente.</li>
+            <li>Volte aqui e use <strong>Nova tentativa</strong>. Se o Bling recusar de novo, os campos que ele apontar aparecem nesta tela.</li>
+          </ol>
+        </section>
+      ) : null}
+    </>
+  )
+}
+
+// Where the note comes from: the customer, the subscription (the order) and the Stripe charge it bills.
+function NfeOrigin({ item }: { item: NfeDetail }) {
+  const subscriptionPath = item.subscription_id ? `/billing/subscriptions/${item.subscription_id}` : null
+  const rows: Array<{ label: string; value: ReactNode; hint?: string }> = []
+  if (item.user_id) {
+    rows.push({
+      label: 'Cliente',
+      value: <Link className="table-link" to={`/users/${item.user_id}`}>{item.customer_name || `Usuário ${item.user_id}`}</Link>,
+    })
+  }
+  if (item.stripe_subscription_id) {
+    rows.push({
+      label: 'Assinatura',
+      value: (
+        <Link className="table-link" to={subscriptionPath ?? billingHref({ busca: item.stripe_subscription_id, status: 'all' })}>
+          {item.stripe_subscription_id}
+        </Link>
+      ),
+      hint: subscriptionPath ? 'Pedido, checkout e entregas' : 'Não encontrada no painel; abre a busca',
+    })
+  }
+  if (!item.imported && item.stripe_invoice_id) {
+    rows.push({
+      label: 'Cobrança Stripe',
+      value: subscriptionPath
+        ? <Link className="table-link" to={`${subscriptionPath}#faturas-stripe`}>{item.stripe_invoice_id}</Link>
+        : item.stripe_invoice_id,
+      hint: 'A fatura paga que gerou esta nota',
+    })
+  }
+  if (item.bling_order_id) {
+    rows.push({ label: 'Pedido no Bling', value: String(item.bling_order_id) })
+  }
+
+  return (
+    <Section title="Origem" description="A cobrança da loja que gerou esta nota.">
+      {item.imported ? (
+        <p className="muted nfe-hint">Criada direto no Bling: não tem cobrança, assinatura nem cliente da loja.</p>
+      ) : rows.length === 0 ? (
+        <p className="muted nfe-hint">Nenhum cliente ou cobrança da loja ligado a esta nota.</p>
+      ) : null}
+      {rows.length ? (
+        <dl className="meta-grid nfe-origin-grid">
+          {rows.map((row) => (
+            <div key={row.label} className="meta-item">
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+              {row.hint ? <dd className="nfe-origin-hint">{row.hint}</dd> : null}
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </Section>
+  )
 }
 
 function CopyField({ label, value }: { label: string; value: string }) {
@@ -61,6 +174,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
 export function NfeDetailPage() {
   const { id } = useParams()
   const { token, hasPermission } = useAuth()
+  const showsTechnical = useShowsTechnicalJson()
   const [item, setItem] = useState<NfeDetail | null>(null)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -78,10 +192,11 @@ export function NfeDetailPage() {
       .catch((requestError) => setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar a nota'))
   }, [token, id, refreshTick])
 
+  const inFlight = item?.status === 'pending' || item?.status === 'submitted'
   useEffect(() => {
-    const timer = window.setInterval(() => setRefreshTick((current) => current + 1), DETAIL_REFRESH_MS)
+    const timer = window.setInterval(() => setRefreshTick((current) => current + 1), inFlight ? IN_FLIGHT_REFRESH_MS : DETAIL_REFRESH_MS)
     return () => window.clearInterval(timer)
-  }, [])
+  }, [inFlight])
 
   const retry = async () => {
     if (!token || !id) return
@@ -123,6 +238,15 @@ export function NfeDetailPage() {
     : ''
   const number = item ? formatNfeNumber(item) : '—'
   const hasFiles = Boolean(item?.danfe_url || item?.pdf_url || item?.xml_url)
+  // Nothing fiscal to show before Bling numbers the note; the amount is already under the title.
+  const hasFiscalData = Boolean(item && (item.nfe_number || item.access_key || item.protocol || hasFiles))
+  const timeline = item ? [
+    item.created_at ? `Criada em ${formatNfeDate(item.created_at)}` : '',
+    item.submitted_at ? `enviada em ${formatNfeDate(item.submitted_at)}` : '',
+    item.authorized_at ? `autorizada em ${formatNfeDate(item.authorized_at)}` : '',
+    item.attempts ? `${item.attempts} ${item.attempts === 1 ? 'tentativa' : 'tentativas'}` : '',
+    item.next_attempt_at ? `próxima em ${formatNfeDate(item.next_attempt_at)}` : '',
+  ].filter(Boolean) : []
 
   return (
     <PageFrame
@@ -160,40 +284,42 @@ export function NfeDetailPage() {
                 </dd>
               </div>
             </dl>
-            {item.last_error ? <p className="nfe-alert nfe-alert-error" role="alert">{item.last_error}</p> : null}
+            {item.last_error ? <NfeError item={item} /> : null}
+            {item.missing_fields?.length ? (
+              <div className="nfe-alert" role="note" aria-label="O que falta na nota">
+                <p>Falta para emitir: {item.missing_fields.map(missingFieldLabel).join(', ')}.</p>
+                <p>O cliente corrige na loja, em Meu plano → Editar assinatura. Quando ele salva, a nota volta para a fila sozinha. "Corrigir dados" fica para exceções.</p>
+                <AddressIssueStatus issue={item.address_issue} />
+              </div>
+            ) : item.address_issue ? <AddressIssueStatus issue={item.address_issue} /> : null}
             {item.imported ? (
               <p className="nfe-alert">Esta nota foi criada direto no Bling. Aqui ela fica só para consulta e o envio é feito por lá.</p>
             ) : null}
-            <MetaGrid items={filled([
-              { label: 'Tentativas', value: item.attempts || null },
-              { label: 'Próxima tentativa', value: item.next_attempt_at ? formatNfeDate(item.next_attempt_at) : null },
-              { label: 'Criada em', value: item.created_at ? formatNfeDate(item.created_at) : null },
-              { label: 'Enviada em', value: item.submitted_at ? formatNfeDate(item.submitted_at) : null },
-              { label: 'Autorizada em', value: item.authorized_at ? formatNfeDate(item.authorized_at) : null },
-            ])} />
+            {timeline.length ? <p className="nfe-timeline">{timeline.join(' · ')}</p> : null}
           </Section>
 
-          <Section title="Documento fiscal">
-            <MetaGrid items={filled([
-              { label: 'Número/série', value: number },
-              { label: 'Valor', value: formatNfeAmount(item) },
-            ])} />
-            {item.access_key || item.protocol ? (
-              <dl className="nfe-copy-list">
-                {item.access_key ? <CopyField label="Chave de acesso" value={item.access_key} /> : null}
-                {item.protocol ? <CopyField label="Protocolo" value={item.protocol} /> : null}
-              </dl>
-            ) : (
-              <p className="muted nfe-hint">A chave de acesso, o protocolo e o XML aparecem depois que a SEFAZ autoriza a nota.</p>
-            )}
-            {hasFiles ? (
-              <div className="nfe-files">
-                {item.danfe_url ? <a className="ghost-button" href={item.danfe_url} target="_blank" rel="noreferrer">Abrir DANFE</a> : null}
-                {item.pdf_url ? <a className="ghost-button" href={item.pdf_url} target="_blank" rel="noreferrer">Abrir PDF</a> : null}
-                {item.xml_url ? <a className="ghost-button" href={item.xml_url} target="_blank" rel="noreferrer">Abrir XML</a> : null}
-              </div>
-            ) : null}
-          </Section>
+          {hasFiscalData ? (
+            <Section title="Documento fiscal">
+              <MetaGrid items={filled([
+                { label: 'Número/série', value: number },
+              ])} />
+              {item.access_key || item.protocol ? (
+                <dl className="nfe-copy-list">
+                  {item.access_key ? <CopyField label="Chave de acesso" value={item.access_key} /> : null}
+                  {item.protocol ? <CopyField label="Protocolo" value={item.protocol} /> : null}
+                </dl>
+              ) : (
+                <p className="muted nfe-hint">A chave de acesso, o protocolo e o XML aparecem depois que a SEFAZ autoriza a nota.</p>
+              )}
+              {hasFiles ? (
+                <div className="nfe-files">
+                  {item.danfe_url ? <a className="ghost-button" href={item.danfe_url} target="_blank" rel="noreferrer">Abrir DANFE</a> : null}
+                  {item.pdf_url ? <a className="ghost-button" href={item.pdf_url} target="_blank" rel="noreferrer">Abrir PDF</a> : null}
+                  {item.xml_url ? <a className="ghost-button" href={item.xml_url} target="_blank" rel="noreferrer">Abrir XML</a> : null}
+                </div>
+              ) : null}
+            </Section>
+          ) : null}
 
           <Section
             title="Cliente na emissão"
@@ -208,6 +334,8 @@ export function NfeDetailPage() {
               { label: 'Endereço', value: addressLine },
             ])} />
           </Section>
+
+          <NfeOrigin item={item} />
 
           {item.status === 'authorized' && !item.imported ? (
             <Section
@@ -229,31 +357,32 @@ export function NfeDetailPage() {
             </Section>
           ) : null}
 
-          <section className="nfe-alert nfe-limits" aria-label="Ações feitas no Bling">
-            <p><strong>Estas ações não estão disponíveis neste painel</strong>, porque o Bling não as oferece para integrações:</p>
-            <ul>
-              <li>Cancelar uma nota autorizada</li>
-              <li>Emitir carta de correção</li>
-              <li>Inutilizar numeração</li>
-              <li>Alterar dados de uma nota autorizada</li>
-            </ul>
-            <p>Faça isso direto no Bling{item.bling_nfe_id ? ', pelo botão Abrir no Bling' : ''}. O cancelamento aparece aqui em poucos minutos.</p>
-          </section>
+          {item.status === 'authorized' ? (
+            <section className="nfe-alert nfe-limits" aria-label="Ações feitas no Bling">
+              <p><strong>Estas ações não estão disponíveis neste painel</strong>, porque o Bling não as oferece para integrações:</p>
+              <ul>
+                <li>Cancelar uma nota autorizada</li>
+                <li>Emitir carta de correção</li>
+                <li>Inutilizar numeração</li>
+                <li>Alterar dados de uma nota autorizada</li>
+              </ul>
+              <p>Faça isso direto no Bling{item.bling_nfe_id ? ', pelo botão Abrir no Bling' : ''}. O cancelamento aparece aqui em poucos minutos.</p>
+            </section>
+          ) : null}
 
-          <details className="section-card nfe-technical">
-            <summary>Dados técnicos</summary>
-            <MetaGrid items={filled([
-              { label: 'Usuário', value: item.user_id },
-              { label: 'Conta Stripe', value: item.imported ? null : item.stripe_account },
-              { label: 'Assinatura Stripe', value: item.stripe_subscription_id },
-              { label: 'Fatura Stripe', value: item.imported ? null : item.stripe_invoice_id },
-              { label: 'Contato Bling', value: item.bling_contact_id },
-              { label: 'Pedido Bling', value: item.bling_order_id },
-              { label: 'NF-e Bling', value: item.bling_nfe_id },
-            ])} />
-            <JsonDetails title="Enviado ao Bling" value={item.request_payload} />
-            <JsonDetails title="Resposta do Bling" value={item.response_payload} />
-          </details>
+          {/* Customer, subscription, charge and order are already in Origem; the Stripe account is always BR. What is
+              left (Bling's own ids and the raw exchange) only helps the admin chase a failure with Bling. */}
+          {showsTechnical ? (
+            <details className="section-card nfe-technical">
+              <summary>Dados técnicos</summary>
+              <MetaGrid items={filled([
+                { label: 'NF-e Bling', value: item.bling_nfe_id },
+                { label: 'Contato Bling', value: item.bling_contact_id },
+              ])} />
+              <JsonDetails title="Enviado ao Bling" value={item.request_payload} />
+              <JsonDetails title="Resposta do Bling" value={item.response_payload} />
+            </details>
+          ) : null}
         </div>
       ) : null}
 

@@ -1,19 +1,26 @@
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { Suspense, lazy, useEffect, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Dialog } from '../components/Dialog'
+import { helpText } from '../components/HelpText'
+import { InfoHint } from '../components/InfoHint'
+import { NutritionEditLog } from '../components/NutritionEditLog'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import {
   BATCH_RANGE,
+  PLAN_NOTICE_DAYS_RANGE,
   COMPANY_FIELDS,
   DAILY_CAP_RANGE,
   LEGAL_KINDS,
   companyFieldLabel,
+  describeCompanyEvent,
   settingsErrorMessage,
   settingsInvalidFields,
   todayVersion,
+  versionFromLabel,
+  versionLabel,
   type AutomatedEmailSettings,
   type CompanyField,
   type CompanyProfile,
@@ -24,6 +31,36 @@ import {
 import { formatDate } from '../lib/format'
 import { MARKET_LABELS, sessionMarkets, type MarketCode } from '../lib/markets'
 
+// The visual editor is heavy: it loads only when the legal documents tab opens.
+const LegalEditor = lazy(() => import('../components/LegalEditor'))
+const LegalPreview = lazy(() => import('../components/LegalEditor').then((module) => ({ default: module.LegalPreview })))
+
+type LegalView = 'visual' | 'markdown'
+
+// A legal text to read: formatted as the store shows it, or its Markdown.
+function LegalReader({ id, markdown }: { id: string; markdown: string }) {
+  const [view, setView] = useState<LegalView>('visual')
+  const labelId = `${id}-label`
+  return (
+    <div className="legal-reader">
+      <div className="legal-reader-bar">
+        <span id={labelId} className="legal-reader-label">Texto</span>
+        <div className="segmented" role="group" aria-label="Visualização">
+          <button type="button" aria-pressed={view === 'visual'} className={view === 'visual' ? 'active' : ''} onClick={() => setView('visual')}>Visual</button>
+          <button type="button" aria-pressed={view === 'markdown'} className={view === 'markdown' ? 'active' : ''} onClick={() => setView('markdown')}>Markdown</button>
+        </div>
+      </div>
+      {/* Both stay mounted, with the same height: switching only hides one, so nothing is rebuilt or resized. */}
+      <div className="legal-reader-view" hidden={view !== 'visual'}>
+        <Suspense fallback={<p className="muted legal-reader-loading" aria-busy="true">Carregando…</p>}>
+          <LegalPreview markdown={markdown} labelId={labelId} />
+        </Suspense>
+      </div>
+      <pre className="legal-text legal-reader-view" hidden={view !== 'markdown'} aria-labelledby={labelId}>{markdown}</pre>
+    </div>
+  )
+}
+
 type Tab = 'empresa' | 'legal' | 'emails'
 
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -33,7 +70,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
 ]
 
 type CompanyForm = Record<CompanyField, string>
-type EmailsForm = { enabled: boolean; batch: string; cap: string }
+type EmailsForm = { enabled: boolean; batch: string; cap: string; renewalNotice: boolean; endingNotice: boolean; noticeDays: string }
 
 function companyFormOf(profile: CompanyProfile | null): CompanyForm {
   return Object.fromEntries(COMPANY_FIELDS.map((field) => [field.key, profile?.[field.key] ?? ''])) as CompanyForm
@@ -44,7 +81,63 @@ function emailsFormOf(settings: AutomatedEmailSettings | null): EmailsForm {
     enabled: Boolean(settings?.life_stage_change_enabled),
     batch: settings ? String(settings.announcement_batch_size) : '',
     cap: settings ? String(settings.announcement_daily_cap) : '',
+    renewalNotice: Boolean(settings?.renewal_notice_enabled),
+    endingNotice: Boolean(settings?.plan_ending_notice_enabled),
+    noticeDays: settings ? String(settings.plan_notice_days) : '',
   }
+}
+
+// Help of each automated email field: what it does, on and off, and why the quantities.
+const EMAIL_HELP = {
+  enabled: [
+    'Avisa o cliente quando o cão muda de fase (filhote → adulto, adulto → sênior) e a receita do plano deixa de servir.',
+    'Quando: verificado 1 vez por dia. O e-mail sai 7 dias antes do prazo de edição da entrega, um por mudança. Só começa depois que o anúncio de lançamento do mercado terminou.',
+    'Ligado: envia.',
+    'Desligado: pausa de emergência, nada sai neste mercado. Ao religar, os e-mails que venceram durante a pausa saem na execução seguinte.',
+  ],
+  batch: [
+    'Vale só para o anúncio de lançamento das receitas de filhote e sênior (enviado à mão, uma vez por mercado). Não afeta os outros e-mails.',
+    'Como funciona: dentro de um envio, a cada N e-mails o sistema espera 1 segundo antes de seguir, para respeitar o limite de envios por segundo do provedor.',
+    'Não é intervalo de minutos: com lote 50 e limite 300, os 300 saem em 6 blocos de 50, em poucos segundos.',
+    'Aceita de 1 a 500.',
+  ],
+  cap: [
+    'Máximo de clientes que recebem o anúncio de lançamento por dia (UTC).',
+    'O que passar fica para um novo envio em outro dia: com 1.000 clientes e limite 300, são 4 dias.',
+    'Por quê: espalhar o envio protege a reputação do domínio (evita spam e bloqueio no provedor) e evita que o suporte receba todas as respostas no mesmo dia.',
+    'Aceita de 1 a 5.000, nunca menor que o lote.',
+  ],
+  renewalNotice: [
+    'Avisa que o plano vai renovar e começar um novo contrato, com o valor da próxima cobrança. Só para assinatura ativa com renovação automática.',
+    'Quando: verificado de hora em hora. Um aviso por assinatura a cada período, até 100 e-mails por hora somando os mercados; o resto sai na hora seguinte.',
+    'Ligado: envia quando a renovação entra na janela de dias de antecedência.',
+    'Desligado: não envia. O aviso continua no Meu plano do cliente.',
+  ],
+  endingNotice: [
+    'Avisa que o plano vai terminar porque o cliente desligou a renovação automática. Um cancelamento não gera este e-mail.',
+    'Quando: verificado de hora em hora, com o mesmo limite do aviso de renovação.',
+    'Ligado: envia quando a data de fim entra na janela de dias de antecedência.',
+    'Desligado: não envia. O aviso continua no Meu plano do cliente.',
+  ],
+  noticeDays: [
+    'Quantos dias antes da renovação ou do fim do plano os avisos começam.',
+    'Com 7, o e-mail sai na primeira verificação horária depois que faltam 7 dias.',
+    'O mesmo número define quando o aviso aparece no Meu plano do cliente, mesmo com os e-mails desligados.',
+    'Aceita de 1 a 30.',
+  ],
+} as const
+
+// An automated email field with its label, its "i" and the control, which the help text describes.
+function EmailField({ id, label, help, children }: { id: string; label: string; help: readonly string[]; children: ReactNode }) {
+  return (
+    <div className="ship-field field-with-hint">
+      <div className="field-label-row">
+        <label htmlFor={id}>{label}</label>
+        <InfoHint id={`${id}-hint`} topic={label.toLowerCase()} text={helpText(help)} />
+      </div>
+      {children}
+    </div>
+  )
 }
 
 const kindLabel = (kind: LegalKind) => LEGAL_KINDS.find((item) => item.id === kind)?.label ?? kind
@@ -144,10 +237,16 @@ export function SettingsPage() {
 
   const publishLegal = () => run(async () => {
     setPublishing(false)
-    const overview = await apiRequest<LegalOverview>(`/admin/legal/${kind}`, { token, method: 'POST', body: { market, version: version.trim(), body_markdown: body } })
+    const id = versionFromLabel(version)
+    if (!id) {
+      setInvalid(['version'])
+      setError('Data da versão inválida. Use DD/MM/AAAA, por exemplo 15/11/2026.')
+      return
+    }
+    const overview = await apiRequest<LegalOverview>(`/admin/legal/${kind}`, { token, method: 'POST', body: { market, version: id, body_markdown: body } })
     setLegal(overview)
     setBody(overview.current?.body_markdown ?? body)
-    setMessage(`${kindLabel(kind)} ${overview.current?.version ?? version} publicada em ${MARKET_LABELS[market]}.`)
+    setMessage(`${kindLabel(kind)} de ${overview.current ? versionLabel(overview.current.version) : version} publicada em ${MARKET_LABELS[market]}.`)
   }, 'Falha ao publicar o documento')
 
   const readVersion = (id: string) => run(async () => {
@@ -168,7 +267,15 @@ export function SettingsPage() {
       const settings = await apiRequest<AutomatedEmailSettings>('/admin/settings/automated-emails', {
         token,
         method: 'PUT',
-        body: { market, life_stage_change_enabled: emailsForm.enabled, announcement_batch_size: batch, announcement_daily_cap: cap },
+        body: {
+          market,
+          life_stage_change_enabled: emailsForm.enabled,
+          announcement_batch_size: batch,
+          announcement_daily_cap: cap,
+          renewal_notice_enabled: emailsForm.renewalNotice,
+          plan_ending_notice_enabled: emailsForm.endingNotice,
+          plan_notice_days: Number(emailsForm.noticeDays),
+        },
       })
       setEmails(settings)
       setEmailsForm(emailsFormOf(settings))
@@ -243,6 +350,15 @@ export function SettingsPage() {
               </div>
             ) : null}
           </Section>
+          <Section title="Histórico de edições" description={`Quem alterou os dados da empresa de ${MARKET_LABELS[market]}, e o que mudou.`}>
+            {company ? (
+              <NutritionEditLog
+                events={company.history}
+                empty="Nenhuma alteração registrada."
+                describe={(event) => describeCompanyEvent(event, market)}
+              />
+            ) : <p className="muted" aria-busy="true">Carregando…</p>}
+          </Section>
         </form>
       ) : null}
 
@@ -260,7 +376,7 @@ export function SettingsPage() {
               <Section
                 title={`${kindLabel(kind)} · ${MARKET_LABELS[market]}`}
                 description={legal.current
-                  ? `Versão atual ${legal.current.version}${legal.current.published_at ? `, publicada em ${formatDate(legal.current.published_at)}` : ''}. A loja mostra esta versão e o cadastro registra o aceite dela.`
+                  ? `Versão atual de ${versionLabel(legal.current.version)}${legal.current.published_at ? `, publicada em ${formatDate(legal.current.published_at)}` : ''}. A loja mostra esta versão e o cadastro registra o aceite dela.`
                   : 'Nenhuma versão publicada neste mercado.'}
               >
                 {canWriteLegal ? (
@@ -269,19 +385,28 @@ export function SettingsPage() {
                     onSubmit={(event) => { event.preventDefault(); setPublishing(true) }}
                   >
                     <label className="ship-field">
-                      <span>Versão (AAAA-MM-DD)</span>
-                      <input value={version} required pattern="\d{4}-\d{2}-\d{2}" disabled={busy} aria-invalid={isInvalid('version')} onChange={(event) => setVersion(event.target.value)} />
+                      <span>Versão (DD/MM/AAAA)</span>
+                      <input value={version} required inputMode="numeric" placeholder="15/11/2026" pattern="\d{2}/\d{2}/\d{4}" title="Data no formato DD/MM/AAAA" disabled={busy} aria-invalid={isInvalid('version')} onChange={(event) => setVersion(event.target.value)} />
                     </label>
-                    <label className="ship-field">
-                      <span>Texto (Markdown)</span>
-                      <textarea rows={18} value={body} required disabled={busy} aria-invalid={isInvalid('body_markdown')} onChange={(event) => setBody(event.target.value)} />
-                    </label>
-                    <div className="table-actions">
+                    <div className="ship-field ship-field-wide">
+                      <span id="legal-body-label">Texto</span>
+                      <Suspense fallback={<p className="muted" aria-busy="true">Carregando editor…</p>}>
+                        <LegalEditor
+                          key={`${market}-${kind}-${legal.current?.version ?? 'nenhuma'}`}
+                          markdown={body}
+                          labelId="legal-body-label"
+                          disabled={busy}
+                          onChange={setBody}
+                        />
+                      </Suspense>
+                      {isInvalid('body_markdown') ? <p className="ship-field-error">O texto não pode ficar vazio.</p> : null}
+                    </div>
+                    <div className="table-actions ship-field-wide">
                       <button className="primary-button" type="submit" disabled={busy || !body.trim()}>Publicar versão</button>
                     </div>
                   </form>
                 ) : legal.current ? (
-                  <pre className="legal-text">{legal.current.body_markdown}</pre>
+                  <LegalReader id={`legal-current-${market}-${kind}`} markdown={legal.current.body_markdown} />
                 ) : null}
               </Section>
               <Section title="Versões anteriores" description="Uma versão publicada não muda. Para corrigir, publique outra.">
@@ -294,10 +419,10 @@ export function SettingsPage() {
                       <tbody>
                         {legal.versions.map((item) => (
                           <tr key={item.version}>
-                            <td>{item.version}{item.version === legal.current?.version ? <span className="badge badge-success"> atual</span> : null}</td>
+                            <td>{versionLabel(item.version)}{item.version === legal.current?.version ? <span className="badge badge-success"> atual</span> : null}</td>
                             <td>{item.published_at ? formatDate(item.published_at) : '—'}</td>
                             <td>
-                              <button className="ghost-button" type="button" disabled={busy} onClick={() => void readVersion(item.version)} aria-label={`Ler versão ${item.version}`}>Ler</button>
+                              <button className="ghost-button" type="button" disabled={busy} onClick={() => void readVersion(item.version)} aria-label={`Ler versão de ${versionLabel(item.version)}`}>Ler</button>
                             </td>
                           </tr>
                         ))}
@@ -315,22 +440,24 @@ export function SettingsPage() {
         <form id="settings-panel-emails" role="tabpanel" aria-labelledby="settings-tab-emails" onSubmit={submitEmails}>
           <Section
             title={`E-mails automáticos em ${MARKET_LABELS[market]}`}
-            description="O e-mail de mudança de fase sai pelo job, em lotes, até o limite do dia. Uma mudança vale na próxima execução do job."
+            description="O e-mail de mudança de fase é verificado 1 vez por dia; os avisos de plano, de hora em hora. Lote e limite diário valem só para o anúncio de lançamento. Uma mudança vale na próxima execução de cada rotina."
           >
             {!emails ? <p className="muted" aria-busy="true">Carregando…</p> : (
-              <div className="ship-fields">
-                <label className="ship-field">
-                  <span>E-mail de mudança de fase</span>
+              <div className="ship-fields email-fields">
+                <EmailField id="email-enabled" label="E-mail de mudança de fase" help={EMAIL_HELP.enabled}>
                   <input
+                    id="email-enabled"
+                    aria-describedby="email-enabled-hint"
                     type="checkbox"
                     checked={emailsForm.enabled}
                     disabled={!canWriteEmails || busy}
                     onChange={(event) => setEmailsForm((current) => ({ ...current, enabled: event.target.checked }))}
                   />
-                </label>
-                <label className="ship-field">
-                  <span>Lote por execução</span>
+                </EmailField>
+                <EmailField id="email-batch" label="Lote por execução" help={EMAIL_HELP.batch}>
                   <input
+                    id="email-batch"
+                    aria-describedby="email-batch-hint"
                     type="number"
                     min={BATCH_RANGE.min}
                     max={BATCH_RANGE.max}
@@ -341,10 +468,11 @@ export function SettingsPage() {
                     aria-invalid={isInvalid('announcement_batch_size')}
                     onChange={(event) => setEmailsForm((current) => ({ ...current, batch: event.target.value }))}
                   />
-                </label>
-                <label className="ship-field">
-                  <span>Limite diário</span>
+                </EmailField>
+                <EmailField id="email-cap" label="Limite diário" help={EMAIL_HELP.cap}>
                   <input
+                    id="email-cap"
+                    aria-describedby="email-cap-hint"
                     type="number"
                     min={DAILY_CAP_RANGE.min}
                     max={DAILY_CAP_RANGE.max}
@@ -355,7 +483,42 @@ export function SettingsPage() {
                     aria-invalid={isInvalid('announcement_daily_cap')}
                     onChange={(event) => setEmailsForm((current) => ({ ...current, cap: event.target.value }))}
                   />
-                </label>
+                </EmailField>
+                <EmailField id="email-renewal" label="Aviso de renovação" help={EMAIL_HELP.renewalNotice}>
+                  <input
+                    id="email-renewal"
+                    aria-describedby="email-renewal-hint"
+                    type="checkbox"
+                    checked={emailsForm.renewalNotice}
+                    disabled={!canWriteEmails || busy}
+                    onChange={(event) => setEmailsForm((current) => ({ ...current, renewalNotice: event.target.checked }))}
+                  />
+                </EmailField>
+                <EmailField id="email-ending" label="Aviso de fim de plano" help={EMAIL_HELP.endingNotice}>
+                  <input
+                    id="email-ending"
+                    aria-describedby="email-ending-hint"
+                    type="checkbox"
+                    checked={emailsForm.endingNotice}
+                    disabled={!canWriteEmails || busy}
+                    onChange={(event) => setEmailsForm((current) => ({ ...current, endingNotice: event.target.checked }))}
+                  />
+                </EmailField>
+                <EmailField id="email-notice-days" label="Dias de antecedência dos avisos" help={EMAIL_HELP.noticeDays}>
+                  <input
+                    id="email-notice-days"
+                    aria-describedby="email-notice-days-hint"
+                    type="number"
+                    min={PLAN_NOTICE_DAYS_RANGE.min}
+                    max={PLAN_NOTICE_DAYS_RANGE.max}
+                    step="1"
+                    required
+                    value={emailsForm.noticeDays}
+                    disabled={!canWriteEmails || busy}
+                    aria-invalid={isInvalid('plan_notice_days')}
+                    onChange={(event) => setEmailsForm((current) => ({ ...current, noticeDays: event.target.value }))}
+                  />
+                </EmailField>
               </div>
             )}
             {canWriteEmails && emails ? (
@@ -369,7 +532,7 @@ export function SettingsPage() {
 
       <Dialog
         title={`Publicar ${kindLabel(kind).toLowerCase()}`}
-        description={`A versão ${version} passa a ser a atual em ${MARKET_LABELS[market]}. Os próximos cadastros registram o aceite dela. Uma versão publicada não pode ser editada.`}
+        description={`A versão de ${version} passa a ser a atual em ${MARKET_LABELS[market]}. Os próximos cadastros registram o aceite dela. Uma versão publicada não pode ser editada.`}
         open={publishing}
         onClose={() => setPublishing(false)}
         footer={(
@@ -382,13 +545,14 @@ export function SettingsPage() {
         <p>{`${body.trim().split('\n').length} linhas de texto.`}</p>
       </Dialog>
       <Dialog
-        title={reading ? `${kindLabel(kind)} ${reading.version}` : ''}
+        title={reading ? `${kindLabel(kind)} de ${versionLabel(reading.version)}` : ''}
         description={reading?.published_at ? `Publicada em ${formatDate(reading.published_at)}.` : undefined}
         open={Boolean(reading)}
+        wide
         onClose={() => setReading(null)}
         footer={<button className="ghost-button" type="button" onClick={() => setReading(null)}>Fechar</button>}
       >
-        {reading ? <pre className="legal-text">{reading.body_markdown}</pre> : null}
+        {reading ? <LegalReader key={reading.version} id="legal-reading" markdown={reading.body_markdown} /> : null}
       </Dialog>
     </PageFrame>
   )

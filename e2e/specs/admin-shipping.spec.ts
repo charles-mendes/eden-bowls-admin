@@ -2,17 +2,20 @@ import { expect, test } from '@playwright/test'
 import { e2eProfiles, openAuthed } from '../helpers/mockAdminApi'
 
 test.describe('Admin shipping', () => {
-  test('a writer lands on the simulator and moves between tabs through the URL', async ({ page }) => {
+  test('a writer lands on Regras and moves between tabs through the URL', async ({ page }) => {
     await openAuthed(page, '/config/shipping', e2eProfiles.admin)
 
-    await expect(page.getByRole('tab', { name: 'Simulador de frete' })).toHaveAttribute('aria-selected', 'true')
-    await expect(page.getByRole('heading', { name: 'Simular frete por CEP' })).toBeVisible()
-
-    await page.getByRole('tab', { name: /Regras de entrega/ }).click()
-    await expect(page).toHaveURL(/aba=regras/)
+    await expect(page.getByRole('tab', { name: /^Regras/ })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('heading', { name: 'Entrega local' })).toBeVisible()
 
-    await page.getByRole('tab', { name: /Regras de entrega/ }).press('ArrowRight')
+    await page.getByRole('tab', { name: 'Simulador' }).click()
+    await expect(page).toHaveURL(/aba=simulador/)
+    await expect(page.getByRole('heading', { name: 'Simular frete por CEP' })).toBeVisible()
+
+    await page.getByRole('tab', { name: /^Regras/ }).click()
+    await expect(page.getByRole('heading', { name: 'Entrega local' })).toBeVisible()
+
+    await page.getByRole('tab', { name: /^Regras/ }).press('ArrowRight')
     await expect(page.getByRole('tab', { name: /Sede/ })).toBeFocused()
     await expect(page.getByRole('article', { name: 'Sede Brasil' })).toBeVisible()
 
@@ -30,15 +33,15 @@ test.describe('Admin shipping', () => {
   test('asks before switching market with unsaved rules', async ({ page }) => {
     const { captured } = await openAuthed(page, '/config/shipping?aba=regras', e2eProfiles.admin)
 
-    await page.getByLabel('Raio de entrega').fill('50')
-    await expect(page.getByRole('tab', { name: /Regras de entrega/ })).toContainText('não salvo')
+    await page.getByLabel('Raio de entrega', { exact: true }).fill('50')
+    await expect(page.getByRole('tab', { name: /^Regras/ })).toContainText('não salvo')
 
     await page.getByRole('group', { name: 'Mercado' }).getByRole('button', { name: 'EUA' }).click()
     const dialog = page.getByRole('dialog', { name: 'Alterações não salvas' })
     await expect(dialog).toContainText('regras do Brasil')
 
     await dialog.getByRole('button', { name: 'Continuar editando' }).click()
-    await expect(page.getByLabel('Raio de entrega')).toHaveValue('50')
+    await expect(page.getByLabel('Raio de entrega', { exact: true })).toHaveValue('50')
 
     await page.getByRole('group', { name: 'Mercado' }).getByRole('button', { name: 'EUA' }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Descartar e trocar' }).click()
@@ -47,12 +50,11 @@ test.describe('Admin shipping', () => {
     expect(captured.some((item) => item.method === 'PUT' && item.path === '/api/v1/admin/shipping/settings')).toBe(false)
   })
 
-  test('an operator without shipping.write lands on the simulator with no save controls', async ({ page }) => {
+  test('an operator without shipping.write lands on Regras with no save controls', async ({ page }) => {
     await openAuthed(page, '/config/shipping', e2eProfiles.operator)
 
-    await expect(page.getByRole('tab', { name: /Simulador/ })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('tab', { name: /^Regras/ })).toHaveAttribute('aria-selected', 'true')
     await expect(page.getByRole('group', { name: 'Mercado' })).toHaveCount(0)
-    await page.getByRole('tab', { name: /Regras de entrega/ }).click()
     await expect(page.getByRole('button', { name: /Salvar regras/ })).toHaveCount(0)
   })
 })

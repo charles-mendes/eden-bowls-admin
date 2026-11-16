@@ -1,5 +1,6 @@
 import { ApiRequestError } from './api'
 import type { MarketCode } from './markets'
+import type { NutritionAuditEvent } from './nutritionSettings'
 
 // Company profile, legal documents and automated emails as the API returns them (admin-settings).
 
@@ -16,6 +17,8 @@ export type CompanyProfile = {
   support_email: string
   store_url: string
   updated_at?: string | null
+  // Who saved the company data of the market, newest first. An older API sends no history.
+  history?: NutritionAuditEvent[]
 }
 
 export type CompanyField = Exclude<keyof CompanyProfile, 'market' | 'updated_at'>
@@ -40,6 +43,22 @@ export function companyFieldLabel(field: CompanyField, market: MarketCode) {
   return COMPANY_FIELDS.find((item) => item.key === field)?.label ?? field
 }
 
+const shownValue = (value: unknown) => (value === undefined || value === null || value === '' ? '—' : String(value))
+
+// One save of the company data: the fields that changed, before → after. An event saved before the API kept the
+// values lists only the field names.
+export function describeCompanyEvent(event: NutritionAuditEvent, market: MarketCode): { title: string; details: string[] } {
+  const meta = (event.metadata ?? {}) as { fields?: unknown; before?: Record<string, unknown>; after?: Record<string, unknown> }
+  const fields = (Array.isArray(meta.fields) ? meta.fields : []).filter((field): field is CompanyField => COMPANY_FIELDS.some((item) => item.key === field))
+  if (!fields.length) return { title: 'Salvou os dados da empresa sem alterações', details: [] }
+  const before = meta.before ?? {}
+  const after = meta.after ?? {}
+  const details = fields.map((field) => (field in after
+    ? `${companyFieldLabel(field, market)}: ${shownValue(before[field])} → ${shownValue(after[field])}`
+    : companyFieldLabel(field, market)))
+  return { title: 'Alterou os dados da empresa', details }
+}
+
 export type LegalKind = 'privacy' | 'terms'
 
 export const LEGAL_KINDS: Array<{ id: LegalKind; label: string }> = [
@@ -61,16 +80,37 @@ export type AutomatedEmailSettings = {
   life_stage_change_enabled: boolean
   announcement_batch_size: number
   announcement_daily_cap: number
+  renewal_notice_enabled: boolean
+  plan_ending_notice_enabled: boolean
+  plan_notice_days: number
   updated_at?: string | null
 }
 
 export const BATCH_RANGE = { min: 1, max: 500 }
 export const DAILY_CAP_RANGE = { min: 1, max: 5000 }
+export const PLAN_NOTICE_DAYS_RANGE = { min: 1, max: 30 }
 
-// Today in the browser timezone, as the `AAAA-MM-DD` id of a new legal version.
+// Today in the browser timezone, as the DD/MM/AAAA label of a new legal version.
+// A legal version is a calendar day: the API keeps it as AAAA-MM-DD, the admin shows and types it as DD/MM/AAAA.
 export function todayVersion(now = new Date()) {
   const pad = (value: number) => String(value).padStart(2, '0')
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  return `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`
+}
+
+// "2026-11-15" → "15/11/2026", from the text itself (no time zone). Anything else is shown as it came.
+export function versionLabel(version: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(version.trim())
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : version
+}
+
+// "15/11/2026" → "2026-11-15", or null when it is not a real day.
+export function versionFromLabel(label: string) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(label.trim())
+  if (!match) return null
+  const [, day, month, year] = match
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)))
+  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() !== Number(month) - 1 || date.getUTCDate() !== Number(day)) return null
+  return `${year}-${month}-${day}`
 }
 
 // Fields listed by a 422 of the API, or none.
@@ -86,6 +126,9 @@ const FIELD_NAMES: Record<string, string> = {
   announcement_batch_size: 'lote por execução',
   announcement_daily_cap: 'limite diário',
   life_stage_change_enabled: 'e-mail de mudança de fase',
+  renewal_notice_enabled: 'aviso de renovação',
+  plan_ending_notice_enabled: 'aviso de fim de plano',
+  plan_notice_days: 'dias de antecedência',
 }
 
 export function settingsErrorMessage(error: unknown, fallback: string, market: MarketCode = 'BR') {
@@ -94,10 +137,10 @@ export function settingsErrorMessage(error: unknown, fallback: string, market: M
       .map((field) => (COMPANY_FIELDS.some((item) => item.key === field) ? companyFieldLabel(field as CompanyField, market) : FIELD_NAMES[field] ?? field))
       .join(', ')
     if (error.code === 'company_profile_invalid') return `Dados da empresa inválidos: ${list}.`
-    if (error.code === 'legal_document_invalid') return `Documento inválido: ${list}. A versão é uma data AAAA-MM-DD e o texto não pode ficar vazio.`
+    if (error.code === 'legal_document_invalid') return `Documento inválido: ${list}. A versão é uma data DD/MM/AAAA e o texto não pode ficar vazio.`
     if (error.code === 'legal_version_taken') return 'Essa versão já existe. Escolha outra data.'
     if (error.code === 'legal_document_not_found') return 'Versão não encontrada.'
-    if (error.code === 'automated_email_settings_invalid') return `Configuração inválida: ${list}. O lote vai de 1 a 500, o limite diário de 1 a 5.000 e não pode ser menor que o lote.`
+    if (error.code === 'automated_email_settings_invalid') return `Configuração inválida: ${list}. O lote vai de 1 a 500, o limite diário de 1 a 5.000 e não pode ser menor que o lote, e os dias de antecedência de 1 a 30.`
     if (error.status === 403) return 'Sem permissão para esta ação.'
   }
   return error instanceof Error && error.message ? error.message : fallback

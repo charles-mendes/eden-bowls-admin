@@ -1,4 +1,5 @@
-import { type ReactNode, useEffect, useEffectEvent, useId, useRef } from 'react'
+import { type ReactNode, useId, useRef } from 'react'
+import { useModalFocus } from '../lib/useModalFocus'
 
 type DialogProps = {
   title: string
@@ -7,35 +8,17 @@ type DialogProps = {
   onClose: () => void
   children: ReactNode
   footer?: ReactNode
+  // Wide panel, for long texts such as a legal document.
+  wide?: boolean
 }
 
-export function Dialog({ title, description, open, onClose, children, footer }: DialogProps) {
+export function Dialog({ title, description, open, onClose, children, footer, wide = false }: DialogProps) {
   const titleId = useId()
   const descriptionId = useId()
   const panelRef = useRef<HTMLDivElement>(null)
-  const closeOnEscape = useEffectEvent(onClose)
-
-  useEffect(() => {
-    if (!open) return undefined
-
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const panel = panelRef.current
-    const focusable = panel?.querySelector<HTMLElement>('.dialog-body input, .dialog-body select, .dialog-body textarea, .dialog-body button')
-    focusable?.focus()
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        closeOnEscape()
-      }
-    }
-
-    document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('keydown', onKeyDown)
-      previous?.focus()
-    }
-  }, [open])
+  useModalFocus(open, panelRef, onClose, {
+    focusSelector: '.dialog-body input, .dialog-body select, .dialog-body textarea, .dialog-body button',
+  })
 
   if (!open) return null
 
@@ -43,7 +26,7 @@ export function Dialog({ title, description, open, onClose, children, footer }: 
     <div className="dialog-overlay" onMouseDown={onClose}>
       <div
         ref={panelRef}
-        className="dialog-panel"
+        className={wide ? 'dialog-panel dialog-panel-wide' : 'dialog-panel'}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

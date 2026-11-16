@@ -55,10 +55,13 @@ export function NfeCustomerDialog({ item, onClose, onSaved }: {
   const [form, setForm] = useState(() => formFrom(item))
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  // Why the operator overrides this note's copy; the API keeps it in the audit log only.
+  const [reason, setReason] = useState('')
+  const reasonValid = reason.trim().length >= 3 && reason.trim().length <= 255
 
   const save = async (event?: FormEvent) => {
     event?.preventDefault()
-    if (!token) return
+    if (!token || !reasonValid) return
     try {
       setSaving(true)
       setError('')
@@ -66,7 +69,7 @@ export function NfeCustomerDialog({ item, onClose, onSaved }: {
       const response = await apiRequest<{ success: boolean; data: NfeDetail }>(`/admin/nfe/${item.id}/customer`, {
         token,
         method: 'PATCH',
-        body: { name, email, document, address },
+        body: { name, email, document, address, reason: reason.trim() },
       })
       onSaved(response.data)
     } catch (requestError) {
@@ -79,12 +82,12 @@ export function NfeCustomerDialog({ item, onClose, onSaved }: {
     <Dialog
       open
       title="Corrigir dados do cliente"
-      description="Os dados entram nesta nota na próxima tentativa e também atualizam o contato no Bling."
+      description="Muda só esta nota, na próxima tentativa. Não muda a assinatura nem a conta do cliente: o endereço da entrega o cliente edita em Meu Plano, na loja."
       onClose={onClose}
       footer={(
         <>
           <button className="ghost-button" type="button" onClick={onClose}>Cancelar</button>
-          <button className="primary-button" type="button" disabled={saving} onClick={() => void save()}>
+          <button className="primary-button" type="button" disabled={saving || !reasonValid} onClick={() => void save()}>
             {saving ? 'Salvando...' : 'Salvar'}
           </button>
         </>
@@ -103,6 +106,10 @@ export function NfeCustomerDialog({ item, onClose, onSaved }: {
             />
           </label>
         ))}
+        <label className="nfe-field-wide">
+          Motivo
+          <textarea required minLength={3} maxLength={255} value={reason} onChange={(event) => setReason(event.target.value)} />
+        </label>
         <button className="visually-hidden" type="submit" tabIndex={-1} aria-hidden="true">Salvar</button>
       </form>
     </Dialog>

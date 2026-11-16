@@ -11,12 +11,20 @@ export const MARKET_LABELS: Record<MarketCode, string> = {
 
 type SessionUser = {
   markets?: string[] | null
+  effectiveMarkets?: string[] | null
 } | null | undefined
 
 export function sessionMarkets(user: SessionUser): MarketCode[] {
   const raw = Array.isArray(user?.markets) ? user.markets : []
   const allowed = new Set(raw.filter((value): value is MarketCode => value === 'BR' || value === 'US'))
   return MARKET_ORDER.filter((market) => allowed.has(market))
+}
+
+// The markets the API scope applies to this session. Falls back to the stored markets on an older API.
+// Empty means unknown: callers show what they show today.
+export function effectiveSessionMarkets(user: SessionUser): MarketCode[] {
+  const effective = sessionMarkets(user ? { markets: user.effectiveMarkets } : user)
+  return effective.length ? effective : sessionMarkets(user)
 }
 
 export function hasBothMarkets(user: SessionUser) {
@@ -50,4 +58,10 @@ export function isProfileInScope(flag: boolean | null | undefined) {
 
 export function staffMarketRequired(role: string) {
   return role !== 'admin' && role !== 'customer'
+}
+
+// True only when the session's markets are known and leave out this screen's market.
+export function isOutsideMarket(user: SessionUser, market: MarketCode) {
+  const markets = effectiveSessionMarkets(user)
+  return markets.length > 0 && !markets.includes(market)
 }

@@ -14,7 +14,7 @@ test.describe('Admin production queue', () => {
     await page.getByRole('button', { name: 'Mais opções para Ana Ledger' }).click()
     const menu = page.getByRole('menu')
     await expect(menu.getByRole('menuitem', { name: 'Assinatura' })).toHaveAttribute('href', '/billing/subscriptions/42')
-    await expect(menu.getByRole('menuitem', { name: 'Checkout' })).toHaveAttribute('href', '/users/u-ana?aba=checkout')
+    await expect(menu.getByRole('menuitem', { name: 'Checkout' })).toHaveAttribute('href', '/users/u-ana?aba=checkout&assinatura=42')
     await page.keyboard.press('Escape')
     await expect(menu).toHaveCount(0)
     await expect.poll(() => captured.some((item) => (

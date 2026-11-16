@@ -33,10 +33,22 @@ export type LifeStageBreed = {
   updatedAt: string | null
 }
 
+// One entry of the admin audit log: who changed what, and when.
+export type NutritionAuditEvent = {
+  id: number
+  actorUserId: number | null
+  actorEmail: string | null
+  action: string
+  metadata: Record<string, unknown>
+  createdAt: string
+}
+
 export type LifeStageOverview = {
   market: MarketCode
   sizeClasses: SizeClassLimit[]
   breeds: LifeStageBreed[]
+  // An older API sends no history.
+  history?: NutritionAuditEvent[]
 }
 
 export type LifeStagePreview = {
@@ -66,6 +78,8 @@ export type BreedGroup = 'dogue' | 'slow_metabolism' | 'terranova'
 
 export type NutritionParameters = {
   combination: Record<string, number>
+  // Giant dogs (over 40 kg or of a giant breed group). A set saved by an older API may lack it.
+  combination_giant: Record<string, number>
   state: Record<string, number>
   base: Record<string, number>
   nem: Record<string, number>
@@ -87,31 +101,27 @@ export type ParametersOverview = {
   published: { id: number | null; parameters: NutritionParameters; publishedAt: string | null }
   draft: ParameterSet | null
   history: ParameterSet[]
+  audit?: NutritionAuditEvent[]
 }
 
 export const FACTOR_RANGE = { min: 1, max: 400 }
-export const NEM_RANGE = { min: 1000, max: 8000 }
+// EM of the food: fresh food sits around 950 to 1500 kcal/kg.
+export const NEM_RANGE = { min: 500, max: 8000 }
 export const MONTHS_RANGE = { min: 1, max: 240 }
 
-export const FACTOR_SECTIONS: Array<{ key: 'combination' | 'state' | 'base' | 'nem'; title: string; description: string }> = [
-  { key: 'base', title: 'Fatores base', description: 'Cão, gato e as exceções por idade, atividade, peso e grupo de raça.' },
-  { key: 'state', title: 'Fatores de estado', description: 'Sênior, gestante e crescimento: substituem o fator base.' },
-  { key: 'combination', title: 'Fatores de combinação', description: 'Castrado × atividade × escore corporal. Valem para todo cão adulto.' },
-  { key: 'nem', title: 'NEM padrão', description: 'Energia metabolizável do alimento, em kcal/kg.' },
+export type FactorSection = 'combination' | 'combination_giant' | 'state' | 'base' | 'nem'
+
+export const FACTOR_SECTIONS: Array<{ key: FactorSection; title: string; description: string }> = [
+  { key: 'combination', title: 'Matriz de manutenção', description: 'Cão adulto em manutenção até 40 kg: castrado × atividade × escore corporal.' },
+  { key: 'combination_giant', title: 'Matriz de raças gigantes', description: 'Cão adulto em manutenção acima de 40 kg, ou de uma raça gigante (lista abaixo), mesmo mais leve.' },
+  { key: 'state', title: 'Fatores de estágio', description: 'Filhote, gestante e sênior usam o fator do estágio, não a matriz.' },
+  { key: 'base', title: 'Fatores de gatos', description: 'Gato em ambiente interno, ou ativo quando a atividade é alta.' },
+  { key: 'nem', title: 'EM do alimento', description: 'Energia metabolizável do alimento, em kcal/kg.' },
 ]
 
 const BASE_LABELS: Record<string, string> = {
-  dog: 'Cão',
-  cat: 'Gato',
-  cat_overweight: 'Gato acima do peso',
-  work_dog_high: 'Cão de trabalho, atividade alta',
-  moderate_high_impact: 'Atividade moderada de alto impacto',
-  age_1_2: 'Cão de 1 a 2 anos',
-  age_3_7: 'Cão de 3 a 7 anos',
-  terranova: 'Grupo Terra Nova',
-  dog_overweight: 'Cão acima do peso',
-  dogue: 'Grupo Dogue',
-  slow_metabolism: 'Metabolismo lento',
+  cat: 'Gato em ambiente interno',
+  cat_active: 'Gato ativo (atividade alta)',
 }
 
 const STATE_LABELS: Record<string, string> = {
@@ -122,7 +132,10 @@ const STATE_LABELS: Record<string, string> = {
   CRESCIMENTO_81_100: 'Crescimento de 81% a 100%',
 }
 
-const NEM_LABELS: Record<string, string> = { dog: 'Cão', cat: 'Gato' }
+// The API calls this `nem`; the veterinarian's document calls it EM da dieta (NEM there is the kcal per day).
+const NEM_LABELS: Record<string, string> = { dog: 'EM do alimento para cães (kcal/kg)', cat: 'EM do alimento para gatos (kcal/kg)' }
+
+const GIANT_PREFIX = 'Gigante: '
 
 const COMBINATION_WORDS: Record<string, string> = {
   SIM: 'Castrado',
@@ -136,17 +149,18 @@ const COMBINATION_WORDS: Record<string, string> = {
 }
 
 export const BREED_GROUP_LABELS: Record<BreedGroup, string> = {
-  dogue: 'Grupo Dogue',
-  slow_metabolism: 'Metabolismo lento',
-  terranova: 'Grupo Terra Nova',
+  dogue: 'Dogue e demais gigantes',
+  slow_metabolism: 'São Bernardo',
+  terranova: 'Terra Nova',
 }
 
 export const BREED_GROUPS: BreedGroup[] = ['dogue', 'slow_metabolism', 'terranova']
 
-export function factorLabel(section: string, key: string) {
+export function factorLabel(section: string, key: string): string {
   if (section === 'base') return BASE_LABELS[key] ?? key
   if (section === 'state') return STATE_LABELS[key] ?? key
   if (section === 'nem') return NEM_LABELS[key] ?? key
+  if (section === 'combination_giant') return `${GIANT_PREFIX}${factorLabel('combination', key)}`
   return key.split('-').map((word) => COMBINATION_WORDS[word] ?? word).join(' · ')
 }
 
@@ -183,17 +197,199 @@ function fieldName(field: string) {
 
 export function nutritionErrorMessage(error: unknown, fallback: string) {
   if (error instanceof ApiRequestError) {
+    if (error.code === 'market_forbidden') return 'Você só pode alterar raças do mercado em que é operador.'
     const fields = invalidFields(error)
     const list = fields.map(fieldName).join(', ')
     if (error.code === 'life_stage_limits_invalid') return `Limites inválidos (${list}). Os meses vão de 1 a 240 e sênior precisa ser maior que adulto.`
     if (error.code === 'life_stage_breed_invalid') return `Raça inválida (${list}).`
     if (error.code === 'life_stage_breed_exists') return 'Essa raça já está na lista deste mercado.'
     if (error.code === 'life_stage_breed_not_found') return 'Raça não encontrada neste mercado.'
-    if (error.code === 'nutrition_parameters_invalid') return `Parâmetros inválidos: ${list}. Fatores vão de 1 a 400 e NEM de 1000 a 8000.`
+    if (error.code === 'nutrition_parameters_invalid') return `Parâmetros inválidos: ${list}. Fatores vão de 1 a 400 e EM do alimento de 500 a 8000 kcal/kg.`
     if (error.code === 'nutrition_draft_missing') return 'Não há rascunho. Salve um rascunho antes.'
     if (error.code === 'nutrition_parameter_set_not_found') return 'Conjunto não encontrado.'
     if (error.code === 'market_required') return 'Escolha um mercado.'
     if (error.status === 403) return 'Sem permissão para esta ação.'
   }
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+// What each piece of data means, for the "i" next to it.
+export const HELP = {
+  adultFrom: 'Idade, em meses, em que o cão deixa de ser filhote e passa a receber a recomendação de adulto. Cães maiores amadurecem mais tarde, por isso o limite cresce com o porte.',
+  seniorFrom: 'Idade, em meses, em que o cão passa a sênior e a recomendação usa o fator Sênior. Cães maiores envelhecem mais cedo. Precisa ser maior que a idade de adulto.',
+  sizeClass: 'Classe de tamanho do cão (pequeno, médio, grande ou gigante). É ela que define as idades de mudança de fase.',
+  breedsTable: 'Quando o cliente informa uma destas raças no cadastro do pet, o porte vem desta tabela e substitui o porte que ele escolheu.',
+  breedNames: 'O cliente pode escrever a raça em português ou em inglês. A comparação ignora acentos e maiúsculas.',
+  breedStatus: 'Uma raça desativada continua na lista, mas deixa de valer na avaliação de fase. Reative para voltar a valer.',
+  preview: 'Antes de salvar, a prévia conta quantos pets com assinatura ativa mudariam de fase. Se algum mudar, a alteração só é salva depois de confirmar.',
+  factor: 'Fator de energia (NRC 2006, FEDIAF 2020). A NEM (necessidade energética de manutenção, em kcal por dia) é o fator × peso elevado ao expoente. Cão usa peso^0,75.',
+  base: 'Tabela 1: 60 para gato em ambiente interno (faixa 52 a 75) e 100 para gato ativo. O gato acima do peso mantém o fator e muda o expoente para 0,4.',
+  state: 'Tabela 1: filhote pelo percentual do peso adulto (210, 175, 140), gestante nas primeiras 4 semanas (132) e sênior (95, faixa 80 a 120). Valem no lugar da matriz.',
+  combination: 'Aba Constantes da planilha: o fator do cão adulto em manutenção pela combinação castrado × atividade × escore que o tutor informa.',
+  combination_giant: 'Fatores da zootecnista Izabella para raças gigantes, que têm metabolismo mais lento. Valem acima de 40 kg e para as raças gigantes listadas, no lugar da matriz de manutenção.',
+  nem: 'EM (energia metabolizável) do alimento, em kcal por kg. Gramas por dia = NEM (kcal por dia) × 1000 ÷ EM. A recomendação usa a EM da receita, ou a média da linha do pet (adulto 1200, filhote 1500, sênior 1150); este valor só vale quando nenhuma receita informa a dela.',
+  breedGroups: 'Porte gigante é o cão adulto acima de 40 kg (documento da veterinária). As listas trazem as raças cujo adulto passa de 40 kg: as gigantes da aba Raças e as grandes acima de 40 kg pelo padrão da raça, como Rottweiler, Akita e Bloodhound. Assim uma fêmea ou um cão magro dessas raças também usa a matriz de raças gigantes. Greyhound e Borzoi ficam de fora (25 a 40 kg). A loja grava a raça como o cliente escolheu, em português no Brasil e em inglês nos EUA, por isso cada raça aparece nas duas línguas.',
+  draft: 'As mudanças vão para um rascunho, que não afeta clientes. Teste no Simulador nutricional e publique: aí as próximas recomendações dos dois mercados passam a usá-lo.',
+  history: 'Conjuntos publicados antes. Um conjunto antigo pode voltar como rascunho, para ser publicado de novo.',
+  editLog: 'Cada alteração salva fica registrada com quem fez, quando e o que mudou.',
+} as const
+
+// Combination keys as a matrix: one row per castrated × activity, one column per body score.
+export const COMBINATION_ROWS: Array<{ castrado: 'SIM' | 'NAO'; activity: 'BAIXO' | 'MODERADO' | 'ALTO' }> = [
+  { castrado: 'SIM', activity: 'BAIXO' },
+  { castrado: 'SIM', activity: 'MODERADO' },
+  { castrado: 'SIM', activity: 'ALTO' },
+  { castrado: 'NAO', activity: 'BAIXO' },
+  { castrado: 'NAO', activity: 'MODERADO' },
+  { castrado: 'NAO', activity: 'ALTO' },
+]
+
+export const COMBINATION_SCORES: Array<{ key: 'ABAIXO' | 'ADEQUADO' | 'ACIMA'; label: string; short: string }> = [
+  { key: 'ABAIXO', label: 'Abaixo do peso', short: 'Abaixo' },
+  { key: 'ADEQUADO', label: 'Peso adequado', short: 'Adequado' },
+  { key: 'ACIMA', label: 'Acima do peso', short: 'Acima' },
+]
+
+export function combinationRowLabel(row: { castrado: string; activity: string }) {
+  return `${COMBINATION_WORDS[row.castrado]}, ${COMBINATION_WORDS[row.activity]}`
+}
+
+type BreedSnapshot = { namePt?: string; nameEn?: string; sizeClass?: SizeClass; active?: boolean }
+type LimitSnapshot = { adultFromMonths?: number; seniorFromMonths?: number }
+type FieldChange = { field: string; from: unknown; to: unknown }
+
+const AUDIT_DETAIL_LIMIT = 6
+
+function asObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+function shown(value: unknown) {
+  if (value === null || value === undefined || value === '') return '—'
+  return String(value)
+}
+
+function changeLabel(field: string) {
+  const [section, key] = field.split('.')
+  if (section === 'breed_groups') return BREED_GROUP_LABELS[key as BreedGroup] ?? key
+  return factorLabel(section, key)
+}
+
+function capped(lines: string[]) {
+  if (lines.length <= AUDIT_DETAIL_LIMIT) return lines
+  return [...lines.slice(0, AUDIT_DETAIL_LIMIT), `e mais ${lines.length - AUDIT_DETAIL_LIMIT} alterações`]
+}
+
+const BREED_SAMPLE = 4
+
+function breedList(value: unknown) {
+  return String(value ?? '').split(',').map((breed) => breed.trim()).filter(Boolean)
+}
+
+function sample(breeds: string[]) {
+  const head = breeds.slice(0, BREED_SAMPLE).join(', ')
+  return breeds.length > BREED_SAMPLE ? `${head} e mais ${breeds.length - BREED_SAMPLE}` : head
+}
+
+// A breed list is stored as one comma-separated text; the log says which breeds came in and went out.
+function breedGroupChange(change: FieldChange) {
+  const from = breedList(change.from)
+  const to = breedList(change.to)
+  const added = to.filter((breed) => !from.includes(breed))
+  const removed = from.filter((breed) => !to.includes(breed))
+  const parts: string[] = []
+  if (added.length) parts.push(`incluiu ${added.length} (${sample(added)})`)
+  if (removed.length) parts.push(`removeu ${removed.length} (${sample(removed)})`)
+  return `${changeLabel(change.field)}: ${parts.length ? parts.join('; ') : 'mudou a ordem'}`
+}
+
+function factorChanges(metadata: Record<string, unknown>) {
+  const changes = Array.isArray(metadata.changes) ? metadata.changes as FieldChange[] : []
+  return capped(changes.map((change) => (change.field.startsWith('breed_groups.')
+    ? breedGroupChange(change)
+    : `${changeLabel(change.field)}: ${shown(change.from)} → ${shown(change.to)}`)))
+}
+
+// Sets the system published on deploy, by the reason it recorded.
+const PUBLISH_REASONS: Record<string, string> = {
+  requerimento_energetico: 'Cálculo ajustado ao documento da veterinária: matriz de raças gigantes e fatores de gatos 60 e 100.',
+  em_alimento_fresco: 'EM do alimento padrão trocada pelo valor de comida fresca (1200 kcal/kg).',
+  racas_gigantes: 'Listas de raças gigantes completadas com as raças de adulto acima de 40 kg.',
+}
+
+// An audit event as a title and the lines of what changed, in Portuguese.
+export function describeAuditEvent(event: NutritionAuditEvent): { title: string; details: string[] } {
+  const meta = asObject(event.metadata)
+  if (event.action === 'life_stage.limits.update') {
+    const before = asObject(meta.before)
+    const after = asObject(meta.after)
+    const details: string[] = []
+    for (const sizeClass of SIZE_CLASSES) {
+      if (!(sizeClass in after)) continue
+      const from = asObject(before[sizeClass]) as LimitSnapshot
+      const to = asObject(after[sizeClass]) as LimitSnapshot
+      const parts: string[] = []
+      if (from.adultFromMonths !== to.adultFromMonths) parts.push(`adulto ${shown(from.adultFromMonths)} → ${shown(to.adultFromMonths)} meses`)
+      if (from.seniorFromMonths !== to.seniorFromMonths) parts.push(`sênior ${shown(from.seniorFromMonths)} → ${shown(to.seniorFromMonths)} meses`)
+      if (parts.length) details.push(`${SIZE_CLASS_LABELS[sizeClass]}: ${parts.join('; ')}`)
+    }
+    return { title: 'Alterou os limites de fase', details }
+  }
+  if (event.action === 'life_stage.breed.update') {
+    const before = meta.before ? asObject(meta.before) as BreedSnapshot : null
+    const after = asObject(meta.after) as BreedSnapshot
+    const size = (value?: SizeClass) => (value ? SIZE_CLASS_LABELS[value] ?? value : '—')
+    if (!before) {
+      return { title: `Incluiu a raça ${after.namePt ?? ''}`.trim(), details: [`${shown(after.namePt)} / ${shown(after.nameEn)}, porte ${size(after.sizeClass)}`] }
+    }
+    const name = after.namePt ?? before.namePt ?? ''
+    const details: string[] = []
+    if (before.namePt !== after.namePt) details.push(`Nome em português: ${shown(before.namePt)} → ${shown(after.namePt)}`)
+    if (before.nameEn !== after.nameEn) details.push(`Nome em inglês: ${shown(before.nameEn)} → ${shown(after.nameEn)}`)
+    if (before.sizeClass !== after.sizeClass) details.push(`Porte: ${size(before.sizeClass)} → ${size(after.sizeClass)}`)
+    if (before.active !== after.active) return { title: `${after.active ? 'Reativou' : 'Desativou'} a raça ${name}`, details }
+    return { title: `Alterou a raça ${name}`, details }
+  }
+  if (event.action === 'nutrition.parameters.draft.save') {
+    const details = factorChanges(meta)
+    return { title: `Salvou o rascunho${meta.set_id ? ` #${meta.set_id}` : ''}`, details: details.length ? details : ['Nenhum valor mudou.'] }
+  }
+  if (event.action === 'nutrition.parameters.draft.discard') {
+    return { title: `Descartou o rascunho${meta.set_id ? ` #${meta.set_id}` : ''}`, details: [] }
+  }
+  if (event.action === 'nutrition.parameters.copy_to_draft') {
+    return { title: `Copiou o conjunto #${shown(meta.from_set_id)} para o rascunho`, details: [] }
+  }
+  if (event.action === 'nutrition.parameters.publish') {
+    const reason = typeof meta.reason === 'string' && PUBLISH_REASONS[meta.reason] ? [PUBLISH_REASONS[meta.reason]] : []
+    return { title: `Publicou o conjunto #${shown(meta.to_set_id)}`, details: [`Substituiu o conjunto #${shown(meta.from_set_id)}.`, ...reason, ...factorChanges(meta)] }
+  }
+  return { title: event.action, details: [] }
+}
+
+export type Species = 'dog' | 'cat'
+
+// Eden Bowls sells no cat food yet (no recipe, no pack): the admin hides the cat factors and the cat simulation.
+// The API keeps the cat factors of the vet's document, so turning this on brings them back as they were.
+export const CATS_ENABLED = false
+
+// The factors tab shows one species at a time; the URL names it as `especie=caes|gatos`.
+const ALL_SPECIES_OPTIONS: Array<{ id: 'caes' | 'gatos'; species: Species; label: string }> = [
+  { id: 'caes', species: 'dog', label: 'Cães' },
+  { id: 'gatos', species: 'cat', label: 'Gatos' },
+]
+export const SPECIES_OPTIONS = ALL_SPECIES_OPTIONS.filter((option) => CATS_ENABLED || option.species === 'dog')
+
+// Base factors are the cats' (indoor and active); every matrix, the stage factors and the breed groups are the dogs'.
+export function speciesOfKey(key: string): Species {
+  return key === 'cat' ? 'cat' : 'dog'
+}
+
+// The species a field of a 422 belongs to.
+export function speciesOfField(field: string): Species {
+  const [section, rest = ''] = field.split('.')
+  const key = rest.split(':')[0]
+  if (section === 'base') return 'cat'
+  if (section === 'nem') return speciesOfKey(key)
+  return 'dog'
 }

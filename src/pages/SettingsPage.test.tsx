@@ -7,11 +7,23 @@ import { adminUser, jsonResponse, operatorWriteUser } from '../test/fixtures'
 import { findCall, installAdminFetchMock, type FetchCall } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
+// The visual editor (MDXEditor) does not run in jsdom: here it is a plain field with the same contract, Markdown in
+// and out. The real editor is covered by e2e/specs/admin-settings-legal.spec.ts.
+vi.mock('../components/LegalEditor', () => ({
+  default: ({ markdown, onChange, labelId, disabled }: { markdown: string; onChange: (value: string) => void; labelId: string; disabled?: boolean }) => (
+    <textarea aria-labelledby={labelId} defaultValue={markdown} disabled={disabled} onChange={(event) => onChange(event.target.value)} />
+  ),
+  LegalPreview: ({ markdown, labelId }: { markdown: string; labelId: string }) => (
+    <div role="document" aria-labelledby={labelId} data-testid="legal-preview">{markdown}</div>
+  ),
+}))
+
 const admin: AdminUser = {
   ...adminUser,
   permissions: [...adminUser.permissions, 'settings.read', 'settings.company.write', 'legal.write', 'settings.email.write'],
 }
-const operator: AdminUser = { ...operatorWriteUser, permissions: [...operatorWriteUser.permissions, 'settings.read', 'settings.email.write'] }
+const operator: AdminUser = { ...operatorWriteUser, permissions: [...operatorWriteUser.permissions, 'settings.read', 'settings.company.write', 'settings.email.write', 'legal.write'] }
+const readonlyUser: AdminUser = { ...operatorWriteUser, roles: ['readonly'], permissions: ['settings.read', 'market.br'] }
 
 function company(market: string) {
   return {
@@ -49,7 +61,7 @@ function routes(respond?: (call: FetchCall) => Response | undefined) {
       return jsonResponse({ market, kind: 'terms', current: { market, kind: 'terms', ...current }, versions })
     }
     if (call.path === '/api/v1/admin/settings/automated-emails' && call.method === 'GET') {
-      return jsonResponse({ market, life_stage_change_enabled: true, announcement_batch_size: 50, announcement_daily_cap: 200, updated_at: null })
+      return jsonResponse({ market, life_stage_change_enabled: true, announcement_batch_size: 50, announcement_daily_cap: 200, renewal_notice_enabled: true, plan_ending_notice_enabled: true, plan_notice_days: 7, updated_at: null })
     }
     return undefined
   }
@@ -68,12 +80,49 @@ describe('SettingsPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('Operator reads but cannot save the BR company profile', async () => {
-    renderPage(operator, '/config')
+  it('Readonly reads but cannot save the BR company profile', async () => {
+    renderPage(readonlyUser, '/config')
 
     expect(await screen.findByLabelText('CNPJ')).toHaveValue('65.291.985/0001-05')
     expect(screen.getByLabelText('CNPJ')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Salvar empresa' })).not.toBeInTheDocument()
+  })
+
+  it('the BR operator sees only Brazil and saves its company profile', async () => {
+    const user = userEvent.setup()
+    const { calls } = renderPage(operator, '/config?mercado=us')
+
+    const city = await screen.findByLabelText('Cidade')
+    expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
+    await user.clear(city)
+    await user.type(city, 'São Paulo')
+    await user.click(screen.getByRole('button', { name: 'Salvar empresa' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Dados da empresa de')
+    const body = findCall(calls, 'PUT', '/api/v1/admin/settings/company')?.body as { market: string; profile: { city: string } }
+    expect(body).toMatchObject({ market: 'BR', profile: { city: 'São Paulo' } })
+  })
+
+  it('shows who changed the company data and what changed', async () => {
+    renderPage(operator, '/config', (call) => (call.method === 'GET' && call.path === '/api/v1/admin/settings/company'
+      ? jsonResponse({
+        ...company('BR'),
+        history: [{
+          id: 4,
+          actorUserId: 8,
+          actorEmail: 'ops.write@edenbowls.com',
+          action: 'settings.company.update',
+          metadata: { market: 'BR', fields: ['city', 'tax_id'], before: { city: 'Curitiba', tax_id: '' }, after: { city: 'São Paulo', tax_id: '65.291.985/0001-05' } },
+          createdAt: '2026-11-15T12:00:00.000Z',
+        }],
+      })
+      : undefined))
+
+    const log = await screen.findByRole('list', { name: 'Histórico de edições' })
+    expect(within(log).getByText('Alterou os dados da empresa')).toBeInTheDocument()
+    expect(within(log).getByText('ops.write@edenbowls.com')).toBeInTheDocument()
+    expect(within(log).getByText('Cidade: Curitiba → São Paulo')).toBeInTheDocument()
+    expect(within(log).getByText('CNPJ: — → 65.291.985/0001-05')).toBeInTheDocument()
   })
 
   it('Invalid CNPJ: marks the field the API lists', async () => {
@@ -99,17 +148,84 @@ describe('SettingsPage', () => {
     const user = userEvent.setup()
     const { calls } = renderPage(admin, '/config?aba=legal&mercado=us&documento=terms')
 
-    const version = await screen.findByLabelText('Versão (AAAA-MM-DD)')
+    const version = await screen.findByLabelText('Versão (DD/MM/AAAA)')
     await user.clear(version)
-    await user.type(version, '2026-11-01')
-    const text = screen.getByLabelText('Texto (Markdown)')
+    await user.type(version, '01/11/2026')
+    const text = screen.getByLabelText('Texto')
     await user.clear(text)
     await user.type(text, '# Terms of use')
     await user.click(screen.getByRole('button', { name: 'Publicar versão' }))
     await user.click(within(await screen.findByRole('dialog', { name: 'Publicar termos de uso' })).getByRole('button', { name: 'Confirmar publicação' }))
 
-    expect(await screen.findByText(/Versão atual 2026-11-01/)).toBeInTheDocument()
+    expect(await screen.findByText(/Versão atual de 01\/11\/2026/)).toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Termos de uso de 01/11/2026 publicada em Estados Unidos.')
     expect(findCall(calls, 'POST', '/api/v1/admin/legal/terms')?.body).toEqual({ market: 'US', version: '2026-11-01', body_markdown: '# Terms of use' })
+  })
+
+  it('the BR operator publishes the BR terms of use', async () => {
+    const user = userEvent.setup()
+    const { calls } = renderPage(operator, '/config?aba=legal&mercado=us&documento=terms')
+
+    const text = await screen.findByLabelText('Texto')
+    expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
+    await user.clear(text)
+    await user.type(text, '# Termos novos')
+    await user.click(screen.getByRole('button', { name: 'Publicar versão' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirmar publicação' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('publicada em Brasil')
+    expect(findCall(calls, 'POST', '/api/v1/admin/legal/terms')?.body).toMatchObject({ market: 'BR', body_markdown: '# Termos novos' })
+  })
+
+  it('readonly sees the legal text without the publish form', async () => {
+    renderPage(readonlyUser, '/config?aba=legal&documento=terms')
+    expect(await screen.findByText(/Texto antigo/)).toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: 'Texto' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('document', { name: 'Texto' })).toHaveTextContent('Texto antigo.')
+    expect(screen.getByRole('button', { name: 'Markdown' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('button', { name: 'Publicar versão' })).not.toBeInTheDocument()
+  })
+
+  it('shows the versions as DD/MM/AAAA and refuses a day that does not exist', async () => {
+    const user = userEvent.setup()
+    const { calls } = renderPage(admin, '/config?aba=legal&documento=terms')
+
+    expect(await screen.findByText(/Versão atual de 15\/01\/2026/)).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: /^15\/01\/2026/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Ler versão de 15/01/2026' })).toBeInTheDocument()
+
+    const version = screen.getByLabelText('Versão (DD/MM/AAAA)')
+    await user.clear(version)
+    await user.type(version, '31/02/2026')
+    await user.click(screen.getByRole('button', { name: 'Publicar versão' }))
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirmar publicação' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Data da versão inválida. Use DD/MM/AAAA')
+    expect(screen.getByLabelText('Versão (DD/MM/AAAA)')).toHaveAttribute('aria-invalid', 'true')
+    expect(calls.some((call) => call.method === 'POST')).toBe(false)
+  })
+
+  it('reads an earlier version formatted, or as Markdown', async () => {
+    const user = userEvent.setup()
+    renderPage(admin, '/config?aba=legal&documento=terms', (call) => (call.path === '/api/v1/admin/legal/terms/versions/2026-01-15'
+      ? jsonResponse({ market: 'BR', kind: 'terms', version: '2026-01-15', published_at: '2026-01-15T12:00:00.000Z', body_markdown: '# Termos\n\nTexto antigo.' })
+      : undefined))
+
+    await user.click(await screen.findByRole('button', { name: 'Ler versão de 15/01/2026' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Termos de uso de 15/01/2026' })
+
+    expect(within(dialog).getByRole('button', { name: 'Visual' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(dialog).getByTestId('legal-preview')).toHaveTextContent('Texto antigo.')
+
+    await user.click(within(dialog).getByRole('button', { name: 'Markdown' }))
+    expect(within(dialog).getByRole('button', { name: 'Markdown' })).toHaveAttribute('aria-pressed', 'true')
+    // The visual view stays mounted but hidden, so switching back does not rebuild it.
+    expect(within(dialog).getByTestId('legal-preview')).not.toBeVisible()
+    expect(within(dialog).getByText(/# Termos/, { selector: 'pre' })).toBeVisible()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Visual' }))
+    expect(within(dialog).getByTestId('legal-preview')).toBeVisible()
+    expect(within(dialog).getByText(/# Termos/, { selector: 'pre' })).not.toBeVisible()
   })
 
   it('Version id already used: says so and keeps the typed text', async () => {
@@ -118,13 +234,29 @@ describe('SettingsPage', () => {
       ? jsonResponse({ success: false, message: 'Taken', details: { code: 'legal_version_taken' } }, 409)
       : undefined))
 
-    const text = await screen.findByLabelText('Texto (Markdown)')
+    const text = await screen.findByLabelText('Texto')
     await user.type(text, '\nNova cláusula.')
     await user.click(screen.getByRole('button', { name: 'Publicar versão' }))
     await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Confirmar publicação' }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Essa versão já existe. Escolha outra data.')
-    expect(screen.getByLabelText('Texto (Markdown)')).toHaveValue('# Termos\n\nTexto antigo.\nNova cláusula.')
+    expect(screen.getByLabelText('Texto')).toHaveValue('# Termos\n\nTexto antigo.\nNova cláusula.')
+  })
+
+  it('explains each automated email field in its tip', async () => {
+    const user = userEvent.setup()
+    renderPage(operator, '/config?aba=emails')
+
+    const batch = await screen.findByLabelText('Lote por execução')
+    expect(batch).toHaveAccessibleDescription(expect.stringContaining('espera 1 segundo'))
+    expect(screen.getByLabelText('Limite diário')).toHaveAccessibleDescription(expect.stringContaining('por dia (UTC)'))
+    expect(screen.getByLabelText('E-mail de mudança de fase')).toHaveAccessibleDescription(expect.stringContaining('Desligado: pausa de emergência'))
+    for (const topic of ['e-mail de mudança de fase', 'lote por execução', 'limite diário', 'aviso de renovação', 'aviso de fim de plano', 'dias de antecedência dos avisos']) {
+      expect(screen.getByRole('button', { name: `Sobre ${topic}` })).toBeInTheDocument()
+    }
+
+    await user.click(screen.getByRole('button', { name: 'Sobre aviso de renovação' }))
+    expect(screen.getByRole('tooltip', { name: /de hora em hora/ })).toBeVisible()
   })
 
   it('Cap lower than batch: marks the cap and sends nothing', async () => {
@@ -142,5 +274,24 @@ describe('SettingsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('O limite diário não pode ser menor que o lote por execução.')
     expect(screen.getByLabelText('Limite diário')).toHaveAttribute('aria-invalid', 'true')
     expect(calls.some((call) => call.method === 'PUT' && call.path === '/api/v1/admin/settings/automated-emails')).toBe(false)
+  })
+
+  it('saves the plan notices with the rest of the emails', async () => {
+    const user = userEvent.setup()
+    const { calls } = renderPage(operator, '/config?aba=emails', (call) => {
+      if (call.path === '/api/v1/admin/settings/automated-emails' && call.method === 'PUT') return jsonResponse(call.body)
+      return undefined
+    })
+
+    await user.click(await screen.findByLabelText('Aviso de renovação'))
+    const days = screen.getByLabelText('Dias de antecedência dos avisos')
+    expect(days).toHaveValue(7)
+    await user.clear(days)
+    await user.type(days, '10')
+    await user.click(screen.getByRole('button', { name: 'Salvar e-mails' }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent('E-mails automáticos salvos.')
+    const saved = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/settings/automated-emails')
+    expect(saved?.body).toMatchObject({ renewal_notice_enabled: false, plan_ending_notice_enabled: true, plan_notice_days: 10 })
   })
 })

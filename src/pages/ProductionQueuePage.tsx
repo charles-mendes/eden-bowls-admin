@@ -7,22 +7,35 @@ import { RowMenu, type RowMenuItem } from '../components/RowMenu'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { getBrowserTimeZone } from '../lib/format'
-import { defaultStripeAccount, hasBothMarkets, isProfileInScope } from '../lib/markets'
+import { defaultStripeAccount, effectiveSessionMarkets, hasBothMarkets, isProfileInScope } from '../lib/markets'
+import { addDays, COURIER_TIMEZONE, todayIn } from '../lib/deliveryRange'
+import { issueCodeText } from '../lib/addressIssues'
+import { RecipientNameDialog } from '../components/shipping/RecipientNameDialog'
 import {
   DUE_LABELS,
   DUE_TO_API,
   PRODUCTION_STATUS_LABELS,
   PRODUCTION_STATUSES,
+  READY_SHORT_BATCH,
+  READY_SHORT_ONE,
   STOCK_COVERAGE_LABELS,
+  chargeDayMonth,
   formatSeparationShortage,
+  formatStockShortages,
+  boxesText,
   isProductionStatus,
   isQueueDue,
   plural,
+  productionQueueHref,
+  stockShortageHref,
+  type BlockPreview,
   type DueBucket,
   type ProductionStatus,
   type ProductionStockResult,
+  type QueueBox,
   type QueueDue,
   type StockCoverage,
+  type StockShortage,
 } from '../lib/productionQueue'
 
 type LineItem = {
@@ -56,6 +69,15 @@ type QueueItem = {
   paymentState?: 'awaiting_payment' | 'past_due' | 'paid'
   paymentLabel?: string | null
   preparationDay?: string | null
+  deliveryDate?: string | null
+  // The paid invoice of the cycle, null while unpaid; absent on an older API.
+  paidInvoiceId?: string | null
+  // keep-ready-orders-dispatchable: what the courier dispatch would refuse for the address on a Brazil cycle;
+  // null elsewhere, absent on an older API.
+  courierIssues?: string[] | null
+  // operator-fills-recipient-name: where displayName comes from, and the account name to suggest.
+  nameSource?: 'recipient' | 'account' | 'email' | null
+  accountName?: string | null
   note: string | null
   subtotal: number | null
   currency: string | null
@@ -63,7 +85,10 @@ type QueueItem = {
   dense: boolean
   customerProfileInScope?: boolean
   lineItems: LineItem[]
+  // shipping-boxes: the boxes the kitchen packs; absent on an older API.
+  boxes?: QueueBox[]
   stockCoverage?: StockCoverage | null
+  stockShortages?: StockShortage[]
   stock?: ProductionStockResult
 }
 
@@ -86,11 +111,32 @@ const STATUS_BADGE: Record<ProductionStatus, string> = {
   blocked: 'badge-error',
 }
 
-const BUCKET_HEADERS: Record<DueBucket, string> = {
+// keep-ready-orders-dispatchable: a ready order past its day waits to leave, not for the kitchen.
+type QueueGroup = DueBucket | 'readyLate'
+
+const BUCKET_HEADERS: Record<QueueGroup, string> = {
+  readyLate: 'Prontos para expedir',
   overdue: 'Atrasados',
   today: 'Hoje',
   tomorrow: 'Amanhã',
   upcoming: 'Próximos dias',
+}
+
+function queueGroup(item: QueueItem): QueueGroup | null {
+  if (item.dueBucket === 'overdue' && item.productionStatus === 'ready') return 'readyLate'
+  return item.dueBucket
+}
+
+// queue-overdue-filter-matches-metric: a ready order past its day is not kitchen work running late; its row says
+// how long the box has been waiting to leave instead of "Atrasado N dias".
+function waitingToLeaveLabel(daysUntil: number | null) {
+  const days = daysUntil == null ? 0 : Math.abs(daysUntil)
+  return days > 0 ? `Aguardando saída há ${plural(days, 'dia', 'dias')}` : 'Aguardando saída'
+}
+
+// The API sorts by due day; the ready ones past their day move above "Atrasados", each group in its order.
+function groupedItems(items: QueueItem[]) {
+  return [...items.filter((item) => queueGroup(item) === 'readyLate'), ...items.filter((item) => queueGroup(item) !== 'readyLate')]
 }
 
 // The forward step of each status: the one button a row shows.
@@ -126,7 +172,7 @@ function longDay(isoDay: string) {
   return new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).format(dayDate(isoDay))
 }
 
-function bucketHeader(bucket: DueBucket, item: QueueItem) {
+function bucketHeader(bucket: QueueGroup, item: QueueItem) {
   const day = civilDay(item)
   return (bucket === 'today' || bucket === 'tomorrow') && day ? `${BUCKET_HEADERS[bucket]} · ${longDay(day)}` : BUCKET_HEADERS[bucket]
 }
@@ -149,9 +195,75 @@ function TableSkeleton() {
   )
 }
 
+// Where a ready order ships from: the courier queue reads the address country, the label queue the `us` account.
+// Only when both agree is the order on the screen the link opens.
+// PM-15: the block warning, with the date the preview gave for this dialog's cycle.
+function blockChargeText(item: QueueItem, preview: { key: string; preview: BlockPreview | null } | null) {
+  const answer = preview && preview.key === `${item.id}|${item.currentPeriodEnd}` ? preview.preview : null
+  const when = answer && answer.chargeMovesTo ? ` para ${chargeDayMonth(answer.chargeMovesTo, item.stripeAccount)}` : ''
+  return `Este pedido ainda não foi cobrado. Bloquear adia a cobrança${when}, e reabrir pode cobrar o cliente na hora.`
+}
+
+// simplify-brazil-dispatch: a Brazil order opens Entregas Brasil on its invoice. A box ready before its delivery
+// day is after the default range (up to tomorrow), so the link also asks for a range that holds it; past 31 days
+// the API refuses that range and the page shows the order as outside the period.
+function courierPath(item: Pick<QueueItem, 'id' | 'paidInvoiceId' | 'deliveryDate'>, now = new Date()) {
+  if (!item.paidInvoiceId) return '/operations/courier'
+  const params = new URLSearchParams({ fatura: item.paidInvoiceId, assinatura: String(item.id) })
+  const today = todayIn(COURIER_TIMEZONE, now)
+  const delivery = item.deliveryDate ? String(item.deliveryDate).slice(0, 10) : ''
+  if (delivery && delivery > addDays(today, 1) && delivery <= addDays(today, 31)) {
+    params.set('de', today)
+    params.set('ate', delivery)
+  }
+  return `/operations/courier?${params.toString()}`
+}
+
+function fulfillmentPath(item: Pick<QueueItem, 'id' | 'stripeAccount' | 'country' | 'paidInvoiceId' | 'deliveryDate'>): string | null {
+  const account = String(item.stripeAccount || '').toLowerCase()
+  const country = String(item.country || '').toUpperCase()
+  if (account === 'br' && country === 'BR') return courierPath(item)
+  if (account === 'us' && country === 'US') return '/operations/labels'
+  return null
+}
+
+function isBrazilRow(item: Pick<QueueItem, 'stripeAccount' | 'country'>) {
+  return String(item.stripeAccount || '').toLowerCase() === 'br' && String(item.country || '').toUpperCase() === 'BR'
+}
+
+// The name the row shows: the one the API picks in displayName (recipient, account name in scope, email).
+// `customerName` is an older field the API no longer sends, kept first so an older answer reads as before.
+function rowName(item: Pick<QueueItem, 'displayName' | 'customerName' | 'email'>) {
+  return item.customerName || item.displayName || item.email
+}
+
+// What a ready row offers: Expedir, or, for a Brazil order the address keeps from leaving, why and where it is
+// handled. The lock shows before the click, in the words of Entregas Brasil. A missing recipient can be filled here.
+function fulfillmentAction(item: QueueItem, onFillRecipient?: (item: QueueItem) => void) {
+  const to = fulfillmentPath(item)
+  if (!to) return <span className="badge-warning">Mercado divergente</span>
+  const issues = isBrazilRow(item) ? item.courierIssues || [] : []
+  if (issues.length) {
+    return (
+      <div className="queue-cell-stack">
+        <span className="badge-warning">Travado: {issues.map(issueCodeText).join(' · ')}</span>
+        {onFillRecipient && issues.includes('recipient_name_missing') ? (
+          <button className="link-button" type="button" onClick={() => onFillRecipient(item)}>Informar quem recebe</button>
+        ) : null}
+        <Link className="link-button" to={to}>Ver na entrega</Link>
+      </div>
+    )
+  }
+  return <Link className="ghost-button" to={to}>Expedir</Link>
+}
+
 export function ProductionQueuePage() {
   const { token, user, hasPermission } = useAuth()
+  const sessionMarketList = effectiveSessionMarkets(user)
+  // Unknown markets (empty list) keep both links, as the menu does.
+  const showsMarket = (market: 'BR' | 'US') => !sessionMarketList.length || sessionMarketList.includes(market)
   const canWrite = hasPermission('production.write')
+  const canFillRecipient = hasPermission('users.delivery.write')
   const bothMarkets = hasBothMarkets(user)
   const [params, setParams] = useSearchParams()
   const [data, setData] = useState<QueueResponse | null>(null)
@@ -162,6 +274,19 @@ export function ProductionQueuePage() {
   const [denseItem, setDenseItem] = useState<QueueItem | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [stockWarning, setStockWarning] = useState('')
+  const [recipientItem, setRecipientItem] = useState<QueueItem | null>(null)
+  const [recipientNotice, setRecipientNotice] = useState('')
+  // queue-overdue-filter-matches-metric: orders marked ready under "Atrasados" leave that list; say where they went.
+  const [readyMoved, setReadyMoved] = useState(0)
+  // PM-09: a short order asks before it is marked ready.
+  const [readyConfirm, setReadyConfirm] = useState<QueueItem | null>(null)
+  // PM-15: the block preview of the dialog's cycle, kept with the key it was asked for.
+  const [blockPreview, setBlockPreview] = useState<{ key: string; preview: BlockPreview | null } | null>(null)
+  // PM-10: the batch selection belongs to one queue read; another page, filter or reload starts empty.
+  const [selection, setSelection] = useState<{ key: string; ids: Set<string> }>({ key: '', ids: new Set() })
+  const [batchConfirm, setBatchConfirm] = useState<{ status: 'in_production' | 'ready'; items: QueueItem[] } | null>(null)
+  const [batchProgress, setBatchProgress] = useState<{ done: number; total: number } | null>(null)
+  const [batchResult, setBatchResult] = useState<{ updated: number; failures: Array<{ name: string; message: string }>; shortages: string } | null>(null)
 
   const rawDue = params.get('prazo')
   const due: QueueDue | '' = isQueueDue(rawDue) ? rawDue : ''
@@ -182,12 +307,17 @@ export function ProductionQueuePage() {
       return next
     }, { replace: true })
     setPage(1)
+    setReadyMoved(0)
   }
 
   const clearFilters = () => {
     setParams(new URLSearchParams(), { replace: true })
     setPage(1)
+    setReadyMoved(0)
   }
+  // Under "Atrasados" the API lists no ready row (unless Pronto is the status filter), so a ready one leaves the list.
+  const leavesOverdueFilter = (status: ProductionStatus) => status === 'ready' && due === 'atrasados' && productionStatus !== 'ready'
+  const readyQueueHref = productionQueueHref({ status: 'ready', mercado: pickedMarket === 'br' || pickedMarket === 'us' ? pickedMarket : undefined })
 
   const [reloadKey, setReloadKey] = useState(0)
   const [loadedKey, setLoadedKey] = useState('')
@@ -227,26 +357,33 @@ export function ProductionQueuePage() {
     }
   }, [token, user, requestPath, requestKey])
 
+  const sendStatus = (item: QueueItem, status: ProductionStatus, note?: string) => apiRequest<QueueItem>(`/admin/production/queue/${item.id}`, {
+    token: token as string,
+    method: 'PATCH',
+    body: {
+      status,
+      periodEnd: item.currentPeriodEnd,
+      note: note || undefined,
+    },
+  })
+
   const patchStatus = async (item: QueueItem, status: ProductionStatus, note?: string) => {
     if (!token || !canWrite || !item.currentPeriodEnd) return
     setBusyId(`${item.id}-${item.currentPeriodEnd}`)
     setError('')
     setStockWarning('')
+    setBatchResult(null)
+    setReadyMoved(0)
     try {
-      const updated = await apiRequest<QueueItem>(`/admin/production/queue/${item.id}`, {
-        token,
-        method: 'PATCH',
-        body: {
-          status,
-          periodEnd: item.currentPeriodEnd,
-          note: note || undefined,
-        },
-      })
+      const updated = await sendStatus(item, status, note)
       if (status === 'ready' && updated.stock && (updated.stock.shortages.length > 0 || updated.stock.unsized > 0)) {
         setStockWarning(formatSeparationShortage(updated.stock))
       }
       setBlockItem(null)
       setBlockNote('')
+      setBlockPreview(null)
+      setReadyConfirm(null)
+      if (leavesOverdueFilter(status)) setReadyMoved(1)
       setReloadKey((key) => key + 1)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao atualizar o status de produção')
@@ -259,10 +396,90 @@ export function ProductionQueuePage() {
     if (status === 'blocked') {
       setBlockNote(item.note || '')
       setBlockItem(item)
+      if (!isPaid(item) && token && item.currentPeriodEnd) void loadBlockPreview(item)
+      return
+    }
+    if (status === 'ready' && item.stockCoverage === 'short') {
+      setReadyConfirm(item)
       return
     }
     void patchStatus(item, status)
   }
+
+  const itemKey = (item: QueueItem) => `${item.id}|${item.currentPeriodEnd}`
+
+  // PM-15: read where the block would move the charge; an answer for another dialog is dropped.
+  const loadBlockPreview = async (item: QueueItem) => {
+    const key = itemKey(item)
+    setBlockPreview({ key, preview: null })
+    try {
+      const preview = await apiRequest<BlockPreview>(
+        `/admin/production/queue/${item.id}/block-preview${buildQueryString({ periodEnd: item.currentPeriodEnd })}`,
+        { token: token as string },
+      )
+      setBlockPreview((current) => (current && current.key === key ? { key, preview } : current))
+    } catch {
+      setBlockPreview((current) => (current && current.key === key ? { key, preview: null } : current))
+    }
+  }
+
+  const closeBlock = () => {
+    setBlockItem(null)
+    setBlockNote('')
+    setBlockPreview(null)
+  }
+
+  // PM-10: what a batch may change. Unpaid, blocked and ready rows are never selected.
+  const selectable = (item: QueueItem) => canWrite && (
+    (item.productionStatus === 'to_prepare' && isPaid(item)) || item.productionStatus === 'in_production'
+  )
+
+  const runBatch = async (status: 'in_production' | 'ready', items: QueueItem[]) => {
+    if (!token || !canWrite) return
+    setBatchConfirm(null)
+    setError('')
+    setStockWarning('')
+    setBatchResult(null)
+    const failures: Array<{ name: string; message: string }> = []
+    const warnings: string[] = []
+    let updated = 0
+    setBatchProgress({ done: 0, total: items.length })
+    for (const [index, item] of items.entries()) {
+      try {
+        const result = await sendStatus(item, status)
+        updated += 1
+        if (status === 'ready' && result.stock && (result.stock.shortages.length > 0 || result.stock.unsized > 0)) {
+          warnings.push(formatSeparationShortage(result.stock))
+        }
+      } catch (requestError) {
+        failures.push({ name: rowName(item), message: requestError instanceof Error ? requestError.message : 'Falha ao atualizar' })
+      }
+      setBatchProgress({ done: index + 1, total: items.length })
+    }
+    setBatchProgress(null)
+    setBatchResult({ updated, failures, shortages: warnings.join(' ') })
+    setReadyMoved(leavesOverdueFilter(status) ? updated : 0)
+    setReloadKey((key) => key + 1)
+  }
+
+  const selectedIds = selection.key === requestKey ? selection.ids : new Set<string>()
+  const pageItems = data?.items ?? []
+  const selectedItems = pageItems.filter((item) => selectedIds.has(itemKey(item)) && selectable(item))
+  const toStart = selectedItems.filter((item) => item.productionStatus === 'to_prepare')
+  const toFinish = selectedItems.filter((item) => item.productionStatus === 'in_production')
+  const selectableItems = pageItems.filter(selectable)
+  const allSelected = selectableItems.length > 0 && selectableItems.every((item) => selectedIds.has(itemKey(item)))
+  const toggleSelected = (item: QueueItem) => {
+    const ids = new Set(selectedIds)
+    if (ids.has(itemKey(item))) ids.delete(itemKey(item))
+    else ids.add(itemKey(item))
+    setSelection({ key: requestKey, ids })
+  }
+  const toggleAll = () => {
+    setSelection({ key: requestKey, ids: allSelected ? new Set() : new Set(selectableItems.map(itemKey)) })
+  }
+  const batchRunning = batchProgress !== null
+  const columns = canWrite ? 7 : 6
 
   const submitBlock = (event: FormEvent) => {
     event.preventDefault()
@@ -273,8 +490,9 @@ export function ProductionQueuePage() {
   }
 
   const metrics = data?.metrics
-  const dueCards: Array<{ id: QueueDue; label: string; value: number | undefined; tone?: string }> = [
-    { id: 'atrasados', label: 'Atrasados', value: metrics?.overdue, tone: metrics && metrics.overdue > 0 ? 'queue-due-danger' : undefined },
+  // explain-hold-reason-and-overdue: the overdue number is only the kitchen's; a ready order waiting to leave is not in it.
+  const dueCards: Array<{ id: QueueDue; label: string; value: number | undefined; tone?: string; hint?: string }> = [
+    { id: 'atrasados', label: 'Atrasados', value: metrics?.overdue, tone: metrics && metrics.overdue > 0 ? 'queue-due-danger' : undefined, hint: 'Só o que a cozinha não terminou. Pronto esperando saída não conta.' },
     { id: 'hoje', label: 'Hoje', value: metrics?.today },
     { id: 'amanha', label: 'Amanhã', value: metrics?.tomorrow },
     { id: 'proximos', label: `Próximos ${windowDays} dias`, value: metrics?.upcoming },
@@ -293,7 +511,7 @@ export function ProductionQueuePage() {
       ? [
         { label: 'Cliente', to: `/users/${item.userId}` },
         { label: 'Assinatura', to: `/billing/subscriptions/${item.id}` },
-        { label: 'Checkout', to: `/users/${item.userId}?aba=checkout` },
+        { label: 'Checkout', to: `/users/${item.userId}?aba=checkout&assinatura=${item.id}` },
       ]
       : [{ label: 'Perfil fora do seu mercado', disabled: true }]
     if (canWrite && item.productionStatus === 'ready') {
@@ -305,14 +523,20 @@ export function ProductionQueuePage() {
     return entries
   }
 
-  let lastBucket: DueBucket | null = null
+  let lastBucket: QueueGroup | null = null
   const total = data?.total ?? 0
 
   return (
     <PageFrame
       title="Fila de produção"
       description="Pedidos pagos, na ordem de preparo. Marque o andamento de cada um aqui."
-      actions={<Link className="ghost-button" to="/dashboard">← Voltar para Hoje</Link>}
+      actions={(
+        <div className="inline-actions">
+          {showsMarket('BR') ? <Link className="ghost-button" to="/operations/courier">Entregas Brasil</Link> : null}
+          {showsMarket('US') ? <Link className="ghost-button" to="/operations/labels">Etiquetas UPS</Link> : null}
+          <Link className="ghost-button" to="/dashboard">← Voltar para Hoje</Link>
+        </div>
+      )}
     >
       <div className="queue-due" role="group" aria-label="Filtrar por prazo">
         {dueCards.map((card) => (
@@ -325,6 +549,7 @@ export function ProductionQueuePage() {
           >
             <span className="queue-due-label">{card.label}</span>
             <strong className="queue-due-value">{card.value ?? '—'}</strong>
+            {card.hint ? <span className="queue-due-hint">{card.hint}</span> : null}
           </button>
         ))}
       </div>
@@ -337,7 +562,7 @@ export function ProductionQueuePage() {
             aria-label="Buscar"
             value={search}
             onChange={(event) => setFilter('busca', event.target.value)}
-            placeholder="E-mail do cliente"
+            placeholder="Nome ou e-mail"
           />
         </label>
         <label className="queue-field">
@@ -382,10 +607,49 @@ export function ProductionQueuePage() {
       </div>
 
       {error ? <div className="alert" role="alert">{error}</div> : null}
+      {recipientNotice ? (
+        <div className="notice" role="status">
+          {recipientNotice}
+          <button className="link-button" type="button" onClick={() => setRecipientNotice('')}>Fechar</button>
+        </div>
+      ) : null}
+      {readyMoved > 0 ? (
+        <div className="notice" role="status" data-testid="ready-moved">
+          {readyMoved === 1
+            ? 'O pedido saiu de Atrasados e está em Prontos para expedir.'
+            : `${readyMoved} pedidos saíram de Atrasados e estão em Prontos para expedir.`}
+          {' '}
+          <Link className="table-link" to={readyQueueHref} onClick={() => setReadyMoved(0)}>Ver prontos</Link>
+          <button className="link-button" type="button" onClick={() => setReadyMoved(0)}>Fechar</button>
+        </div>
+      ) : null}
       {stockWarning ? (
         <div className="alert" role="status">
           {stockWarning}
           <button className="link-button" type="button" onClick={() => setStockWarning('')}>Fechar</button>
+        </div>
+      ) : null}
+      {batchResult ? (
+        <div className={batchResult.failures.length ? 'alert' : 'notice'} role="status" data-testid="batch-result">
+          <p>{plural(batchResult.updated, 'pedido atualizado', 'pedidos atualizados')}.</p>
+          {batchResult.failures.length ? (
+            <ul className="plain-list">
+              {batchResult.failures.map((failure, index) => <li key={`${failure.name}-${index}`}>{failure.name}: {failure.message}</li>)}
+            </ul>
+          ) : null}
+          {batchResult.shortages ? <p>{batchResult.shortages}</p> : null}
+          <button className="link-button" type="button" onClick={() => setBatchResult(null)}>Fechar</button>
+        </div>
+      ) : null}
+      {canWrite && (selectedItems.length > 0 || batchRunning) ? (
+        <div className="queue-batch-bar" role="toolbar" aria-label="Ações em lote">
+          <span>{batchRunning && batchProgress ? `Atualizando ${batchProgress.done} de ${batchProgress.total}` : plural(selectedItems.length, 'selecionado', 'selecionados')}</span>
+          <button className="primary-button" type="button" disabled={batchRunning || toStart.length === 0} onClick={() => setBatchConfirm({ status: 'in_production', items: toStart })}>
+            Iniciar preparo ({toStart.length})
+          </button>
+          <button className="primary-button" type="button" disabled={batchRunning || toFinish.length === 0} onClick={() => setBatchConfirm({ status: 'ready', items: toFinish })}>
+            Marcar como pronto ({toFinish.length})
+          </button>
         </div>
       ) : null}
 
@@ -394,6 +658,11 @@ export function ProductionQueuePage() {
           <table className="queue-table">
             <thead>
               <tr>
+                {canWrite ? (
+                  <th className="queue-select-head">
+                    <input type="checkbox" aria-label="Selecionar todos da página" checked={allSelected} disabled={selectableItems.length === 0 || batchRunning} onChange={toggleAll} />
+                  </th>
+                ) : null}
                 <th>Cliente</th>
                 <th>Dia de preparo</th>
                 <th>Sabores</th>
@@ -405,7 +674,7 @@ export function ProductionQueuePage() {
             <tbody>
               {(data?.items.length ?? 0) === 0 ? (
                 <tr>
-                  <td colSpan={6} className="queue-empty">
+                  <td colSpan={columns} className="queue-empty">
                     {filtering ? (
                       <>
                         Nenhum pedido com estes filtros.{' '}
@@ -414,32 +683,53 @@ export function ProductionQueuePage() {
                     ) : `Nenhum pedido para preparar nos próximos ${windowDays} dias.`}
                   </td>
                 </tr>
-              ) : data?.items.map((item) => {
-                const showHeader = item.dueBucket && item.dueBucket !== lastBucket
-                if (item.dueBucket) lastBucket = item.dueBucket
+              ) : groupedItems(data?.items ?? []).map((item) => {
+                const group = queueGroup(item)
+                const showHeader = group && group !== lastBucket
+                if (group) lastBucket = group
                 const primary = PRIMARY_ACTION[item.productionStatus]
                 const canStart = primary && (primary.status !== 'in_production' || isPaid(item))
                 const busy = busyId === `${item.id}-${item.currentPeriodEnd}`
-                const name = item.customerName || item.email
+                const name = rowName(item)
                 return (
                   <Fragment key={`${item.id}-${item.currentPeriodEnd}`}>
-                    {showHeader && item.dueBucket ? (
+                    {showHeader && group ? (
                       <tr className="queue-group-row">
-                        <td colSpan={6}>{bucketHeader(item.dueBucket, item)}</td>
+                        <td colSpan={columns}>{bucketHeader(group, item)}</td>
                       </tr>
                     ) : null}
                     <tr>
+                      {canWrite ? (
+                        <td className="queue-cell-select">
+                          {selectable(item) ? (
+                            <input
+                              type="checkbox"
+                              aria-label={`Selecionar ${name}`}
+                              checked={selectedIds.has(itemKey(item))}
+                              disabled={batchRunning}
+                              onChange={() => toggleSelected(item)}
+                            />
+                          ) : null}
+                        </td>
+                      ) : null}
                       <td className="queue-cell-customer">
                         <div className="queue-cell-stack">
-                          <strong>{name}</strong>
-                          {item.customerName ? <span className="muted">{item.email}</span> : null}
+                          <strong>
+                            {name}
+                            {item.nameSource === 'account' ? <span className="muted name-source"> (conta)</span> : null}
+                          </strong>
+                          {name !== item.email ? <span className="muted">{item.email}</span> : null}
                           <span className="muted">{[item.country, item.city].filter(Boolean).join(' · ') || '—'}</span>
                         </div>
                       </td>
                       <td className="nowrap" data-label="Dia de preparo">
                         <div className="queue-cell-stack">
                           <span>{shortDay(civilDay(item))}</span>
-                          {item.dueBucket === 'overdue' ? <span className="badge-error">{item.dueLabel}</span> : null}
+                          {item.dueBucket === 'overdue' ? (
+                            queueGroup(item) === 'readyLate'
+                              ? <span className="badge-warning">{waitingToLeaveLabel(item.daysUntil)}</span>
+                              : <span className="badge-error">{item.dueLabel}</span>
+                          ) : null}
                         </div>
                       </td>
                       <td data-label="Sabores">
@@ -448,6 +738,7 @@ export function ProductionQueuePage() {
                           <span className="muted">
                             {plural(item.packCount, 'pacote', 'pacotes')}{item.packSizeLabel ? ` · ${item.packSizeLabel}` : ''}
                           </span>
+                          {boxesText(item.boxes) ? <span className="muted" data-testid={`boxes-${item.id}`}>{boxesText(item.boxes)}</span> : null}
                           {item.dense ? (
                             <button className="link-button" type="button" onClick={() => setDenseItem(item)}>Ver mix</button>
                           ) : null}
@@ -456,10 +747,12 @@ export function ProductionQueuePage() {
                       <td data-label="Preparo">
                         <div className="queue-cell-stack">
                           <span className={STATUS_BADGE[item.productionStatus]}>{PRODUCTION_STATUS_LABELS[item.productionStatus]}</span>
-                          {item.stockCoverage ? (
-                            <span className={item.stockCoverage === 'short' ? 'badge-warning' : 'muted'}>
-                              {STOCK_COVERAGE_LABELS[item.stockCoverage]}
-                            </span>
+                          {item.stockCoverage === 'short' ? (
+                            <Link className="badge-warning" to={stockShortageHref(item, bothMarkets)}>
+                              {STOCK_COVERAGE_LABELS.short}
+                            </Link>
+                          ) : item.stockCoverage ? (
+                            <span className="muted">{STOCK_COVERAGE_LABELS[item.stockCoverage]}</span>
                           ) : null}
                           {item.note ? <span className="muted queue-note">{item.note}</span> : null}
                         </div>
@@ -484,9 +777,7 @@ export function ProductionQueuePage() {
                             >
                               {primary.label}
                             </button>
-                          ) : item.productionStatus === 'ready' ? (
-                            <span className="muted">Concluído</span>
-                          ) : null}
+                          ) : item.productionStatus === 'ready' ? fulfillmentAction(item, canFillRecipient ? setRecipientItem : undefined) : null}
                           <RowMenu label={`Mais opções para ${name}`} items={menuItems(item)} />
                         </div>
                       </td>
@@ -512,10 +803,10 @@ export function ProductionQueuePage() {
         title="Bloquear pedido"
         description="Diga o que impede o preparo. A nota fica visível na fila."
         open={Boolean(blockItem)}
-        onClose={() => { setBlockItem(null); setBlockNote('') }}
+        onClose={closeBlock}
         footer={(
           <>
-            <button className="ghost-button" type="button" onClick={() => { setBlockItem(null); setBlockNote('') }}>
+            <button className="ghost-button" type="button" onClick={closeBlock}>
               Cancelar
             </button>
             <button
@@ -531,7 +822,13 @@ export function ProductionQueuePage() {
       >
         <form id="production-block-form" className="closure-form" onSubmit={submitBlock}>
           {blockItem ? (
-            <p className="closure-context"><strong>{blockItem.customerName || blockItem.email}</strong> · {blockItem.flavorMix || '—'}</p>
+            <p className="closure-context"><strong>{rowName(blockItem)}</strong> · {blockItem.flavorMix || '—'}</p>
+          ) : null}
+          {blockItem && (blockItem.paymentState === 'awaiting_payment' || blockItem.paymentState === 'past_due') ? (
+            // Blocking an unpaid cycle moves the Stripe charge; the operator sees it before confirming.
+            <p className="alert" role="note">
+              {blockChargeText(blockItem, blockPreview)}
+            </p>
           ) : null}
           <label className="closure-field">
             Nota
@@ -548,6 +845,61 @@ export function ProductionQueuePage() {
       </Dialog>
 
       <Dialog
+        title="Falta estoque"
+        open={Boolean(readyConfirm)}
+        onClose={() => setReadyConfirm(null)}
+        footer={readyConfirm ? (
+          <>
+            <button className="ghost-button" type="button" onClick={() => setReadyConfirm(null)}>Cancelar</button>
+            <Link className="ghost-button" to={stockShortageHref(readyConfirm, bothMarkets)}>Abrir estoque</Link>
+            <button className="primary-button" type="button" disabled={busyId !== null} onClick={() => void patchStatus(readyConfirm, 'ready')}>
+              Marcar como pronto
+            </button>
+          </>
+        ) : null}
+      >
+        {readyConfirm ? (
+          <>
+            <p className="closure-context"><strong>{rowName(readyConfirm)}</strong> · {readyConfirm.flavorMix || '—'}</p>
+            <p className="alert" role="note">{READY_SHORT_ONE(formatStockShortages(readyConfirm.stockShortages) || 'alguma receita')}</p>
+          </>
+        ) : null}
+      </Dialog>
+
+      <Dialog
+        title={batchConfirm?.status === 'ready' ? 'Marcar como pronto' : 'Iniciar preparo'}
+        description={batchConfirm ? `${plural(batchConfirm.items.length, 'pedido', 'pedidos')} vão mudar.` : undefined}
+        open={Boolean(batchConfirm)}
+        onClose={() => setBatchConfirm(null)}
+        footer={batchConfirm ? (
+          <>
+            <button className="ghost-button" type="button" onClick={() => setBatchConfirm(null)}>Cancelar</button>
+            <button className="primary-button" type="button" onClick={() => void runBatch(batchConfirm.status, batchConfirm.items)}>
+              {batchConfirm.status === 'ready' ? 'Marcar como pronto' : 'Iniciar preparo'}
+            </button>
+          </>
+        ) : null}
+      >
+        {batchConfirm ? (
+          <>
+            {batchConfirm.status === 'ready' && batchConfirm.items.some((item) => item.stockCoverage === 'short') ? (
+              <p className="alert" role="note">{READY_SHORT_BATCH}</p>
+            ) : null}
+            <ul className="plain-list" data-testid="batch-items">
+              {batchConfirm.items.map((item) => (
+                <li key={itemKey(item)}>
+                  <strong>{rowName(item)}</strong> · {item.flavorMix || '—'}
+                  {batchConfirm.status === 'ready' && item.stockCoverage === 'short' ? (
+                    <span className="badge-warning"> Falta: {formatStockShortages(item.stockShortages) || 'estoque'}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </Dialog>
+
+      <Dialog
         title="Mix de sabores"
         open={Boolean(denseItem)}
         onClose={() => setDenseItem(null)}
@@ -561,6 +913,18 @@ export function ProductionQueuePage() {
           ))}
         </ul>
       </Dialog>
+      {recipientItem ? (
+        <RecipientNameDialog
+          subscriptionId={recipientItem.id}
+          accountName={recipientItem.accountName}
+          onClose={() => setRecipientItem(null)}
+          onSaved={(message) => {
+            setRecipientItem(null)
+            setRecipientNotice(message)
+            setReloadKey((key) => key + 1)
+          }}
+        />
+      ) : null}
     </PageFrame>
   )
 }

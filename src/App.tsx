@@ -9,10 +9,13 @@ import { InsightsRoute } from './pages/BusinessOverviewPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
-import { RecipeContentPage } from './pages/RecipeContentPage'
-import { RecipesPage } from './pages/RecipesPage'
+import { PlanSettingsPage } from './pages/PlanSettingsPage'
+import { RecipeRedirectPage } from './pages/RecipeRedirectPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { ProductionQueuePage } from './pages/ProductionQueuePage'
+import { LabelQueuePage } from './pages/LabelQueuePage'
+import { CourierDeliveriesPage } from './pages/CourierDeliveriesPage'
+import { MarketExceptionsPage } from './pages/MarketExceptionsPage'
 import { StockPage } from './pages/StockPage'
 import { DeliveryCalendarPage } from './pages/DeliveryCalendarPage'
 import { BillingPage } from './pages/BillingPage'
@@ -66,11 +69,15 @@ function App() {
           <Route path="/nutrition/settings" element={<NutritionSettingsPage />} />
           <Route path="/catalog/products" element={<ProductsPage />} />
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
-          <Route path="/catalog/recipes" element={<RecipesPage />} />
-          <Route path="/catalog/recipes/:market/:recipeKey" element={<RecipeContentPage />} />
+          <Route path="/catalog/plan" element={<PlanSettingsPage />} />
+          <Route path="/catalog/recipes" element={<Navigate to="/catalog/products" replace />} />
+          <Route path="/catalog/recipes/:market/:recipeKey" element={<RecipeRedirectPage />} />
           <Route path="/onboarding/sessions" element={<OnboardingPage />} />
           <Route path="/onboarding/sessions/:id" element={<LegacyCheckoutRedirect />} />
           <Route path="/operations/production" element={<ProductionQueuePage />} />
+          <Route path="/operations/labels" element={<LabelQueuePage />} />
+          <Route path="/operations/courier" element={<CourierDeliveriesPage />} />
+          <Route path="/operations/market-exceptions" element={<MarketExceptionsPage />} />
           <Route path="/operations/stock" element={<StockPage />} />
           <Route path="/operations/delivery-calendar" element={<DeliveryCalendarPage />} />
           <Route path="/billing" element={<BillingPage />} />

@@ -6,7 +6,7 @@ import { Dialog } from '../components/Dialog'
 import { AccountSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
-import { formatTermMonths } from '../lib/format'
+import { formatDate, formatTermMonths } from '../lib/format'
 import { defaultStripeAccount, hasBothMarkets, type StripeAccount } from '../lib/markets'
 
 type PromoSlot = {
@@ -22,7 +22,9 @@ type PromoHealth = {
   complete: boolean
   missing_terms: number[]
   mapping: Record<string, string | null>
+  // Checkouts of this account blocked by a term with no coupon, since its three terms were last saved.
   misconfig_count: number
+  misconfig_last_at?: string | null
   slots?: Record<string, PromoSlot>
   missing_in_stripe?: number[]
   inactive?: number[]
@@ -53,7 +55,6 @@ const MAX_PERCENT_OFF = 90
 const emptyMapping = { 1: '', 3: '', 6: '' }
 
 const noticeCopy: Record<string, string> = {
-  mapped: 'Mapa salvo no banco.',
   created: 'Cupom criado na Stripe e gravado no banco.',
   synced: 'Mapa sincronizado com a Stripe.',
 }
@@ -132,7 +133,6 @@ export function CouponsPage() {
   const bothMarkets = hasBothMarkets(user)
   const [pickedAccount, setPickedAccount] = useState<StripeAccount | ''>('')
   const [health, setHealth] = useState<PromoHealth | null>(null)
-  const [mapping, setMapping] = useState(emptyMapping)
   const [codes, setCodes] = useState<PromoCode[]>([])
   const [createOpen, setCreateOpen] = useState(false)
   const [term, setTerm] = useState<Term>(1)
@@ -148,10 +148,8 @@ export function CouponsPage() {
   const [createError, setCreateError] = useState('')
   const account = (bothMarkets ? pickedAccount : null) || defaultStripeAccount(user)
 
-  const applyHealth = (nextHealth: PromoHealth) => {
-    setHealth(nextHealth)
-    setMapping(mappingFromHealth(nextHealth))
-  }
+  const applyHealth = (nextHealth: PromoHealth) => setHealth(nextHealth)
+  const mapping = health ? mappingFromHealth(health) : emptyMapping
 
   const accountQuery = buildQueryString({ account })
 
@@ -180,23 +178,6 @@ export function CouponsPage() {
   useEffect(() => {
     void load()
   }, [token, user, account])
-
-  const saveMap = async (event: FormEvent) => {
-    event.preventDefault()
-    if (!token || !account) return
-    try {
-      setError('')
-      const response = await apiRequest<PromoHealth>(`/admin/stripe/first-purchase-promos${accountQuery}`, {
-        token,
-        method: 'PUT',
-        body: { ...mapping, account },
-      })
-      applyHealth(response)
-      setMessage('mapped')
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Falha ao mapear')
-    }
-  }
 
   const syncStripe = async () => {
     if (!token || !account) return
@@ -282,7 +263,6 @@ export function CouponsPage() {
             setMessage('')
             setHealth(null)
             setCodes([])
-            setMapping(emptyMapping)
           }}
         />
       </FiltersBar>
@@ -291,7 +271,11 @@ export function CouponsPage() {
         <div className="alert">Faltam cupons para {health.missing_terms.map((item) => formatTermMonths(item)).join(', ')}. O checkout de cliente elegível fica bloqueado até cada prazo ter um cupom.</div>
       ) : null}
       {health && health.misconfig_count > 0 ? (
-        <div className="warning">Configurações inconsistentes: {health.misconfig_count}</div>
+        <div className="warning">
+          Checkouts de primeira compra bloqueados por falta de cupom: {health.misconfig_count}
+          {health.misconfig_last_at ? ` (último em ${formatDate(health.misconfig_last_at)})` : ''}.
+          {health.complete ? ' O aviso some ao criar um cupom ou sincronizar com a Stripe.' : ''}
+        </div>
       ) : null}
       {error ? <div className="alert">{error}</div> : null}
       {message ? <div className="success">{noticeCopy[message] || message}</div> : null}
@@ -359,29 +343,6 @@ export function CouponsPage() {
           {commitmentNote(health)}
         </div>
 
-        {canWrite ? (
-          <details className="maintenance-panel">
-            <summary>Vincular ID manualmente</summary>
-            <p className="muted">Só para um código criado direto no painel da Stripe que a sincronização não reconheceu. O ID começa com promo_.</p>
-            <form className="form-toolbar" onSubmit={saveMap}>
-              <div className="form-grid">
-                {TERMS.map((slotTerm) => (
-                  <label key={slotTerm}>
-                    {`${formatTermMonths(slotTerm)} — ${percentLabel(health, slotTerm)}`}
-                    <input
-                      value={mapping[slotTerm]}
-                      onChange={(event) => setMapping((current) => ({ ...current, [slotTerm]: event.target.value }))}
-                      placeholder="promo_..."
-                    />
-                  </label>
-                ))}
-              </div>
-              <div className="inline-actions">
-                <button className="ghost-button" type="submit">Salvar mapa</button>
-              </div>
-            </form>
-          </details>
-        ) : null}
       </Section>
 
       <Section title="Códigos na Stripe" description="Os 25 códigos de promoção mais recentes desta conta.">

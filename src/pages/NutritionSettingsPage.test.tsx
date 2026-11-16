@@ -3,18 +3,31 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NutritionSettingsPage } from './NutritionSettingsPage'
 import type { AdminUser } from '../contexts/AuthContext'
-import { jsonResponse, operatorWriteUser, veterinarianUser } from '../test/fixtures'
+import { adminUser, jsonResponse, operatorUsWriteUser, operatorWriteUser, veterinarianUser } from '../test/fixtures'
 import { findCall, installAdminFetchMock, type FetchCall } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
-// The veterinarian with the new permission and no assigned market: the API accepts both markets.
-const veterinarian: AdminUser = { ...veterinarianUser, markets: [], permissions: ['nutrition.simulate', 'nutrition.settings.write'] }
+// The veterinarian with the permissions the API gives the role and no assigned market: the API accepts both markets.
+const veterinarian: AdminUser = { ...veterinarianUser, markets: [], permissions: ['nutrition.simulate', 'nutrition.settings.write', 'nutrition.breeds.write', 'nutrition.limits.write'] }
+// The admin writes factors and breeds, but not the life-stage limits.
+const admin: AdminUser = { ...adminUser, permissions: [...adminUser.permissions, 'nutrition.simulate', 'nutrition.settings.write', 'nutrition.breeds.write'] }
+
+// The operator of one market with the breed permission the API gives the role.
+const operatorBr: AdminUser = { ...operatorWriteUser, permissions: [...operatorWriteUser.permissions, 'nutrition.breeds.write'] }
+const operatorUs: AdminUser = { ...operatorUsWriteUser, permissions: [...operatorUsWriteUser.permissions, 'nutrition.breeds.write'] }
+
+const BREED_HISTORY = [
+  { id: 12, action: 'life_stage.breed.update', actorUserId: 9, actorEmail: 'ana.souza@edenbowls.com', createdAt: '2026-11-13T09:10:00.000Z', metadata: { market: 'BR', breed_id: 7, before: null, after: { namePt: 'Mastim Tibetano', nameEn: 'Tibetan Mastiff', sizeClass: 'giant', active: true } } },
+  { id: 11, action: 'life_stage.breed.update', actorUserId: 9, actorEmail: 'ana.souza@edenbowls.com', createdAt: '2026-11-12T13:20:00.000Z', metadata: { market: 'BR', breed_id: 4, before: { namePt: 'Dogue Alemão', nameEn: 'Great Dane', sizeClass: 'large', active: true }, after: { namePt: 'Dogue Alemão', nameEn: 'Great Dane', sizeClass: 'giant', active: true } } },
+  { id: 10, action: 'life_stage.limits.update', actorUserId: 5, actorEmail: 'vet@edenbowls.com', createdAt: '2026-11-10T14:00:00.000Z', metadata: { market: 'BR', before: { small: { adultFromMonths: 9, seniorFromMonths: 120 } }, after: { small: { adultFromMonths: 10, seniorFromMonths: 120 } } } },
+]
 
 const PARAMETERS = {
   combination: { 'SIM-BAIXO-ADEQUADO': 85, 'NAO-ALTO-ACIMA': 85 },
+  combination_giant: { 'SIM-BAIXO-ADEQUADO': 85, 'NAO-ALTO-ABAIXO': 115 },
   state: { SENIOR: 95, GESTANTE: 132 },
-  base: { dog: 95, cat: 242 },
-  nem: { dog: 3600, cat: 3800 },
+  base: { cat: 60, cat_active: 100 },
+  nem: { dog: 1200, cat: 1200 },
   breed_groups: { dogue: ['dogue alemao', 'great dane'], slow_metabolism: ['sao bernardo'], terranova: ['terra nova'] },
 }
 
@@ -48,7 +61,7 @@ function routes(server: Server = {}) {
     const market = new URLSearchParams(call.search).get('market') || (call.body as { market?: string } | null)?.market || 'BR'
     if (call.path === '/api/v1/admin/life-stage' && call.method === 'GET') {
       const overview = lifeStage(market)
-      return jsonResponse({ ...overview, breeds: [...overview.breeds, ...breeds] })
+      return jsonResponse({ ...overview, breeds: [...overview.breeds, ...breeds], history: BREED_HISTORY.map((event) => ({ ...event, metadata: { ...event.metadata, market } })) })
     }
     if (call.path === '/api/v1/admin/life-stage/preview') {
       return jsonResponse({ market, ...(server.preview ?? { pets_evaluated: 10, pets_changing: 0, transitions: [] }) })
@@ -61,7 +74,7 @@ function routes(server: Server = {}) {
       return jsonResponse(breed)
     }
     if (call.path === '/api/v1/admin/nutrition/parameters' && call.method === 'GET') {
-      return jsonResponse({ published, draft, history: [{ id: published.id, status: 'published', publishedAt: published.publishedAt }, { id: 0, status: 'retired', publishedAt: '2026-09-01T10:00:00.000Z' }] })
+      return jsonResponse({ published, draft, audit: [{ id: 20, action: 'nutrition.parameters.draft.save', actorUserId: 5, actorEmail: 'vet@edenbowls.com', createdAt: '2026-10-26T16:30:00.000Z', metadata: { set_id: 3, changes: [{ field: 'state.SENIOR', from: 90, to: 95 }] } }], history: [{ id: published.id, status: 'published', publishedAt: published.publishedAt }, { id: 0, status: 'retired', publishedAt: '2026-09-01T10:00:00.000Z' }] })
     }
     if (call.path === '/api/v1/admin/nutrition/parameters/draft' && call.method === 'PUT') {
       draft = { id: 2, status: 'draft', parameters: (call.body as { parameters: typeof PARAMETERS }).parameters }
@@ -76,7 +89,7 @@ function routes(server: Server = {}) {
   }
 }
 
-function renderPage(profile: AdminUser, server: Server = {}, route = '/nutrition/settings') {
+function renderPage(profile: AdminUser, server: Server = {}, route = '/nutrition/settings?aba=fases') {
   seedAuth()
   const mock = installAdminFetchMock(profile, { routes: routes(server) })
   renderAuthedPage(<NutritionSettingsPage />, route, '/nutrition/settings')
@@ -146,11 +159,16 @@ describe('NutritionSettingsPage', () => {
     const { calls } = renderPage(veterinarian, {}, '/nutrition/settings?aba=racas&mercado=us')
 
     expect(await screen.findByText('Great Dane')).toBeInTheDocument()
-    await user.type(screen.getByLabelText('Nome em português'), 'Mastim Napolitano')
-    await user.type(screen.getByLabelText('Nome em inglês'), 'Neapolitan Mastiff')
+    expect(screen.queryByLabelText('Nome em português')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Incluir raça' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Incluir raça em Estados Unidos' })
+    await user.type(within(dialog).getByLabelText('Nome em português'), 'Mastim Napolitano')
+    await user.type(within(dialog).getByLabelText('Nome em inglês'), 'Neapolitan Mastiff')
+    await user.click(within(dialog).getByRole('button', { name: 'Incluir raça' }))
 
     expect(await screen.findByText('Neapolitan Mastiff')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('Mastim Napolitano incluída.')).toBeInTheDocument()
     expect(findCall(calls, 'POST', '/api/v1/admin/life-stage/breeds')?.body).toEqual({
       market: 'US', name_pt: 'Mastim Napolitano', name_en: 'Neapolitan Mastiff', size_class: 'giant',
     })
@@ -182,5 +200,193 @@ describe('NutritionSettingsPage', () => {
     expect(await screen.findByLabelText('Sênior')).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Salvar rascunho' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Copiar para rascunho' })).not.toBeInTheDocument()
+  })
+
+  it('the BR operator edits and adds breeds of Brasil but not the limits', async () => {
+    const user = userEvent.setup()
+    const { calls } = renderPage(operatorBr, {}, '/nutrition/settings?aba=racas')
+
+    expect(await screen.findByText(/Você pode incluir e editar raças de Brasil/)).toBeInTheDocument()
+    await user.selectOptions(await screen.findByLabelText('Porte de Dogue Alemão'), 'large')
+    await waitFor(() => expect(findCall(calls, 'PATCH', '/api/v1/admin/life-stage/breeds/4')?.body).toEqual({ market: 'BR', size_class: 'large' }))
+    expect(findCall(calls, 'POST', '/api/v1/admin/life-stage/preview')?.body).toEqual({ market: 'BR', breed: { id: 4, size_class: 'large' } })
+
+    await user.click(screen.getByRole('button', { name: 'Incluir raça' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Incluir raça em Brasil' })
+    await user.type(within(dialog).getByLabelText('Nome em português'), 'Mastim Napolitano')
+    await user.type(within(dialog).getByLabelText('Nome em inglês'), 'Neapolitan Mastiff')
+    await user.click(within(dialog).getByRole('button', { name: 'Incluir raça' }))
+    await waitFor(() => expect(findCall(calls, 'POST', '/api/v1/admin/life-stage/breeds')?.body).toMatchObject({ market: 'BR', name_pt: 'Mastim Napolitano' }))
+
+    await user.click(screen.getByRole('tab', { name: 'Fases da vida' }))
+    expect(await screen.findByLabelText('Médio: sênior a partir de')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Salvar limites' })).not.toBeInTheDocument()
+  })
+
+  it('the US operator sees only Estados Unidos and writes its breeds', async () => {
+    const { calls } = renderPage(operatorUs, {}, '/nutrition/settings?aba=racas&mercado=br')
+    expect(await screen.findByText('Raças com porte próprio em Estados Unidos')).toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
+    expect(await screen.findByLabelText('Porte de Dogue Alemão')).toBeEnabled()
+    expect(calls.every((call) => call.path !== '/api/v1/admin/life-stage' || call.search.includes('market=US'))).toBe(true)
+  })
+
+  it('an operator without the breed permission reads breeds only', async () => {
+    renderPage(operatorWriteUser, {}, '/nutrition/settings?aba=racas')
+    expect(await screen.findByText('Great Dane')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Porte de Dogue Alemão')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Incluir raça' })).not.toBeInTheDocument()
+  })
+
+  it('shows who edited each tab', async () => {
+    const user = userEvent.setup()
+    renderPage(veterinarian, {}, '/nutrition/settings?aba=racas')
+
+    const log = await screen.findByRole('list', { name: 'Histórico de edições' })
+    expect(within(log).getByText('Incluiu a raça Mastim Tibetano')).toBeInTheDocument()
+    expect(within(log).getByText('Porte: Grande → Gigante')).toBeInTheDocument()
+    expect(within(log).getAllByText('ana.souza@edenbowls.com')).toHaveLength(2)
+    expect(within(log).queryByText('Alterou os limites de fase')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Fases da vida' }))
+    const limitsLog = await screen.findByRole('list', { name: 'Histórico de edições' })
+    expect(within(limitsLog).getByText('Pequeno: adulto 9 → 10 meses')).toBeInTheDocument()
+    expect(within(limitsLog).getByText('vet@edenbowls.com')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Fatores' }))
+    const factorsLog = await screen.findByRole('list', { name: 'Histórico de edições' })
+    expect(within(factorsLog).getByText('Salvou o rascunho #3')).toBeInTheDocument()
+    expect(within(factorsLog).getByText('Sênior: 90 → 95')).toBeInTheDocument()
+  })
+
+  it('explains the data behind an "i"', async () => {
+    const user = userEvent.setup()
+    renderPage(veterinarian, {}, '/nutrition/settings?aba=fatores')
+    const button = await screen.findByRole('button', { name: 'Sobre matriz de raças gigantes' })
+    await user.click(button)
+    expect(screen.getByRole('tooltip', { hidden: false })).toHaveTextContent('zootecnista Izabella')
+    expect(screen.getByLabelText('Castrado · atividade baixa · acima do peso')).toBeInTheDocument()
+  })
+
+  it('a duplicate breed keeps the modal open with the error inside it', async () => {
+    const user = userEvent.setup()
+    renderPage(veterinarian, {
+      respond: (call) => (call.path === '/api/v1/admin/life-stage/breeds' && call.method === 'POST'
+        ? jsonResponse({ success: false, message: 'Exists', details: { code: 'life_stage_breed_exists' } }, 409)
+        : undefined),
+    }, '/nutrition/settings?aba=racas')
+
+    await user.click(await screen.findByRole('button', { name: 'Incluir raça' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Incluir raça em Brasil' })
+    await user.type(within(dialog).getByLabelText('Nome em português'), 'Dogue Alemão')
+    await user.type(within(dialog).getByLabelText('Nome em inglês'), 'Great Dane')
+    await user.click(within(dialog).getByRole('button', { name: 'Incluir raça' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Essa raça já está na lista deste mercado.')
+    await user.click(within(dialog).getByRole('button', { name: 'Cancelar' }))
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('a breed that changes pets asks for confirmation instead of the create modal', async () => {
+    const user = userEvent.setup()
+    const { calls } = renderPage(veterinarian, { preview: { pets_evaluated: 12, pets_changing: 2, transitions: [{ from: 'adult', to: 'senior', count: 2 }] } }, '/nutrition/settings?aba=racas')
+
+    await user.click(await screen.findByRole('button', { name: 'Incluir raça' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Incluir raça em Brasil' })
+    await user.type(within(dialog).getByLabelText('Nome em português'), 'Mastim Napolitano')
+    await user.type(within(dialog).getByLabelText('Nome em inglês'), 'Neapolitan Mastiff')
+    await user.click(within(dialog).getByRole('button', { name: 'Incluir raça' }))
+
+    const confirm = await screen.findByRole('dialog', { name: 'Incluir raça' })
+    expect(within(confirm).getByText('2 de 12 pets mudariam de fase em Brasil:')).toBeInTheDocument()
+    expect(screen.getAllByRole('dialog')).toHaveLength(1)
+    await user.click(within(confirm).getByRole('button', { name: 'Confirmar' }))
+    expect(await screen.findByText('Mastim Napolitano incluída.')).toBeInTheDocument()
+    expect(findCall(calls, 'POST', '/api/v1/admin/life-stage/breeds')).toBeTruthy()
+  })
+
+  it('a reader sees no add button', async () => {
+    renderPage(operatorWriteUser, {}, '/nutrition/settings?aba=racas')
+    expect(await screen.findByText('Great Dane')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Incluir raça' })).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['the BR operator', operatorBr],
+    ['the US operator', operatorUs],
+    ['the admin', admin],
+  ])('only the veterinarian changes the limits: %s reads them', async (_name, viewer) => {
+    renderPage(viewer)
+    expect(await screen.findByText('Somente leitura: só a veterinária altera os limites de fase.')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Médio: sênior a partir de')).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Salvar limites' })).not.toBeInTheDocument()
+  })
+
+  it('the veterinarian edits the limits with no read-only note', async () => {
+    renderPage(veterinarian)
+    expect(await screen.findByLabelText('Médio: sênior a partir de')).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Salvar limites' })).toBeInTheDocument()
+    expect(screen.queryByText(/Somente leitura/)).not.toBeInTheDocument()
+  })
+
+  it('opens on Raças, with the tabs in the order Raças, Fases da vida, Fatores', async () => {
+    renderPage(veterinarian, {}, '/nutrition/settings')
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Raças', 'Fases da vida', 'Fatores'])
+    expect(screen.getByRole('tab', { name: 'Raças' })).toHaveAttribute('aria-selected', 'true')
+    expect(await screen.findByText('Raças com porte próprio em Brasil')).toBeInTheDocument()
+  })
+
+  it('Fatores shows only the dogs: no cat food is sold, so the cat factors are hidden and kept as they are', async () => {
+    const user = userEvent.setup()
+    const { calls } = renderPage(veterinarian, {}, '/nutrition/settings?aba=fatores&especie=gatos')
+
+    expect(await screen.findByRole('heading', { name: 'Fatores de estágio' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Matriz de manutenção' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Matriz de raças gigantes' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Gigante: Não castrado · atividade alta · abaixo do peso')).toHaveValue(115)
+    expect(screen.getByRole('heading', { name: 'Raças gigantes' })).toBeInTheDocument()
+    expect(screen.getByLabelText('EM do alimento para cães (kcal/kg)')).toHaveValue(1200)
+    expect(screen.queryByRole('group', { name: 'Espécie' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Gato em ambiente interno')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('EM do alimento para gatos (kcal/kg)')).not.toBeInTheDocument()
+    expect(screen.getByText(/NEM \(kcal\/dia\)/)).not.toHaveTextContent('gato')
+
+    // One parameter set for both species: saving the dogs keeps the hidden cat values.
+    const senior = screen.getByLabelText('Sênior')
+    await user.clear(senior)
+    await user.type(senior, '90')
+    await user.click(screen.getByRole('button', { name: 'Salvar rascunho' }))
+    await waitFor(() => expect(findCall(calls, 'PUT', '/api/v1/admin/nutrition/parameters/draft')).toBeTruthy())
+    const saved = findCall(calls, 'PUT', '/api/v1/admin/nutrition/parameters/draft')?.body as { parameters: typeof PARAMETERS }
+    expect(saved.parameters.state.SENIOR).toBe(90)
+    expect(saved.parameters.base).toEqual(PARAMETERS.base)
+    expect(saved.parameters.nem).toEqual(PARAMETERS.nem)
+  })
+
+  it('a set from an older API without the giant matrix still opens', async () => {
+    const older: Partial<typeof PARAMETERS> = { ...PARAMETERS }
+    delete older.combination_giant
+    renderPage(veterinarian, {
+      respond: (call) => (call.path === '/api/v1/admin/nutrition/parameters' && call.method === 'GET'
+        ? jsonResponse({ published: { id: 1, parameters: older, publishedAt: null }, draft: null, history: [] })
+        : undefined),
+    }, '/nutrition/settings?aba=fatores')
+    expect(await screen.findByRole('heading', { name: 'Matriz de raças gigantes' })).toBeInTheDocument()
+    expect(screen.getByLabelText('Gigante: Não castrado · atividade alta · abaixo do peso')).toHaveValue(null)
+  })
+
+  it('the publication made by the deploy shows the system and its reason', async () => {
+    renderPage(veterinarian, {
+      respond: (call) => (call.path === '/api/v1/admin/nutrition/parameters' && call.method === 'GET'
+        ? jsonResponse({
+          published: { id: 9, parameters: PARAMETERS, publishedAt: null }, draft: null, history: [],
+          audit: [{ id: 30, action: 'nutrition.parameters.publish', actorUserId: null, actorEmail: null, createdAt: '2026-11-15T12:00:00.000Z', metadata: { from_set_id: 4, to_set_id: 9, reason: 'requerimento_energetico' } }],
+        })
+        : undefined),
+    }, '/nutrition/settings?aba=fatores')
+    const log = await screen.findByRole('list', { name: 'Histórico de edições' })
+    expect(within(log).getByText('Sistema')).toBeInTheDocument()
+    expect(within(log).getByText(/documento da veterinária/)).toBeInTheDocument()
   })
 })
