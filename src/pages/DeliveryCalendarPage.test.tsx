@@ -731,3 +731,63 @@ describe('DeliveryCalendarPage tabs', () => {
     expect(screen.queryByRole('button', { name: 'Novo fechamento' })).not.toBeInTheDocument()
   })
 })
+
+describe('DeliveryCalendarPage week shortcuts', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows the week in force and copies the first open day hours to every open day', async () => {
+    renderCalendar(operatorWriteUser, {}, '/operations/delivery-calendar')
+    expect(await screen.findByText('seg–sáb 09:00–20:00')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /em todos os dias abertos/ })).not.toBeInTheDocument()
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Terça fecha' }), { target: { value: '18:00' } })
+    expect(screen.getByText('Alterações não salvas')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Usar 09:00–20:00 (segunda) em todos os dias abertos' }))
+    expect(screen.getByRole('textbox', { name: 'Terça fecha' })).toHaveValue('20:00')
+    expect(screen.queryByText('Alterações não salvas')).not.toBeInTheDocument()
+  })
+
+  it('a closed day shows no hours to edit', async () => {
+    renderCalendar(operatorWriteUser, {}, '/operations/delivery-calendar')
+    await screen.findByRole('switch', { name: 'Domingo aberto' })
+    expect(screen.queryByRole('textbox', { name: 'Domingo abre' })).not.toBeInTheDocument()
+    expect(screen.getAllByText('Sem preparo')).toHaveLength(1)
+  })
+})
+
+describe('DeliveryCalendarPage United States hours', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows and edits the hours in 12 hours with AM/PM, and sends 24-hour times', async () => {
+    const mock = renderCalendar(adminUser, {
+      respond: (call) => (call.path === '/api/v1/admin/delivery-calendar/week/preview'
+        ? jsonResponse({ market: 'US', timeZone: 'America/New_York', before: weekOf([1, 2, 3, 4, 5]), after: weekOf([1, 2, 3, 4, 5]), impact: [], confirmedMoves: [] })
+        : undefined),
+    }, '/operations/delivery-calendar')
+    fireEvent.change(await screen.findByLabelText('Mercado'), { target: { value: 'US' } })
+
+    const closes = await screen.findByRole('textbox', { name: 'Segunda fecha' })
+    expect(closes).toHaveValue('08:00')
+    expect(within(screen.getByRole('radiogroup', { name: 'Segunda fecha, AM ou PM' })).getByRole('radio', { name: 'PM' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('textbox', { name: 'Segunda abre' })).toHaveValue('09:00')
+    expect(within(screen.getByRole('radiogroup', { name: 'Segunda abre, AM ou PM' })).getByRole('radio', { name: 'AM' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByText('seg–sex 9:00 AM–8:00 PM')).toBeInTheDocument()
+
+    // 06:00 PM closes Monday at 18:00.
+    fireEvent.change(closes, { target: { value: '06:00' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Ver impacto' }))
+    await screen.findByText(/Nenhuma entrega agendada muda/)
+    const preview = findCall(mock.calls, 'POST', '/api/v1/admin/delivery-calendar/week/preview')
+    expect((preview?.body as { days: Array<{ weekday: number; closesAt: string }> }).days[0]).toMatchObject({ weekday: 1, opensAt: '09:00', closesAt: '18:00' })
+  })
+
+  it('switching PM to AM keeps the digits and moves the time by 12 hours', async () => {
+    renderCalendar(adminUser, {}, '/operations/delivery-calendar')
+    fireEvent.change(await screen.findByLabelText('Mercado'), { target: { value: 'US' } })
+    const group = await screen.findByRole('radiogroup', { name: 'Terça fecha, AM ou PM' })
+    fireEvent.click(within(group).getByRole('radio', { name: 'AM' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Terça: a abertura precisa ser antes do fechamento.')
+    fireEvent.click(within(group).getByRole('radio', { name: 'PM' }))
+    expect(screen.queryByText('Terça: a abertura precisa ser antes do fechamento.')).not.toBeInTheDocument()
+  })
+})

@@ -7127,22 +7127,125 @@ button.readiness-step-inner:hover .readiness-title {
   white-space: nowrap;
 }
 
-/* Semana padrão (Calendário de operação): seven rows of day, open switch and hours. The rows stack the hours under
+/* Calendário de operação: market and year in a slim toolbar, Stripe problems as a collapsible warning, three
+   equal tabs on phones. */
+.calendar-toolbar {
+  grid-template-columns: repeat(auto-fill, minmax(180px, 220px));
+}
+
+.sync-alert {
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  background: var(--warning-bg);
+}
+
+.sync-alert > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  cursor: pointer;
+  list-style: none;
+}
+
+.sync-alert > summary::-webkit-details-marker {
+  display: none;
+}
+
+.sync-alert > summary::after {
+  content: 'Ver';
+  order: 2;
+  margin-left: auto;
+  color: var(--warning-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+
+.sync-alert[open] > summary::after {
+  content: 'Ocultar';
+}
+
+.sync-alert-title {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.sync-alert-hint {
+  order: 3;
+  flex-basis: 100%;
+  color: var(--warning-text);
+  font-size: var(--text-sm);
+}
+
+.sync-alert > .table-shell {
+  margin: 0 var(--space-3) var(--space-3);
+  background: var(--surface);
+}
+
+.flag-closed {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+@media (max-width: 640px) {
+  .calendar-tabs.page-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+  }
+
+  .calendar-tabs .page-tab {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 10px 4px;
+    text-align: center;
+    line-height: 1.25;
+  }
+
+  .sync-alert > .table-shell {
+    margin: 0 var(--space-2) var(--space-2);
+    background: transparent;
+  }
+}
+
+/* Semana padrão: seven rows of day, open switch and hours, kept to a readable width. The rows stack the hours under
    the day on a narrow panel, so the page never scrolls sideways. */
+.week-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+}
+
+.week-summary-label {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
 .week-table {
   container-type: inline-size;
   display: grid;
+  max-width: 760px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
 .week-row {
   display: grid;
-  grid-template-columns: minmax(7rem, 10rem) minmax(8rem, 10rem) 1fr;
+  grid-template-columns: 8rem 9rem 1fr;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
+  min-height: 52px;
+  padding: var(--space-2) var(--space-4);
   border-top: 1px solid var(--border);
 }
 
@@ -7151,27 +7254,38 @@ button.readiness-step-inner:hover .readiness-title {
 }
 
 .week-head {
+  min-height: 0;
   background: var(--surface-muted);
+  color: var(--text-soft);
+  font-size: var(--text-xs);
   font-weight: 600;
-  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.week-closed {
+  background: var(--surface-muted);
 }
 
 .week-closed .week-day {
-  color: var(--text-muted, #6b7280);
+  color: var(--text-soft);
 }
 
 .week-day {
+  color: var(--text-strong);
   font-weight: 600;
 }
 
 .week-toggle {
   align-items: center;
+  font-size: var(--text-sm);
 }
 
 .week-hours {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
 }
 
 .week-hours label {
@@ -7180,45 +7294,172 @@ button.readiness-step-inner:hover .readiness-title {
   gap: var(--space-2);
 }
 
-.week-hours input {
-  width: 5.5rem;
+.week-hours .week-time {
+  width: 4.75rem;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* United States hours: hh:mm in 12 hours with an AM/PM switch beside it. */
+.us-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.us-time-period {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.us-time-option {
+  min-width: 40px;
+  min-height: 36px;
+  padding: 0 8px;
+  border: 0;
+  background: var(--surface);
+  color: var(--text-soft);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.us-time-option + .us-time-option {
+  border-left: 1px solid var(--border-strong);
+}
+
+.us-time-option.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.us-time-option:disabled {
+  cursor: default;
+  opacity: 0.6;
 }
 
 .week-hours-label {
-  font-size: 0.875rem;
+  min-width: 2.75rem;
+  color: var(--text-soft);
+  font-size: var(--text-sm);
+}
+
+.week-off {
+  color: var(--text-soft);
+  font-size: var(--text-sm);
 }
 
 .week-note {
-  margin: 0 0 var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border-left: 3px solid var(--border-strong);
-  background: var(--surface-muted);
+  max-width: 760px;
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  background: var(--warning-bg);
+  color: var(--text-strong);
+  font-size: var(--text-sm);
 }
 
+.week-copy {
+  margin-top: var(--space-3);
+}
+
+/* The save bar stays in reach while the draft has changes, at the bottom of the screen on long pages. */
 .week-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
+  max-width: 760px;
   margin-top: var(--space-4);
+}
+
+.week-actions-dirty {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: 0 -4px 16px rgba(24, 24, 27, 0.08);
+}
+
+.week-dirty {
+  margin-right: auto;
+  color: var(--warning-text);
+  font-size: var(--text-sm);
+  font-weight: 600;
 }
 
 .week-problem {
   flex-basis: 100%;
   margin: 0;
   color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.week-impact-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  padding: 0;
+  list-style: none;
+}
+
+.week-impact-counts li {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  font-size: var(--text-sm);
+}
+
+.week-impact-empty {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
 }
 
 @container (max-width: 520px) {
   .week-row {
     grid-template-columns: 1fr auto;
+    padding: var(--space-3);
   }
 
-  .week-head .week-hours-head {
-    grid-column: 1 / -1;
+  .week-head {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-4);
+  }
+
+  .week-head > :first-child {
+    margin-right: auto;
   }
 
   .week-hours {
     grid-column: 1 / -1;
+  }
+
+  .week-closed .week-hours {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .week-actions-dirty {
+    margin-inline: calc(-1 * var(--space-2));
+  }
+
+  .week-actions .primary-button {
+    flex: 1 1 100%;
   }
 }

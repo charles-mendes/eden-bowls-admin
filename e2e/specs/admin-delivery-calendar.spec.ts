@@ -79,6 +79,7 @@ test.describe('Admin delivery calendar', () => {
 
   test('resends a conflict after showing the found and target dates', async ({ page }) => {
     const { captured } = await openYear(page)
+    await page.getByText('Sincronizações com o Stripe').click()
     const conflict = page.getByRole('row').filter({ hasText: 'sub_late' })
     await expect(conflict.getByText('Conflito')).toBeVisible()
     await conflict.getByRole('button', { name: 'Reenviar' }).click()

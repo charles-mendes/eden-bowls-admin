@@ -304,14 +304,42 @@ export function describeValues(values: (Partial<ClosedDayFlags> & { active?: boo
 
 const SHORT_WEEKDAYS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom']
 
+export type DayPeriod = 'AM' | 'PM'
+
+// The API keeps hours as 24-hour HH:MM. The United States reads and types them in 12 hours with AM/PM.
+export function to12Hour(hhmm: string): { time: string; period: DayPeriod } {
+  const [hour, minute] = hhmm.split(':').map(Number)
+  const period: DayPeriod = hour >= 12 ? 'PM' : 'AM'
+  const twelve = hour % 12 === 0 ? 12 : hour % 12
+  return { time: `${String(twelve).padStart(2, '0')}:${String(minute).padStart(2, '0')}`, period }
+}
+
+// "08:00" + PM -> "20:00"; 12 AM is midnight and 12 PM is noon. An incomplete or invalid time gives ''.
+export function from12Hour(time: string, period: DayPeriod) {
+  const match = /^(\d{2}):(\d{2})$/.exec(time)
+  if (!match) return ''
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+  if (hour < 1 || hour > 12 || minute > 59) return ''
+  const hour24 = (hour % 12) + (period === 'PM' ? 12 : 0)
+  return `${String(hour24).padStart(2, '0')}:${match[2]}`
+}
+
+// A time as the market reads it: 24 hours in Brazil, "9:00 AM" in the United States.
+export function formatTime(hhmm: string, market?: MarketCode | null) {
+  if (market !== 'US' || !/^\d{2}:\d{2}$/.test(hhmm)) return hhmm
+  const { time, period } = to12Hour(hhmm)
+  return `${time.replace(/^0/, '')} ${period}`
+}
+
 // A week in one line: open days grouped by their hours, runs of days joined ("seg–sex 09:00–20:00 · sáb 09:00–13:00").
-export function describeWeek(days: OperatingDay[] | null | undefined) {
+export function describeWeek(days: OperatingDay[] | null | undefined, market?: MarketCode | null) {
   if (!days || days.length === 0) return '—'
   const open = [...days].sort((a, b) => a.weekday - b.weekday).filter((day) => day.open)
   if (open.length === 0) return 'Nenhum dia aberto'
   const groups: Array<{ hours: string; weekdays: number[] }> = []
   for (const day of open) {
-    const hours = `${day.opensAt}–${day.closesAt}`
+    const hours = `${formatTime(day.opensAt, market)}–${formatTime(day.closesAt, market)}`
     const group = groups.find((item) => item.hours === hours)
     if (group) group.weekdays.push(day.weekday)
     else groups.push({ hours, weekdays: [day.weekday] })

@@ -113,7 +113,7 @@ export function DeliveryCalendarHistory({ items, timeZone }: { items: CalendarHi
         </div>
       ) : (
         <div className="table-shell table-scroll">
-          <table className="history-table">
+          <table className="history-table stack-table">
             <thead>
               <tr>
                 <th>Quando</th>
@@ -135,17 +135,17 @@ export function DeliveryCalendarHistory({ items, timeZone }: { items: CalendarHi
                   ? (meta.impact ?? []).map((entry) => ({ ...entry, label: OUTCOME_LABELS[entry.outcome], pendingTrialEnd: undefined }))
                   : (meta.moved ?? []).map((entry) => ({ ...entry, label: MOVE_LABELS[entry.move] }))
                 const valuesOf = (values: typeof meta.before) => (week
-                  ? describeWeek(values as OperatingDay[] | null)
+                  ? describeWeek(values as OperatingDay[] | null, meta.market)
                   : describeValues(Array.isArray(values) ? null : values))
                 return (
                   <tr key={item.id}>
-                    <td className="nowrap">{formatDate(item.createdAt)}</td>
-                    <td>{item.actorEmail || '—'}</td>
-                    <td><span className="history-action">{ACTION_LABELS[item.action] || item.action}</span></td>
-                    <td className="nowrap">{week ? 'Toda semana' : formatDay(meta.closedOn)}{meta.label ? <div className="muted">{meta.label}</div> : null}</td>
-                    <td>{resend ? `Esperada ${formatDate(meta.expectedTrialEnd, timeZone)} · encontrada ${formatDate(meta.foundTrialEnd, timeZone)}` : valuesOf(meta.before)}</td>
-                    <td>{resend ? `Alvo ${formatDate(meta.targetTrialEnd, timeZone)}` : valuesOf(meta.after)}</td>
-                    <td>
+                    <td className="stack-table-title nowrap">{formatDate(item.createdAt)}</td>
+                    <td data-label="Quem">{item.actorEmail || '—'}</td>
+                    <td data-label="Ação"><span className="history-action">{ACTION_LABELS[item.action] || item.action}</span></td>
+                    <td data-label="Data" className="nowrap">{week ? 'Toda semana' : formatDay(meta.closedOn)}{meta.label ? <div className="muted">{meta.label}</div> : null}</td>
+                    <td data-label="Antes">{resend ? `Esperada ${formatDate(meta.expectedTrialEnd, timeZone)} · encontrada ${formatDate(meta.foundTrialEnd, timeZone)}` : valuesOf(meta.before)}</td>
+                    <td data-label="Depois">{resend ? `Alvo ${formatDate(meta.targetTrialEnd, timeZone)}` : valuesOf(meta.after)}</td>
+                    <td data-label="Assinaturas">
                       {resend ? meta.stripeSubscriptionId : moved.length > 0 ? (
                         <details className="history-moved">
                           <summary>{week

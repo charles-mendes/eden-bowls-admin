@@ -50,6 +50,7 @@ test.describe('Admin readonly', () => {
     await page.getByLabel('Ano').selectOption('2027')
     await expect(page.getByRole('cell', { name: 'Natal', exact: true })).toBeVisible()
     await expect(page.getByLabel('Mercado')).toBeDisabled()
+    await page.getByText('Sincronizações com o Stripe').click()
     await expect(page.getByRole('row').filter({ hasText: 'sub_late' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Novo fechamento' })).toHaveCount(0)
     await expect(page.getByRole('button', { name: /^(Editar|Desativar|Reativar|Remover)/ })).toHaveCount(0)

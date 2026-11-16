@@ -400,23 +400,19 @@ export function DeliveryCalendarPage() {
     <PageFrame
       title="Calendário de operação"
       description="A semana em que a cozinha prepara e os dias fechados para preparo, coleta e entrega de cada mercado."
-      actions={canWrite && market && tab === 'dias' ? (
-        <button className="primary-button" type="button" onClick={() => { setDraft({ ...EMPTY_DRAFT, closedOn: `${year}-01-01` }); setDialogError('') }}>
-          Novo fechamento
-        </button>
-      ) : null}
     >
-      <Section title="Filtros">
-        <FiltersBar>
-          <MarketSelect user={user} value={market || ''} onChange={(value) => setPickedMarket(value as MarketCode)} />
+      {/* Market and year sit above the tabs, without a card of their own; the week has no year. */}
+      <FiltersBar className="calendar-toolbar">
+        <MarketSelect user={user} value={market || ''} onChange={(value) => setPickedMarket(value as MarketCode)} />
+        {tab !== 'semana' ? (
           <label>
             Ano
             <select aria-label="Ano" value={year} onChange={(event) => setYear(Number(event.target.value))}>
               {years.map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
           </label>
-        </FiltersBar>
-      </Section>
+        ) : null}
+      </FiltersBar>
 
       {error ? <div className="alert" role="alert">{error}</div> : null}
       {notice ? <div className="warning" role="status">{notice}</div> : null}
@@ -430,9 +426,15 @@ export function DeliveryCalendarPage() {
       ) : null}
 
       {syncs && (syncs.delayed.length > 0 || syncs.problems.length > 0) ? (
-        <Section title="Sincronizações com o Stripe" description={`Atrasadas há mais de ${syncs.delayMinutes} minutos, com falha ou em conflito.`}>
+        // A warning that opens on demand: the problems stay one tap away without pushing the calendar down.
+        <details className="sync-alert">
+          <summary>
+            <span className="sync-alert-title">Sincronizações com o Stripe</span>
+            <span className="badge-error">{syncs.delayed.length + syncs.problems.length} precisam de atenção</span>
+            <span className="sync-alert-hint">Atrasadas há mais de {syncs.delayMinutes} minutos, com falha ou em conflito.</span>
+          </summary>
           <div className="table-shell table-scroll">
-            <table>
+            <table className="stack-table">
               <thead>
                 <tr>
                   <th>Assinatura</th>
@@ -448,13 +450,13 @@ export function DeliveryCalendarPage() {
               <tbody>
                 {[...syncs.delayed, ...syncs.problems].map((sync) => (
                   <tr key={sync.id}>
-                    <td>{sync.stripeSubscriptionId}</td>
-                    <td><span className={sync.status === 'pending' ? 'badge-warning' : 'badge-error'}>{SYNC_STATUS_LABELS[sync.status] || sync.status}</span></td>
-                    <td>{formatDate(sync.expectedTrialEnd, timeZone)}</td>
-                    <td>{formatDate(sync.targetTrialEnd, timeZone)}</td>
-                    <td>{sync.status === 'conflict' ? (sync.foundTrialEnd ? formatDate(sync.foundTrialEnd, timeZone) : 'sem trial (cobrança já feita)') : '—'}</td>
-                    <td>{sync.attempts}</td>
-                    <td>{sync.lastError || '—'}</td>
+                    <td className="stack-table-title">{sync.stripeSubscriptionId}</td>
+                    <td data-label="Situação"><span className={sync.status === 'pending' ? 'badge-warning' : 'badge-error'}>{SYNC_STATUS_LABELS[sync.status] || sync.status}</span></td>
+                    <td data-label="Data esperada">{formatDate(sync.expectedTrialEnd, timeZone)}</td>
+                    <td data-label="Data alvo">{formatDate(sync.targetTrialEnd, timeZone)}</td>
+                    <td data-label="No Stripe">{sync.status === 'conflict' ? (sync.foundTrialEnd ? formatDate(sync.foundTrialEnd, timeZone) : 'sem trial (cobrança já feita)') : '—'}</td>
+                    <td data-label="Tentativas">{sync.attempts}</td>
+                    <td data-label="Último erro">{sync.lastError || '—'}</td>
                     {canWrite ? (
                       <td>
                         {sync.status === 'failed' || sync.status === 'conflict' ? (
@@ -469,10 +471,10 @@ export function DeliveryCalendarPage() {
               </tbody>
             </table>
           </div>
-        </Section>
+        </details>
       ) : null}
 
-      <div className="page-tabs" role="tablist" aria-label="Visões do calendário" onKeyDown={moveTabFocus}>
+      <div className="page-tabs calendar-tabs" role="tablist" aria-label="Visões do calendário" onKeyDown={moveTabFocus}>
         {TABS.map((option) => (
           <button
             key={option.id}
@@ -499,12 +501,20 @@ export function DeliveryCalendarPage() {
 
       {tab === 'dias' ? (
         <div id="calendar-panel-dias" role="tabpanel" aria-labelledby="calendar-tab-dias">
-        <Section title="Dias fechados" description={market ? `${market} · ${year}` : undefined}>
+        <Section
+          title="Feriados e fechamentos"
+          description={market ? `Exceções por data em ${year}: elas valem acima da semana padrão.` : undefined}
+          actions={canWrite && market ? (
+            <button className="primary-button" type="button" onClick={() => { setDraft({ ...EMPTY_DRAFT, closedOn: `${year}-01-01` }); setDialogError('') }}>
+              Novo fechamento
+            </button>
+          ) : undefined}
+        >
           {loading ? <p aria-busy="true">Carregando calendário…</p> : rows.length === 0 ? (
             <p>Nenhum dia fechado cadastrado para este ano.</p>
           ) : (
             <div className="table-shell table-scroll">
-              <table>
+              <table className="stack-table">
                 <thead>
                   <tr>
                     <th>Data</th>
@@ -518,13 +528,13 @@ export function DeliveryCalendarPage() {
                 <tbody>
                   {rows.map((row) => (
                     <tr key={row.id} className={row.active ? undefined : 'muted'}>
-                      <td>{formatDay(row.closedOn)}</td>
-                      <td>{row.label}</td>
-                      <td>{TYPE_LABELS[row.type] || row.type}</td>
-                      <td>{row.active ? <span className="badge-success">Ativa</span> : <span className="badge-info">Inativa</span>}</td>
-                      {FLAGS.map((flag) => <td key={flag}>{row[flag] ? 'Fechado' : 'Aberto'}</td>)}
+                      <td className="stack-table-title nowrap">{formatDay(row.closedOn)}</td>
+                      <td data-label="Rótulo">{row.label}</td>
+                      <td data-label="Tipo">{TYPE_LABELS[row.type] || row.type}</td>
+                      <td data-label="Situação">{row.active ? <span className="badge-success">Ativa</span> : <span className="badge-info">Inativa</span>}</td>
+                      {FLAGS.map((flag) => <td key={flag} data-label={FLAG_LABELS[flag]}>{row[flag] ? <span className="flag-closed">Fechado</span> : <span className="muted">Aberto</span>}</td>)}
                       {canWrite ? (
-                        <td>
+                        <td className="stack-table-actions">
                           <div className="table-actions">
                             <button
                               className="ghost-button"

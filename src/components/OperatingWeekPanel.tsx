@@ -3,11 +3,14 @@ import { Section } from './Section'
 import { InfoHint } from './InfoHint'
 import { helpText } from './HelpText'
 import { BrTimeInput } from './BrDateInput'
+import { UsTimeInput } from './UsTimeInput'
 import { ApiRequestError } from '../lib/api'
 import type { MarketCode } from '../lib/markets'
 import {
   WEEKDAY_NAMES,
+  describeWeek,
   formatDay,
+  formatTime,
   getOperatingWeek,
   previewOperatingWeek,
   saveOperatingWeek,
@@ -33,7 +36,13 @@ const US_NOTE = 'Nos EUA, sexta e sábado nunca preparam, mesmo abertos: a colet
 
 const TIME_ZONE_LABELS: Record<MarketCode, string> = {
   BR: 'horário de Brasília',
-  US: 'horário de Nova York',
+  US: 'horário de Nova York (12 horas, AM/PM)',
+}
+
+const OUTCOME_BADGES: Record<WeekImpactItem['outcome'], string> = {
+  moved: 'badge-info',
+  moved_charge_kept: 'badge-warning',
+  kept: 'badge-success',
 }
 
 function outcomeText(item: WeekImpactItem) {
@@ -143,6 +152,20 @@ export function OperatingWeekPanel({ token, market, canWrite, onSaved }: Operati
   }
 
   const readonly = !canWrite || busy
+  const firstOpen = draft.find((day) => day.open) || null
+  const sameHours = !firstOpen || draft.every((day) => !day.open || (day.opensAt === firstOpen.opensAt && day.closesAt === firstOpen.closesAt))
+  const counts = preview ? {
+    moved: preview.impact.filter((item) => item.outcome === 'moved').length,
+    chargeKept: preview.impact.filter((item) => item.outcome === 'moved_charge_kept').length,
+    kept: preview.impact.filter((item) => item.outcome === 'kept').length,
+  } : null
+
+  // One tap to give every open day the hours of the first one, the usual case of a kitchen with fixed hours.
+  const copyFirstHours = () => {
+    if (!firstOpen) return
+    setDraft((days) => days.map((day) => (day.open ? { ...day, opensAt: firstOpen.opensAt, closesAt: firstOpen.closesAt } : day)))
+    setNotice('')
+  }
 
   return (
     <>
@@ -150,6 +173,12 @@ export function OperatingWeekPanel({ token, market, canWrite, onSaved }: Operati
         title="Semana padrão"
         description={`Dias e horário de preparo de ${market}, no ${TIME_ZONE_LABELS[market]}.`}
       >
+        {stored !== null && !loading ? (
+          <p className="week-summary">
+            <span className="week-summary-label">Em vigor</span>
+            <strong>{describeWeek(stored, market)}</strong>
+          </p>
+        ) : null}
         {error ? <div className="alert" role="alert">{error}</div> : null}
         {notice ? <div className="success" role="status">{notice}</div> : null}
         {!canWrite ? <p className="readonly-note">Somente leitura: editar a semana exige permissão de produção.</p> : null}
@@ -191,26 +220,54 @@ export function OperatingWeekPanel({ token, market, canWrite, onSaved }: Operati
                     </label>
                   </span>
                   <span role="cell" className="week-hours">
+                    {!day.open ? <span className="week-off">Sem preparo</span> : (<>
                     <label>
                       <span className="week-hours-label">Abre</span>
-                      <BrTimeInput
-                        aria-label={`${name} abre`}
-                        aria-describedby="week-hours-help"
-                        value={day.opensAt}
-                        disabled={readonly || !day.open}
-                        onChange={(value) => updateDay(day.weekday, { opensAt: value })}
-                      />
+                      {market === 'US' ? (
+                        <UsTimeInput
+                          key={`${market}-${day.weekday}-opens`}
+                          label={`${name} abre`}
+                          describedBy="week-hours-help"
+                          value={day.opensAt}
+                          className="week-time"
+                          disabled={readonly}
+                          onChange={(value) => updateDay(day.weekday, { opensAt: value })}
+                        />
+                      ) : (
+                        <BrTimeInput
+                          aria-label={`${name} abre`}
+                          aria-describedby="week-hours-help"
+                          value={day.opensAt}
+                          className="week-time"
+                          disabled={readonly}
+                          onChange={(value) => updateDay(day.weekday, { opensAt: value })}
+                        />
+                      )}
                     </label>
                     <label>
                       <span className="week-hours-label">Fecha</span>
-                      <BrTimeInput
-                        aria-label={`${name} fecha`}
-                        aria-describedby="week-hours-help"
-                        value={day.closesAt}
-                        disabled={readonly || !day.open}
-                        onChange={(value) => updateDay(day.weekday, { closesAt: value })}
-                      />
+                      {market === 'US' ? (
+                        <UsTimeInput
+                          key={`${market}-${day.weekday}-closes`}
+                          label={`${name} fecha`}
+                          describedBy="week-hours-help"
+                          value={day.closesAt}
+                          className="week-time"
+                          disabled={readonly}
+                          onChange={(value) => updateDay(day.weekday, { closesAt: value })}
+                        />
+                      ) : (
+                        <BrTimeInput
+                          aria-label={`${name} fecha`}
+                          aria-describedby="week-hours-help"
+                          value={day.closesAt}
+                          className="week-time"
+                          disabled={readonly}
+                          onChange={(value) => updateDay(day.weekday, { closesAt: value })}
+                        />
+                      )}
                     </label>
+                    </>)}
                   </span>
                 </div>
               )
@@ -219,8 +276,15 @@ export function OperatingWeekPanel({ token, market, canWrite, onSaved }: Operati
         )}
 
         {canWrite && stored !== null && !loading ? (
-          <div className="week-actions">
+          <>
+          {firstOpen && !sameHours ? (
+            <button className="link-button week-copy" type="button" disabled={busy} onClick={copyFirstHours}>
+              Usar {formatTime(firstOpen.opensAt, market)}–{formatTime(firstOpen.closesAt, market)} ({WEEKDAY_NAMES[firstOpen.weekday - 1].toLowerCase()}) em todos os dias abertos
+            </button>
+          ) : null}
+          <div className={changed ? 'week-actions week-actions-dirty' : 'week-actions'}>
             {problem ? <p className="week-problem" role="alert">{problem}</p> : null}
+            {changed ? <span className="week-dirty" role="status">Alterações não salvas</span> : null}
             <button className="ghost-button" type="button" disabled={busy || !changed} onClick={() => { setDraft(stored); setPreview(null); setError('') }}>
               Desfazer alterações
             </button>
@@ -232,16 +296,25 @@ export function OperatingWeekPanel({ token, market, canWrite, onSaved }: Operati
             </button>
             {changed && !previewCurrent && !problem ? <small className="ship-hint">Veja o impacto antes de salvar.</small> : null}
           </div>
+          </>
         ) : null}
       </Section>
 
       {preview && previewCurrent ? (
         <Section title="Impacto da mudança" description="Entregas agendadas cujo dia de preparo muda com esta semana.">
           {preview.impact.length === 0 ? (
-            <p role="status">Nenhuma entrega agendada muda. A semana vale para os pagamentos a partir de agora.</p>
+            <p role="status" className="week-impact-empty">Nenhuma entrega agendada muda. A semana vale para os pagamentos a partir de agora.</p>
           ) : (
+            <>
+            {counts ? (
+              <ul className="week-impact-counts" aria-label="Resumo do impacto">
+                <li><strong>{counts.moved}</strong> {counts.moved === 1 ? 'muda de data' : 'mudam de data'}</li>
+                <li><strong>{counts.chargeKept}</strong> {counts.chargeKept === 1 ? 'mantém a cobrança e muda o preparo' : 'mantêm a cobrança e mudam o preparo'}</li>
+                <li><strong>{counts.kept}</strong> {counts.kept === 1 ? 'mantém a data' : 'mantêm a data'}</li>
+              </ul>
+            ) : null}
             <div className="table-shell table-scroll">
-              <table aria-label="Entregas afetadas">
+              <table className="stack-table" aria-label="Entregas afetadas">
                 <thead>
                   <tr>
                     <th>Assinatura</th>
@@ -252,14 +325,15 @@ export function OperatingWeekPanel({ token, market, canWrite, onSaved }: Operati
                 <tbody>
                   {preview.impact.map((item) => (
                     <tr key={`${item.stripeSubscriptionId}-${item.deliveryId}`}>
-                      <td>{item.stripeSubscriptionId}</td>
-                      <td className="nowrap">{formatDay(item.preparationDay)}</td>
-                      <td>{outcomeText(item)}</td>
+                      <td className="stack-table-title">{item.stripeSubscriptionId}</td>
+                      <td data-label="Preparo atual" className="nowrap">{formatDay(item.preparationDay)}</td>
+                      <td data-label="Resultado"><span className={OUTCOME_BADGES[item.outcome]}>{outcomeText(item)}</span></td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            </>
           )}
         </Section>
       ) : null}
