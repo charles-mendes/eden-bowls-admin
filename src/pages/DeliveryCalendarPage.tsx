@@ -5,6 +5,7 @@ import { Section } from '../components/Section'
 import { FiltersBar } from '../components/FiltersBar'
 import { Dialog } from '../components/Dialog'
 import { DeliveryCalendarHistory } from '../components/DeliveryCalendarHistory'
+import { OperatingWeekPanel } from '../components/OperatingWeekPanel'
 import { MarketSelect } from '../components/MarketSelect'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError } from '../lib/api'
@@ -78,12 +79,17 @@ function lockedFrom(error: unknown): LockedSubscription[] {
 
 type Draft = NewClosedDay
 
-type CalendarTab = 'dias' | 'historico'
+type CalendarTab = 'semana' | 'dias' | 'historico'
 
 const TABS: Array<{ id: CalendarTab; label: string }> = [
-  { id: 'dias', label: 'Dias fechados' },
+  { id: 'semana', label: 'Semana padrão' },
+  { id: 'dias', label: 'Feriados e fechamentos' },
   { id: 'historico', label: 'Histórico' },
 ]
+
+function tabFrom(value: string | null): CalendarTab {
+  return value === 'dias' || value === 'historico' ? value : 'semana'
+}
 
 const EMPTY_DRAFT: Draft = {
   type: 'adhoc',
@@ -178,7 +184,7 @@ export function DeliveryCalendarPage() {
   const timeZone = market ? TIME_ZONES[market] : 'UTC'
   const [year, setYear] = useState(currentYear)
   const [searchParams, setSearchParams] = useSearchParams()
-  const tab: CalendarTab = searchParams.get('aba') === 'historico' ? 'historico' : 'dias'
+  const tab = tabFrom(searchParams.get('aba'))
   const [rows, setRows] = useState<ClosedDay[]>([])
   const [history, setHistory] = useState<CalendarHistoryItem[]>([])
   const [syncs, setSyncs] = useState<CalendarSyncs | null>(null)
@@ -235,7 +241,7 @@ export function DeliveryCalendarPage() {
 
   const selectTab = (next: CalendarTab) => {
     setSearchParams((params) => {
-      if (next === 'dias') params.delete('aba')
+      if (next === 'semana') params.delete('aba')
       else params.set('aba', next)
       return params
     }, { replace: true })
@@ -392,9 +398,9 @@ export function DeliveryCalendarPage() {
 
   return (
     <PageFrame
-      title="Feriados e fechamentos"
-      description="Dias fechados para preparo, coleta e entrega de cada mercado."
-      actions={canWrite && market ? (
+      title="Calendário de operação"
+      description="A semana em que a cozinha prepara e os dias fechados para preparo, coleta e entrega de cada mercado."
+      actions={canWrite && market && tab === 'dias' ? (
         <button className="primary-button" type="button" onClick={() => { setDraft({ ...EMPTY_DRAFT, closedOn: `${year}-01-01` }); setDialogError('') }}>
           Novo fechamento
         </button>
@@ -480,10 +486,16 @@ export function DeliveryCalendarPage() {
             onClick={() => selectTab(option.id)}
           >
             {option.label}
-            {!loading ? <span className="page-tab-count">{option.id === 'historico' ? history.length : rows.length}</span> : null}
+            {!loading && option.id !== 'semana' ? <span className="page-tab-count">{option.id === 'historico' ? history.length : rows.length}</span> : null}
           </button>
         ))}
       </div>
+
+      {tab === 'semana' && token && market ? (
+        <div id="calendar-panel-semana" role="tabpanel" aria-labelledby="calendar-tab-semana">
+          <OperatingWeekPanel token={token} market={market} canWrite={canWrite} onSaved={load} />
+        </div>
+      ) : null}
 
       {tab === 'dias' ? (
         <div id="calendar-panel-dias" role="tabpanel" aria-labelledby="calendar-tab-dias">
@@ -553,7 +565,9 @@ export function DeliveryCalendarPage() {
           )}
         </Section>
         </div>
-      ) : (
+      ) : null}
+
+      {tab === 'historico' ? (
         <div id="calendar-panel-historico" role="tabpanel" aria-labelledby="calendar-tab-historico">
           <Section title="Histórico" description={`Quem mudou o calendário${market ? ` de ${market}` : ''} em ${year}, do mais recente ao mais antigo.`}>
             {loading ? <p aria-busy="true">Carregando histórico…</p> : (
@@ -561,7 +575,7 @@ export function DeliveryCalendarPage() {
             )}
           </Section>
         </div>
-      )}
+      ) : null}
 
 
       <Dialog

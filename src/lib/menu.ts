@@ -26,7 +26,7 @@ export const adminMenu: MenuItem[] = [
   { label: 'Exceções de mercado', href: '/operations/market-exceptions', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'shipping.read' },
   { label: 'Estoque', href: '/operations/stock', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Notas fiscais', href: '/operations/nfe', roles: ['admin', 'operator', 'readonly'], group: 'Operação', markets: ['BR'] },
-  { label: 'Feriados e fechamentos', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
+  { label: 'Calendário de operação', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
   { label: 'Assinantes', href: '/billing', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
   { label: 'Produtos', href: '/catalog/products', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },

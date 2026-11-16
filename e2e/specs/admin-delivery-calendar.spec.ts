@@ -2,8 +2,8 @@ import { expect, test, type Page } from '@playwright/test'
 import { e2eProfiles, openAuthed } from '../helpers/mockAdminApi'
 
 async function openYear(page: Page, profile = e2eProfiles.operatorWrite) {
-  const mocks = await openAuthed(page, '/operations/delivery-calendar', profile)
-  await expect(page.getByRole('heading', { name: 'Feriados e fechamentos' })).toBeVisible()
+  const mocks = await openAuthed(page, '/operations/delivery-calendar?aba=dias', profile)
+  await expect(page.getByRole('heading', { name: 'Calendário de operação' })).toBeVisible()
   await page.getByLabel('Ano').selectOption('2027')
   await expect(page.getByRole('cell', { name: 'Natal', exact: true })).toBeVisible()
   return mocks
@@ -13,7 +13,9 @@ async function draftClosure(page: Page, { type = 'adhoc', date, label }: { type?
   await page.getByRole('button', { name: 'Novo fechamento' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByLabel('Tipo').selectOption(type)
-  await dialog.getByLabel('Data').fill(date)
+  // The date field is typed as dd/mm/aaaa (BrDateInput).
+  const [year, month, day] = date.split('-')
+  await dialog.getByLabel('Data').fill(`${day}/${month}/${year}`)
   await dialog.getByLabel('Rótulo').fill(label)
   await dialog.getByRole('button', { name: 'Ver entregas afetadas' }).click()
   return dialog

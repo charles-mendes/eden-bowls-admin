@@ -194,12 +194,32 @@ type CalendarRow = {
   closesDelivery: boolean
 }
 
+type OperatingDay = { weekday: number; open: boolean; opensAt: string; closesAt: string }
+
 type CalendarState = {
   rows: CalendarRow[]
   history: Array<Record<string, unknown>>
   syncs: Array<Record<string, unknown>>
+  week: Record<'BR' | 'US', OperatingDay[]>
   nextId: number
 }
+
+const weekOf = (open: number[]): OperatingDay[] => [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ weekday, open: open.includes(weekday), opensAt: '09:00', closesAt: '20:00' }))
+
+// Closing Saturday in Brazil reaches three deliveries, one of each outcome; any other change moves nothing.
+function weekImpact(market: 'BR' | 'US', before: OperatingDay[], after: OperatingDay[]) {
+  const saturdayCloses = market === 'BR' && before[5]?.open && !after[5]?.open
+  if (!saturdayCloses) return []
+  return [
+    { stripeSubscriptionId: 'sub_ana', ledgerId: 42, userId: 7, deliveryId: 'current', chargeAt: '2027-01-23T03:00:00.000Z', preparationDay: '2027-01-23', deliveryDate: '2027-01-23', newPreparationDay: '2027-01-25', newDeliveryDate: '2027-01-25', outcome: 'moved', lockReason: null, move: 'stripe_sync' },
+    { stripeSubscriptionId: 'sub_bia', ledgerId: 43, userId: 8, deliveryId: 'current', chargeAt: '2027-01-23T17:30:00.000Z', preparationDay: '2027-01-23', deliveryDate: '2027-01-23', newPreparationDay: '2027-01-25', newDeliveryDate: '2027-01-25', outcome: 'moved_charge_kept', lockReason: 'past_editable_until', move: 'projection_only' },
+    { stripeSubscriptionId: 'sub_cris', ledgerId: 44, userId: 9, deliveryId: 'current', chargeAt: null, preparationDay: '2027-01-23', deliveryDate: '2027-01-23', newPreparationDay: '2027-01-23', newDeliveryDate: '2027-01-23', outcome: 'kept', lockReason: 'paid', move: 'projection_only' },
+  ]
+}
+
+const confirmedMovesOf = (impact: ReturnType<typeof weekImpact>) => impact
+  .filter((item) => item.outcome !== 'kept')
+  .map((item) => ({ stripeSubscriptionId: item.stripeSubscriptionId, deliveryId: item.deliveryId, newPreparationDay: item.newPreparationDay }))
 
 function calendarState(): CalendarState {
   const national = (id: number, closedOn: string, label: string, origin = 'fixed'): CalendarRow => ({
@@ -217,6 +237,7 @@ function calendarState(): CalendarState {
       { id: 11, stripeSubscriptionId: 'sub_late', market: 'BR', auditEventId: 1, expectedTrialEnd: '2027-02-08T03:00:00.000Z', targetTrialEnd: '2027-02-10T03:00:00.000Z', foundTrialEnd: '2027-02-15T03:00:00.000Z', status: 'conflict', attempts: 1, lastError: null, createdAt: '2027-01-20T12:00:00.000Z' },
       { id: 12, stripeSubscriptionId: 'sub_down', market: 'BR', auditEventId: 1, expectedTrialEnd: '2027-02-08T03:00:00.000Z', targetTrialEnd: '2027-02-10T03:00:00.000Z', foundTrialEnd: null, status: 'failed', attempts: 8, lastError: 'Stripe timeout', createdAt: '2027-01-20T12:00:00.000Z' },
     ],
+    week: { BR: weekOf([1, 2, 3, 4, 5, 6]), US: weekOf([1, 2, 3, 4, 5]) },
     nextId: 100,
   }
 }
@@ -263,6 +284,32 @@ async function handleDeliveryCalendar(route: Route, method: string, path: string
   }
   if (path === `${base}/alerts` && method === 'GET') {
     await fulfillJson(route, { market, upsCalendar: market === 'US' ? { coveredThrough: '2027-12-31', missingYear: 2028, daysLeft: 80, warn: true } : null })
+    return true
+  }
+  if (path === `${base}/week` && method === 'GET') {
+    await fulfillJson(route, { market, timeZone: market === 'BR' ? 'America/Sao_Paulo' : 'America/New_York', days: state.week[market] })
+    return true
+  }
+  if (path === `${base}/week/preview` && method === 'POST') {
+    const after = input.days as OperatingDay[]
+    const impact = weekImpact(market, state.week[market], after)
+    await fulfillJson(route, { market, timeZone: market === 'BR' ? 'America/Sao_Paulo' : 'America/New_York', before: state.week[market], after, impact, confirmedMoves: confirmedMovesOf(impact) })
+    return true
+  }
+  if (path === `${base}/week` && method === 'PUT') {
+    const after = input.days as OperatingDay[]
+    const impact = weekImpact(market, state.week[market], after)
+    const expected = JSON.stringify(confirmedMovesOf(impact))
+    if (JSON.stringify(input.confirmedMoves ?? []) !== expected) {
+      await fulfillJson(route, { message: 'As entregas afetadas mudaram desde a prévia. Veja o impacto de novo.', details: { code: 'week_impact_changed', confirmedMoves: JSON.parse(expected) } }, 409)
+      return true
+    }
+    audit('delivery_calendar.week_update', {
+      closedOn: null, before: state.week[market], after, syncIds: [],
+      impact: impact.map((item) => ({ stripeSubscriptionId: item.stripeSubscriptionId, deliveryId: item.deliveryId, previousPreparationDay: item.preparationDay, newPreparationDay: item.newPreparationDay, outcome: item.outcome, move: item.move })),
+    })
+    state.week[market] = after
+    await fulfillJson(route, { market, timeZone: market === 'BR' ? 'America/Sao_Paulo' : 'America/New_York', days: after, impact, syncIds: [], auditEventId: state.history.length })
     return true
   }
   if (path === `${base}/preview` && method === 'POST') {

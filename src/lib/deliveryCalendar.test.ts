@@ -2,6 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiRequestError } from './api'
 import {
   createClosedDay,
+  describeWeek,
+  getOperatingWeek,
+  previewOperatingWeek,
+  saveOperatingWeek,
   getCalendarAlerts,
   listCalendarHistory,
   listCalendarSyncs,
@@ -88,5 +92,46 @@ describe('delivery calendar client', () => {
     const error = await createClosedDay('t', 'US', row).catch((caught) => caught)
     expect(error).toBeInstanceOf(ApiRequestError)
     expect(error).toMatchObject({ status: 409, code: 'delivery_locked', details: { subscriptions: [{ stripeSubscriptionId: 'sub_1' }] } })
+  })
+})
+
+describe('standard week client', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  const days = [1, 2, 3, 4, 5, 6, 7].map((weekday) => ({ weekday, open: weekday <= 5, opensAt: '09:00', closesAt: '20:00' }))
+
+  it('reads, previews and saves the week of one market', async () => {
+    const calls = stubFetch({ body: { success: true, data: {} } })
+    await getOperatingWeek('tok', 'BR')
+    await previewOperatingWeek('tok', 'BR', days)
+    await saveOperatingWeek('tok', 'BR', days, [{ stripeSubscriptionId: 'sub_1', deliveryId: 'current', newPreparationDay: '2026-11-23' }])
+
+    expect(calls[0]).toMatchObject({ method: 'GET', authorization: 'Bearer tok' })
+    expect(calls[0].url).toMatch(/\/admin\/delivery-calendar\/week\?market=BR$/)
+    expect(calls[1]).toMatchObject({ method: 'POST', body: { market: 'BR', days } })
+    expect(calls[1].url).toMatch(/\/admin\/delivery-calendar\/week\/preview$/)
+    expect(calls[2]).toMatchObject({
+      method: 'PUT',
+      body: { market: 'BR', days, confirmedMoves: [{ stripeSubscriptionId: 'sub_1', deliveryId: 'current', newPreparationDay: '2026-11-23' }] },
+    })
+  })
+
+  it('a changed impact comes back as week_impact_changed', async () => {
+    stubFetch({ status: 409, body: { message: 'mudou', details: { code: 'week_impact_changed' } } })
+    await expect(saveOperatingWeek('tok', 'BR', days, [])).rejects.toMatchObject({ status: 409, code: 'week_impact_changed' })
+  })
+})
+
+describe('describeWeek', () => {
+  const day = (weekday: number, open: boolean, opensAt = '09:00', closesAt = '20:00') => ({ weekday, open, opensAt, closesAt })
+
+  it('joins runs of open days with the same hours', () => {
+    expect(describeWeek([1, 2, 3, 4, 5, 6, 7].map((weekday) => day(weekday, weekday <= 5)))).toBe('seg–sex 09:00–20:00')
+    expect(describeWeek([day(1, true), day(2, true), day(3, false), day(4, true), day(5, true), day(6, true, '09:00', '13:00'), day(7, false)]))
+      .toBe('seg–ter, qui–sex 09:00–20:00 · sáb 09:00–13:00')
+  })
+
+  it('says when no day is open', () => {
+    expect(describeWeek([day(1, false)])).toBe('Nenhum dia aberto')
+    expect(describeWeek(null)).toBe('—')
   })
 })

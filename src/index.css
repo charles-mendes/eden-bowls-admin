@@ -7126,3 +7126,99 @@ button.readiness-step-inner:hover .readiness-title {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Semana padrão (Calendário de operação): seven rows of day, open switch and hours. The rows stack the hours under
+   the day on a narrow panel, so the page never scrolls sideways. */
+.week-table {
+  container-type: inline-size;
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+}
+
+.week-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 10rem) minmax(8rem, 10rem) 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.week-row:first-child {
+  border-top: 0;
+}
+
+.week-head {
+  background: var(--surface-muted);
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.week-closed .week-day {
+  color: var(--text-muted, #6b7280);
+}
+
+.week-day {
+  font-weight: 600;
+}
+
+.week-toggle {
+  align-items: center;
+}
+
+.week-hours {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.week-hours label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.week-hours input {
+  width: 5.5rem;
+}
+
+.week-hours-label {
+  font-size: 0.875rem;
+}
+
+.week-note {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: 3px solid var(--border-strong);
+  background: var(--surface-muted);
+}
+
+.week-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.week-problem {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--danger);
+}
+
+@container (max-width: 520px) {
+  .week-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .week-head .week-hours-head {
+    grid-column: 1 / -1;
+  }
+
+  .week-hours {
+    grid-column: 1 / -1;
+  }
+}

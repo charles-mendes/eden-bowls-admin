@@ -83,8 +83,8 @@ export type CalendarHistoryItem = {
     closedOn: string | null
     type?: ClosedDayType
     label?: string
-    before?: AuditValues | null
-    after?: AuditValues | null
+    before?: AuditValues | OperatingDay[] | null
+    after?: AuditValues | OperatingDay[] | null
     moved?: MovedDelivery[]
     syncId?: number
     stripeSubscriptionId?: string
@@ -92,6 +92,7 @@ export type CalendarHistoryItem = {
     expectedTrialEnd?: string | null
     foundTrialEnd?: string | null
     targetTrialEnd?: string
+    impact?: Array<Pick<WeekImpactItem, 'stripeSubscriptionId' | 'deliveryId' | 'outcome' | 'move' | 'newPreparationDay'> & { previousPreparationDay: string }>
   }
 }
 
@@ -174,6 +175,83 @@ export function getCalendarAlerts(token: string, market: MarketCode) {
   return apiRequest<CalendarAlerts>(`${BASE}/alerts${buildQueryString({ market })}`, { token })
 }
 
+// The standard week of a market (delivery-calendar): seven days, Monday (1) first to Sunday (7). "Open" is about
+// preparation only; the hours are in the market's time zone.
+export type OperatingDay = {
+  weekday: number
+  open: boolean
+  opensAt: string
+  closesAt: string
+}
+
+export type OperatingWeek = {
+  market: MarketCode
+  timeZone: string
+  days: OperatingDay[]
+}
+
+export type WeekOutcome = 'kept' | 'moved_charge_kept' | 'moved'
+
+export type WeekImpactItem = {
+  stripeSubscriptionId: string
+  ledgerId: number
+  userId: number
+  deliveryId: string
+  chargeAt: string | null
+  preparationDay: string
+  deliveryDate: string
+  newPreparationDay: string
+  newDeliveryDate: string
+  outcome: WeekOutcome
+  lockReason: string | null
+  move: DeliveryMove
+}
+
+export type ConfirmedMove = {
+  stripeSubscriptionId: string
+  deliveryId: string
+  newPreparationDay: string
+}
+
+export type WeekPreview = {
+  market: MarketCode
+  timeZone: string
+  before: OperatingDay[]
+  after: OperatingDay[]
+  impact: WeekImpactItem[]
+  confirmedMoves: ConfirmedMove[]
+}
+
+export type WeekSaveResult = {
+  market: MarketCode
+  timeZone: string
+  days: OperatingDay[]
+  impact: WeekImpactItem[]
+  syncIds: number[]
+  auditEventId: number
+}
+
+export function getOperatingWeek(token: string, market: MarketCode) {
+  return apiRequest<OperatingWeek>(`${BASE}/week${buildQueryString({ market })}`, { token })
+}
+
+export function previewOperatingWeek(token: string, market: MarketCode, days: OperatingDay[]) {
+  return apiRequest<WeekPreview>(`${BASE}/week/preview`, { token, method: 'POST', body: { market, days } })
+}
+
+// Saves only with the moves the operator saw in the preview; the API answers 409 `week_impact_changed` otherwise.
+export function saveOperatingWeek(token: string, market: MarketCode, days: OperatingDay[], confirmedMoves: ConfirmedMove[]) {
+  return apiRequest<WeekSaveResult>(`${BASE}/week`, { token, method: 'PUT', body: { market, days, confirmedMoves } })
+}
+
+export const WEEKDAY_NAMES = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+
+export const OUTCOME_LABELS: Record<WeekOutcome, string> = {
+  moved: 'Muda',
+  moved_charge_kept: 'Cobrança mantida, preparo muda',
+  kept: 'Mantém a data',
+}
+
 export const FLAG_LABELS: Record<keyof ClosedDayFlags, string> = {
   closesPreparation: 'Preparo',
   closesPickup: 'Coleta',
@@ -201,6 +279,7 @@ export const ACTION_LABELS: Record<string, string> = {
   'delivery_calendar.deactivate': 'Desativação',
   'delivery_calendar.update': 'Mudança de marcação',
   'delivery_calendar.sync_resend': 'Reenvio ao Stripe',
+  'delivery_calendar.week_update': 'Semana padrão',
 }
 
 const WEEKDAYS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
@@ -221,4 +300,31 @@ export function closedFlags(values: Partial<ClosedDayFlags> | null | undefined) 
 export function describeValues(values: (Partial<ClosedDayFlags> & { active?: boolean }) | null | undefined) {
   if (!values) return '—'
   return `${values.active === false ? 'Inativa' : 'Ativa'} · fecha ${closedFlags(values)}`
+}
+
+const SHORT_WEEKDAYS = ['seg', 'ter', 'qua', 'qui', 'sex', 'sáb', 'dom']
+
+// A week in one line: open days grouped by their hours, runs of days joined ("seg–sex 09:00–20:00 · sáb 09:00–13:00").
+export function describeWeek(days: OperatingDay[] | null | undefined) {
+  if (!days || days.length === 0) return '—'
+  const open = [...days].sort((a, b) => a.weekday - b.weekday).filter((day) => day.open)
+  if (open.length === 0) return 'Nenhum dia aberto'
+  const groups: Array<{ hours: string; weekdays: number[] }> = []
+  for (const day of open) {
+    const hours = `${day.opensAt}–${day.closesAt}`
+    const group = groups.find((item) => item.hours === hours)
+    if (group) group.weekdays.push(day.weekday)
+    else groups.push({ hours, weekdays: [day.weekday] })
+  }
+  return groups.map(({ hours, weekdays }) => {
+    const runs: string[] = []
+    let start = weekdays[0]
+    for (let index = 1; index <= weekdays.length; index += 1) {
+      if (weekdays[index] === weekdays[index - 1] + 1) continue
+      const end = weekdays[index - 1]
+      runs.push(start === end ? SHORT_WEEKDAYS[start - 1] : `${SHORT_WEEKDAYS[start - 1]}–${SHORT_WEEKDAYS[end - 1]}`)
+      start = weekdays[index]
+    }
+    return `${runs.join(', ')} ${hours}`
+  }).join(' · ')
 }
