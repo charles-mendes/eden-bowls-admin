@@ -600,6 +600,18 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     presentation: null,
     variations: [{ id: 'var-1', name: 'Frango 1kg', sku: 'BOWL-1', active: false }],
   }
+  // Image library (plan-image-library): one BR banner and one BR plan thumbnail, and the image prod-1 links to.
+  const library = {
+    assets: [
+      { id: 41, kind: 'banner', market: 'BR', url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', originalFilename: 'receita-frango-pt.png', mimeType: 'image/webp', width: 1024, height: 636, bytes: 120000, createdAt: '2026-10-28T10:00:00.000Z', archivedAt: null as string | null, archived: false },
+      { id: 21, kind: 'plan', market: 'BR', url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', originalFilename: 'adulto-frango_400.png', mimeType: 'image/webp', width: 400, height: 400, bytes: 41000, createdAt: '2026-10-28T10:00:00.000Z', archivedAt: null as string | null, archived: false },
+    ],
+    links: { banner: null as number | null, plan: null as number | null },
+  }
+  const mediaView = (asset: (typeof library.assets)[number]) => ({
+    ...asset,
+    usedBy: library.links[asset.kind as 'banner' | 'plan'] === asset.id ? [{ productId: 'prod-1', key: 'turkey', name: 'Frango', market: 'BR' }] : [],
+  })
   const detailWithContent = () => ({
     ...catalog.detail,
     content: {
@@ -609,7 +621,9 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       flavorAliases: '',
       shortLabel: '',
       imageUrl: recipeContent.imageUrl,
-      planImageUrl: null,
+      imageAssetId: recipeContent.imageAssetId ?? null,
+      planImageUrl: recipeContent.planImageUrl ?? null,
+      planImageAssetId: recipeContent.planImageAssetId ?? null,
       labelStatus: recipeContent.labelStatus,
       labelMissing: recipeContent.labelMissing,
       presentationReady: Boolean(recipeContent.presentation),
@@ -813,14 +827,61 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/image$/.test(path) && method === 'PUT') {
-      recipeContent = { ...recipeContent, imageUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', imageUpdatedAt: '2026-10-23T12:00:00.000Z' }
-      await fulfillJson(route, recipeContent)
+    if (path === '/api/v1/admin/media' && method === 'GET') {
+      const market = url.searchParams.get('market') || 'BR'
+      const kind = url.searchParams.get('kind') || 'plan'
+      const archived = url.searchParams.get('archived') === 'true'
+      await fulfillJson(route, {
+        market,
+        items: library.assets.filter((asset) => asset.market === market && asset.kind === kind && asset.archived === archived).map(mediaView),
+      })
       return
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/image$/.test(path) && method === 'DELETE') {
-      recipeContent = { ...recipeContent, imageUrl: null }
+    if (path === '/api/v1/admin/media' && method === 'POST') {
+      const id = Math.max(...library.assets.map((asset) => asset.id)) + 1
+      const kind = body?.kind === 'banner' ? 'banner' : 'plan'
+      const asset = {
+        id, kind, market: String(body?.market ?? 'BR'), url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', originalFilename: String(body?.originalFilename ?? ''),
+        mimeType: 'image/webp', width: kind === 'banner' ? 1024 : 400, height: kind === 'banner' ? 636 : 400, bytes: 1, createdAt: '2026-10-28T12:00:00.000Z', archivedAt: null, archived: false,
+      }
+      library.assets = [asset, ...library.assets]
+      await fulfillJson(route, { ...mediaView(asset), duplicate: false }, 201)
+      return
+    }
+
+    if (/^\/api\/v1\/admin\/media\/[^/]+\/(archive|restore)$/.test(path) && method === 'POST') {
+      const [, , , , , id, action] = path.split('/')
+      const asset = library.assets.find((item) => item.id === Number(id))
+      if (!asset) {
+        await fulfillJson(route, { message: 'Library image not found.' }, 404)
+        return
+      }
+      asset.archived = action === 'archive'
+      asset.archivedAt = asset.archived ? '2026-10-28T12:00:00.000Z' : null
+      await fulfillJson(route, mediaView(asset))
+      return
+    }
+
+    // Banner and plan thumbnail of prod-1: a library image by id, or an upload that goes into the library first.
+    const imageLink = /^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/(image|plan-image)$/.exec(path)
+    if (imageLink && ['PUT', 'DELETE'].includes(method)) {
+      const kind = imageLink[1] === 'image' ? 'banner' : 'plan'
+      let assetId: number | null = null
+      if (method === 'PUT') {
+        assetId = body?.assetId != null ? Number(body.assetId) : Math.max(...library.assets.map((asset) => asset.id)) + 1
+        if (body?.assetId == null) {
+          library.assets = [{
+            id: assetId, kind, market: 'BR', url: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', originalFilename: String(body?.originalFilename ?? ''),
+            mimeType: 'image/webp', width: kind === 'banner' ? 1024 : 400, height: kind === 'banner' ? 636 : 400, bytes: 1, createdAt: '2026-10-28T12:00:00.000Z', archivedAt: null, archived: false,
+          }, ...library.assets]
+        }
+      }
+      library.links[kind] = assetId
+      const url = assetId == null ? null : library.assets.find((asset) => asset.id === assetId)?.url ?? null
+      recipeContent = kind === 'banner'
+        ? { ...recipeContent, imageUrl: url, imageAssetId: assetId, imageUpdatedAt: '2026-10-23T12:00:00.000Z' }
+        : { ...recipeContent, planImageUrl: url, planImageAssetId: assetId, planImageUpdatedAt: '2026-10-23T12:00:00.000Z' }
       await fulfillJson(route, recipeContent)
       return
     }

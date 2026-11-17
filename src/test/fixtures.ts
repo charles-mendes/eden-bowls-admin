@@ -542,8 +542,10 @@ export const recipeContent = {
   name: 'Frango',
   lifeStage: 'adult' as 'adult' | 'puppy' | 'senior',
   imageUrl: null as string | null,
+  imageAssetId: null as number | null,
   imageUpdatedAt: null as string | null,
   planImageUrl: null as string | null,
+  planImageAssetId: null as number | null,
   planImageUpdatedAt: null as string | null,
   label: null as RecipeLabelFixture | null,
   labelUpdatedAt: null as string | null,
@@ -929,3 +931,48 @@ export const upsPickupRequested = {
   shipment_ids: [101, 102],
   requested_by: 'ops@edenbowls.com',
 }
+
+export type MediaAssetFixture = {
+  id: number
+  kind: 'plan' | 'banner'
+  market: string
+  url: string
+  originalFilename: string
+  mimeType: string
+  width: number | null
+  height: number | null
+  bytes: number | null
+  createdAt: string | null
+  archivedAt: string | null
+  archived: boolean
+  usedBy: Array<{ productId: string | null; key: string; name: string; market: string }>
+}
+
+// Image library: plan thumbnails (one active and one archived in BR, one in US) and home banners (one active and
+// one archived in BR, one in US).
+export const mediaAssets: MediaAssetFixture[] = [
+  {
+    id: 21, kind: 'plan', market: 'BR', url: '/recipe-images/plan-br-21.webp', originalFilename: 'adulto-frango_400.png', mimeType: 'image/webp',
+    width: 400, height: 400, bytes: 41000, createdAt: '2026-10-28T10:00:00.000Z', archivedAt: null, archived: false, usedBy: [],
+  },
+  {
+    id: 22, kind: 'plan', market: 'BR', url: '/recipe-images/plan-br-22.webp', originalFilename: 'adulto-frango-antiga_400.png', mimeType: 'image/webp',
+    width: 400, height: 400, bytes: 39000, createdAt: '2026-10-20T10:00:00.000Z', archivedAt: '2026-10-21T10:00:00.000Z', archived: true, usedBy: [],
+  },
+  {
+    id: 31, kind: 'plan', market: 'US', url: '/recipe-images/plan-us-31.webp', originalFilename: 'adult-chicken_400.png', mimeType: 'image/webp',
+    width: 400, height: 400, bytes: 40000, createdAt: '2026-10-28T10:00:00.000Z', archivedAt: null, archived: false, usedBy: [],
+  },
+  {
+    id: 41, kind: 'banner', market: 'BR', url: '/recipe-images/banner-br-41.webp', originalFilename: 'receita-frango-pt.png', mimeType: 'image/webp',
+    width: 1024, height: 636, bytes: 120000, createdAt: '2026-10-28T10:00:00.000Z', archivedAt: null, archived: false, usedBy: [],
+  },
+  {
+    id: 42, kind: 'banner', market: 'BR', url: '/recipe-images/banner-br-42.webp', originalFilename: 'receita-frango-antiga.png', mimeType: 'image/webp',
+    width: 1024, height: 636, bytes: 118000, createdAt: '2026-10-20T10:00:00.000Z', archivedAt: '2026-10-21T10:00:00.000Z', archived: true, usedBy: [],
+  },
+  {
+    id: 51, kind: 'banner', market: 'US', url: '/recipe-images/banner-us-51.webp', originalFilename: 'recipe-chicken.png', mimeType: 'image/webp',
+    width: 1024, height: 636, bytes: 121000, createdAt: '2026-10-28T10:00:00.000Z', archivedAt: null, archived: false, usedBy: [],
+  },
+]

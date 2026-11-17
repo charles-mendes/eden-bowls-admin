@@ -10,8 +10,9 @@ import {
   operatorWriteUser,
   productDetail,
   productsList,
+  mediaAssets as mediaAssetsFixture,
+  type MediaAssetFixture,
   recipeContent as recipeContentFixture,
-  recipeImageUrl,
   promotionCodesList,
   shippingSettings,
   todayOverview,
@@ -165,6 +166,7 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
   catalogPatch?: 'locked'
   recipeContent?: typeof recipeContentFixture
   recipeImage?: 'invalid'
+  mediaAssets?: MediaAssetFixture[]
   contacts?: Array<Record<string, unknown>>
   contactError?: { status: number; code: string; field?: string }
   paidCycles?: Array<Record<string, unknown>>
@@ -208,7 +210,9 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     flavorAliases: recipeContent.flavorAliases ?? '',
     shortLabel: recipeContent.shortLabel ?? '',
     imageUrl: recipeContent.imageUrl,
+    imageAssetId: recipeContent.imageAssetId ?? null,
     planImageUrl: recipeContent.planImageUrl ?? null,
+    planImageAssetId: recipeContent.planImageAssetId ?? null,
     labelStatus: recipeContent.labelStatus,
     labelMissing: recipeContent.labelMissing,
     presentationReady: Boolean(recipeContent.presentation),
@@ -216,6 +220,44 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
     presentation: recipeContent.presentation,
   })
   const detailWithContent = () => (catalogDetail.content === null ? catalogDetail : { ...catalogDetail, content: productContent() })
+
+  // Image library: assets without their usedBy, and the image each product links to, per kind.
+  let mediaAssets = (options.mediaAssets ?? mediaAssetsFixture).map((item) => {
+    const asset: Omit<MediaAssetFixture, 'usedBy'> & { usedBy?: unknown } = { ...item }
+    delete asset.usedBy
+    return asset as Omit<MediaAssetFixture, 'usedBy'>
+  })
+  const mediaBytes = new Map<number, string>()
+  const links = { plan: new Map<string, number>(), banner: new Map<string, number>() }
+  if (recipeContent.planImageAssetId != null) links.plan.set(recipeContent.productId, recipeContent.planImageAssetId)
+  if (recipeContent.imageAssetId != null) links.banner.set(recipeContent.productId, recipeContent.imageAssetId)
+  const productOf = (productId: string) => catalogItems.find((item) => item.id === productId)
+  const mediaView = (asset: (typeof mediaAssets)[number]) => ({
+    ...asset,
+    usedBy: [...links[asset.kind].entries()]
+      .filter(([, id]) => id === asset.id)
+      .map(([productId]) => {
+        const content = productId === recipeContent.productId ? { code: recipeContent.flavorSlug, name: recipeContent.name } : productOf(productId)?.content
+        return { productId, key: content?.code ?? productId, name: content?.name ?? productId, market: asset.market }
+      }),
+  })
+  const addMediaAsset = (kind: MediaAssetFixture['kind'], market: string, originalFilename: string, imageBase64: string) => {
+    const known = mediaAssets.find((asset) => asset.kind === kind && asset.market === market && mediaBytes.get(asset.id) === imageBase64)
+    if (known) {
+      known.archived = false
+      known.archivedAt = null
+      return { asset: known, duplicate: true }
+    }
+    const id = Math.max(100, ...mediaAssets.map((asset) => asset.id)) + 1
+    const [width, height] = kind === 'banner' ? [1024, 636] : [400, 400]
+    const asset = {
+      id, kind, market, url: `/recipe-images/${kind}-${market.toLowerCase()}-${id}.webp`, originalFilename, mimeType: 'image/webp',
+      width, height, bytes: 40000, createdAt: '2026-10-28T12:00:00.000Z', archivedAt: null, archived: false,
+    }
+    mediaAssets = [asset, ...mediaAssets]
+    mediaBytes.set(id, imageBase64)
+    return { asset, duplicate: false }
+  }
 
   const queueItems = (options.productionQueue ?? [{
     ...productionQueueItem,
@@ -453,34 +495,89 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
       return jsonResponse(detailWithContent())
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/image$/.test(path) && method === 'PUT') {
-      if (options.recipeImage === 'invalid') {
-        return jsonResponse({
-          message: 'Image must be 1024 x 636 pixels, or close enough to be resized to it.',
-          details: { code: 'recipe_image_invalid', reason: 'dimensions', width: 800, height: 800, expectedWidth: 1024, expectedHeight: 636, maxUpscale: 1.25, maxCrop: 0.15 },
-        }, 422)
-      }
-      recipeContent = { ...recipeContent, imageUrl: recipeImageUrl, imageUpdatedAt: '2026-10-23T12:00:00.000Z' }
-      return jsonResponse(recipeContent)
+    if (path === '/api/v1/admin/media' && method === 'GET') {
+      const market = url.searchParams.get('market') || 'BR'
+      const archived = url.searchParams.get('archived') === 'true'
+      const kind = url.searchParams.get('kind') || 'plan'
+      return jsonResponse({
+        market,
+        items: mediaAssets.filter((asset) => asset.kind === kind && asset.market === market && asset.archived === archived).map(mediaView),
+      })
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/image$/.test(path) && method === 'DELETE') {
-      const active = recipeContent.variations.filter((item) => item.active)
-      if (active.length) {
-        return jsonResponse({
-          message: 'The image of a product with an active variation cannot be removed.',
-          details: { code: 'recipe_content_in_use', activeVariations: active.map((item) => item.id) },
-        }, 409)
-      }
-      recipeContent = { ...recipeContent, imageUrl: null }
-      return jsonResponse(recipeContent)
+    if (path === '/api/v1/admin/media' && method === 'POST') {
+      const kind = body?.kind === 'banner' ? 'banner' : 'plan'
+      const { asset, duplicate } = addMediaAsset(kind, String(body?.market ?? 'BR'), String(body?.originalFilename ?? ''), String(body?.imageBase64 ?? ''))
+      return jsonResponse({ ...mediaView(asset), duplicate }, duplicate ? 200 : 201)
     }
 
-    if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/plan-image$/.test(path) && ['PUT', 'DELETE'].includes(method)) {
-      recipeContent = method === 'PUT'
-        ? { ...recipeContent, planImageUrl: '/recipe-images/recipe-br-turkey-plan-1.webp', planImageUpdatedAt: '2026-10-27T12:00:00.000Z' }
-        : { ...recipeContent, planImageUrl: null }
-      return jsonResponse(recipeContent)
+    if (/^\/api\/v1\/admin\/media\/[^/]+\/(archive|restore)$/.test(path) && method === 'POST') {
+      const [, , , , , id, action] = path.split('/')
+      const asset = mediaAssets.find((item) => item.id === Number(id))
+      if (!asset) return jsonResponse({ message: 'Library image not found.' }, 404)
+      const usedBy = mediaView(asset).usedBy
+      if (action === 'archive' && usedBy.length > 0) {
+        return jsonResponse({ message: 'A library image in use cannot be archived.', details: { code: 'media_asset_in_use', usedBy } }, 409)
+      }
+      asset.archived = action === 'archive'
+      asset.archivedAt = asset.archived ? '2026-10-28T12:00:00.000Z' : null
+      return jsonResponse(mediaView(asset))
+    }
+
+    // Banner (`/image`) and plan thumbnail (`/plan-image`) of a product: link a library image by id, or upload one
+    // into the library first; DELETE only unlinks. The banner keeps the 409 of a product with an active variation.
+    const linkMatch = /^\/api\/v1\/admin\/catalog\/products\/([^/]+)\/content\/(image|plan-image)$/.exec(path)
+    if (linkMatch && ['PUT', 'DELETE'].includes(method)) {
+      const productId = decodeURIComponent(linkMatch[1])
+      const kind = linkMatch[2] === 'image' ? 'banner' : 'plan'
+      const own = productId === recipeContent.productId
+      const other = productOf(productId)
+      const market = own ? recipeContent.market : other?.planCountry ?? recipeContent.market
+      let asset: (typeof mediaAssets)[number] | null = null
+      if (method === 'PUT') {
+        if (kind === 'banner' && options.recipeImage === 'invalid' && body?.assetId == null) {
+          return jsonResponse({
+            message: 'Image must be 1024 x 636 pixels, or close enough to be resized to it.',
+            details: { code: 'recipe_image_invalid', reason: 'dimensions', width: 800, height: 800, expectedWidth: 1024, expectedHeight: 636, maxUpscale: 1.25, maxCrop: 0.15 },
+          }, 422)
+        }
+        if (body?.assetId != null) {
+          asset = mediaAssets.find((item) => item.id === Number(body.assetId)) ?? null
+          if (!asset) return jsonResponse({ message: 'Library image not found.' }, 404)
+          if (asset.kind !== kind || asset.market !== market) {
+            const reason = asset.kind !== kind ? 'kind' : 'market'
+            return jsonResponse({ message: 'Wrong library image.', details: { code: 'media_asset_invalid', reason, assetKind: asset.kind, assetMarket: asset.market } }, 422)
+          }
+          if (asset.archived) {
+            return jsonResponse({ message: 'Archived.', details: { code: 'media_asset_archived' } }, 409)
+          }
+        } else {
+          asset = addMediaAsset(kind, market, String(body?.originalFilename ?? `${productId}-${kind}`), String(body?.imageBase64 ?? '')).asset
+        }
+        links[kind].set(productId, asset.id)
+      } else {
+        const active = own ? recipeContent.variations.filter((item) => item.active) : []
+        if (kind === 'banner' && active.length) {
+          return jsonResponse({
+            message: 'The image of a product with an active variation cannot be removed.',
+            details: { code: 'recipe_content_in_use', activeVariations: active.map((item) => item.id) },
+          }, 409)
+        }
+        links[kind].delete(productId)
+      }
+      const linked = kind === 'banner'
+        ? { imageUrl: asset ? asset.url : null, imageAssetId: asset ? asset.id : null, imageUpdatedAt: '2026-10-28T12:00:00.000Z' }
+        : { planImageUrl: asset ? asset.url : null, planImageAssetId: asset ? asset.id : null, planImageUpdatedAt: '2026-10-28T12:00:00.000Z' }
+      if (own) {
+        recipeContent = { ...recipeContent, ...linked }
+        return jsonResponse(recipeContent)
+      }
+      if (other?.content) {
+        const content = other.content as typeof other.content & Record<string, unknown>
+        if ('imageUrl' in linked) content.imageUrl = linked.imageUrl ?? null
+        if ('planImageUrl' in linked) content.planImageUrl = linked.planImageUrl ?? null
+      }
+      return jsonResponse({ ...recipeContent, productId, market, flavorSlug: other?.content?.code ?? productId, name: other?.content?.name ?? productId, ...linked })
     }
 
     if (/^\/api\/v1\/admin\/catalog\/products\/[^/]+\/content\/presentation$/.test(path) && method === 'PUT') {

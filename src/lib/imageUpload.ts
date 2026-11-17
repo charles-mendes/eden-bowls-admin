@@ -21,8 +21,9 @@ export const RECIPE_IMAGE_MAX_CROP = 0.15
 export const RECIPE_IMAGE_MIN_WIDTH = Math.ceil(RECIPE_IMAGE_WIDTH / RECIPE_IMAGE_MAX_UPSCALE)
 export const RECIPE_IMAGE_MIN_HEIGHT = Math.ceil(RECIPE_IMAGE_HEIGHT / RECIPE_IMAGE_MAX_UPSCALE)
 export const MAX_RECIPE_IMAGE_BYTES = 5 * 1024 * 1024
-// Square package thumbnail of the plan flavor picker: 400 px for retina screens, or 200 px.
-export const RECIPE_PLAN_IMAGE_SIZES = [400, 200]
+// Square package thumbnail of the plan flavor picker (plan-image-library): 400 px only, which covers retina
+// screens at the card size.
+export const RECIPE_PLAN_IMAGE_SIZES = [400]
 
 export function imageMimeType(file: File) {
   return IMAGE_MIME_TYPES[file.type] ?? null

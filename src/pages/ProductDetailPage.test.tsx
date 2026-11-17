@@ -199,8 +199,8 @@ describe('ProductDetailPage', () => {
       expect(screen.queryByRole('button', { name: 'Salvar rótulo' })).not.toBeInTheDocument()
       await openTab(user, 'Imagens')
       expect(await screen.findByRole('heading', { name: 'Imagem da tela inicial' })).toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Remover imagem' })).not.toBeInTheDocument()
-      expect(screen.queryByLabelText('Escolher imagem')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Desvincular imagem' })).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Enviar nova imagem')).not.toBeInTheDocument()
       await openTab(user, 'Apresentação')
       expect(screen.queryByRole('button', { name: 'Salvar apresentação' })).not.toBeInTheDocument()
     })
@@ -358,7 +358,7 @@ describe('ProductDetailPage', () => {
       renderDetail()
 
       await openTab(user, 'Imagens')
-      await user.click(await screen.findByRole('button', { name: 'Remover imagem' }))
+      await user.click(await screen.findByRole('button', { name: 'Desvincular imagem' }))
 
       expect(await screen.findByText('A imagem não pode ser removida enquanto houver variação ativa deste produto. Desative as variações antes.')).toBeInTheDocument()
       expect(screen.getByRole('tab', { name: 'Imagens' })).toHaveAttribute('aria-selected', 'true')
@@ -376,7 +376,7 @@ describe('ProductDetailPage', () => {
       await user.click(await screen.findByRole('button', { name: 'Abrir foto de Frango 1kg' }))
       expect(screen.getByRole('tab', { name: 'Imagens' })).toHaveAttribute('aria-selected', 'true')
 
-      await user.upload(await screen.findByLabelText('Escolher imagem'), new File(['png'], 'banner.png', { type: 'image/png' }))
+      await user.upload(await screen.findByLabelText('Enviar nova imagem'), new File(['png'], 'banner.png', { type: 'image/png' }))
       await user.click(await screen.findByRole('button', { name: 'Salvar imagem' }))
       await waitFor(() => expect(findCall(calls, 'PUT', '/admin/catalog/products/prod-1/content/image')).toBeTruthy())
       await waitFor(() => expect(calls.filter((call) => call.method === 'GET' && call.path === PRODUCT_PATH).length).toBeGreaterThan(1))

@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
-import { RecipeImageSection } from './RecipeImageSection'
 import { RecipeLabelSection } from './RecipeLabelSection'
-import { RecipePlanImageSection } from './RecipePlanImageSection'
+import { RecipeLibraryImageSection } from './RecipeLibraryImageSection'
 import { RecipePresentationSection } from './RecipePresentationSection'
 import type { RecipeContent } from '../lib/recipeContent'
 
@@ -52,8 +51,8 @@ export function RecipeContentSections({
   return (
     <>
       {shows('presentation') ? <RecipePresentationSection {...shared} onDirtyChange={handlers.presentation} /> : null}
-      {shows('image') ? <RecipeImageSection {...shared} onDirtyChange={handlers.image} /> : null}
-      {shows('planImage') ? <RecipePlanImageSection {...shared} onDirtyChange={handlers.planImage} /> : null}
+      {shows('image') ? <RecipeLibraryImageSection kind="banner" {...shared} onDirtyChange={handlers.image} /> : null}
+      {shows('planImage') ? <RecipeLibraryImageSection kind="plan" {...shared} onDirtyChange={handlers.planImage} /> : null}
       {shows('label') ? <RecipeLabelSection {...shared} onDirtyChange={handlers.label} /> : null}
     </>
   )
