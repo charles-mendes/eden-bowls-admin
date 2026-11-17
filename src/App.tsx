@@ -10,6 +10,7 @@ import { ReportsPage } from './pages/ReportsPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
 import { PlanSettingsPage } from './pages/PlanSettingsPage'
+import { MediaLibraryPage } from './pages/MediaLibraryPage'
 import { RecipeRedirectPage } from './pages/RecipeRedirectPage'
 import { OnboardingPage } from './pages/OnboardingPage'
 import { ProductionQueuePage } from './pages/ProductionQueuePage'
@@ -70,6 +71,7 @@ function App() {
           <Route path="/catalog/products" element={<ProductsPage />} />
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
           <Route path="/catalog/plan" element={<PlanSettingsPage />} />
+          <Route path="/catalog/media" element={<MediaLibraryPage />} />
           <Route path="/catalog/recipes" element={<Navigate to="/catalog/products" replace />} />
           <Route path="/catalog/recipes/:market/:recipeKey" element={<RecipeRedirectPage />} />
           <Route path="/onboarding/sessions" element={<OnboardingPage />} />

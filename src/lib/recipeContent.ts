@@ -75,7 +75,11 @@ export type RecipeContent = {
   lifeStage: LifeStage
   imageUrl: string | null
   imageUpdatedAt: string | null
+  /** Library image the banner links to (plan-image-library). */
+  imageAssetId?: number | null
   planImageUrl?: string | null
+  /** Library image the plan thumbnail links to (plan-image-library). */
+  planImageAssetId?: number | null
   planImageUpdatedAt?: string | null
   label: Partial<RecipeLabel> | null
   labelUpdatedAt: string | null

@@ -81,8 +81,8 @@ test.describe('Admin readonly', () => {
 
     await page.getByRole('tab', { name: 'Imagens' }).click()
     await expect(page.getByRole('heading', { name: 'Imagem da tela inicial' })).toBeVisible()
-    await expect(page.getByText('Escolher imagem')).toHaveCount(0)
-    await expect(page.getByRole('button', { name: /Salvar imagem|Remover imagem/ })).toHaveCount(0)
+    await expect(page.getByText(/Enviar nova|Escolher imagem da biblioteca|Escolher da biblioteca/)).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /Salvar imagem|Desvincular imagem|Salvar miniatura|Desvincular miniatura/ })).toHaveCount(0)
     await page.getByRole('tab', { name: 'Rótulo' }).click()
     await expect(page.getByRole('heading', { name: 'Rótulo' })).toBeVisible()
     await expect(page.getByRole('button', { name: /Salvar rótulo|Adicionar/ })).toHaveCount(0)

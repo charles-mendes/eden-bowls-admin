@@ -98,7 +98,7 @@ describe('RecipeContentSections unsaved state', () => {
     installAdminFetchMock(operatorWriteUser)
     const { lastDirty } = renderSections()
 
-    await user.upload(screen.getByLabelText('Escolher imagem'), png('banner.png', 1024, 636))
+    await user.upload(screen.getByLabelText('Enviar nova imagem'), png('banner.png', 1024, 636))
     await screen.findByRole('img', { name: 'Prévia da nova imagem' })
     expect(lastDirty()).toBe(true)
 
@@ -111,7 +111,7 @@ describe('RecipeContentSections unsaved state', () => {
     installAdminFetchMock(operatorWriteUser)
     const { lastDirty } = renderSections()
 
-    await user.upload(screen.getByLabelText('Escolher miniatura'), png('pack.png', 400, 400))
+    await user.upload(screen.getByLabelText('Enviar nova'), png('pack.png', 400, 400))
     await screen.findByRole('img', { name: 'Prévia da nova miniatura' })
     expect(lastDirty()).toBe(true)
   })

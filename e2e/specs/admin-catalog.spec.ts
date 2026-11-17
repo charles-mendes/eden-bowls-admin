@@ -170,18 +170,54 @@ test.describe('Admin catalog', () => {
     const panel = page.getByRole('tabpanel')
     await expect(panel.getByRole('heading', { name: 'Imagem da tela inicial' })).toBeVisible()
 
-    await panel.getByLabel('Escolher imagem').setInputFiles({ name: 'pequena.png', mimeType: 'image/png', buffer: solidPng(600, 400) })
+    await panel.getByLabel('Enviar nova imagem').setInputFiles({ name: 'pequena.png', mimeType: 'image/png', buffer: solidPng(600, 400) })
     await expect(panel.getByText('A imagem tem 600 × 400 px e precisa ter 1024 × 636 px')).toBeVisible()
     expect(captured.some((item) => item.method === 'PUT')).toBe(false)
 
-    await panel.getByLabel('Escolher imagem').setInputFiles({ name: 'banner.png', mimeType: 'image/png', buffer: solidPng(1024, 636) })
+    await panel.getByLabel('Enviar nova imagem').setInputFiles({ name: 'banner.png', mimeType: 'image/png', buffer: solidPng(1024, 636) })
     await expect(panel.getByRole('img', { name: 'Prévia da nova imagem' })).toBeVisible()
     await panel.getByRole('button', { name: 'Salvar imagem' }).click()
-    await expect(panel.getByText('Imagem salva. A loja passa a usar esta imagem.')).toBeVisible()
+    await expect(panel.getByText('Imagem salva e guardada na Biblioteca de imagens. A loja passa a usar esta imagem.')).toBeVisible()
     await expect.poll(() => captured.find((item) => item.method === 'PUT')).toEqual(expect.objectContaining({
       path: '/api/v1/admin/catalog/products/prod-1/content/image',
       authorization: 'Bearer e2e-access-token',
       body: expect.objectContaining({ mimeType: 'image/png' }),
+    }))
+  })
+
+  test('links a library banner to the product from the Imagens tab', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/catalog/products/prod-1#imagem', e2eProfiles.operatorWrite)
+
+    const panel = page.getByRole('tabpanel')
+    await panel.getByRole('button', { name: 'Escolher imagem da biblioteca' }).click()
+    const dialog = page.getByRole('dialog', { name: 'Escolher imagem da biblioteca' })
+    await dialog.getByRole('button', { name: 'Usar receita-frango-pt.png' }).click()
+    await expect(panel.getByText('Destaque receita-frango-pt.png vinculado. A loja passa a usar esta imagem.')).toBeVisible()
+    await expect.poll(() => captured.find((item) => item.method === 'PUT')).toEqual(expect.objectContaining({
+      path: '/api/v1/admin/catalog/products/prod-1/content/image',
+      body: { assetId: 41 },
+    }))
+    await expect(panel.getByRole('button', { name: 'Desvincular imagem' })).toBeVisible()
+  })
+
+  test('the image library lists the banners with the product using each and links a plan thumbnail', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/catalog/media', e2eProfiles.operatorWrite)
+
+    await expect(page.getByRole('heading', { name: 'Biblioteca de imagens' })).toBeVisible()
+    await expect(page.getByRole('img', { name: 'receita-frango-pt.png' })).toBeVisible()
+    await page.getByRole('tab', { name: 'Miniaturas' }).click()
+    const card = page.getByRole('listitem').filter({ has: page.getByRole('img', { name: 'adulto-frango_400.png' }) })
+    await card.getByRole('button', { name: 'Vincular a um produto' }).click()
+    await expect(page.getByRole('dialog', { name: 'Vincular a um produto' })).toBeVisible()
+    // The title becomes "Editar vínculo" once the image has a product.
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Produto de BR').selectOption('prod-1')
+    await dialog.getByRole('button', { name: 'Vincular' }).click()
+    await expect(dialog.getByText('Vinculada a Frango (BR).')).toBeVisible()
+    await expect(dialog.getByRole('link', { name: 'Frango' })).toHaveAttribute('href', '/catalog/products/prod-1')
+    await expect.poll(() => captured.find((item) => item.method === 'PUT')).toEqual(expect.objectContaining({
+      path: '/api/v1/admin/catalog/products/prod-1/content/plan-image',
+      body: { assetId: 21 },
     }))
   })
 

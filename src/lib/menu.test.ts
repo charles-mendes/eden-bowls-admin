@@ -103,6 +103,14 @@ describe('admin menu', () => {
     expect(activeMenuHref('/billingx', items)).toBe('')
   })
 
+  it('shows Biblioteca de imagens right after Plano in Loja', () => {
+    for (const role of ['admin', 'operator', 'readonly'] as const) {
+      const hrefs = groupedMenuItems([role], ['catalog.read']).find((group) => group.group === 'Loja')?.items.map((item) => item.href) ?? []
+      expect(hrefs.indexOf('/catalog/media')).toBe(hrefs.indexOf('/catalog/plan') + 1)
+    }
+    expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/catalog/media')
+  })
+
   it('has no Receitas item: recipes are products', () => {
     for (const role of ['admin', 'operator', 'readonly'] as const) {
       expect(visibleMenuItems([role]).map((item) => item.href)).not.toContain('/catalog/recipes')
