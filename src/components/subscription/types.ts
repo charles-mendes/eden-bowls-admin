@@ -37,6 +37,11 @@ export type SubscriptionDetail = {
   // customer profile is outside the operator's market.
   delivery_instructions?: string | null
   delivery_instructions_source?: DeliveryInstructionsSource
+  // customer-shipping-charge: true when a US subscription was checked out with free shipping, false when charged,
+  // null for BR, for subscriptions before the rule, and on an older API (absent).
+  shipping_waived?: boolean | null
+  // The quote the company pays for a free US subscription; null when charged or unknown.
+  company_shipping_cost?: { amount: number; currency: string; source: 'ups' | 'fixed' | 'fallback' | null } | null
 }
 
 // GET /admin/billing/subscriptions/:id/shipments

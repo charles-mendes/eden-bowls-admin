@@ -145,3 +145,16 @@ export const UPS_SHIPMENT_STATUS: Record<string, { label: string; badge: string 
   voided: { label: 'Anulada', badge: 'badge-error' },
   delivered: { label: 'Entregue', badge: 'badge-success' },
 }
+
+// customer-shipping-charge: the quote the company pays for a free US subscription.
+export type CompanyShippingCost = { amount: number; currency: string; source: 'ups' | 'fixed' | 'fallback' | null } | null
+
+const COST_SOURCE: Record<string, string> = { ups: 'UPS', fixed: 'fixa', fallback: 'contingência' }
+
+// "Frete grátis para o cliente, pago pela empresa: US$ 18.40 (UPS)"; without the amount when the API has none.
+export function companyPaidShippingText(cost: CompanyShippingCost) {
+  const base = 'Frete grátis para o cliente, pago pela empresa'
+  if (!cost) return base
+  const source = cost.source ? ` (${COST_SOURCE[cost.source] ?? cost.source})` : ''
+  return `${base}: US$ ${Number(cost.amount).toFixed(2)}${source}`
+}

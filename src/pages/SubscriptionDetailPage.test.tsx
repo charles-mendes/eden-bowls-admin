@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { companyPaidShippingText } from '../lib/upsLabels'
 import { SubscriptionDetailPage } from './SubscriptionDetailPage'
 import { addressIssue, adminUser, checkoutDetail, customerContact, operatorUsWriteUser, operatorWriteUser, readonlyUser } from '../test/fixtures'
 import { customerInvoice, installAdminFetchMock, nfeSummary } from '../test/mockAdminFetch'
@@ -191,6 +192,38 @@ describe('SubscriptionDetailPage', () => {
     await user.click(await within(ups).findByRole('button', { name: 'Gerar etiqueta UPS' }))
     expect(await within(ups).findByText(/Conta e país do endereço não combinam: esta assinatura não sai por nenhum mercado/)).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '1Z999AA10123456784' })).not.toBeInTheDocument()
+  })
+
+  it('Free US subscription: the UPS section says the company pays the shipping, with its cost', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUsWriteUser, {
+      subscriptionMarket: 'US',
+      paidCycles: [cycle('in_test_1')],
+      subscriptionOverrides: { shipping_waived: true, company_shipping_cost: { amount: 18.4, currency: 'USD', source: 'ups' } },
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const condition = await within(await sectionOf('Envio UPS')).findByLabelText('Condição do frete')
+    expect(condition).toHaveTextContent('Frete grátis para o cliente, pago pela empresa: US$ 18.40 (UPS)')
+  })
+
+  it('Charged US subscription: no free shipping line, the quoted freight stays as before', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUsWriteUser, {
+      subscriptionMarket: 'US',
+      paidCycles: [cycle('in_test_1')],
+      subscriptionOverrides: { shipping_waived: false, company_shipping_cost: null },
+    })
+    renderAuthedPage(<SubscriptionDetailPage />, '/billing/subscriptions/sub-row-1', '/billing/subscriptions/:id')
+
+    const ups = await sectionOf('Envio UPS')
+    await within(ups).findByRole('button', { name: 'Gerar etiqueta UPS' })
+    expect(within(ups).queryByLabelText('Condição do frete')).not.toBeInTheDocument()
+  })
+
+  it('a free US subscription without the cost from the API shows the line without an amount', () => {
+    expect(companyPaidShippingText(null)).toBe('Frete grátis para o cliente, pago pela empresa')
+    expect(companyPaidShippingText({ amount: 12.9, currency: 'USD', source: 'fallback' })).toBe('Frete grátis para o cliente, pago pela empresa: US$ 12.90 (contingência)')
   })
 
   it('names a market exception among the label issues', async () => {

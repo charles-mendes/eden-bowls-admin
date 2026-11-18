@@ -13,10 +13,12 @@ function initialsOf(email: string | null) {
 
 // The audit log of a nutrition settings tab: who changed what and when, newest first.
 // `describe` turns an event into its title and lines; by default, the nutrition events.
-export function NutritionEditLog({ events, empty, describe = describeAuditEvent }: {
+// `timeZone` shows the times in a market's zone; without it, in the browser's.
+export function NutritionEditLog({ events, empty, describe = describeAuditEvent, timeZone }: {
   events: NutritionAuditEvent[] | undefined
   empty: string
   describe?: (event: NutritionAuditEvent) => { title: string; details: string[] }
+  timeZone?: string
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -41,7 +43,7 @@ export function NutritionEditLog({ events, empty, describe = describeAuditEvent 
                 <p className="edit-log-meta">
                   <span className="edit-log-actor">{event.actorEmail ?? (event.actorUserId === null ? 'Sistema' : 'Usuário removido')}</span>
                   <span aria-hidden="true"> · </span>
-                  <time dateTime={event.createdAt}>{formatDate(event.createdAt)}</time>
+                  <time dateTime={event.createdAt}>{timeZone ? formatDate(event.createdAt, timeZone) : formatDate(event.createdAt)}</time>
                 </p>
                 {details.length ? (
                   <ul className="edit-log-details">

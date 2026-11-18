@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ShippingPage } from './ShippingPage'
-import { adminUser, operatorUsUser, operatorWriteUser, readonlyUser, shippingSettings } from '../test/fixtures'
+import { adminUser, jsonResponse, operatorUsUser, operatorUsWriteUser, operatorWriteUser, readonlyUser, shippingSettings } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
 
@@ -542,4 +542,147 @@ describe('ShippingPage', () => {
     expect(screen.getByRole('tab', { name: /Sede/ })).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByRole('article', { name: 'Sede Brasil' })).toBeInTheDocument()
   })
+
+  describe('US shipping charge switch (customer-shipping-charge)', () => {
+    type ChargeEvent = { enabled: boolean; actor_email: string | null; changed_at: string }
+    const withCharge = (charge: boolean, history: ChargeEvent[] = []) => ({
+      ...shippingSettings,
+      data: { settings: { ...shippingSettings.data.settings, us: { ...shippingSettings.data.settings.us, charge_shipping: charge, charge_shipping_history: history } } },
+    })
+    const twoChanges: ChargeEvent[] = [
+      { enabled: false, actor_email: 'rui@edenbowls.com', changed_at: '2026-11-19T14:30:00.000Z' },
+      { enabled: true, actor_email: 'ana@edenbowls.com', changed_at: '2026-11-18T15:00:00.000Z' },
+    ]
+    const historyItems = () => within(screen.getByRole('list', { name: 'Histórico de edições' })).getAllByRole('listitem')
+
+    afterEach(() => vi.restoreAllMocks())
+
+    it('US operator turns charges on: confirms, saves and sees the switch on with the new event', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const savedEvent: ChargeEvent = { enabled: true, actor_email: 'ops.us.write@edenbowls.com', changed_at: '2026-11-18T15:00:00.000Z' }
+      const { calls } = installAdminFetchMock(operatorUsWriteUser, {
+        shippingSettings: withCharge(false),
+        routes: (call) => (call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings'
+          ? jsonResponse(withCharge(true, [savedEvent]))
+          : undefined),
+      })
+      renderAuthedPage(<ShippingPage />, '/config/shipping')
+
+      const toggle = await screen.findByRole('switch', { name: /Cobrar frete do cliente/ })
+      expect(toggle).not.toBeChecked()
+      expect(toggle).toHaveAccessibleDescription(expect.stringContaining('valor original riscado e FREE'))
+      expect(screen.getByText('Nenhuma alteração ainda')).toBeInTheDocument()
+
+      await user.click(toggle)
+      const dialog = await screen.findByRole('dialog', { name: 'Ligar a cobrança do frete?' })
+      expect(within(dialog).getByText(/vale só para checkouts novos/)).toBeInTheDocument()
+      await user.click(within(dialog).getByRole('button', { name: 'Ligar cobrança' }))
+      expect(toggle).toBeChecked()
+
+      await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+      await screen.findByText('Regras dos Estados Unidos salvas.')
+      const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
+      expect(put?.body).toMatchObject({ us: { charge_shipping: true } })
+      expect((put?.body as { us: Record<string, unknown> }).us).not.toHaveProperty('charge_shipping_history')
+      expect(screen.getByRole('switch', { name: /Cobrar frete do cliente/ })).toBeChecked()
+      expect(historyItems()[0]).toHaveTextContent('Cobrança ligada')
+      expect(historyItems()[0]).toHaveTextContent('ops.us.write@edenbowls.com')
+    })
+
+    it('Confirmation cancelled: no request and the switch keeps its saved value', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorUsWriteUser, { shippingSettings: withCharge(false) })
+      renderAuthedPage(<ShippingPage />, '/config/shipping')
+
+      const toggle = await screen.findByRole('switch', { name: /Cobrar frete do cliente/ })
+      await user.click(toggle)
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancelar' }))
+
+      expect(toggle).not.toBeChecked()
+      expect(screen.queryByText('Alterações não salvas.')).not.toBeInTheDocument()
+      expect(calls.some((call) => call.method === 'PUT')).toBe(false)
+    })
+
+    it('Read-only operator: the switch is disabled and the history is shown', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorUsUser, { shippingSettings: withCharge(false, twoChanges) })
+      renderAuthedPage(<ShippingPage />, '/config/shipping')
+
+      expect(await screen.findByRole('switch', { name: /Cobrar frete do cliente/ })).toBeDisabled()
+      expect(historyItems()).toHaveLength(2)
+    })
+
+    it('Two changes: newest first, with emails and labels', async () => {
+      seedAuth()
+      installAdminFetchMock(adminUser, { shippingSettings: withCharge(false, twoChanges) })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?mercado=us', '/config/shipping')
+
+      await screen.findByRole('switch', { name: /Cobrar frete do cliente/ })
+      const [first, second] = historyItems()
+      expect(first).toHaveTextContent('Cobrança desligada')
+      expect(first).toHaveTextContent('rui@edenbowls.com')
+      expect(second).toHaveTextContent('Cobrança ligada')
+      expect(second).toHaveTextContent('ana@edenbowls.com')
+    })
+
+    it('Browser in Brazil: the history shows New York time', async () => {
+      const resolved = Intl.DateTimeFormat.prototype.resolvedOptions
+      vi.spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions').mockImplementation(function (this: Intl.DateTimeFormat) {
+        return { ...resolved.call(this), timeZone: 'America/Sao_Paulo' }
+      })
+      seedAuth()
+      installAdminFetchMock(adminUser, { shippingSettings: withCharge(true, [twoChanges[1]]) })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?mercado=us', '/config/shipping')
+
+      await screen.findByRole('switch', { name: /Cobrar frete do cliente/ })
+      expect(historyItems()[0]).toHaveTextContent('18 de nov. de 2026, 10:00')
+      expect(historyItems()[0]).not.toHaveTextContent('12:00')
+    })
+
+    it('Empty history', async () => {
+      seedAuth()
+      installAdminFetchMock(adminUser, { shippingSettings: withCharge(false) })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?mercado=us', '/config/shipping')
+
+      expect(await screen.findByText('Nenhuma alteração ainda')).toBeInTheDocument()
+    })
+
+    it('a refused switch shows the reason and keeps the typed value', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(adminUser, {
+        shippingSettings: withCharge(false),
+        shippingSettingsSaveError: { status: 422, code: 'invalid_charge_shipping', message: 'US charge_shipping must be true or false.' },
+      })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?mercado=us', '/config/shipping')
+
+      const toggle = await screen.findByRole('switch', { name: /Cobrar frete do cliente/ })
+      await user.click(toggle)
+      await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Ligar cobrança' }))
+      await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+
+      expect(await screen.findByText('Não foi possível salvar a cobrança de frete.')).toBeInTheDocument()
+      expect(toggle).toBeChecked()
+    })
+
+    it.each([
+      [false, 'FREE'],
+      [true, 'US$ 18.45'],
+    ])('the US simulation with charges %s shows the quote and what the customer pays (%s)', async (charge, pays) => {
+      const user = userEvent.setup()
+      seedAuth()
+      installAdminFetchMock(adminUser, { shippingSettings: withCharge(charge) })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?mercado=us&aba=simulador', '/config/shipping')
+
+      await user.type(await screen.findByLabelText(/ZIP code/), '94105')
+      await user.click(screen.getByRole('button', { name: /Simular/ }))
+
+      const list = await screen.findByLabelText('Cobrança do cliente')
+      expect(list).toHaveTextContent('Valor do freteUS$ 18.45')
+      expect(list).toHaveTextContent(`Cliente paga${pays}`)
+    })
+  })
 })
+

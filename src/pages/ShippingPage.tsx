@@ -4,6 +4,7 @@ import { Dialog } from '../components/Dialog'
 import { HelpLabel } from '../components/HelpLabel'
 import { helpText } from '../components/HelpText'
 import { InfoHint } from '../components/InfoHint'
+import { NutritionEditLog } from '../components/NutritionEditLog'
 import { HeadquartersCard } from '../components/shipping/HeadquartersCard'
 import { PageFrame } from '../components/PageFrame'
 import { Section } from '../components/Section'
@@ -14,7 +15,10 @@ import {
   BR_DELIVERY_DAYS,
   SHIPPING_BOX_KEYS,
   UPS_SERVICES,
+  US_MARKET_TIME_ZONE,
   brDeliveryLabel,
+  chargeHistoryEvents,
+  describeChargeEvent,
   brHeadquartersReady,
   emptySettings,
   formatMoney,
@@ -40,7 +44,18 @@ type BrQuote = {
 
 type FixedQuote = { shipping: number; label?: string; carrier?: string; delivery?: string }
 
-type UsTestResult = { quote_mode: 'fixed' | 'ups'; fixed: FixedQuote | null; ups: UpsSimulation }
+type UsTestResult = {
+  quote_mode: 'fixed' | 'ups'
+  fixed: FixedQuote | null
+  ups: UpsSimulation
+  // What the customer would pay for the simulated quote (customer-shipping-charge).
+  original_amount?: number | null
+  charged_amount?: number | null
+  charge_enabled?: boolean
+}
+
+// The panel's US amount, as the client reads it: "US$ 18.40".
+const usd = (value: number) => `US$ ${value.toFixed(2)}`
 
 const STEP_ICON: Record<string, string> = { ok: '✓', error: '✕', warning: '!', skipped: '–' }
 
@@ -151,6 +166,9 @@ function saveRulesError(error: unknown) {
   if (error instanceof ApiRequestError && error.code === 'invalid_dry_ice_kg') {
     return 'Gelo seco por caixa deve ficar entre 0,1 e 2,5 kg, com uma casa decimal, e não pode passar do peso da caixa.'
   }
+  if (error instanceof ApiRequestError && error.code === 'invalid_charge_shipping') {
+    return 'Não foi possível salvar a cobrança de frete.'
+  }
   if (error instanceof ApiRequestError && error.code === 'invalid_shipping_box') {
     return 'Confira as caixas: medidas acima de 0, peso vazio de 0,1 a 10 kg e a Starter com menos pacotes que a mensal.'
   }
@@ -205,6 +223,7 @@ function rulesOf(settings: ShippingSettings, market: 'BR' | 'US') {
     boxes: us.boxes,
     allowed_service_codes: us.allowed_service_codes,
     max_transit_days: us.max_transit_days,
+    charge_shipping: us.charge_shipping,
   }
 }
 
@@ -235,6 +254,8 @@ export function ShippingPage() {
   const [error, setError] = useState('')
   const [pendingMarket, setPendingMarket] = useState<'BR' | 'US' | null>(null)
   const [saving, setSaving] = useState(false)
+  // The switch value waiting for the operator's confirmation; nothing changes until it is confirmed.
+  const [pendingCharge, setPendingCharge] = useState<boolean | null>(null)
 
   const dirty = loaded && JSON.stringify(rulesOf(settings, market)) !== JSON.stringify(rulesOf(saved, market))
   const savedHqReady = headquartersReady(saved, market)
@@ -468,6 +489,25 @@ export function ShippingPage() {
                   </label>
                 </div>
               </Section>
+              <Section title="Cobrança do frete" description="Se o cliente dos EUA paga o frete ou se a empresa paga.">
+                <Toggle
+                  checked={us.charge_shipping}
+                  disabled={!canWrite}
+                  onChange={(value) => setPendingCharge(value)}
+                  label="Cobrar frete do cliente"
+                  description={us.charge_shipping
+                    ? 'Ligado: o cliente paga o frete cotado.'
+                    : 'Desligado: o cliente vê o valor original riscado e FREE, e a empresa paga o frete.'}
+                  help={SHIPPING_HELP.us.chargeShipping}
+                />
+                <div className="ship-hq-title"><h4>Histórico</h4></div>
+                <NutritionEditLog
+                  events={chargeHistoryEvents(us.charge_shipping_history)}
+                  empty="Nenhuma alteração ainda"
+                  describe={describeChargeEvent}
+                  timeZone={US_MARKET_TIME_ZONE}
+                />
+              </Section>
 
               {upsMode ? (
                 <Section title="UPS" description="A UPS calcula valor e prazo pelo endereço. Credenciais ficam no servidor.">
@@ -672,6 +712,14 @@ export function ShippingPage() {
                       </div>
                     ) : null}
 
+                    {usResult.original_amount != null ? (
+                      <dl className="ship-result-list" aria-label="Cobrança do cliente">
+                        <dt>Valor do frete</dt><dd>{usd(usResult.original_amount)}</dd>
+                        <dt>Cliente paga</dt>
+                        <dd>{usResult.charge_enabled ? usd(usResult.charged_amount ?? 0) : 'FREE'}</dd>
+                      </dl>
+                    ) : null}
+
                     <ol className="ship-steps" aria-label="Chamadas UPS">
                       {usResult.ups.steps.map((step) => (
                         <li key={step.key} className={`ship-step ship-step-${step.status}`}>
@@ -716,6 +764,33 @@ export function ShippingPage() {
         </div>
       ) : null}
 
+      <Dialog
+        title={pendingCharge ? 'Ligar a cobrança do frete?' : 'Desligar a cobrança do frete?'}
+        open={pendingCharge !== null}
+        onClose={() => setPendingCharge(null)}
+        footer={(
+          <>
+            <button className="ghost-button" type="button" onClick={() => setPendingCharge(null)}>Cancelar</button>
+            <button
+              className="primary-button"
+              type="button"
+              onClick={() => {
+                if (pendingCharge !== null) updateUs({ charge_shipping: pendingCharge })
+                setPendingCharge(null)
+              }}
+            >
+              {pendingCharge ? 'Ligar cobrança' : 'Desligar cobrança'}
+            </button>
+          </>
+        )}
+      >
+        <p>
+          {pendingCharge
+            ? 'Os clientes dos EUA passam a pagar o frete cotado.'
+            : 'Os clientes dos EUA deixam de pagar o frete: veem o valor original riscado e FREE, e a empresa paga.'}
+          {' '}A mudança vale só para checkouts novos. Cada assinatura mantém a condição com que foi contratada. Salve as regras para aplicar.
+        </p>
+      </Dialog>
       <Dialog
         title="Alterações não salvas"
         open={Boolean(pendingMarket)}
