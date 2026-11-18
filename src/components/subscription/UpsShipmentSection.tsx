@@ -2,10 +2,10 @@ import { Link } from 'react-router-dom'
 import { Section } from '../Section'
 import { SectionFeedbackView } from '../SectionFeedbackView'
 import { formatDate } from '../../lib/format'
-import { labelIssueText, UPS_SHIPMENT_STATUS, type LabelIssue } from '../../lib/upsLabels'
+import { companyPaidShippingText, labelIssueText, UPS_SHIPMENT_STATUS, type LabelIssue } from '../../lib/upsLabels'
 import type { PaidCycle } from '../../lib/paidCycles'
 import type { SectionFeedback } from '../../lib/useSectionFeedback'
-import { cycleText, type UpsShipment } from './types'
+import { cycleText, type SubscriptionDetail, type UpsShipment } from './types'
 
 const TRACKING_STATUS: Record<string, string> = {
   label_created: 'Aguardando coleta',
@@ -33,12 +33,17 @@ type Props = {
   canWrite: boolean
   feedback: SectionFeedback
   actions: UpsActions
+  // customer-shipping-charge: the subscription's shipping condition, from the detail.
+  shippingWaived?: boolean | null
+  companyShippingCost?: SubscriptionDetail['company_shipping_cost']
 }
 
-export function UpsShipmentSection({ shipments, labelIssues, awaitingLabel, canWrite, feedback, actions }: Props) {
+
+export function UpsShipmentSection({ shipments, labelIssues, awaitingLabel, canWrite, feedback, actions, shippingWaived, companyShippingCost }: Props) {
   return (
     <Section id="envio-ups" title="Envio UPS" description="Uma etiqueta por fatura paga. Compare o frete cobrado no checkout com o custo da UPS.">
       <SectionFeedbackView feedback={feedback} />
+      {shippingWaived ? <p className="muted" aria-label="Condição do frete">{companyPaidShippingText(companyShippingCost ?? null)}</p> : null}
       {labelIssues.length > 0 ? (
         <div className="warning" role="alert" aria-label="Etiqueta bloqueada">
           <strong>Não é possível gerar a etiqueta. Corrija antes:</strong>

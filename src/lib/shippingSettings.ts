@@ -1,3 +1,5 @@
+import type { NutritionAuditEvent } from './nutritionSettings'
+
 export type BrCenter = {
   name: string
   street: string
@@ -71,7 +73,32 @@ export type ShippingSettings = {
     allowed_service_codes: string[]
     // Business days of UPS transit the insulated box accepts; a longer quote makes the address unavailable.
     max_transit_days: number
+    // Whether new US checkouts charge the shipping quote (customer-shipping-charge). Off: the company pays it.
+    charge_shipping: boolean
+    // Changes of the switch, newest first, read from the admin audit log. Not sent on save.
+    charge_shipping_history: ChargeShippingEvent[]
   }
+}
+
+export type ChargeShippingEvent = { enabled: boolean; actor_email: string | null; changed_at: string }
+
+// The US market's time zone: the switch history shows New York time, whatever the browser's.
+export const US_MARKET_TIME_ZONE = 'America/New_York'
+
+// The switch history in the shape of the panel's edit log.
+export function chargeHistoryEvents(history: ChargeShippingEvent[]): NutritionAuditEvent[] {
+  return history.map((event, index) => ({
+    id: index + 1,
+    actorUserId: null,
+    actorEmail: event.actor_email,
+    action: event.enabled ? 'shipping.us.charge.enable' : 'shipping.us.charge.disable',
+    metadata: { enabled: event.enabled },
+    createdAt: event.changed_at,
+  }))
+}
+
+export function describeChargeEvent(event: NutritionAuditEvent) {
+  return { title: event.metadata.enabled ? 'Cobrança ligada' : 'Cobrança desligada', details: [] as string[] }
 }
 
 export type HeadquartersValidation = {
@@ -145,6 +172,8 @@ export const emptySettings = (): ShippingSettings => ({
     },
     allowed_service_codes: ['03'],
     max_transit_days: 1,
+    charge_shipping: false,
+    charge_shipping_history: [],
   },
 })
 
@@ -180,6 +209,8 @@ export function mergeSettings(input: Partial<ShippingSettings> | undefined): Shi
         ? us.allowed_service_codes
         : base.us.allowed_service_codes,
       quote_mode: us?.quote_mode === 'ups' ? 'ups' : 'fixed',
+      charge_shipping: us?.charge_shipping === true,
+      charge_shipping_history: Array.isArray(us?.charge_shipping_history) ? us.charge_shipping_history : [],
     },
   }
 }

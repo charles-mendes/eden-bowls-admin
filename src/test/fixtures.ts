@@ -702,6 +702,9 @@ export const shippingSettings = {
         },
         package: { weight_lb: 10, length_in: 12, width_in: 12, height_in: 12 },
         allowed_service_codes: ['03'],
+        // customer-shipping-charge: off on deploy, with no change yet.
+        charge_shipping: false,
+        charge_shipping_history: [] as Array<{ enabled: boolean; actor_email: string | null; changed_at: string }>,
       },
     },
   },

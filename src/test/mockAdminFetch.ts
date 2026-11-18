@@ -1094,6 +1094,10 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
               ],
               selected: { service_code: '03', label: 'UPS Ground', amount: 18.45, currency: 'USD', delivery_days: 4 },
             },
+            // customer-shipping-charge: what the customer pays for the simulated quote, from the stored switch.
+            original_amount: 18.45,
+            charged_amount: (options.shippingSettings ?? shippingSettings).data.settings.us.charge_shipping ? 18.45 : 0,
+            charge_enabled: (options.shippingSettings ?? shippingSettings).data.settings.us.charge_shipping,
           },
         })
       }

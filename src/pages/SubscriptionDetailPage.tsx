@@ -554,6 +554,8 @@ export function SubscriptionDetailPage() {
             canWrite={canWriteShipping}
             feedback={upsFeedback}
             actions={upsActions}
+            shippingWaived={data.shipping_waived}
+            companyShippingCost={data.company_shipping_cost}
           />
         ) : null}
 

@@ -42,6 +42,12 @@ export const SHIPPING_HELP = {
     ],
   },
   us: {
+    chargeShipping: [
+      'Liga ou desliga a cobrança do frete do cliente nos Estados Unidos.',
+      'Desligado: o cliente vê o valor original riscado e FREE, e a empresa paga o frete. A cotação UPS fica gravada como custo da empresa.',
+      'Ligado: o cliente paga o frete cotado.',
+      'A mudança vale só para checkouts novos. Cada assinatura mantém a condição com que foi contratada.',
+    ],
     enabled: [
       'Liga ou desliga a entrega nos Estados Unidos.',
       'Ligado: a loja cota o frete para os ZIPs americanos, pelo modo de cotação escolhido.',
