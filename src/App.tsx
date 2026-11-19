@@ -1,7 +1,7 @@
 import * as Sentry from '@sentry/react'
 import { Navigate, Outlet, Route, Routes, useParams } from 'react-router-dom'
 import { AdminLayout } from './components/AdminLayout'
-import { AuthProvider } from './contexts/AuthContext'
+import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { RequireAuth } from './routes/RequireAuth'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
@@ -28,6 +28,7 @@ import { NutritionSettingsPage } from './pages/NutritionSettingsPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { UsersPage } from './pages/UsersPage'
 import { RolesPage } from './pages/RolesPage'
+import { CheckoutReadinessPage } from './pages/CheckoutReadinessPage'
 import { UserDetailPage } from './pages/UserDetailPage'
 import { ChangePasswordPage } from './pages/ChangePasswordPage'
 import { FeedbacksPage } from './pages/FeedbacksPage'
@@ -54,6 +55,12 @@ function ProtectedShell() {
   )
 }
 
+// Admin only: other roles go back to Hoje before the page asks the API anything.
+function AdminCheckoutReadinessRoute() {
+  const { hasRole } = useAuth()
+  return hasRole('admin') ? <CheckoutReadinessPage /> : <Navigate to="/dashboard" replace />
+}
+
 const SentryRoutes = Sentry.withSentryReactRouterV7Routing(Routes)
 
 function App() {
@@ -64,6 +71,7 @@ function App() {
         <Route element={<ProtectedShell />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/operations/checkout-readiness" element={<AdminCheckoutReadinessRoute />} />
           <Route path="/insights" element={<InsightsRoute />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/nutrition/simulate" element={<NutritionSimulatePage />} />

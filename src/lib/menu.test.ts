@@ -2,6 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { activeMenuHref, groupedMenuItems, visibleMenuItems } from './menu'
 
 describe('admin menu', () => {
+  it('Checkout da loja is admin only, first in Operação, above Hoje', () => {
+    const operacao = groupedMenuItems(['admin']).find((entry) => entry.group === 'Operação')
+    expect(operacao?.items.slice(0, 2).map((item) => item.label)).toEqual(['Checkout da loja', 'Hoje'])
+    for (const role of ['operator', 'readonly', 'veterinarian'] as const) {
+      expect(visibleMenuItems([role]).map((item) => item.href)).not.toContain('/operations/checkout-readiness')
+    }
+  })
+
   it('hides operational sections from veterinarian-only accounts', () => {
     const hrefs = visibleMenuItems(['veterinarian']).map((item) => item.href)
 

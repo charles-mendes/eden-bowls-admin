@@ -6,6 +6,7 @@ import { SystemHealth } from '../components/SystemHealth'
 import { useAuth } from '../contexts/AuthContext'
 import { apiRequest, buildQueryString } from '../lib/api'
 import { billingHref } from '../lib/billing'
+import { CHECKOUT_READINESS_PATH, fetchCheckoutReadiness, summaryLine } from '../lib/checkoutReadiness'
 import { courierHref } from '../lib/courierDeliveries'
 import { nfeListHref } from '../lib/nfe'
 import { getBrowserTimeZone } from '../lib/format'
@@ -211,6 +212,24 @@ export function DashboardPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [reload, setReload] = useState(0)
+  const isAdmin = hasRole('admin')
+  // admin-checkout-readiness: only the count, with the Todos filter. Hidden on zero and on error.
+  const [readinessCount, setReadinessCount] = useState(0)
+
+  useEffect(() => {
+    if (!token || !isAdmin) return
+    let cancelled = false
+    fetchCheckoutReadiness(token)
+      .then((response) => {
+        if (!cancelled) setReadinessCount(response.warnings.length)
+      })
+      .catch(() => {
+        if (!cancelled) setReadinessCount(0)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [token, isAdmin, reload])
 
   useEffect(() => {
     if (!token || !user) return
@@ -329,6 +348,12 @@ export function DashboardPage() {
           ))}
         </div>
       </section>
+
+      {isAdmin && readinessCount > 0 ? (
+        <p className="day-readiness">
+          <Link to={CHECKOUT_READINESS_PATH}>{summaryLine(readinessCount)}</Link>
+        </p>
+      ) : null}
 
       <section className="day-section" aria-labelledby="day-pending">
         <div className="day-section-head">
