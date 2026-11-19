@@ -375,7 +375,7 @@ describe('LabelQueuePage', () => {
 
     expect(await screen.findByText('Cliente 5')).toBeInTheDocument()
     expect(queueCalls(calls)[0].search).toBe('')
-    expect(screen.getByText('Mais 1 pedido com entrega depois de 07/11.')).toBeInTheDocument()
+    expect(screen.getByText('Mais 1 pedido com entrega depois de 11/07.')).toBeInTheDocument()
   })
 
   it('sends the range of the URL and moves to the next cut of a full list', async () => {
@@ -385,7 +385,7 @@ describe('LabelQueuePage', () => {
     render('/operations/labels?de=2026-11-01&ate=2026-11-20')
 
     await waitFor(() => expect(queueCalls(calls)[0]?.search).toBe('?from=2026-11-01&to=2026-11-20'))
-    await userEvent.click(await screen.findByRole('button', { name: 'Ver a partir de 09/11' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ver a partir de 11/09' }))
     await waitFor(() => expect(queueCalls(calls).at(-1)?.search).toBe('?from=2026-11-09&to=2026-11-20'))
   })
 

@@ -1,19 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  COURIER_TIMEZONE,
-  LABELS_TIMEZONE,
-  laterRange,
-  laterText,
-  nextFromRange,
-  nextSevenDays,
-  nowInputIn,
-  presetOf,
-  rangeLabel,
-  rangeQuery,
-  readRange,
-  writeRange,
-  zonedInputToIso,
-} from './deliveryRange'
+import { COURIER_TIMEZONE, LABELS_TIMEZONE, dayMonth, laterRange, laterText, nextFromRange, nextSevenDays, nowInputIn, presetOf, rangeLabel, rangeQuery, readRange, writeRange, zonedInputToIso } from './deliveryRange'
 
 // 2026-11-07 02:30 UTC: still the 6th in New York, already 23:30 of the 6th in São Paulo.
 const NOW = new Date('2026-11-07T02:30:00Z')
@@ -73,3 +59,14 @@ describe('deliveryRange', () => {
     expect(zonedInputToIso('15:40', COURIER_TIMEZONE)).toBeNull()
   })
 })
+
+// Etiquetas UPS (US) writes days month first, like its calendar; Entregas Brasil keeps day first.
+describe('day and month by market', () => {
+  it('writes dd/mm for br and mm/dd for us', () => {
+    expect(dayMonth('2026-11-07')).toBe('07/11')
+    expect(dayMonth('2026-11-07', 'us')).toBe('11/07')
+    expect(laterText(2, '2026-11-07', 'us')).toBe('Mais 2 pedidos com entrega depois de 11/07.')
+    expect(rangeLabel({ from: '2026-11-01', to: '2026-11-03' }, 'UTC', new Date('2026-11-20T12:00:00Z'), 'us')).toBe('11/01 a 11/03')
+  })
+})
+
