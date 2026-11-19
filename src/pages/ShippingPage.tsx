@@ -169,6 +169,9 @@ function saveRulesError(error: unknown) {
   if (error instanceof ApiRequestError && error.code === 'invalid_charge_shipping') {
     return 'Não foi possível salvar a cobrança de frete.'
   }
+  if (error instanceof ApiRequestError && error.code === 'invalid_skip_dry_ice_in_test') {
+    return 'Não foi possível salvar a opção de gelo seco no ambiente de teste.'
+  }
   if (error instanceof ApiRequestError && error.code === 'invalid_shipping_box') {
     return 'Confira as caixas: medidas acima de 0, peso vazio de 0,1 a 10 kg e a Starter com menos pacotes que a mensal.'
   }
@@ -224,6 +227,7 @@ function rulesOf(settings: ShippingSettings, market: 'BR' | 'US') {
     allowed_service_codes: us.allowed_service_codes,
     max_transit_days: us.max_transit_days,
     charge_shipping: us.charge_shipping,
+    skip_dry_ice_in_test: us.skip_dry_ice_in_test,
   }
 }
 
@@ -542,6 +546,14 @@ export function ShippingPage() {
                         value={us.package.dry_ice_kg}
                         onChange={(value) => updatePackage({ dry_ice_kg: value ?? 0 })}
                         hint="Declarado à UPS como UN1845 na etiqueta e na cotação. De 0,1 a 2,5 kg, nunca mais que o peso da caixa."
+                      />
+                      <Toggle
+                        checked={us.skip_dry_ice_in_test}
+                        disabled={!canWrite}
+                        onChange={(skip_dry_ice_in_test) => updateUs({ skip_dry_ice_in_test })}
+                        label="Não declarar Gelo seco na UPS para testes"
+                        help={SHIPPING_HELP.us.skipDryIceInTest}
+                        description="Só local e QA, para o UPS Ground cotar. Em produção o gelo seco é sempre declarado."
                       />
                     </div>
                   </fieldset>

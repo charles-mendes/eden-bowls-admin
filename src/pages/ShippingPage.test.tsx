@@ -351,6 +351,27 @@ describe('ShippingPage', () => {
       renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
 
       expect(await screen.findByRole('spinbutton', { name: /Gelo seco por caixa/ })).toBeDisabled()
+      expect(screen.getByRole('switch', { name: /Não declarar Gelo seco na UPS para testes/ })).toBeDisabled()
+    })
+
+    it('Test environment switch: starts off, turned on it saves skip_dry_ice_in_test and keeps 0.5 kg', async () => {
+      const user = userEvent.setup()
+      seedAuth()
+      const { calls } = installAdminFetchMock(adminUser, { shippingSettings: upsSettings })
+      renderAuthedPage(<ShippingPage />, '/config/shipping?aba=regras', '/config/shipping')
+
+      await user.click(await screen.findByRole('button', { name: 'EUA' }))
+      const toggle = await screen.findByRole('switch', { name: /Não declarar Gelo seco na UPS para testes/ })
+      expect(toggle).not.toBeChecked()
+      expect(screen.getByText(/Em produção o gelo seco é sempre declarado/)).toBeInTheDocument()
+
+      await user.click(toggle)
+      expect(toggle).toBeChecked()
+      expect(screen.getByRole('spinbutton', { name: /Gelo seco por caixa/ })).toHaveValue(0.5)
+      await user.click(screen.getByRole('button', { name: 'Salvar regras dos EUA' }))
+      await screen.findByText('Regras dos Estados Unidos salvas.')
+      const put = calls.find((call) => call.method === 'PUT' && call.path === '/api/v1/admin/shipping/settings')
+      expect(put?.body).toMatchObject({ us: { skip_dry_ice_in_test: true, package: { dry_ice_kg: 0.5 } } })
     })
   })
 

@@ -75,6 +75,9 @@ export type ShippingSettings = {
     max_transit_days: number
     // Whether new US checkouts charge the shipping quote (customer-shipping-charge). Off: the company pays it.
     charge_shipping: boolean
+    // On: the UPS test environment (CIE) gets quotes and labels without the dry ice declaration, because CIE drops
+    // UPS Ground for a package with dry ice. Production UPS always gets it. dry_ice_kg is kept as is.
+    skip_dry_ice_in_test: boolean
     // Changes of the switch, newest first, read from the admin audit log. Not sent on save.
     charge_shipping_history: ChargeShippingEvent[]
   }
@@ -173,6 +176,7 @@ export const emptySettings = (): ShippingSettings => ({
     allowed_service_codes: ['03'],
     max_transit_days: 1,
     charge_shipping: false,
+    skip_dry_ice_in_test: false,
     charge_shipping_history: [],
   },
 })
@@ -210,6 +214,7 @@ export function mergeSettings(input: Partial<ShippingSettings> | undefined): Shi
         : base.us.allowed_service_codes,
       quote_mode: us?.quote_mode === 'ups' ? 'ups' : 'fixed',
       charge_shipping: us?.charge_shipping === true,
+      skip_dry_ice_in_test: us?.skip_dry_ice_in_test === true,
       charge_shipping_history: Array.isArray(us?.charge_shipping_history) ? us.charge_shipping_history : [],
     },
   }

@@ -8,6 +8,15 @@ describe('mergeSettings', () => {
   })
 })
 
+describe('US dry ice test environment switch', () => {
+  it('reads off when the API has none, and on only for true', () => {
+    expect(emptySettings().us.skip_dry_ice_in_test).toBe(false)
+    expect(mergeSettings(undefined).us.skip_dry_ice_in_test).toBe(false)
+    expect(mergeSettings({ us: { skip_dry_ice_in_test: true } } as never).us.skip_dry_ice_in_test).toBe(true)
+    expect(mergeSettings({ us: { skip_dry_ice_in_test: 1 } } as never).us.skip_dry_ice_in_test).toBe(false)
+  })
+})
+
 describe('US shipping charge switch', () => {
   it('reads the switch off and an empty history when the API has neither', () => {
     expect(emptySettings().us.charge_shipping).toBe(false)
