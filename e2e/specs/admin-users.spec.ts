@@ -27,6 +27,22 @@ test.describe('Admin users', () => {
     ))).toBe(true)
   })
 
+  // customer-purchase-trail
+  test('shows the purchase trail of one market, read only', async ({ page }) => {
+    const { captured } = await openAuthed(page, '/users/u-ana?aba=trilha', e2eProfiles.admin)
+
+    await expect(page.getByRole('heading', { name: 'Trilha de compra · Brasil' })).toBeVisible()
+    const steps = page.getByRole('table', { name: 'Passos da tentativa' }).first()
+    await expect(steps.getByText('invalid_zipcode')).toBeVisible()
+    await expect(steps.getByText('Seu cartão foi recusado.')).toBeVisible()
+    await expect(page.getByText('first_purchase_coupon.create')).toBeVisible()
+    await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/users/u-ana/purchase-trail' && item.search === '?market=br')).toBe(true)
+
+    await page.getByRole('group', { name: 'Mercado' }).getByRole('button', { name: 'Estados Unidos' }).click()
+    await expect(page.getByText('Nenhuma tentativa neste mercado.')).toBeVisible()
+    await expect(page.getByText('invalid_zipcode')).toHaveCount(0)
+  })
+
   test('saves delivery instructions', async ({ page }) => {
     const { captured } = await openAuthed(page, '/users/u-ana', e2eProfiles.operatorWrite)
 
@@ -80,7 +96,7 @@ test.describe('Admin users', () => {
     await page.getByLabel('Nome').fill('Lia')
     await page.getByLabel('E-mail').fill('lia@edenbowls.com')
     await page.getByLabel('Papel').selectOption('veterinarian')
-    await page.getByLabel('Mercado').selectOption('US')
+    await page.getByRole('group', { name: 'Mercado' }).getByRole('button', { name: 'Estados Unidos' }).click()
     await page.getByRole('button', { name: 'Criar acesso' }).click()
 
     await expect(page.getByText(/Acesso criado para lia@edenbowls.com/)).toBeVisible()

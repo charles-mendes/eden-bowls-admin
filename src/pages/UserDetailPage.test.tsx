@@ -716,4 +716,20 @@ describe('UserDetailPage', () => {
     // The test router has only this route, so leaving the page empties the screen.
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Excluir acesso' })).not.toBeInTheDocument())
   })
+
+  // customer-purchase-trail: the tab exists for who reads billing.subscribers.read.
+  it('shows the purchase trail tab to readonly', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+    expect(await screen.findByRole('tab', { name: 'Trilha de compra' })).toBeInTheDocument()
+  })
+
+  it('hides the purchase trail tab without billing.subscribers.read', async () => {
+    seedAuth()
+    installAdminFetchMock({ ...operatorWriteUser, permissions: operatorWriteUser.permissions.filter((item) => item !== 'billing.subscribers.read') })
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+    await screen.findByRole('tab', { name: 'Cadastro' })
+    expect(screen.queryByRole('tab', { name: 'Trilha de compra' })).not.toBeInTheDocument()
+  })
 })
