@@ -540,6 +540,23 @@ async function handlePackStock(route: Route, method: string, path: string, url: 
 
 const trailError = { http_status: null, error_code: null, error_message: null, stripe_code: null, stripe_type: null, stripe_param: null }
 const trailEvent = { action: null, pet_id: null, subscription_id: null, stripe_event_id: null, stripe_event_type: null, ...trailError }
+const purchaseErrorStep = {
+  id: 1, area: 'checkout', step: 'zipcode_lookup', action: null, outcome: 'failed', pet_id: null, subscription_id: null, stripe_event_id: null, stripe_event_type: null,
+  http_status: 422, error_code: 'invalid_zipcode', error_message: 'CEP inválido.', stripe_code: null, stripe_type: null, stripe_param: null, created_at: '2026-11-18T12:00:00Z',
+}
+const purchaseErrorRows = {
+  br: [{
+    kind: 'attempt', occurred_at: '2026-11-18T12:00:00Z', market: 'br', user_id: 'u-ana', email: 'ana.carolina.de.souza.martins@example.com', area: 'checkout', step: 'zipcode_lookup', action: null,
+    attempt_status: 'paid', stripe_event_type: null, http_status: 422, error_code: 'invalid_zipcode', error_message: 'CEP inválido.', stripe_code: null, stripe_type: null, stripe_param: null,
+    attempt: { id: 1 }, events: [purchaseErrorStep, { ...purchaseErrorStep, id: 2, step: 'payment_intent_ack', outcome: 'ok', http_status: 200, error_code: null, error_message: null }],
+  }],
+  us: [{
+    kind: 'webhook', occurred_at: '2026-11-18T10:00:00Z', market: 'us', user_id: null, email: null, area: 'webhook', step: 'customer_not_resolved', action: null,
+    attempt_status: null, stripe_event_type: 'invoice.payment_failed', http_status: null, error_code: 'customer_not_resolved', error_message: null, stripe_code: null, stripe_type: null, stripe_param: null,
+    attempt: null, events: [],
+  }],
+}
+
 const purchaseTrailAttempts = {
   br: [
     {
@@ -780,9 +797,16 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
+    // purchase-error-monitor: failures of one market.
+    if (path === '/api/v1/admin/purchase-trail/errors' && method === 'GET') {
+      const market = url.searchParams.get('market') === 'us' ? 'us' : 'br'
+      await fulfillJson(route, { success: true, data: { market, from: '2026-11-12T00:00:00.000Z', to: '2026-11-20T00:00:00.000Z', rows: purchaseErrorRows[market], next_before: null } })
+      return
+    }
+
     if (path === '/api/v1/admin/purchase-trail/config-events' && method === 'GET') {
       const market = url.searchParams.get('market') === 'us' ? 'us' : 'br'
-      await fulfillJson(route, { success: true, data: { market, events: market === 'br' ? purchaseTrailConfigEvents : [], next_before: null } })
+      await fulfillJson(route, { success: true, data: { market, events: market === 'br' ? purchaseTrailConfigEvents.filter((event) => url.searchParams.get('outcome') !== 'failed' || event.outcome === 'failed') : [], next_before: null } })
       return
     }
 

@@ -142,6 +142,9 @@ export function UserDetailPage() {
   const requestedTab = searchParams.get('aba')
   // The purchase trail reads billing.subscribers.read on the API (readonly has it, a veterinarian does not).
   const canReadTrail = hasPermission('billing.subscribers.read')
+  // purchase-error-monitor: a row of Erros de compra opens the tab in its own market (?mercado=BR|US).
+  const mercado = (searchParams.get('mercado') || '').toUpperCase()
+  const requestedTrailMarket = mercado === 'BR' || mercado === 'US' ? mercado : undefined
   const tabs = TABS.filter((option) => option.id !== 'trilha' || canReadTrail)
   const tab: CustomerTab = tabs.some((option) => option.id === requestedTab) ? requestedTab as CustomerTab : 'cadastro'
   const [data, setData] = useState<UserDetail | null>(null)
@@ -719,7 +722,7 @@ export function UserDetailPage() {
 
       {tab === 'trilha' && userId && token ? (
         <div id="customer-panel-trilha" role="tabpanel" aria-labelledby="customer-tab-trilha">
-          <PurchaseTrail key={userId} userId={userId} token={token} user={user} customerCountry={data?.delivery?.country} />
+          <PurchaseTrail key={userId} userId={userId} token={token} user={user} customerCountry={data?.delivery?.country} requestedMarket={requestedTrailMarket} />
         </div>
       ) : null}
 

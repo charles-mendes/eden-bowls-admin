@@ -363,6 +363,7 @@ export function LabelQueuePage() {
         timeZone={LABELS_TIMEZONE}
         truncated={Boolean(data?.truncated)}
         onChange={setRange}
+        dateFormat="us"
       />
       {addressOnly ? (
         <div className="queue-summary-main">

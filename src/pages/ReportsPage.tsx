@@ -236,11 +236,11 @@ export function ReportsPage() {
                 <>
                   <label>
                     De
-                    <BrDateInput value={draft.from} max={today} onChange={(from) => applyCustom(from, draft.to)} />
+                    <BrDateInput format={market === 'US' ? 'us' : 'br'} value={draft.from} max={today} onChange={(from) => applyCustom(from, draft.to)} />
                   </label>
                   <label>
                     Até
-                    <BrDateInput value={draft.to} max={today} onChange={(to) => applyCustom(draft.from, to)} />
+                    <BrDateInput format={market === 'US' ? 'us' : 'br'} value={draft.to} max={today} onChange={(to) => applyCustom(draft.from, to)} />
                   </label>
                 </>
               ) : null}

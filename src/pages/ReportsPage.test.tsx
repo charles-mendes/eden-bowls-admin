@@ -109,7 +109,9 @@ describe('ReportsPage', () => {
     expect(screen.getByRole('tab', { name: 'Assinaturas' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.getByRole('button', { name: 'Estados Unidos' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText(/Estados Unidos · 01\/07\/2026 a 30\/09\/2026/)).toBeInTheDocument()
-    expect(screen.getByLabelText('De')).toHaveValue('01/07/2026')
+    // A US report types its days as mm/dd/yyyy.
+    expect(screen.getByLabelText('De')).toHaveValue('07/01/2026')
+    expect(screen.getByLabelText('De')).toHaveAttribute('placeholder', 'mm/dd/yyyy')
     expect(screen.getByText(/3 cancelamentos têm data aproximada/)).toBeInTheDocument()
     expect(reportCalls(calls).map((call) => call.path + call.search)).toEqual([
       '/api/v1/admin/reports/subscriptions?market=US&from=2026-07-01&to=2026-09-30',

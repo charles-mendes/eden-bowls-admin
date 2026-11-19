@@ -469,7 +469,7 @@ describe('LabelQueuePage pickup', () => {
     await user.click(await coleta.findByRole('button', { name: 'Pedir coleta à UPS' }))
 
     expect(await coleta.findByText('Coleta pedida. PRN 2929602E9CP.')).toBeInTheDocument()
-    expect(confirm.mock.calls[0][0]).toMatch(/^Pedir coleta à UPS para \d{2}\/\d{2}, das 14:00 às 18:00, com 2 caixas \(2 etiquetas\)\?$/)
+    expect(confirm.mock.calls[0][0]).toMatch(/^Pedir coleta à UPS para \d{2}\/\d{2}, das 2:00 PM às 6:00 PM, com 2 caixas \(2 etiquetas\)\?$/)
     expect(pickupPosts(calls)[0].body).toEqual({
       pickup_date: todayIn(LABELS_TIMEZONE),
       ready_time: '14:00',
@@ -639,7 +639,7 @@ describe('LabelQueuePage pickup', () => {
     })
     render()
 
-    expect(await screen.findByText('Coleta pedida para 09/11 · PRN 2929602E9CP')).toBeInTheDocument()
+    expect(await screen.findByText('Coleta pedida para 11/09 · PRN 2929602E9CP')).toBeInTheDocument()
     expect(screen.getByText('Sem coleta')).toBeInTheDocument()
   })
 })

@@ -5,80 +5,11 @@ import { formatDate, formatTermMonths } from '../lib/format'
 import { MARKET_LABELS, sessionMarkets, type MarketCode } from '../lib/markets'
 import { Section } from './Section'
 
+import { TRAIL_AREAS, TRAIL_STATUS, trailErrorText, type CustomerTrail, type TrailAttempt, type TrailConfigEvent as ConfigEvent, type TrailEvent } from '../lib/purchaseTrail'
+
 // customer-purchase-trail (backend): what the customer did on the way to a purchase, or to a change of a bought
 // subscription, and what failed there. Read only, one market at a time: BR and US never share a list.
-type TrailError = {
-  http_status: number | null
-  error_code: string | null
-  error_message: string | null
-  stripe_code: string | null
-  stripe_type: string | null
-  stripe_param: string | null
-}
-
-export type TrailEvent = TrailError & {
-  id: number
-  area: string
-  step: string
-  action: string | null
-  outcome: 'ok' | 'failed'
-  pet_id: number | null
-  subscription_id: string | null
-  stripe_event_id: string | null
-  stripe_event_type: string | null
-  created_at: string | null
-}
-
-export type TrailAttempt = TrailError & {
-  id: number
-  market: 'br' | 'us'
-  area: string
-  status: 'in_progress' | 'paid' | 'completed' | 'failed'
-  final_step: string | null
-  attempt_id: string | null
-  term_months: number | null
-  currency: string | null
-  promotion_code_id: string | null
-  subscription_id: string | null
-  stripe_account: string | null
-  started_at: string | null
-  finished_at: string | null
-  events: TrailEvent[]
-}
-
-type CustomerTrail = { market: 'br' | 'us'; attempts: TrailAttempt[]; unlinked_events: TrailEvent[] }
-
-type ConfigEvent = {
-  id: number
-  action: string
-  target_ref: string | null
-  outcome: 'ok' | 'failed'
-  error_code: string | null
-  actor_admin_id: number | null
-  created_at: string | null
-}
-
-const STATUS: Record<TrailAttempt['status'], { label: string; className: string }> = {
-  in_progress: { label: 'Em andamento', className: 'badge-info' },
-  paid: { label: 'Pago', className: 'badge-success' },
-  completed: { label: 'Concluída', className: 'badge-success' },
-  failed: { label: 'Falhou', className: 'badge-error' },
-}
-
-const AREAS: Record<string, string> = {
-  onboarding: 'Onboarding',
-  plan: 'Plano',
-  checkout: 'Checkout',
-  subscription: 'Assinatura',
-  webhook: 'Webhook Stripe',
-}
-
-function errorText(item: TrailError) {
-  const parts = [item.error_code, item.stripe_code && item.stripe_code !== item.error_code ? `Stripe: ${item.stripe_code}` : null, item.stripe_param ? `campo ${item.stripe_param}` : null]
-  return parts.filter(Boolean).join(' · ')
-}
-
-function EventsTable({ events, label }: { events: TrailEvent[]; label: string }) {
+export function TrailEventsTable({ events, label }: { events: TrailEvent[]; label: string }) {
   if (!events.length) return <p className="empty-note">Nenhum passo registrado.</p>
   return (
     <div className="table-shell table-scroll">
@@ -109,7 +40,7 @@ function EventsTable({ events, label }: { events: TrailEvent[]; label: string })
                   {event.http_status ? <span className="muted"> {event.http_status}</span> : null}
                 </span>
               </td>
-              <td data-label="Erro">{errorText(event) || '-'}</td>
+              <td data-label="Erro">{trailErrorText(event) || '-'}</td>
               <td data-label="Mensagem ao cliente">{event.error_message || '-'}</td>
             </tr>
           ))}
@@ -120,7 +51,7 @@ function EventsTable({ events, label }: { events: TrailEvent[]; label: string })
 }
 
 function AttemptItem({ attempt, open }: { attempt: TrailAttempt; open: boolean }) {
-  const status = STATUS[attempt.status] ?? { label: attempt.status, className: 'badge-info' }
+  const status = TRAIL_STATUS[attempt.status] ?? { label: attempt.status, className: 'badge-info' }
   const meta = [
     attempt.term_months ? formatTermMonths(attempt.term_months) : null,
     attempt.currency,
@@ -131,27 +62,29 @@ function AttemptItem({ attempt, open }: { attempt: TrailAttempt; open: boolean }
   return (
     <details className="checkout-history-item" open={open}>
       <summary>
-        <strong>{AREAS[attempt.area] ?? attempt.area}</strong>
+        <strong>{TRAIL_AREAS[attempt.area] ?? attempt.area}</strong>
         <span className={status.className}>{status.label}</span>
         {attempt.status === 'failed' && attempt.error_code ? <span className="muted">{attempt.error_code}</span> : null}
         <span className="muted checkout-history-date">Início {formatDate(attempt.started_at)}</span>
       </summary>
       <div className="stack checkout-history-body">
         {meta.length ? <p className="muted">{meta.join(' · ')}</p> : null}
-        <EventsTable events={attempt.events} label="Passos da tentativa" />
+        <TrailEventsTable events={attempt.events} label="Passos da tentativa" />
       </div>
     </details>
   )
 }
 
-function initialMarket(user: AdminUser | null, customerCountry?: MarketCode): MarketCode {
+// The market asked in the URL wins over the customer's address country, when the staff works in it.
+function initialMarket(user: AdminUser | null, customerCountry?: MarketCode, requestedMarket?: MarketCode): MarketCode {
   const allowed = sessionMarkets(user)
+  if (requestedMarket && (!allowed.length || allowed.includes(requestedMarket))) return requestedMarket
   if (customerCountry && (!allowed.length || allowed.includes(customerCountry))) return customerCountry
   return allowed[0] ?? 'BR'
 }
 
-export function PurchaseTrail({ userId, token, user, customerCountry }: { userId: string; token: string; user: AdminUser | null; customerCountry?: MarketCode }) {
-  const [market, setMarket] = useState<MarketCode>(() => initialMarket(user, customerCountry))
+export function PurchaseTrail({ userId, token, user, customerCountry, requestedMarket }: { userId: string; token: string; user: AdminUser | null; customerCountry?: MarketCode; requestedMarket?: MarketCode }) {
+  const [market, setMarket] = useState<MarketCode>(() => initialMarket(user, customerCountry, requestedMarket))
   const [trail, setTrail] = useState<{ key: string; data: CustomerTrail | null; config: ConfigEvent[]; error: string }>({ key: '', data: null, config: [], error: '' })
   const key = `${userId}|${market}`
   const allowed = sessionMarkets(user)
@@ -206,7 +139,7 @@ export function PurchaseTrail({ userId, token, user, customerCountry }: { userId
 
       {data && data.unlinked_events.length ? (
         <Section title="Webhooks Stripe sem tentativa" description="Eventos da Stripe deste cliente e mercado que não se ligaram a uma tentativa.">
-          <EventsTable events={data.unlinked_events} label="Webhooks sem tentativa" />
+          <TrailEventsTable events={data.unlinked_events} label="Webhooks sem tentativa" />
         </Section>
       ) : null}
 

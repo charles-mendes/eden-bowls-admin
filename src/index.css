@@ -7704,3 +7704,91 @@ button.readiness-step-inner:hover .readiness-title {
     flex: 1 1 100%;
   }
 }
+
+/* purchase-error-monitor: Erros de compra. */
+.purchase-error-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-end;
+  margin-bottom: var(--space-4);
+}
+
+.purchase-error-filters input,
+.purchase-error-filters select {
+  min-height: 36px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: var(--text-md);
+}
+
+.purchase-error-filters input:focus-visible,
+.purchase-error-filters select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.purchase-error-filters label {
+  display: grid;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-soft);
+  min-width: 0;
+}
+
+.purchase-error-when {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.purchase-error-item > summary > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.purchase-error-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.purchase-error-facts > div {
+  min-width: 0;
+}
+
+.purchase-error-facts dt {
+  font-size: var(--text-xs);
+  color: var(--text-soft);
+}
+
+.purchase-error-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .purchase-error-filters label {
+    flex: 1 1 140px;
+  }
+}
+
+/* BrTimeInput format="us" (UPS pickup): hh:mm with AM/PM; the API keeps 24-hour HH:MM. */
+.us-time {
+  display: flex;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.us-time input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.us-time select {
+  flex: none;
+}

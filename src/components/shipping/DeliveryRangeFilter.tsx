@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { BrDateInput } from '../BrDateInput'
+import type { DateFormat } from '../../lib/brDate'
 import {
   dayMonth,
   laterRange,
@@ -22,12 +23,15 @@ export function DeliveryRangeFilter({
   timeZone,
   truncated,
   onChange,
+  dateFormat = 'br',
 }: {
   range: DeliveryRange | null
   info: DeliveryRangeInfo | null
   timeZone: string
   truncated: boolean
   onChange: (range: DeliveryRange | null) => void
+  // The market of the page: Etiquetas UPS (US) types mm/dd/yyyy, Entregas Brasil dd/mm/aaaa.
+  dateFormat?: DateFormat
 }) {
   const preset = presetOf(range, timeZone)
   // Without a range in the URL the fields show the API's default, never a range left over from the last answer.
@@ -65,11 +69,11 @@ export function DeliveryRangeFilter({
         </div>
         <label className="queue-field">
           De
-          <BrDateInput value={draft.from} onChange={(from) => applyDraft({ ...draft, from })} />
+          <BrDateInput format={dateFormat} value={draft.from} onChange={(from) => applyDraft({ ...draft, from })} />
         </label>
         <label className="queue-field">
           Até
-          <BrDateInput value={draft.to} onChange={(to) => applyDraft({ ...draft, to })} />
+          <BrDateInput format={dateFormat} value={draft.to} onChange={(to) => applyDraft({ ...draft, to })} />
         </label>
         {draft.from || draft.to || range ? (
           <button type="button" className="ghost-button queue-filter-clear" onClick={clearDates}>
@@ -78,21 +82,21 @@ export function DeliveryRangeFilter({
         ) : null}
       </div>
       <p className="muted" aria-live="polite">
-        Período: {rangeLabel(range, timeZone)}
-        {preset === 'default' && info?.range ? ` (atrasados desde ${dayMonth(info.range.from)})` : ''}
+        Período: {rangeLabel(range, timeZone, new Date(), dateFormat)}
+        {preset === 'default' && info?.range ? ` (atrasados desde ${dayMonth(info.range.from, dateFormat)})` : ''}
       </p>
       {truncated && !info?.next_from ? <div className="warning" role="status">A lista mostra só os primeiros pedidos do período.</div> : null}
       {truncated && info?.next_from ? (
         <div className="warning" role="status">
           A lista não cabe numa página.{' '}
           <button type="button" className="link-button" onClick={() => onChange(nextFromRange(answeredTo ?? info.next_from as string, info.next_from as string))}>
-            Ver a partir de {dayMonth(info.next_from)}
+            Ver a partir de {dayMonth(info.next_from, dateFormat)}
           </button>
         </div>
       ) : null}
       {later > 0 && answeredTo ? (
         <p className="muted">
-          {laterText(later, answeredTo)}{' '}
+          {laterText(later, answeredTo, dateFormat)}{' '}
           <button type="button" className="link-button" onClick={() => onChange(laterRange(answeredTo))}>
             Ver os próximos dias
           </button>

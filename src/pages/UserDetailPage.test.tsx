@@ -732,4 +732,19 @@ describe('UserDetailPage', () => {
     await screen.findByRole('tab', { name: 'Cadastro' })
     expect(screen.queryByRole('tab', { name: 'Trilha de compra' })).not.toBeInTheDocument()
   })
+
+  // purchase-error-monitor: ?mercado= from a row of Erros de compra wins over the address country.
+  it('opens the trail in the market of the URL, else in the address country', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(adminUser)
+    const view = renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=trilha&mercado=US', '/users/:userId')
+    await waitFor(() => expect(calls.some((call) => call.path === '/api/v1/admin/users/u-ana/purchase-trail' && call.search.includes('market=us'))).toBe(true))
+    expect(calls.some((call) => call.path === '/api/v1/admin/users/u-ana/purchase-trail' && call.search.includes('market=br'))).toBe(false)
+    view.unmount()
+
+    const second = installAdminFetchMock(adminUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=trilha', '/users/:userId')
+    await waitFor(() => expect(second.calls.some((call) => call.path === '/api/v1/admin/users/u-ana/purchase-trail')).toBe(true))
+    expect(second.calls.find((call) => call.path === '/api/v1/admin/users/u-ana/purchase-trail')?.search).toContain('market=br')
+  })
 })
