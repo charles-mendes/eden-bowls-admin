@@ -411,7 +411,7 @@ export function CouponsPage() {
             </label>
             <label>
               Código
-              <input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder={`BEMVINDO${percent ?? ''}`} required />
+              <input value={code} onChange={(event) => setCode(event.target.value.toUpperCase())} placeholder={`${account === 'us' ? 'WELCOME' : 'BEMVINDO'}${percent ?? ''}`} required />
             </label>
             <label>
               Nome (opcional)
