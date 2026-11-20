@@ -125,7 +125,8 @@ describe('ProductDetailPage', () => {
       expect(screen.queryByLabelText('Código')).not.toBeInTheDocument()
       expect(screen.queryByLabelText('País do plano')).not.toBeInTheDocument()
       expect(screen.queryByRole('combobox', { name: /mercado/i })).not.toBeInTheDocument()
-      expect(screen.getByRole('link', { name: 'Loja › Plano' })).toHaveAttribute('href', '/catalog/plan?market=BR')
+      // Loja › Plano is admin only, so the operator gets no link to it.
+      expect(screen.queryByRole('link', { name: 'Loja › Plano' })).not.toBeInTheDocument()
     })
 
     it('shows the API refusal of a field in Portuguese and keeps the typed value', async () => {

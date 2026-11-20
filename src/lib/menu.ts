@@ -33,7 +33,7 @@ export const adminMenu: MenuItem[] = [
   { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
   { label: 'Assinantes', href: '/billing', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
   { label: 'Produtos', href: '/catalog/products', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
-  { label: 'Plano', href: '/catalog/plan', roles: ['admin', 'operator', 'readonly'], group: 'Loja', permission: 'catalog.read' },
+  { label: 'Plano', href: '/catalog/plan', roles: ['admin'], group: 'Loja', permission: 'catalog.read' },
   { label: 'Biblioteca de imagens', href: '/catalog/media', roles: ['admin', 'operator', 'readonly'], group: 'Loja', permission: 'catalog.read' },
   { label: 'Cupons 1ª compra', href: '/billing/coupons', roles: ['admin', 'operator'], group: 'Loja' },
   { label: 'Feedbacks manuais', href: '/feedbacks', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },

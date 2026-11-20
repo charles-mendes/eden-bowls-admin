@@ -123,9 +123,10 @@ describe('admin menu', () => {
   })
 
   it('shows Biblioteca de imagens right after Plano in Loja', () => {
-    for (const role of ['admin', 'operator', 'readonly'] as const) {
-      const hrefs = groupedMenuItems([role], ['catalog.read']).find((group) => group.group === 'Loja')?.items.map((item) => item.href) ?? []
-      expect(hrefs.indexOf('/catalog/media')).toBe(hrefs.indexOf('/catalog/plan') + 1)
+    const hrefs = groupedMenuItems(['admin'], ['catalog.read']).find((group) => group.group === 'Loja')?.items.map((item) => item.href) ?? []
+    expect(hrefs.indexOf('/catalog/media')).toBe(hrefs.indexOf('/catalog/plan') + 1)
+    for (const role of ['operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role], ['catalog.read']).map((item) => item.href)).toContain('/catalog/media')
     }
     expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/catalog/media')
   })
@@ -136,12 +137,13 @@ describe('admin menu', () => {
     }
   })
 
-  it('shows Plano in Loja for catalog readers', () => {
-    for (const role of ['admin', 'operator', 'readonly'] as const) {
-      const loja = groupedMenuItems([role], ['catalog.read']).find((group) => group.group === 'Loja')
-      expect(loja?.items.map((item) => item.href)).toContain('/catalog/plan')
+  it('shows Plano in Loja only to admins with catalog.read', () => {
+    const loja = groupedMenuItems(['admin'], ['catalog.read']).find((group) => group.group === 'Loja')
+    expect(loja?.items.map((item) => item.href)).toContain('/catalog/plan')
+    for (const role of ['operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role], ['catalog.read']).map((item) => item.href)).not.toContain('/catalog/plan')
     }
-    expect(visibleMenuItems(['operator'], []).map((item) => item.href)).not.toContain('/catalog/plan')
+    expect(visibleMenuItems(['admin'], []).map((item) => item.href)).not.toContain('/catalog/plan')
     expect(visibleMenuItems(['veterinarian'], ['catalog.read']).map((item) => item.href)).not.toContain('/catalog/plan')
   })
 

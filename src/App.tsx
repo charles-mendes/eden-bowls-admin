@@ -74,6 +74,12 @@ function MarketExceptionsRoute() {
   return hasRole('admin') ? <MarketExceptionsPage /> : <Navigate to="/dashboard" replace />
 }
 
+// Loja › Plano: admin only in the panel; other roles go back to Pendências before the page asks the API anything.
+function PlanSettingsRoute() {
+  const { hasRole } = useAuth()
+  return hasRole('admin') ? <PlanSettingsPage /> : <Navigate to="/dashboard" replace />
+}
+
 const SentryRoutes = Sentry.withSentryReactRouterV7Routing(Routes)
 
 function App() {
@@ -92,7 +98,7 @@ function App() {
           <Route path="/nutrition/settings" element={<NutritionSettingsPage />} />
           <Route path="/catalog/products" element={<ProductsPage />} />
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
-          <Route path="/catalog/plan" element={<PlanSettingsPage />} />
+          <Route path="/catalog/plan" element={<PlanSettingsRoute />} />
           <Route path="/catalog/media" element={<MediaLibraryPage />} />
           <Route path="/catalog/recipes" element={<Navigate to="/catalog/products" replace />} />
           <Route path="/catalog/recipes/:market/:recipeKey" element={<RecipeRedirectPage />} />
