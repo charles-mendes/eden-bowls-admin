@@ -135,10 +135,17 @@ describe('attentionEntries', () => {
   })
 
   test('the market exception is one entry linking to market exceptions', () => {
-    const entries = attentionEntries({ ...base, marketException: true })
+    const entries = attentionEntries({ ...base, marketException: true, canOpenMarketExceptions: true })
 
     expect(entries).toHaveLength(1)
     expect(entries[0].href).toBe('/operations/market-exceptions')
+  })
+
+  test('without access to market exceptions the entry has no link and asks an admin', () => {
+    const [entry] = attentionEntries({ ...base, marketException: true })
+
+    expect(entry.href).toBeNull()
+    expect(entry.next).toBe('Peça a um admin para resolver em Exceções de mercado.')
   })
 
   test('nothing open, nothing listed', () => {

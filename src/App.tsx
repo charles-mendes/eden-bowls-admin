@@ -68,6 +68,12 @@ function PurchaseErrorsRoute() {
   return hasPermission('billing.subscribers.read') ? <PurchaseErrorsPage /> : <Navigate to="/dashboard" replace />
 }
 
+// Market exceptions: admin only in the panel; other roles go back to Pendências before the page asks the API anything.
+function MarketExceptionsRoute() {
+  const { hasRole } = useAuth()
+  return hasRole('admin') ? <MarketExceptionsPage /> : <Navigate to="/dashboard" replace />
+}
+
 const SentryRoutes = Sentry.withSentryReactRouterV7Routing(Routes)
 
 function App() {
@@ -95,7 +101,7 @@ function App() {
           <Route path="/operations/production" element={<ProductionQueuePage />} />
           <Route path="/operations/labels" element={<LabelQueuePage />} />
           <Route path="/operations/courier" element={<CourierDeliveriesPage />} />
-          <Route path="/operations/market-exceptions" element={<MarketExceptionsPage />} />
+          <Route path="/operations/market-exceptions" element={<MarketExceptionsRoute />} />
           <Route path="/operations/stock" element={<StockPage />} />
           <Route path="/operations/delivery-calendar" element={<DeliveryCalendarPage />} />
           <Route path="/billing" element={<BillingPage />} />

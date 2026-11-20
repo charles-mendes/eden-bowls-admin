@@ -1278,12 +1278,22 @@ describe('SubscriptionDetailPage workflow', () => {
 
     it('the account and country mismatch shows once, as an entry linking to market exceptions', async () => {
       seedAuth()
-      installAdminFetchMock(operatorWriteUser, { marketException: true })
+      installAdminFetchMock({ ...operatorWriteUser, roles: ['admin'] }, { marketException: true })
       open(page)
 
       const block = await sectionOf('Precisa de atenção')
       expect(screen.getAllByText(/Conta e país do endereço não combinam/)).toHaveLength(1)
       expect(within(block).getByRole('link', { name: 'Abrir Exceções de mercado' })).toHaveAttribute('href', '/operations/market-exceptions')
+    })
+
+    it('a non-admin sees the mismatch without the link to market exceptions', async () => {
+      seedAuth()
+      installAdminFetchMock(operatorWriteUser, { marketException: true })
+      open(page)
+
+      const block = await sectionOf('Precisa de atenção')
+      expect(within(block).getByText('Peça a um admin para resolver em Exceções de mercado.')).toBeInTheDocument()
+      expect(within(block).queryByRole('link', { name: 'Abrir Exceções de mercado' })).toBeNull()
     })
 
     it('nothing open, no block', async () => {

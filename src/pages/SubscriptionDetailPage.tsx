@@ -36,7 +36,7 @@ import { useSectionFeedback, type SectionFeedback } from '../lib/useSectionFeedb
 const failure = (requestError: unknown, fallback: string) => (requestError instanceof Error ? requestError.message : fallback)
 
 export function SubscriptionDetailPage() {
-  const { token, hasPermission } = useAuth()
+  const { token, hasPermission, hasRole } = useAuth()
   const { id } = useParams()
   const [data, setData] = useState<SubscriptionDetail | null>(null)
   const location = useLocation()
@@ -469,6 +469,7 @@ export function SubscriptionDetailPage() {
       courierWaiting: shipsByCourier && awaitingCourier.length > 0,
       courierItems: shipsByCourier ? courierItems : [],
       marketException: data.market_exception,
+      canOpenMarketExceptions: hasRole('admin'),
     })
     : []
   const charges = buildCharges({

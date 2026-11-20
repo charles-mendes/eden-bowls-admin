@@ -170,11 +170,11 @@ describe('admin menu', () => {
 
     expect(br.group).toBe('Operação')
     expect(br.items.map((item) => item.label)).toEqual([
-      'Pendências', 'Fila de produção', 'Entregas Brasil', 'Exceções de mercado', 'Estoque', 'Notas fiscais', 'Calendário de operação',
+      'Pendências', 'Fila de produção', 'Entregas Brasil', 'Estoque', 'Notas fiscais', 'Calendário de operação',
     ])
     expect(us.group).toBe('Operação')
     expect(us.items.map((item) => item.label)).toEqual([
-      'Pendências', 'Fila de produção', 'Etiquetas UPS', 'Exceções de mercado', 'Estoque', 'Calendário de operação',
+      'Pendências', 'Fila de produção', 'Etiquetas UPS', 'Estoque', 'Calendário de operação',
     ])
   })
 
@@ -189,11 +189,14 @@ describe('admin menu', () => {
     expect(groupedMenuItems(['operator'], ['shipping.read'], ['BR']).flatMap((group) => group.items).map((item) => item.href)).not.toContain('/operations/labels')
   })
 
-  it('shows Exceções de mercado only with shipping.read, in every market', () => {
-    const hrefs = (permissions: string[], markets: ('BR' | 'US')[] = []) => visibleMenuItems(['operator'], permissions, markets).map((item) => item.href)
+  it('shows Exceções de mercado only to admins with shipping.read, in every market', () => {
+    const hrefs = (permissions: string[], markets: ('BR' | 'US')[] = []) => visibleMenuItems(['admin'], permissions, markets).map((item) => item.href)
     expect(hrefs(['shipping.read'])).toContain('/operations/market-exceptions')
     expect(hrefs(['shipping.read'], ['US'])).toContain('/operations/market-exceptions')
     expect(hrefs(['shipping.read'], ['BR'])).toContain('/operations/market-exceptions')
     expect(hrefs([])).not.toContain('/operations/market-exceptions')
+    for (const role of ['operator', 'readonly', 'veterinarian'] as const) {
+      expect(visibleMenuItems([role], ['shipping.read']).map((item) => item.href)).not.toContain('/operations/market-exceptions')
+    }
   })
 })
