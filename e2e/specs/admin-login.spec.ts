@@ -22,18 +22,18 @@ test.describe('Admin login', () => {
     await page.getByLabel('Senha').fill('secret')
     await page.getByRole('button', { name: 'Entrar' }).click()
 
-    await expect(page.getByRole('heading', { name: 'Hoje', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Pendências', exact: true })).toBeVisible()
     await expect(page.getByText('ops@edenbowls.com')).toBeVisible()
     expect(tokenBodies).toEqual([{ username: 'ops@edenbowls.com', password: 'secret' }])
     expect(meAuth.some((value) => value === 'Bearer e2e-access-token')).toBe(true)
     await expect.poll(() => page.evaluate(() => localStorage.getItem('eden-bowls-admin-token'))).toBe('e2e-access-token')
   })
 
-  test('an operator sees the day without the system health panel', async ({ page }) => {
+  test('an operator sees the pending items without the system health panel', async ({ page }) => {
     const { captured } = await openAuthed(page, '/dashboard', e2eProfiles.operator)
 
-    await expect(page.getByRole('heading', { name: 'Hoje', exact: true })).toBeVisible()
-    await expect(page.getByText('Ana Ledger')).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Pendências', exact: true })).toBeVisible()
+    await expect(page.getByText('1 pedido de hoje com preparo não iniciado')).toBeVisible()
     await expect(page.getByText('Saúde do sistema')).toHaveCount(0)
     await expect(page.getByRole('group', { name: 'Mercado' })).toHaveCount(0)
     await expect.poll(() => captured.some((item) => item.path === '/api/v1/admin/catalog/sync/health')).toBe(false)
@@ -86,7 +86,7 @@ test.describe('Admin login', () => {
 
     await expect(page.getByRole('heading', { name: 'Nutrition simulator' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Simulador nutricional' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Hoje' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'Pendências' })).toHaveCount(0)
 
     await page.goto('/users')
     await expect(page).toHaveURL(/\/nutrition\/simulate/)
