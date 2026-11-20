@@ -26,6 +26,7 @@ const SEVERITY_LABEL: Record<Severity, string> = { high: 'Alta', medium: 'Média
 type Pending = { key: string; severity: Severity; title: string; detail: string; action: string; to: string; refused?: TodayItem[] }
 
 const customer = (item: TodayItem) => item.displayName || item.email
+const boxesLine = (item: TodayItem) => (item.packCount > 0 ? `${plural(item.packCount, 'pacote', 'pacotes')}${item.packSizeLabel ? ` de ${item.packSizeLabel}` : ''}` : '')
 
 // What blocks the deliveries, worst first. Each one opens the place where it gets solved.
 function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado'], stalePaid = 0): Pending[] {
@@ -34,7 +35,6 @@ function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado'], stal
   const refused = items.filter((item) => item.paymentState === 'past_due')
   const blocked = items.filter((item) => item.productionStatus === 'blocked')
   const notStarted = items.filter((item) => item.dueBucket === 'today' && item.paymentState === 'paid' && item.productionStatus === 'to_prepare')
-  const noLabel = items.filter((item) => item.upsLabel === 'missing' && item.productionStatus === 'ready')
   // queue-overdue-filter-matches-metric: a ready Brazil order past its preparation day whose box has not left is
   // late for the customer even though the kitchen is done; "Atrasados" leaves it out, so it is pending here.
   const waitingToLeave = items.filter((item) => item.dueBucket === 'overdue' && item.productionStatus === 'ready'
@@ -91,24 +91,18 @@ function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado'], stal
       action: 'Ver na fila', to: productionQueueHref({ prazo: 'hoje', status: 'to_prepare', mercado }),
     })
   }
-  if (noLabel.length) {
-    const one = noLabel.length === 1 ? noLabel[0] : null
-    list.push({
-      key: 'ups', severity: 'low', title: plural(noLabel.length, 'pedido pronto sem etiqueta UPS', 'pedidos prontos sem etiqueta UPS'),
-      detail: one ? `${customer(one)}: gerar a etiqueta para envio.` : 'Gerar as etiquetas para envio.',
-      action: one ? 'Abrir pedido' : 'Ver etiquetas',
-      to: one ? `/billing/subscriptions/${one.id}` : LABELS_PATH,
-    })
-  }
   return list
 }
+
+// Ready US orders still waiting for a UPS label: their own section, one line per order.
+const withoutUpsLabel = (items: TodayItem[]) => items.filter((item) => item.upsLabel === 'missing' && item.productionStatus === 'ready')
 
 // keep-ready-orders-dispatchable: parts after the title, each with its own link when it has one.
 type WorkPart = { key: string; text: string; to?: string }
 type Work = { key: string; title: string; to: string; action: string; parts?: WorkPart[] }
 
 // Shipping and invoice work, counted by the API. Only counts above zero and markets on screen show.
-function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'BR' | 'US'>): Work[] {
+function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'BR' | 'US'>, isAdmin: boolean): Work[] {
   if (!fulfillment) return []
   const brazil = markets.includes('BR')
   const us = markets.includes('US')
@@ -151,7 +145,8 @@ function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'
         action: market === 'BR' ? 'Abrir entregas' : 'Abrir etiquetas',
       })
     }
-    const exceptions = fulfillment.marketExceptions?.[market] ?? 0
+    // Exceções de mercado is an admin-only screen: other roles do not see its count.
+    const exceptions = isAdmin ? fulfillment.marketExceptions?.[market] ?? 0 : 0
     if (exceptions > 0) {
       list.push({
         key: `market-exceptions-${market}`,
@@ -240,7 +235,9 @@ export function DashboardPage() {
   const mercado: QueueFilters['mercado'] = market ? (market === 'US' ? 'us' : 'br') : undefined
   const pending = pendingItems(items, mercado, data?.stalePaid ?? 0)
   const shownMarkets = market ? [market] : markets
-  const work = fulfillmentItems(data?.fulfillment, shownMarkets)
+  const work = fulfillmentItems(data?.fulfillment, shownMarkets, isAdmin)
+  const showUps = shownMarkets.includes('US')
+  const noLabel = withoutUpsLabel(items)
 
   return (
     <PageFrame
@@ -326,6 +323,33 @@ export function DashboardPage() {
           </p>
         ) : null}
       </section>
+
+      {showUps ? (
+        <section className="day-section" aria-labelledby="day-ups-label">
+          <div className="day-section-head">
+            <h3 id="day-ups-label">Sem etiqueta UPS</h3>
+            {noLabel.length > 0 ? <span className="muted">{plural(noLabel.length, 'pedido pronto', 'pedidos prontos')} esperando etiqueta</span> : null}
+            <Link className="ghost-button" to={LABELS_PATH}>Abrir Etiquetas UPS</Link>
+          </div>
+          {!data ? (
+            <p className="muted">{loading ? 'Carregando…' : '—'}</p>
+          ) : noLabel.length === 0 ? (
+            <p className="day-all-clear">Todos os pedidos prontos têm etiqueta.</p>
+          ) : (
+            <ul className="day-pending">
+              {noLabel.map((item) => (
+                <li key={item.id}>
+                  <div className="day-pending-text">
+                    <strong>{customer(item)}</strong>
+                    <span>{[item.city, item.dueLabel, boxesLine(item)].filter(Boolean).join(' · ')}</span>
+                  </div>
+                  <Link className="ghost-button" to={`/billing/subscriptions/${item.id}`}>Abrir pedido</Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       {work.length > 0 ? (
         <section className="day-section" aria-labelledby="day-fulfillment">

@@ -179,13 +179,22 @@ describe('DashboardPage', () => {
     expect(screen.getByText(/Amanhã \(Brasil\): Folga da cozinha/)).toBeInTheDocument()
 
     const pending = within(screen.getByRole('region', { name: 'Produção' })).getAllByRole('listitem')
-    expect(pending.map((item) => within(item).getByText(/^(Alta|Média|Baixa)$/).textContent)).toEqual(['Alta', 'Média', 'Baixa'])
+    expect(pending.map((item) => within(item).getByText(/^(Alta|Média|Baixa)$/).textContent)).toEqual(['Alta', 'Média'])
     expect(within(pending[0]).getByText('1 pagamento recusado')).toBeInTheDocument()
     expect(within(pending[0]).getByText('Davi Rocha: falar com o cliente antes de preparar.')).toBeInTheDocument()
     expect(within(pending[0]).getByRole('link', { name: 'Abrir pedido' })).toHaveAttribute('href', '/billing/subscriptions/34')
     expect(within(pending[1]).getByText('1 pedido de hoje com preparo não iniciado')).toBeInTheDocument()
     expect(within(pending[1]).getByRole('link', { name: 'Ver na fila' })).toHaveAttribute('href', '/operations/production?prazo=hoje&status=to_prepare')
-    expect(within(pending[2]).getByText('1 pedido pronto sem etiqueta UPS')).toBeInTheDocument()
+    // The ready order without a UPS label has its own section, one line per order, not a blocker line.
+    expect(screen.queryByText('1 pedido pronto sem etiqueta UPS')).not.toBeInTheDocument()
+    const ups = within(screen.getByRole('region', { name: 'Sem etiqueta UPS' }))
+    expect(ups.getByText('1 pedido pronto esperando etiqueta')).toBeInTheDocument()
+    expect(ups.getByRole('link', { name: 'Abrir Etiquetas UPS' })).toHaveAttribute('href', '/operations/labels')
+    const upsRows = ups.getAllByRole('listitem')
+    expect(upsRows).toHaveLength(1)
+    expect(within(upsRows[0]).getByText('Ana Costa')).toBeInTheDocument()
+    expect(within(upsRows[0]).getByText('Miami · Atrasado 1 dia · 3 pacotes de 500 g')).toBeInTheDocument()
+    expect(within(upsRows[0]).getByRole('link', { name: 'Abrir pedido' })).toHaveAttribute('href', '/billing/subscriptions/31')
 
     expect(screen.getByText('Saúde do sistema')).toBeInTheDocument()
 
@@ -281,6 +290,19 @@ describe('DashboardPage', () => {
 
     await screen.findByText(/Quarta-feira, 7 de outubro/)
     expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Sem etiqueta UPS' })).not.toBeInTheDocument()
+  })
+
+  it('says every ready order has its UPS label when none is missing', async () => {
+    seedAuth()
+    installAdminFetchMock(adminUser, {
+      routes: withToday({ items: todayOverview.items.map((item) => ({ ...item, upsLabel: item.upsLabel === 'missing' ? 'created' : item.upsLabel })) }),
+    })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const ups = within(await screen.findByRole('region', { name: 'Sem etiqueta UPS' }))
+    expect(await ups.findByText('Todos os pedidos prontos têm etiqueta.')).toBeInTheDocument()
+    expect(ups.queryAllByRole('listitem')).toHaveLength(0)
   })
 
   it('shows the market switch from the effective markets when no market is stored', async () => {
@@ -459,7 +481,7 @@ describe('DashboardPage', () => {
   // admin-flow-fixes-5 (PM-26): address problems and market exceptions per market.
   it('counts the open address problems and the market exceptions of the market on screen', async () => {
     seedAuth()
-    installAdminFetchMock(operatorUser, {
+    installAdminFetchMock({ ...operatorUser, roles: ['admin'] }, {
       routes: withToday({ fulfillment: { ...zero, addressIssues: { BR: { open: 3, stale: 1 }, US: { open: 5, stale: 0 } }, marketExceptions: { BR: 1, US: 2 } } }),
     })
     renderAuthedPage(<DashboardPage />, '/dashboard')
@@ -470,6 +492,18 @@ describe('DashboardPage', () => {
     expect(link('1 exceção de mercado')).toHaveAttribute('href', '/operations/market-exceptions')
     expect(work.queryByText(/5 problemas de endereço/)).not.toBeInTheDocument()
     expect(work.queryByText('2 exceções de mercado')).not.toBeInTheDocument()
+  })
+
+  it('hides the market exceptions count from non-admins', async () => {
+    seedAuth()
+    installAdminFetchMock(operatorUser, {
+      routes: withToday({ fulfillment: { ...zero, addressIssues: { BR: { open: 3, stale: 0 }, US: { open: 0, stale: 0 } }, marketExceptions: { BR: 1, US: 0 } } }),
+    })
+    renderAuthedPage(<DashboardPage />, '/dashboard')
+
+    const work = within(await screen.findByRole('region', { name: 'Expedição e notas' }))
+    expect(work.getByText('3 problemas de endereço abertos')).toBeInTheDocument()
+    expect(work.queryByText(/exceção de mercado/)).not.toBeInTheDocument()
   })
 
   it('links the US address problems to the label queue and hides zero counts', async () => {
@@ -529,7 +563,7 @@ describe('DashboardPage', () => {
     expect(within(screen.getByRole('dialog')).getByText('Sem telefone')).toBeInTheDocument()
   })
 
-  it('opens the refused subscribers and the label queue when several orders wait', async () => {
+  it('opens the refused subscribers and lists each order waiting for a UPS label', async () => {
     seedAuth()
     const base = todayOverview.items[0]
     installAdminFetchMock(adminUser, {
@@ -548,8 +582,10 @@ describe('DashboardPage', () => {
     const pending = within(await screen.findByRole('region', { name: 'Produção' }))
     const refused = (await pending.findByText('2 pagamentos recusados')).closest('li') as HTMLElement
     expect(within(refused).getByRole('link', { name: 'Ver assinantes' })).toHaveAttribute('href', '/billing?status=past_due')
-    const labels = pending.getByText('2 pedidos prontos sem etiqueta UPS').closest('li') as HTMLElement
-    expect(within(labels).getByRole('link', { name: 'Ver etiquetas' })).toHaveAttribute('href', '/operations/labels')
+    const ups = within(screen.getByRole('region', { name: 'Sem etiqueta UPS' }))
+    expect(ups.getByText('2 pedidos prontos esperando etiqueta')).toBeInTheDocument()
+    expect(ups.getAllByRole('link', { name: 'Abrir pedido' }).map((link) => link.getAttribute('href'))).toEqual(['/billing/subscriptions/41', '/billing/subscriptions/42'])
+    expect(ups.getByRole('link', { name: 'Abrir Etiquetas UPS' })).toHaveAttribute('href', '/operations/labels')
   })
 
   describe('checkout readiness line (admin-checkout-readiness)', () => {
