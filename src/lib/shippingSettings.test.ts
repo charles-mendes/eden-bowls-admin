@@ -1,10 +1,34 @@
 import { describe, expect, it } from 'vitest'
-import { chargeHistoryEvents, describeChargeEvent, emptySettings, mergeSettings } from './shippingSettings'
+import { chargeHistoryEvents, describeChargeEvent, emptySettings, formatPhone, mergeSettings, usPhoneInvalid } from './shippingSettings'
 
 describe('mergeSettings', () => {
   it('reads the US ship-from phone, empty when the API has none', () => {
     expect(mergeSettings({ us: { ship_from: { phone: '305 555 0100' } } } as never).us.ship_from.phone).toBe('305 555 0100')
     expect(mergeSettings(undefined).us.ship_from.phone).toBe('')
+  })
+})
+
+describe('formatPhone', () => {
+  it('writes a US phone as (area) xxx-xxxx and drops the country code 1', () => {
+    expect(formatPhone('US', '1(561)674-6117')).toBe('(561) 674-6117')
+    expect(formatPhone('US', '+1 561 674 6117')).toBe('(561) 674-6117')
+    expect(formatPhone('US', '5616746117999')).toBe('(561) 674-6117')
+    expect(formatPhone('US', '56')).toBe('(56')
+    expect(formatPhone('US', '561674')).toBe('(561) 674')
+    expect(formatPhone('US', '')).toBe('')
+  })
+
+  it('writes a BR phone with the DDD, landline or mobile, and drops the country code 55', () => {
+    expect(formatPhone('BR', '4133334444')).toBe('(41) 3333-4444')
+    expect(formatPhone('BR', '41998905819')).toBe('(41) 99890-5819')
+    expect(formatPhone('BR', '+55 41 99890-5819')).toBe('(41) 99890-5819')
+    expect(formatPhone('BR', '413')).toBe('(41) 3')
+  })
+
+  it('asks the US phone for exactly 10 digits, a leading 1 apart', () => {
+    expect(usPhoneInvalid('')).toBe(false)
+    expect(usPhoneInvalid('1(561)674-6117')).toBe(false)
+    expect(usPhoneInvalid('(561) 674-611')).toBe(true)
   })
 })
 
