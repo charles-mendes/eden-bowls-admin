@@ -7744,6 +7744,51 @@ button.readiness-step-inner:hover .readiness-title {
   flex: none;
 }
 
+/* Inside a form field `.ship-field select` stretches to 100%: the AM/PM select keeps its own width so hh:mm shows. */
+.ship-field .us-time input {
+  width: auto;
+  min-width: 5ch;
+}
+
+.ship-field .us-time select {
+  width: auto;
+}
+
+/* UPS pickup: the labels go in one list without bullets; a long tracking number breaks instead of widening the card. */
+.pickup-labels {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.pickup-labels label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.pickup-labels span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The ask button takes its own row under the fields, and the whole width on a phone. */
+.pickup-fields {
+  margin-bottom: var(--space-3);
+}
+
+.pickup-fields .ship-actions {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 560px) {
+  .pickup-fields .ship-actions .primary-button {
+    width: 100%;
+  }
+}
+
 /* Report figures that open their details */
 .day-card-link {
   color: inherit;
