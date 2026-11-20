@@ -265,14 +265,14 @@ describe('LabelQueuePage', () => {
     expect(confirm).not.toHaveBeenCalled()
   })
 
-  it('Reimprimir on a created row prints its stored label without buying or selecting', async () => {
+  it('Imprimir on a created row prints its stored label without buying or selecting', async () => {
     const user = userEvent.setup()
     const confirm = vi.fn()
     vi.stubGlobal('confirm', confirm)
     const { calls } = install(operatorUsWriteUser, { queue: { ready: [], unresolved: [], created: [created(4)], truncated: false } })
     render()
 
-    await user.click(await screen.findByRole('button', { name: 'Reimprimir etiqueta de Cliente 4' }))
+    await user.click(await screen.findByRole('button', { name: 'Imprimir etiqueta de Cliente 4' }))
 
     await waitFor(() => expect(printLabels).toHaveBeenCalledTimes(1))
     expect(printLabels.mock.calls[0][0]).toHaveLength(1)
@@ -281,12 +281,12 @@ describe('LabelQueuePage', () => {
     expect(confirm).not.toHaveBeenCalled()
   })
 
-  it('Ready rows have no Reimprimir button', async () => {
+  it('Ready rows have no row Imprimir button', async () => {
     install(operatorUsWriteUser, { queue: { ready: [order(1)], unresolved: [], created: [], truncated: false } })
     render()
 
     expect(await screen.findByText('Cliente 1')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Reimprimir/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Imprimir etiqueta de/ })).not.toBeInTheDocument()
   })
 
   it('Shipment with two boxes: fetches packages 1 and 2 and prints two pages, and the row shows its boxes', async () => {

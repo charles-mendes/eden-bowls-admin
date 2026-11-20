@@ -328,12 +328,12 @@ export function LabelQueuePage() {
               <button
                 className="ghost-button"
                 type="button"
-                aria-label={`Reimprimir etiqueta de ${orderName(item)}`}
-                title="Reimprimir etiqueta"
+                aria-label={`Imprimir etiqueta de ${orderName(item)}`}
+                title="Imprimir de novo a etiqueta já comprada"
                 disabled={running}
                 onClick={() => void reprint(item)}
               >
-                <span aria-hidden="true">🖨</span> Reimprimir
+                Imprimir
               </button>
             ) : null}
             <Link className="ghost-button" to={`/billing/subscriptions/${item.subscription_id}`}>Assinatura</Link>
@@ -417,7 +417,7 @@ export function LabelQueuePage() {
         {table(data?.unresolved ?? [], (item) => row(item, false), 'Nenhuma compra pendente.')}
       </Section>
 
-      <Section title="Etiquetas criadas" description="Ainda não entregues. Use Reimprimir na linha, ou selecione várias e imprima de uma vez.">
+      <Section title="Etiquetas criadas" description="Ainda não entregues. Use Imprimir na linha, ou selecione várias e imprima de uma vez.">
         {table(data?.created ?? [], (item) => row(item, true, [], true), 'Nenhuma etiqueta aberta.')}
       </Section>
 
