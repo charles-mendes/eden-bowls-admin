@@ -27,6 +27,15 @@ describe('admin menu', () => {
     expect(hrefs).toEqual(['/nutrition/simulate', '/nutrition/settings'])
   })
 
+  it('Parâmetros nutricionais is only for admin and veterinarian', () => {
+    for (const role of ['admin', 'veterinarian'] as const) {
+      expect(visibleMenuItems([role]).map((item) => item.href)).toContain('/nutrition/settings')
+    }
+    for (const role of ['operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role]).map((item) => item.href)).not.toContain('/nutrition/settings')
+    }
+  })
+
   it('Veterinarian has no settings: Configurações is for admin, operator and readonly', () => {
     expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/config')
     for (const role of ['admin', 'operator', 'readonly'] as const) {

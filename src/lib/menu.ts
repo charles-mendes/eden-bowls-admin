@@ -40,7 +40,7 @@ export const adminMenu: MenuItem[] = [
   { label: 'Visão do negócio', href: '/insights', roles: ['admin', 'operator', 'readonly'], group: 'Negócio', permission: 'reports.read' },
   { label: 'Relatórios', href: '/reports', roles: ['admin', 'operator', 'readonly'], group: 'Negócio', permission: 'reports.read' },
   { label: 'Simulador nutricional', href: '/nutrition/simulate', roles: ['admin', 'operator', 'veterinarian'], group: 'Ferramentas' },
-  { label: 'Parâmetros nutricionais', href: '/nutrition/settings', roles: ['admin', 'operator', 'readonly', 'veterinarian'], group: 'Ferramentas' },
+  { label: 'Parâmetros nutricionais', href: '/nutrition/settings', roles: ['admin', 'veterinarian'], group: 'Ferramentas' },
   { label: 'Equipe e papéis', href: '/users/roles', roles: ['admin'], group: 'Administração' },
   { label: 'Privacidade', href: '/privacy/requests', roles: ['admin', 'operator', 'readonly'], group: 'Administração' },
   { label: 'Configurações', href: '/config', roles: ['admin', 'operator', 'readonly'], group: 'Administração' },

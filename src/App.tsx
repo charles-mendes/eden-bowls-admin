@@ -80,6 +80,12 @@ function PlanSettingsRoute() {
   return hasRole('admin') ? <PlanSettingsPage /> : <Navigate to="/dashboard" replace />
 }
 
+// Parâmetros nutricionais: admin and veterinarian only; other roles go back to Pendências before the page asks the API anything.
+function NutritionSettingsRoute() {
+  const { hasRole } = useAuth()
+  return hasRole('admin') || hasRole('veterinarian') ? <NutritionSettingsPage /> : <Navigate to="/dashboard" replace />
+}
+
 const SentryRoutes = Sentry.withSentryReactRouterV7Routing(Routes)
 
 function App() {
@@ -95,7 +101,7 @@ function App() {
           <Route path="/insights" element={<InsightsRoute />} />
           <Route path="/reports" element={<ReportsPage />} />
           <Route path="/nutrition/simulate" element={<NutritionSimulatePage />} />
-          <Route path="/nutrition/settings" element={<NutritionSettingsPage />} />
+          <Route path="/nutrition/settings" element={<NutritionSettingsRoute />} />
           <Route path="/catalog/products" element={<ProductsPage />} />
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
           <Route path="/catalog/plan" element={<PlanSettingsRoute />} />
