@@ -256,7 +256,7 @@ function OverviewBody({ data, market, range }: { data: Overview; market: MarketC
       <section className="insights-panel" aria-labelledby="insights-mix">
         <div className="insights-heading">
           <div>
-            <h3 id="insights-mix">Mix das assinaturas ativas</h3>
+            <h3 id="insights-mix">Pacotes por entrega das assinaturas ativas</h3>
             <p className="muted">Pacotes por entrega nas assinaturas ativas agora, para planejar compras da cozinha</p>
           </div>
         </div>
@@ -276,26 +276,28 @@ function OverviewBody({ data, market, range }: { data: Overview; market: MarketC
               </div>
               <div>
                 <p className="insights-kicker">Tamanhos de pacote</p>
-                <table className="insights-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Pacote</th>
-                      <th scope="col">Assinaturas</th>
-                      <th scope="col">Pacotes</th>
-                      <th scope="col">Participação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mix.packSizes.map((size) => (
-                      <tr key={size.grams}>
-                        <td>{size.label}</td>
-                        <td>{formatNumber(size.subscriptions)}</td>
-                        <td>{formatNumber(size.packs)}</td>
-                        <td>{formatRate(size.share)}</td>
+                <div className="table-scroll">
+                  <table className="insights-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Pacote</th>
+                        <th scope="col">Assinaturas</th>
+                        <th scope="col">Pacotes</th>
+                        <th scope="col">Participação</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {mix.packSizes.map((size) => (
+                        <tr key={size.grams}>
+                          <td>{size.label}</td>
+                          <td>{formatNumber(size.subscriptions)}</td>
+                          <td>{formatNumber(size.packs)}</td>
+                          <td>{formatRate(size.share)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </>

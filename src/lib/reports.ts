@@ -90,7 +90,7 @@ export const REPORT_TABS: Array<{ id: ReportTab; label: string; report: ReportNa
   { id: 'receita', label: 'Receita', report: 'revenue' },
   { id: 'assinaturas', label: 'Assinaturas', report: 'subscriptions' },
   { id: 'aquisicao', label: 'Aquisição', report: 'acquisition' },
-  { id: 'mix', label: 'Mix', report: 'mix' },
+  { id: 'mix', label: 'Pacotes por entrega', report: 'mix' },
   { id: 'operacao', label: 'Operação', report: 'operations' },
   { id: 'estoque', label: 'Estoque', report: 'stock' },
 ]

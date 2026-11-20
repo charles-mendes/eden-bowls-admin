@@ -457,11 +457,11 @@ function MixTab({ data }: { data: MixReport }) {
       <section className="insights-panel" aria-labelledby="report-mix-recipes">
         <div>
           <h3 id="report-mix-recipes">Receitas</h3>
-          <p className="muted">Packs por ciclo nas assinaturas ativas</p>
+          <p className="muted">Pacotes por entrega nas assinaturas ativas</p>
         </div>
         {data.recipes.length ? (
           <FunnelBars
-            title="Packs por receita"
+            title="Pacotes por receita"
             stages={data.recipes.map((row) => ({
               key: row.key,
               label: <>{row.name}<NameMark show={row.nameMissing} market={market} /></>,
@@ -471,16 +471,16 @@ function MixTab({ data }: { data: MixReport }) {
         ) : <p className="muted">Nenhuma assinatura ativa.</p>}
       </section>
       <section className="insights-panel" aria-labelledby="report-mix-packs">
-        <h3 id="report-mix-packs">Tamanhos de pack</h3>
+        <h3 id="report-mix-packs">Tamanhos de pacote</h3>
         <ReportTable
-          caption="Tamanhos de pack"
+          caption="Tamanhos de pacote"
           rowKey={(row) => String(row.grams)}
           rows={data.packSizes}
           empty="Nenhuma assinatura ativa."
           columns={[
-            { key: 'label', label: 'Pack', cell: (row) => row.label },
+            { key: 'label', label: 'Pacote', cell: (row) => row.label },
             { key: 'subscriptions', label: 'Assinaturas', cell: (row) => formatCount(row.subscriptions) },
-            { key: 'packs', label: 'Packs', cell: (row) => formatCount(row.packs) },
+            { key: 'packs', label: 'Pacotes', cell: (row) => formatCount(row.packs) },
             { key: 'share', label: 'Participação', cell: (row) => formatRate(row.share) },
           ]}
         />

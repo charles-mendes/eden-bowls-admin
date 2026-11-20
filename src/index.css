@@ -5088,8 +5088,13 @@ label.primary-button {
 
 .insights-split {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: var(--space-3);
+}
+
+/* Grid items default to min-width: auto, so a wide child would stretch the column past the screen. */
+.insights-split > * {
+  min-width: 0;
 }
 
 .insights-panel {
@@ -5232,8 +5237,10 @@ label.primary-button {
   text-align: right;
 }
 
+/* The global `table { min-width: 820px }` would push these compact tables past their panel. */
 .insights-table {
   width: 100%;
+  min-width: 0;
   border-collapse: collapse;
   font-size: var(--text-sm);
 }
