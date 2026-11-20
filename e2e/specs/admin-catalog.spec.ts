@@ -74,7 +74,7 @@ test.describe('Admin catalog', () => {
   })
 
   test('saves the market plan settings on the Plano screen', async ({ page }) => {
-    const { captured } = await openAuthed(page, '/catalog/plan?market=BR', e2eProfiles.operatorWrite)
+    const { captured } = await openAuthed(page, '/catalog/plan?market=BR', e2eProfiles.admin)
 
     const limit = page.getByRole('spinbutton', { name: 'Limite do pacote pequeno' })
     await expect(limit).toHaveValue('8')

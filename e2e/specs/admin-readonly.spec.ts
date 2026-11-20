@@ -9,7 +9,7 @@ test.describe('Admin readonly', () => {
     await expect(page.getByLabel('Conta')).toHaveValue('br')
     await expect(page.getByLabel('Conta')).toBeDisabled()
     await expect(page.getByRole('option', { name: 'US' })).toHaveCount(0)
-    await expect(page.getByRole('link', { name: 'Hoje' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Pendências' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Feedbacks manuais' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Clientes' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Checkouts' })).toHaveCount(0)

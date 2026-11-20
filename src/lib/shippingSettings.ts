@@ -224,13 +224,38 @@ export function brHeadquartersReady(center: BrCenter) {
   return Boolean(center.zipcode && center.street && center.city && (center.lat !== 0 || center.lng !== 0))
 }
 
-// The US phone UPS takes on the pickup: empty, or 10 digits at least (the API rule).
-export function usPhoneInvalid(phone: string | undefined) {
-  const digits = String(phone || '').replace(/\D/g, '')
-  return digits.length > 0 && digits.length < 10
+// The phone digits of a market without the country code: US 10 (area code and number; no area code starts
+// with 1, so a leading 1 is the country code), BR 10 or 11 (DDD and number; a leading 55 past 11 is the country code).
+export function phoneDigits(market: 'BR' | 'US', raw: string | undefined) {
+  let digits = String(raw || '').replace(/\D/g, '')
+  if (market === 'US') {
+    if (digits.startsWith('1')) digits = digits.slice(1)
+    return digits.slice(0, 10)
+  }
+  if (digits.length > 11 && digits.startsWith('55')) digits = digits.slice(2)
+  return digits.slice(0, 11)
 }
 
-export const US_PHONE_INVALID_TEXT = 'O telefone precisa de 10 dígitos (código de área e número).'
+// The phone as it is typed, in the market layout: US (561) 674-6117, BR (41) 3333-4444 or (41) 99890-5819.
+export function formatPhone(market: 'BR' | 'US', raw: string | undefined) {
+  const digits = phoneDigits(market, raw)
+  if (!digits) return ''
+  const area = digits.slice(0, market === 'US' ? 3 : 2)
+  const rest = digits.slice(area.length)
+  if (!rest) return `(${area}`
+  const split = market === 'US' ? 3 : rest.length > 8 ? 5 : 4
+  const head = rest.slice(0, split)
+  const tail = rest.slice(split)
+  return tail ? `(${area}) ${head}-${tail}` : `(${area}) ${head}`
+}
+
+// The US phone UPS takes on the pickup: empty, or the 10 digits (area code and number).
+export function usPhoneInvalid(phone: string | undefined) {
+  const digits = phoneDigits('US', phone)
+  return digits.length > 0 && digits.length !== 10
+}
+
+export const US_PHONE_INVALID_TEXT = 'O telefone precisa de 10 dígitos (código de área e número), como (561) 674-6117.'
 
 export function usHeadquartersReady(shipFrom: UsShipFrom) {
   return Boolean(shipFrom.zipcode && shipFrom.street && shipFrom.city && shipFrom.state)

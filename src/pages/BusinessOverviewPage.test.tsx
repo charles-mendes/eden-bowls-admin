@@ -123,7 +123,9 @@ describe('BusinessOverviewPage', () => {
     expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
     expect(screen.getByText(/de Brasil · 28\/09\/2026 a 27\/10\/2026/)).toBeInTheDocument()
     const headings = screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent)
-    expect(headings).toEqual(['Receita', 'Assinaturas', 'Tendência semanal', 'Funil de aquisição', 'Mix das assinaturas ativas'])
+    expect(headings).toEqual(['Receita', 'Assinaturas', 'Tendência semanal', 'Funil de aquisição', 'Pacotes por entrega das assinaturas ativas'])
+    expect(screen.getByRole('link', { name: 'Ver relatório de aquisição →' })).toHaveAttribute('href', '/reports?aba=aquisicao&mercado=BR&de=2026-09-28&ate=2026-10-27')
+    expect(screen.queryByRole('link', { name: 'Ver checkouts →' })).not.toBeInTheDocument()
 
     const gross = screen.getByText('Faturamento bruto').closest('.day-card') as HTMLElement
     expect(nbsp(within(gross).getByText(/R\$/).textContent)).toBe('R$ 10.000,00')

@@ -211,7 +211,7 @@ export function UpsPickupSection({
             })}
           </ul>
           {canWrite ? (
-            <div className="ship-fields">
+            <div className="ship-fields pickup-fields">
               <label className="ship-field">
                 <span>Data da coleta</span>
                 <BrDateInput format="us" value={date} onChange={setDate} />

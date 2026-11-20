@@ -12,7 +12,7 @@ import { nfeListHref } from '../lib/nfe'
 import { getBrowserTimeZone } from '../lib/format'
 import { effectiveSessionMarkets } from '../lib/markets'
 import { plural, productionQueueHref, QUEUE_PATH, type QueueFilters } from '../lib/productionQueue'
-import { nextStep, UPS_CHECK_PATH, UPS_PICKUP_PATH, type Bucket, type ClosedDay, type Counts, type Fulfillment, type TodayItem, type TodayOverview, type Tone } from '../lib/today'
+import { UPS_CHECK_PATH, UPS_PICKUP_PATH, type ClosedDay, type Fulfillment, type TodayItem, type TodayOverview } from '../lib/today'
 
 const MARKET_NAME = { BR: 'Brasil', US: 'EUA' } as const
 
@@ -26,6 +26,7 @@ const SEVERITY_LABEL: Record<Severity, string> = { high: 'Alta', medium: 'Média
 type Pending = { key: string; severity: Severity; title: string; detail: string; action: string; to: string; refused?: TodayItem[] }
 
 const customer = (item: TodayItem) => item.displayName || item.email
+const boxesLine = (item: TodayItem) => (item.packCount > 0 ? `${plural(item.packCount, 'pacote', 'pacotes')}${item.packSizeLabel ? ` de ${item.packSizeLabel}` : ''}` : '')
 
 // What blocks the deliveries, worst first. Each one opens the place where it gets solved.
 function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado'], stalePaid = 0): Pending[] {
@@ -34,7 +35,6 @@ function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado'], stal
   const refused = items.filter((item) => item.paymentState === 'past_due')
   const blocked = items.filter((item) => item.productionStatus === 'blocked')
   const notStarted = items.filter((item) => item.dueBucket === 'today' && item.paymentState === 'paid' && item.productionStatus === 'to_prepare')
-  const noLabel = items.filter((item) => item.upsLabel === 'missing' && item.productionStatus === 'ready')
   // queue-overdue-filter-matches-metric: a ready Brazil order past its preparation day whose box has not left is
   // late for the customer even though the kitchen is done; "Atrasados" leaves it out, so it is pending here.
   const waitingToLeave = items.filter((item) => item.dueBucket === 'overdue' && item.productionStatus === 'ready'
@@ -91,24 +91,18 @@ function pendingItems(items: TodayItem[], mercado: QueueFilters['mercado'], stal
       action: 'Ver na fila', to: productionQueueHref({ prazo: 'hoje', status: 'to_prepare', mercado }),
     })
   }
-  if (noLabel.length) {
-    const one = noLabel.length === 1 ? noLabel[0] : null
-    list.push({
-      key: 'ups', severity: 'low', title: plural(noLabel.length, 'pedido pronto sem etiqueta UPS', 'pedidos prontos sem etiqueta UPS'),
-      detail: one ? `${customer(one)}: gerar a etiqueta para envio.` : 'Gerar as etiquetas para envio.',
-      action: one ? 'Abrir pedido' : 'Ver etiquetas',
-      to: one ? `/billing/subscriptions/${one.id}` : LABELS_PATH,
-    })
-  }
   return list
 }
+
+// Ready US orders still waiting for a UPS label: their own section, one line per order.
+const withoutUpsLabel = (items: TodayItem[]) => items.filter((item) => item.upsLabel === 'missing' && item.productionStatus === 'ready')
 
 // keep-ready-orders-dispatchable: parts after the title, each with its own link when it has one.
 type WorkPart = { key: string; text: string; to?: string }
 type Work = { key: string; title: string; to: string; action: string; parts?: WorkPart[] }
 
 // Shipping and invoice work, counted by the API. Only counts above zero and markets on screen show.
-function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'BR' | 'US'>): Work[] {
+function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'BR' | 'US'>, isAdmin: boolean): Work[] {
   if (!fulfillment) return []
   const brazil = markets.includes('BR')
   const us = markets.includes('US')
@@ -151,7 +145,8 @@ function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'
         action: market === 'BR' ? 'Abrir entregas' : 'Abrir etiquetas',
       })
     }
-    const exceptions = fulfillment.marketExceptions?.[market] ?? 0
+    // Exceções de mercado is an admin-only screen: other roles do not see its count.
+    const exceptions = isAdmin ? fulfillment.marketExceptions?.[market] ?? 0 : 0
     if (exceptions > 0) {
       list.push({
         key: `market-exceptions-${market}`,
@@ -165,13 +160,6 @@ function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'
     list.push({ key: 'bling', title: 'Bling desconectado', to: nfeListHref(), action: 'Abrir notas' })
   }
   return list
-}
-
-function stepAction(to: string) {
-  if (to.startsWith(QUEUE_PATH)) return 'Abrir na fila'
-  if (to.startsWith('/operations/courier')) return 'Abrir entregas'
-  if (to.startsWith(LABELS_PATH)) return 'Abrir etiquetas'
-  return 'Abrir pedido'
 }
 
 function closedDayText(day: ClosedDay, today: string) {
@@ -188,18 +176,6 @@ function longDate(isoDate: string) {
   const [year, month, day] = isoDate.split('-').map(Number)
   const text = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(year, month - 1, day))
   return text.charAt(0).toUpperCase() + text.slice(1)
-}
-
-function splitHint(counts: Record<'BR' | 'US', Counts>, bucket: Bucket, markets: Array<'BR' | 'US'>) {
-  if (markets.length < 2) return undefined
-  return `Brasil ${counts.BR[bucket]} · EUA ${counts.US[bucket]}`
-}
-
-const STEP_TONE: Record<Tone, string> = {
-  error: 'day-step-error',
-  warning: 'day-step-warning',
-  info: 'day-step-info',
-  success: 'day-step-success',
 }
 
 export function DashboardPage() {
@@ -258,46 +234,16 @@ export function DashboardPage() {
   const items = data?.items ?? []
   const mercado: QueueFilters['mercado'] = market ? (market === 'US' ? 'us' : 'br') : undefined
   const pending = pendingItems(items, mercado, data?.stalePaid ?? 0)
-  const needsYou = items.filter((item) => {
-    const tone = nextStep(item).tone
-    return tone === 'error' || tone === 'warning'
-  })
   const shownMarkets = market ? [market] : markets
+  const work = fulfillmentItems(data?.fulfillment, shownMarkets, isAdmin)
   const showUps = shownMarkets.includes('US')
-  const work = fulfillmentItems(data?.fulfillment, shownMarkets)
-  const readyWithoutLabel = items.filter((item) => item.upsLabel === 'missing' && item.productionStatus === 'ready').length
-
-  const cards: Array<{ key: string; label: string; value: number | undefined; hint: string; split?: string; tone?: string; to: string }> = [
-    {
-      key: 'overdue', label: 'Atrasados', value: data?.totals.overdue, hint: 'Só o que a cozinha não terminou. Pronto esperando saída conta em pedidos a despachar.',
-      split: data ? splitHint(data.byMarket, 'overdue', shownMarkets) : undefined,
-      tone: data && data.totals.overdue > 0 ? 'day-card-danger' : undefined,
-      to: productionQueueHref({ prazo: 'atrasados', mercado }),
-    },
-    {
-      key: 'today', label: 'Hoje', value: data?.totals.today, hint: 'Com preparo hoje',
-      split: data ? splitHint(data.byMarket, 'today', shownMarkets) : undefined,
-      to: productionQueueHref({ prazo: 'hoje', mercado }),
-    },
-    {
-      key: 'tomorrow', label: 'Amanhã', value: data?.totals.tomorrow, hint: 'Com preparo amanhã',
-      split: data ? splitHint(data.byMarket, 'tomorrow', shownMarkets) : undefined,
-      to: productionQueueHref({ prazo: 'amanha', mercado }),
-    },
-  ]
-  if (showUps) {
-    cards.push({
-      key: 'ups', label: 'Sem etiqueta UPS', value: data ? readyWithoutLabel : undefined, hint: 'Prontos hoje sem etiqueta',
-      tone: readyWithoutLabel > 0 ? 'day-card-warning' : undefined,
-      to: LABELS_PATH,
-    })
-  }
+  const noLabel = withoutUpsLabel(items)
 
   return (
     <PageFrame
       eyebrow={data ? longDate(data.today) : undefined}
-      title="Hoje"
-      description="Pendências e pedidos do dia. Clique em um número para abrir a fila já filtrada."
+      title="Pendências"
+      description="O que trava a produção e a expedição, da mais grave para a menos grave. Os números do dia (Atrasados, Hoje, Amanhã) ficam na Fila de produção."
       actions={(
         <div className="day-toolbar">
           {bothMarkets ? (
@@ -334,21 +280,6 @@ export function DashboardPage() {
         )
       })}
 
-      <section className="day-section" aria-labelledby="day-numbers">
-        <h3 id="day-numbers" className="day-kicker">Números do dia</h3>
-        <div className="day-cards">
-          {cards.map((card) => (
-            <Link key={card.key} to={card.to} className={['day-card', card.tone ?? ''].filter(Boolean).join(' ')}>
-              <span className="day-card-label">{card.label}</span>
-              <strong className="day-card-value">{card.value ?? '—'}</strong>
-              <span className="day-card-hint">{card.hint}</span>
-              {card.split ? <span className="day-card-hint">{card.split}</span> : null}
-              <span className="day-card-link">Abrir na fila →</span>
-            </Link>
-          ))}
-        </div>
-      </section>
-
       {isAdmin && readinessCount > 0 ? (
         <p className="day-readiness">
           <Link to={CHECKOUT_READINESS_PATH}>{summaryLine(readinessCount)}</Link>
@@ -357,7 +288,7 @@ export function DashboardPage() {
 
       <section className="day-section" aria-labelledby="day-pending">
         <div className="day-section-head">
-          <h3 id="day-pending">Pendências</h3>
+          <h3 id="day-pending">Produção</h3>
           {pending.length > 0 ? (
             <span className="muted">{plural(pending.length, 'item', 'itens')}, da mais grave para a menos grave</span>
           ) : null}
@@ -393,6 +324,33 @@ export function DashboardPage() {
         ) : null}
       </section>
 
+      {showUps ? (
+        <section className="day-section" aria-labelledby="day-ups-label">
+          <div className="day-section-head">
+            <h3 id="day-ups-label">Sem etiqueta UPS</h3>
+            {noLabel.length > 0 ? <span className="muted">{plural(noLabel.length, 'pedido pronto', 'pedidos prontos')} esperando etiqueta</span> : null}
+            <Link className="ghost-button" to={LABELS_PATH}>Abrir Etiquetas UPS</Link>
+          </div>
+          {!data ? (
+            <p className="muted">{loading ? 'Carregando…' : '—'}</p>
+          ) : noLabel.length === 0 ? (
+            <p className="day-all-clear">Todos os pedidos prontos têm etiqueta.</p>
+          ) : (
+            <ul className="day-pending">
+              {noLabel.map((item) => (
+                <li key={item.id}>
+                  <div className="day-pending-text">
+                    <strong>{customer(item)}</strong>
+                    <span>{[item.city, item.dueLabel, boxesLine(item)].filter(Boolean).join(' · ')}</span>
+                  </div>
+                  <Link className="ghost-button" to={`/billing/subscriptions/${item.id}`}>Abrir pedido</Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
+
       {work.length > 0 ? (
         <section className="day-section" aria-labelledby="day-fulfillment">
           <div className="day-section-head">
@@ -418,41 +376,6 @@ export function DashboardPage() {
           </ul>
         </section>
       ) : null}
-
-      <section className="day-section" aria-labelledby="day-needs-you">
-        <div className="day-section-head">
-          <h3 id="day-needs-you">Precisa de você</h3>
-          <span className="muted">Só os pedidos que pedem uma ação agora</span>
-        </div>
-        {!data ? (
-          <p className="muted">{loading ? 'Carregando…' : '—'}</p>
-        ) : needsYou.length === 0 ? (
-          <p className="day-all-clear">Nenhum pedido pede ação agora.</p>
-        ) : (
-          <ul className="day-orders">
-            {needsYou.map((item) => {
-              const step = nextStep(item)
-              const action = stepAction(step.to)
-              return (
-                <li key={`${item.id}-${item.dueBucket}`} className="day-order">
-                  <div className="day-order-head">
-                    <strong>{customer(item)}</strong>
-                    <span className="muted">{[MARKET_NAME[item.market], item.city].filter(Boolean).join(' · ')}</span>
-                  </div>
-                  <span className="day-order-items">
-                    {item.flavorMix || '—'} · {plural(item.packCount, 'pacote', 'pacotes')}{item.packSizeLabel ? ` · ${item.packSizeLabel}` : ''}
-                  </span>
-                  <span className={`day-order-step ${STEP_TONE[step.tone]}`}>{step.text}</span>
-                  {item.note ? <span className="muted day-order-note">{item.note}</span> : null}
-                  <Link to={step.to} className="day-order-link" aria-label={`${action}: ${customer(item)}`}>
-                    {action} →
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </section>
 
       {hasRole('admin') ? (
         <details className="day-health">

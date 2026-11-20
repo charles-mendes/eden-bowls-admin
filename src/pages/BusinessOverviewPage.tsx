@@ -125,12 +125,12 @@ export function BusinessOverviewPage() {
       {isReady && !market ? <div className="alert" role="alert">Sua conta não tem mercado atribuído. Peça a um admin para definir Brasil ou Estados Unidos.</div> : null}
       {current?.error ? <div className="alert" role="alert">{current.error}</div> : null}
       {!current && market ? <p className="muted">Carregando dados.</p> : null}
-      {data && market ? <OverviewBody data={data} market={market} /> : null}
+      {data && market ? <OverviewBody data={data} market={market} range={range} /> : null}
     </PageFrame>
   )
 }
 
-function OverviewBody({ data, market }: { data: Overview; market: MarketCode }) {
+function OverviewBody({ data, market, range }: { data: Overview; market: MarketCode; range: { from: string; to: string } }) {
   const { revenue, subscriptions, acquisition, mix, operations } = data
   const weeks = subscriptions.series.map((bucket) => ({
     bucket,
@@ -159,7 +159,7 @@ function OverviewBody({ data, market }: { data: Overview; market: MarketCode }) 
         <span><i className="insights-dot insights-dot-danger" aria-hidden="true" />{formatCount(operations.late.value)} atrasados</span>
         <span><i className="insights-dot insights-dot-danger" aria-hidden="true" />{formatCount(operations.awaitingPayment.value)} aguardando pagamento</span>
         <span><i className="insights-dot insights-dot-warning" aria-hidden="true" />{formatCount(operations.cycles.blocked.value)} bloqueados</span>
-        <span className="insights-strip-link">Abrir Hoje →</span>
+        <span className="insights-strip-link">Abrir Pendências →</span>
       </Link>
 
       <section className="day-section" aria-labelledby="insights-revenue">
@@ -231,7 +231,7 @@ function OverviewBody({ data, market }: { data: Overview; market: MarketCode }) 
               <h3 id="insights-funnel">Funil de aquisição</h3>
               <p className="muted">Do checkout à assinatura ativa no Stripe</p>
             </div>
-            <Link to="/onboarding/sessions">Ver checkouts →</Link>
+            <Link to={`/reports?aba=aquisicao&mercado=${market}&de=${range.from}&ate=${range.to}`}>Ver relatório de aquisição →</Link>
           </div>
           <div className="insights-funnel">
             {stages.map((stage) => (
@@ -256,7 +256,7 @@ function OverviewBody({ data, market }: { data: Overview; market: MarketCode }) 
       <section className="insights-panel" aria-labelledby="insights-mix">
         <div className="insights-heading">
           <div>
-            <h3 id="insights-mix">Mix das assinaturas ativas</h3>
+            <h3 id="insights-mix">Pacotes por entrega das assinaturas ativas</h3>
             <p className="muted">Pacotes por entrega nas assinaturas ativas agora, para planejar compras da cozinha</p>
           </div>
         </div>
@@ -276,26 +276,28 @@ function OverviewBody({ data, market }: { data: Overview; market: MarketCode }) 
               </div>
               <div>
                 <p className="insights-kicker">Tamanhos de pacote</p>
-                <table className="insights-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Pacote</th>
-                      <th scope="col">Assinaturas</th>
-                      <th scope="col">Pacotes</th>
-                      <th scope="col">Participação</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mix.packSizes.map((size) => (
-                      <tr key={size.grams}>
-                        <td>{size.label}</td>
-                        <td>{formatNumber(size.subscriptions)}</td>
-                        <td>{formatNumber(size.packs)}</td>
-                        <td>{formatRate(size.share)}</td>
+                <div className="table-scroll">
+                  <table className="insights-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">Pacote</th>
+                        <th scope="col">Assinaturas</th>
+                        <th scope="col">Pacotes</th>
+                        <th scope="col">Participação</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {mix.packSizes.map((size) => (
+                        <tr key={size.grams}>
+                          <td>{size.label}</td>
+                          <td>{formatNumber(size.subscriptions)}</td>
+                          <td>{formatNumber(size.packs)}</td>
+                          <td>{formatRate(size.share)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           </>

@@ -26,6 +26,8 @@ type Sources = {
   courierWaiting?: boolean
   courierItems?: CourierDelivery[]
   marketException?: boolean
+  // Exceções de mercado is admin only; other roles get the entry without the link.
+  canOpenMarketExceptions?: boolean
 }
 
 // The newest note of each invoice: an older refused note that a later one replaced is not a problem any more.
@@ -78,8 +80,8 @@ export function attentionEntries(sources: Sources): AttentionEntry[] {
       key: 'market-exception',
       title: 'Conta e país do endereço não combinam',
       details: ['Esta assinatura não sai pela fila de etiquetas nem pela de entregas e não recebe NF-e até a conta e o país do endereço combinarem.'],
-      next: 'Resolva em Exceções de mercado.',
-      href: '/operations/market-exceptions',
+      next: sources.canOpenMarketExceptions ? 'Resolva em Exceções de mercado.' : 'Peça a um admin para resolver em Exceções de mercado.',
+      href: sources.canOpenMarketExceptions ? '/operations/market-exceptions' : null,
       linkLabel: 'Abrir Exceções de mercado',
     })
   }

@@ -5,6 +5,7 @@ import { SHIPPING_HELP } from '../../lib/shippingHelp'
 import {
   BR_STATES,
   US_PHONE_INVALID_TEXT,
+  formatPhone,
   US_STATES,
   usPhoneInvalid,
   brHeadquartersReady,
@@ -27,7 +28,7 @@ function draftFrom(market: Market, settings: ShippingSettings): Draft {
     return { name, street, number, complement, neighborhood, city, state, zipcode }
   }
   const { name, street, street2, city, state, zipcode, phone } = settings.us.ship_from
-  return { name, street, street2, city, state, zipcode, phone: phone || '' }
+  return { name, street, street2, city, state, zipcode, phone: formatPhone('US', phone) }
 }
 
 function addressKey(market: Market, draft: Draft) {
@@ -49,7 +50,7 @@ function usLines(shipFrom: UsShipFrom) {
     shipFrom.street2,
     [shipFrom.city, [shipFrom.state, shipFrom.zipcode].filter(Boolean).join(' ')].filter(Boolean).join(', '),
     'United States',
-    shipFrom.phone ? `Telefone ${shipFrom.phone}` : '',
+    shipFrom.phone ? `Telefone ${formatPhone('US', shipFrom.phone)}` : '',
   ].filter(Boolean)
 }
 
@@ -93,7 +94,10 @@ export function HeadquartersCard({
   const lines = isBr ? brLines(settings.br.center) : usLines(settings.us.ship_from)
   const errors = validation?.errors || {}
   const phoneInvalid = !isBr && usPhoneInvalid(draft.phone)
-  const validForDraft = Boolean(validation?.valid) && validatedKey === addressKey(market, draft) && !phoneInvalid
+  // The stored address was validated when it was saved: changing only the name or the phone needs no new check.
+  // A check that failed still blocks the save.
+  const addressUnchanged = ready && validation?.valid !== false && addressKey(market, draft) === addressKey(market, draftFrom(market, settings))
+  const validForDraft = (addressUnchanged || (Boolean(validation?.valid) && validatedKey === addressKey(market, draft))) && !phoneInvalid
 
   const set = (key: string, value: string) => setDraft((current) => ({ ...current, [key]: value }))
 
@@ -288,7 +292,7 @@ export function HeadquartersCard({
                   />
                 </Field>
                 <Field label="Telefone" help={SHIPPING_HELP.hq.phone} error={phoneInvalid ? US_PHONE_INVALID_TEXT : undefined} hint="A UPS pede o telefone para buscar as caixas.">
-                  <input value={draft.phone || ''} onChange={(event) => set('phone', event.target.value)} placeholder="305 555 0100" inputMode="tel" autoComplete="tel" />
+                  <input value={draft.phone || ''} onChange={(event) => set('phone', formatPhone('US', event.target.value))} placeholder="(561) 674-6117" inputMode="tel" autoComplete="tel" />
                 </Field>
               </>
             )}

@@ -163,7 +163,7 @@ describe('NfeListPage', () => {
     renderAuthedPage(<NfeListPage />, '/operations/nfe')
 
     expect(await screen.findByText(/Esta tela é do mercado Brasil e sua conta não trabalha nele/)).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Voltar para Hoje' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByRole('link', { name: 'Voltar para Pendências' })).toHaveAttribute('href', '/dashboard')
     expect(calls.some((call) => call.path === '/api/v1/admin/nfe')).toBe(false)
   })
 })

@@ -27,16 +27,6 @@ function mockAdminApi(profile: typeof operatorUser | typeof veterinarianUser) {
       return jsonResponse(profile)
     }
 
-    if (url.includes('/admin/onboarding/metrics')) {
-      return jsonResponse({
-        totalCheckouts: 4,
-        linkedToStripe: 3,
-        stripeActive: 2,
-        withSimplified: 1,
-        generatedAt: '2026-08-19T12:00:00.000Z',
-      })
-    }
-
     if (url.includes('/admin/catalog/sync/health')) {
       return jsonResponse({
         market: 'BR',
@@ -80,7 +70,7 @@ describe('admin auth shell', () => {
     await user.click(screen.getByRole('button', { name: 'Entrar' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Hoje' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Pendências' })).toBeInTheDocument()
     })
 
     expect(screen.getByRole('navigation', { name: 'Seções do painel' })).toBeInTheDocument()
@@ -102,7 +92,7 @@ describe('admin auth shell', () => {
       expect(screen.getByRole('heading', { name: 'Simulador nutricional' })).toBeInTheDocument()
     })
 
-    expect(screen.queryByRole('link', { name: 'Hoje' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Pendências' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Simulador nutricional' })).toBeInTheDocument()
   })
 })

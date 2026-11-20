@@ -10,6 +10,12 @@ import {
   reportPath,
   validateRange,
   type ReportState,
+  detailApiPath,
+  detailExportPath,
+  detailLink,
+  detailPagePath,
+  parseDetailParams,
+  reportsLink,
 } from './reports'
 
 const nbsp = (text: string) => text.replace(/\u00a0/g, ' ')
@@ -61,5 +67,35 @@ describe('reports lib', () => {
   it('uses the file name the API sends, with a fallback', () => {
     expect(exportFilename(state, 'attachment; filename="eden-revenue-US-2026-09-28-2026-10-27.csv"')).toBe('eden-revenue-US-2026-09-28-2026-10-27.csv')
     expect(exportFilename(state, null)).toBe('eden-revenue-US-2026-09-28-2026-10-27.csv')
+  })
+})
+
+describe('report details links', () => {
+  const state = { tab: 'receita' as const, market: 'US' as const, from: '2026-10-20', to: '2026-11-18', granularity: null }
+
+  it('opens the details of a card with the Reports filters', () => {
+    expect(detailLink(state, 'grossRevenue')).toBe('/reports/detalhe?aba=receita&indicador=grossRevenue&mercado=US&de=2026-10-20&ate=2026-11-18')
+    expect(detailLink({ ...state, granularity: 'week' }, 'series.revenue', { bucket: '2026-10-19' }))
+      .toBe('/reports/detalhe?aba=receita&indicador=series.revenue&mercado=US&de=2026-10-20&ate=2026-11-18&granularidade=week&bucket=2026-10-19')
+    expect(detailLink({ ...state, tab: 'resumo' }, 'grossRevenue', { market: 'BR' })).toContain('mercado=BR')
+  })
+
+  it('reads the details URL back and returns to the same tab and filters', () => {
+    const params = new URLSearchParams('aba=operacao&indicador=cycles.ready&mercado=US&de=2026-10-20&ate=2026-11-18&granularidade=week&bucket=2026-10-19&anterior=1&pagina=2')
+    const parsed = parseDetailParams(params)
+    expect(parsed).toEqual({
+      tab: 'operacao', indicator: 'cycles.ready', market: 'US', from: '2026-10-20', to: '2026-11-18',
+      granularity: 'week', bucket: '2026-10-19', previous: true, page: 2,
+    })
+    const detail = { ...parsed, market: 'US' as const }
+    expect(reportsLink(detail)).toBe('/reports?aba=operacao&mercado=US&de=2026-10-20&ate=2026-11-18&granularidade=week')
+    expect(detailPagePath(detail, { previous: false, page: 1 }))
+      .toBe('/reports/detalhe?aba=operacao&indicador=cycles.ready&mercado=US&de=2026-10-20&ate=2026-11-18&granularidade=week&bucket=2026-10-19')
+  })
+
+  it('asks the API in its own names', () => {
+    const detail = { ...state, indicator: 'grossRevenue', bucket: null, previous: true, page: 3 }
+    expect(detailApiPath(detail)).toBe('/admin/reports/details?report=revenue&indicator=grossRevenue&market=US&from=2026-10-20&to=2026-11-18&period=previous&page=3&perPage=50')
+    expect(detailExportPath({ ...detail, tab: 'resumo' })).toBe('/admin/reports/details/export.csv?report=summary&indicator=grossRevenue&market=US&from=2026-10-20&to=2026-11-18&period=previous&formato=excel')
   })
 })

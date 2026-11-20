@@ -6,13 +6,13 @@ import { RequireAuth } from './routes/RequireAuth'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { InsightsRoute } from './pages/BusinessOverviewPage'
+import { ReportDetailPage } from './pages/ReportDetailPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
 import { PlanSettingsPage } from './pages/PlanSettingsPage'
 import { MediaLibraryPage } from './pages/MediaLibraryPage'
 import { RecipeRedirectPage } from './pages/RecipeRedirectPage'
-import { OnboardingPage } from './pages/OnboardingPage'
 import { ProductionQueuePage } from './pages/ProductionQueuePage'
 import { LabelQueuePage } from './pages/LabelQueuePage'
 import { CourierDeliveriesPage } from './pages/CourierDeliveriesPage'
@@ -41,9 +41,10 @@ import { PrivacyRequestDetailPage } from './pages/PrivacyRequestDetailPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 // The old 360 detail and /orders/:id both keyed on the user id; their content now lives in the customer's Checkout tab.
+// The old lists (/onboarding/sessions, /orders) go to Clientes: checkouts are read per customer.
 function LegacyCheckoutRedirect() {
   const { id } = useParams()
-  return <Navigate to={id ? `/users/${id}?aba=checkout` : '/onboarding/sessions'} replace />
+  return <Navigate to={id ? `/users/${id}?aba=checkout` : '/users'} replace />
 }
 
 function ProtectedShell() {
@@ -56,16 +57,34 @@ function ProtectedShell() {
   )
 }
 
-// Admin only: other roles go back to Hoje before the page asks the API anything.
+// Admin only: other roles go back to Pendências before the page asks the API anything.
 function AdminCheckoutReadinessRoute() {
   const { hasRole } = useAuth()
   return hasRole('admin') ? <CheckoutReadinessPage /> : <Navigate to="/dashboard" replace />
 }
 
-// purchase-error-monitor: billing.subscribers.read (admin, operator, readonly; not a veterinarian).
+// purchase-error-monitor: admin only in the panel; other roles go back to Pendências before the page asks the API anything.
 function PurchaseErrorsRoute() {
-  const { hasPermission } = useAuth()
-  return hasPermission('billing.subscribers.read') ? <PurchaseErrorsPage /> : <Navigate to="/dashboard" replace />
+  const { hasRole } = useAuth()
+  return hasRole('admin') ? <PurchaseErrorsPage /> : <Navigate to="/dashboard" replace />
+}
+
+// Market exceptions: admin only in the panel; other roles go back to Pendências before the page asks the API anything.
+function MarketExceptionsRoute() {
+  const { hasRole } = useAuth()
+  return hasRole('admin') ? <MarketExceptionsPage /> : <Navigate to="/dashboard" replace />
+}
+
+// Loja › Plano: admin only in the panel; other roles go back to Pendências before the page asks the API anything.
+function PlanSettingsRoute() {
+  const { hasRole } = useAuth()
+  return hasRole('admin') ? <PlanSettingsPage /> : <Navigate to="/dashboard" replace />
+}
+
+// Parâmetros nutricionais: admin and veterinarian only; other roles go back to Pendências before the page asks the API anything.
+function NutritionSettingsRoute() {
+  const { hasRole } = useAuth()
+  return hasRole('admin') || hasRole('veterinarian') ? <NutritionSettingsPage /> : <Navigate to="/dashboard" replace />
 }
 
 const SentryRoutes = Sentry.withSentryReactRouterV7Routing(Routes)
@@ -82,20 +101,21 @@ function App() {
           <Route path="/operations/checkout-readiness" element={<AdminCheckoutReadinessRoute />} />
           <Route path="/insights" element={<InsightsRoute />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/reports/detalhe" element={<ReportDetailPage />} />
           <Route path="/nutrition/simulate" element={<NutritionSimulatePage />} />
-          <Route path="/nutrition/settings" element={<NutritionSettingsPage />} />
+          <Route path="/nutrition/settings" element={<NutritionSettingsRoute />} />
           <Route path="/catalog/products" element={<ProductsPage />} />
           <Route path="/catalog/products/:productId" element={<ProductDetailPage />} />
-          <Route path="/catalog/plan" element={<PlanSettingsPage />} />
+          <Route path="/catalog/plan" element={<PlanSettingsRoute />} />
           <Route path="/catalog/media" element={<MediaLibraryPage />} />
           <Route path="/catalog/recipes" element={<Navigate to="/catalog/products" replace />} />
           <Route path="/catalog/recipes/:market/:recipeKey" element={<RecipeRedirectPage />} />
-          <Route path="/onboarding/sessions" element={<OnboardingPage />} />
+          <Route path="/onboarding/sessions" element={<Navigate to="/users" replace />} />
           <Route path="/onboarding/sessions/:id" element={<LegacyCheckoutRedirect />} />
           <Route path="/operations/production" element={<ProductionQueuePage />} />
           <Route path="/operations/labels" element={<LabelQueuePage />} />
           <Route path="/operations/courier" element={<CourierDeliveriesPage />} />
-          <Route path="/operations/market-exceptions" element={<MarketExceptionsPage />} />
+          <Route path="/operations/market-exceptions" element={<MarketExceptionsRoute />} />
           <Route path="/operations/stock" element={<StockPage />} />
           <Route path="/operations/delivery-calendar" element={<DeliveryCalendarPage />} />
           <Route path="/billing" element={<BillingPage />} />
@@ -115,7 +135,7 @@ function App() {
           <Route path="/users/roles" element={<RolesPage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />
           <Route path="/account/password" element={<ChangePasswordPage />} />
-          <Route path="/orders" element={<Navigate to="/onboarding/sessions" replace />} />
+          <Route path="/orders" element={<Navigate to="/users" replace />} />
           <Route path="/orders/:id" element={<LegacyCheckoutRedirect />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />

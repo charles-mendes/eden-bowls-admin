@@ -25,10 +25,10 @@ test.describe('Erros de compra', () => {
     await expect(page.getByRole('heading', { name: 'Trilha de compra · Brasil' })).toBeVisible()
   })
 
-  test('readonly sees the page and the menu item', async ({ page }) => {
+  test('readonly goes back and has no menu item (admin only)', async ({ page }) => {
     await openAuthed(page, '/operations/purchase-errors', e2eProfiles.readonly)
-    await expect(page.getByRole('heading', { name: 'Erros de compra' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'Erros de compra' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Erros de compra' })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'Erros de compra' })).toHaveCount(0)
   })
 
   test('a veterinarian goes back and has no menu item', async ({ page }) => {

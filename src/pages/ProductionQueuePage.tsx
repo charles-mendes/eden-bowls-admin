@@ -102,7 +102,9 @@ type QueueResponse = {
 }
 
 const PER_PAGE = 20
-const WINDOWS = [7, 14, 30]
+const WINDOWS = [1, 7, 14, 30]
+// 1 is the "Hoje" period: only today's due cycles (plus the overdue ones the queue always keeps).
+const windowLabel = (days: number) => (days === 1 ? 'Hoje' : `Próximos ${days} dias`)
 
 const STATUS_BADGE: Record<ProductionStatus, string> = {
   to_prepare: 'badge-neutral',
@@ -495,7 +497,7 @@ export function ProductionQueuePage() {
     { id: 'atrasados', label: 'Atrasados', value: metrics?.overdue, tone: metrics && metrics.overdue > 0 ? 'queue-due-danger' : undefined, hint: 'Só o que a cozinha não terminou. Pronto esperando saída não conta.' },
     { id: 'hoje', label: 'Hoje', value: metrics?.today },
     { id: 'amanha', label: 'Amanhã', value: metrics?.tomorrow },
-    { id: 'proximos', label: `Próximos ${windowDays} dias`, value: metrics?.upcoming },
+    { id: 'proximos', label: windowDays === 1 ? 'Próximos dias' : `Próximos ${windowDays} dias`, value: metrics?.upcoming },
   ]
 
   const chips: Array<{ key: 'prazo' | 'status' | 'busca' | 'mercado'; text: string }> = []
@@ -534,7 +536,7 @@ export function ProductionQueuePage() {
         <div className="inline-actions">
           {showsMarket('BR') ? <Link className="ghost-button" to="/operations/courier">Entregas Brasil</Link> : null}
           {showsMarket('US') ? <Link className="ghost-button" to="/operations/labels">Etiquetas UPS</Link> : null}
-          <Link className="ghost-button" to="/dashboard">← Voltar para Hoje</Link>
+          <Link className="ghost-button" to="/dashboard">← Voltar para Pendências</Link>
         </div>
       )}
     >
@@ -568,7 +570,7 @@ export function ProductionQueuePage() {
         <label className="queue-field">
           Período
           <select aria-label="Período" value={windowDays} onChange={(event) => setFilter('periodo', event.target.value === '7' ? '' : event.target.value)}>
-            {WINDOWS.map((days) => <option key={days} value={days}>Próximos {days} dias</option>)}
+            {WINDOWS.map((days) => <option key={days} value={days}>{windowLabel(days)}</option>)}
           </select>
         </label>
         <label className="queue-field">

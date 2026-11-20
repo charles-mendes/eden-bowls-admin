@@ -2,29 +2,36 @@ import { describe, expect, it } from 'vitest'
 import { activeMenuHref, groupedMenuItems, visibleMenuItems } from './menu'
 
 describe('admin menu', () => {
-  it('Checkout da loja is admin only, first in Operação, above Hoje', () => {
+  it('Checkout da loja is admin only, first in Operação, above Pendências', () => {
     const operacao = groupedMenuItems(['admin']).find((entry) => entry.group === 'Operação')
-    expect(operacao?.items.slice(0, 2).map((item) => item.label)).toEqual(['Checkout da loja', 'Hoje'])
+    expect(operacao?.items.slice(0, 2).map((item) => item.label)).toEqual(['Checkout da loja', 'Pendências'])
     for (const role of ['operator', 'readonly', 'veterinarian'] as const) {
       expect(visibleMenuItems([role]).map((item) => item.href)).not.toContain('/operations/checkout-readiness')
     }
   })
 
   // purchase-error-monitor
-  it('Erros de compra is first in Operação, above Checkout da loja, for who reads billing.subscribers.read', () => {
+  it('Erros de compra is first in Operação, above Checkout da loja, and only for the admin', () => {
     const operacao = groupedMenuItems(['admin'], ['billing.subscribers.read']).find((entry) => entry.group === 'Operação')
-    expect(operacao?.items.slice(0, 3).map((item) => item.label)).toEqual(['Erros de compra', 'Checkout da loja', 'Hoje'])
-    for (const role of ['operator', 'readonly'] as const) {
-      expect(visibleMenuItems([role], ['billing.subscribers.read']).map((item) => item.href)).toContain('/operations/purchase-errors')
-      expect(visibleMenuItems([role]).map((item) => item.href)).not.toContain('/operations/purchase-errors')
+    expect(operacao?.items.slice(0, 3).map((item) => item.label)).toEqual(['Erros de compra', 'Checkout da loja', 'Pendências'])
+    for (const role of ['operator', 'readonly', 'veterinarian'] as const) {
+      expect(visibleMenuItems([role], ['billing.subscribers.read']).map((item) => item.href)).not.toContain('/operations/purchase-errors')
     }
-    expect(visibleMenuItems(['veterinarian'], ['billing.subscribers.read']).map((item) => item.href)).not.toContain('/operations/purchase-errors')
   })
 
   it('hides operational sections from veterinarian-only accounts', () => {
     const hrefs = visibleMenuItems(['veterinarian']).map((item) => item.href)
 
     expect(hrefs).toEqual(['/nutrition/simulate', '/nutrition/settings'])
+  })
+
+  it('Parâmetros nutricionais is only for admin and veterinarian', () => {
+    for (const role of ['admin', 'veterinarian'] as const) {
+      expect(visibleMenuItems([role]).map((item) => item.href)).toContain('/nutrition/settings')
+    }
+    for (const role of ['operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role]).map((item) => item.href)).not.toContain('/nutrition/settings')
+    }
   })
 
   it('Veterinarian has no settings: Configurações is for admin, operator and readonly', () => {
@@ -123,9 +130,10 @@ describe('admin menu', () => {
   })
 
   it('shows Biblioteca de imagens right after Plano in Loja', () => {
-    for (const role of ['admin', 'operator', 'readonly'] as const) {
-      const hrefs = groupedMenuItems([role], ['catalog.read']).find((group) => group.group === 'Loja')?.items.map((item) => item.href) ?? []
-      expect(hrefs.indexOf('/catalog/media')).toBe(hrefs.indexOf('/catalog/plan') + 1)
+    const hrefs = groupedMenuItems(['admin'], ['catalog.read']).find((group) => group.group === 'Loja')?.items.map((item) => item.href) ?? []
+    expect(hrefs.indexOf('/catalog/media')).toBe(hrefs.indexOf('/catalog/plan') + 1)
+    for (const role of ['operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role], ['catalog.read']).map((item) => item.href)).toContain('/catalog/media')
     }
     expect(visibleMenuItems(['veterinarian']).map((item) => item.href)).not.toContain('/catalog/media')
   })
@@ -136,12 +144,13 @@ describe('admin menu', () => {
     }
   })
 
-  it('shows Plano in Loja for catalog readers', () => {
-    for (const role of ['admin', 'operator', 'readonly'] as const) {
-      const loja = groupedMenuItems([role], ['catalog.read']).find((group) => group.group === 'Loja')
-      expect(loja?.items.map((item) => item.href)).toContain('/catalog/plan')
+  it('shows Plano in Loja only to admins with catalog.read', () => {
+    const loja = groupedMenuItems(['admin'], ['catalog.read']).find((group) => group.group === 'Loja')
+    expect(loja?.items.map((item) => item.href)).toContain('/catalog/plan')
+    for (const role of ['operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role], ['catalog.read']).map((item) => item.href)).not.toContain('/catalog/plan')
     }
-    expect(visibleMenuItems(['operator'], []).map((item) => item.href)).not.toContain('/catalog/plan')
+    expect(visibleMenuItems(['admin'], []).map((item) => item.href)).not.toContain('/catalog/plan')
     expect(visibleMenuItems(['veterinarian'], ['catalog.read']).map((item) => item.href)).not.toContain('/catalog/plan')
   })
 
@@ -162,7 +171,7 @@ describe('admin menu', () => {
     expect(vet).not.toContain('/reports')
   })
 
-  it('orders Operação by the day of work in each market, with Hoje first', () => {
+  it('orders Operação by the day of work in each market, with Pendências first', () => {
     const operacao = (markets: ('BR' | 'US')[]) =>
       groupedMenuItems(['operator'], ['shipping.read', 'reports.read'], markets)[0]
     const br = operacao(['BR'])
@@ -170,11 +179,11 @@ describe('admin menu', () => {
 
     expect(br.group).toBe('Operação')
     expect(br.items.map((item) => item.label)).toEqual([
-      'Hoje', 'Fila de produção', 'Entregas Brasil', 'Exceções de mercado', 'Estoque', 'Notas fiscais', 'Calendário de operação',
+      'Pendências', 'Fila de produção', 'Entregas Brasil', 'Estoque', 'Notas fiscais', 'Calendário de operação',
     ])
     expect(us.group).toBe('Operação')
     expect(us.items.map((item) => item.label)).toEqual([
-      'Hoje', 'Fila de produção', 'Etiquetas UPS', 'Exceções de mercado', 'Estoque', 'Calendário de operação',
+      'Pendências', 'Fila de produção', 'Etiquetas UPS', 'Estoque', 'Calendário de operação',
     ])
   })
 
@@ -189,11 +198,14 @@ describe('admin menu', () => {
     expect(groupedMenuItems(['operator'], ['shipping.read'], ['BR']).flatMap((group) => group.items).map((item) => item.href)).not.toContain('/operations/labels')
   })
 
-  it('shows Exceções de mercado only with shipping.read, in every market', () => {
-    const hrefs = (permissions: string[], markets: ('BR' | 'US')[] = []) => visibleMenuItems(['operator'], permissions, markets).map((item) => item.href)
+  it('shows Exceções de mercado only to admins with shipping.read, in every market', () => {
+    const hrefs = (permissions: string[], markets: ('BR' | 'US')[] = []) => visibleMenuItems(['admin'], permissions, markets).map((item) => item.href)
     expect(hrefs(['shipping.read'])).toContain('/operations/market-exceptions')
     expect(hrefs(['shipping.read'], ['US'])).toContain('/operations/market-exceptions')
     expect(hrefs(['shipping.read'], ['BR'])).toContain('/operations/market-exceptions')
     expect(hrefs([])).not.toContain('/operations/market-exceptions')
+    for (const role of ['operator', 'readonly', 'veterinarian'] as const) {
+      expect(visibleMenuItems([role], ['shipping.read']).map((item) => item.href)).not.toContain('/operations/market-exceptions')
+    }
   })
 })

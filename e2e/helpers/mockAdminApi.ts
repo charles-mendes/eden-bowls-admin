@@ -585,6 +585,77 @@ const purchaseTrailConfigEvents = [
   { id: 2, market: 'br', stripe_account: 'br', actor_admin_id: 7, action: 'shipping_settings.update', target_ref: null, outcome: 'failed', error_code: 'invalid_fee', created_at: '2026-11-16T10:00:00Z' },
 ]
 
+// Reports (admin-reports-drilldown): the revenue tab of the US and the details of gross revenue.
+async function handleReports(route: Route, method: string, path: string, url: URL) {
+  if (!path.startsWith('/api/v1/admin/reports') || method !== 'GET') return false
+  const market = url.searchParams.get('market') ?? 'US'
+  const from = url.searchParams.get('from') ?? '2026-10-20'
+  const to = url.searchParams.get('to') ?? '2026-11-18'
+  const previous = url.searchParams.get('period') === 'previous'
+  const period = { from, to, timezone: 'America/New_York', granularity: 'week', partialToday: false, previous: { from: '2026-09-20', to: '2026-10-19' } }
+
+  if (path === '/api/v1/admin/reports/revenue') {
+    await fulfillJson(route, {
+      market,
+      currency: 'USD',
+      period,
+      generatedAt: '2026-11-19T12:00:00Z',
+      kpis: {
+        grossRevenue: { value: 229500, previous: 114750 },
+        paidInvoices: { value: 2, previous: 1 },
+        averageTicket: { value: 114750, previous: 114750 },
+        firstPurchaseRevenue: { value: 229500, previous: 114750 },
+        renewalRevenue: { value: 0, previous: 0 },
+      },
+      estimatedMrr: { value: 114750, previous: null, estimated: true, trialingSubscriptions: 0, unpricedSubscriptions: 0 },
+      excludedInvoices: 0,
+      series: [
+        { key: '2026-10-19', from: '2026-10-20', to: '2026-10-25', partial: true, revenue: 114750, invoices: 1 },
+        { key: '2026-11-02', from: '2026-11-02', to: '2026-11-08', partial: false, revenue: 114750, invoices: 1 },
+      ],
+    })
+    return true
+  }
+
+  if (path === '/api/v1/admin/reports/details') {
+    const records = previous
+      ? [{ id: 3, type: 'invoices', reference: 'EB-2026-000003', date: '2026-10-02T15:00:00Z', description: 'Primeira compra · USD', group: { key: 'subscription_create', label: 'Primeira compra' }, link: '/billing/subscriptions/41', contribution: 114750, customer: { name: 'Carla Dias', link: '/users/6' } }]
+      : [
+        { id: 1, type: 'invoices', reference: 'EB-2026-000001', date: '2026-10-21T15:00:00Z', description: 'Primeira compra · USD', group: { key: 'subscription_create', label: 'Primeira compra' }, link: '/billing/subscriptions/42', contribution: 114750, customer: { name: 'Ana Souza', link: '/users/7' } },
+        { id: 2, type: 'invoices', reference: 'EB-2026-000002', date: '2026-11-05T15:00:00Z', description: 'Primeira compra · USD', group: { key: 'subscription_create', label: 'Primeira compra' }, link: '/billing/subscriptions/43', contribution: 114750, customer: { name: 'Bia Lima', link: '/users/8' } },
+      ]
+    const total = records.reduce((sum, record) => sum + record.contribution, 0)
+    await fulfillJson(route, {
+      report: 'revenue',
+      indicator: url.searchParams.get('indicator'),
+      source: { report: 'revenue', indicator: url.searchParams.get('indicator') },
+      label: 'Faturamento bruto',
+      title: 'Faturamento bruto',
+      description: 'Soma do valor pago das faturas do período.',
+      kind: 'money',
+      contributionKind: 'money',
+      market,
+      currency: 'USD',
+      pointInTime: false,
+      hasPrevious: true,
+      window: previous
+        ? { from: '2026-09-20', to: '2026-10-19', timezone: 'America/New_York', previous: true, bucket: null }
+        : { from, to, timezone: 'America/New_York', previous: false, bucket: null },
+      value: total,
+      criteria: ['Mercado EUA (US): conta Stripe us, moeda USD.', 'Faturas de cliente com status pago (paid), da conta Stripe do mercado.', 'Data do pagamento dentro da janela, no fuso America/New_York.'],
+      formula: { expression: `Soma do valor pago de ${records.length} fatura(s)`, terms: [{ label: 'Faturas', value: records.length, kind: 'count' }], result: total },
+      groups: [{ key: 'subscription_create', label: 'Primeira compra', count: records.length, contribution: total }],
+      totals: { count: records.length, contribution: total },
+      excluded: [],
+      reconciliation: { reportValue: total, recordsValue: total, matches: true },
+      records: { items: records, page: 1, perPage: 50, total: records.length },
+      generatedAt: '2026-11-19T12:00:00Z',
+    })
+    return true
+  }
+  return false
+}
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -702,6 +773,10 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
+    if (await handleReports(route, method, path, url)) {
+      return
+    }
+
     if (path === '/api/v1/auth/token' && method === 'POST') {
       if (tokenStatus !== 200) {
         await fulfillJson(route, { code: 'invalid_credentials', message: 'Invalid username or password' }, tokenStatus)
@@ -807,22 +882,6 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
     if (path === '/api/v1/admin/purchase-trail/config-events' && method === 'GET') {
       const market = url.searchParams.get('market') === 'us' ? 'us' : 'br'
       await fulfillJson(route, { success: true, data: { market, events: market === 'br' ? purchaseTrailConfigEvents.filter((event) => url.searchParams.get('outcome') !== 'failed' || event.outcome === 'failed') : [], next_before: null } })
-      return
-    }
-
-    if (path === '/api/v1/admin/onboarding/metrics') {
-      await fulfillJson(route, {
-        totalCheckouts: 4,
-        linkedToStripe: 3,
-        stripeActive: 2,
-        withSimplified: 1,
-        generatedAt: '2026-08-19T12:00:00.000Z',
-      })
-      return
-    }
-
-    if (path === '/api/v1/admin/onboarding/checkouts' && method === 'GET') {
-      await fulfillJson(route, { total: 1, page: 1, perPage: 20, totalPages: 1, items: [checkoutItem] })
       return
     }
 
@@ -1441,4 +1500,9 @@ export const e2eProfiles = {
     permissions: [],
   },
   readonly: readonlyProfile,
+  reports: {
+    ...adminProfile,
+    userId: 'u-reports',
+    permissions: [...adminProfile.permissions, 'reports.read', 'reports.export', 'billing.subscribers.read'],
+  },
 }

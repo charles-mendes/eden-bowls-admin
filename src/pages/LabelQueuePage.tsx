@@ -181,6 +181,37 @@ export function LabelQueuePage() {
     return response.blob()
   }
 
+  // One page per box of every label; a label whose file is gone is marked on its row.
+  const printAll = async (printable: PrintableLabel[], next: Record<string, Outcome>) => {
+    const blobs: Blob[] = []
+    for (const label of printable) {
+      const numbers = label.packages > 0 ? Array.from({ length: label.packages }, (_, index) => index + 1) : [undefined]
+      for (const packageNumber of numbers) {
+        const blob = await fetchLabel(label.shipmentId, packageNumber)
+        if (blob) blobs.push(blob)
+        else next[label.invoiceId] = { kind: 'missing_file' }
+      }
+    }
+    setOutcomes({ ...next })
+    if (blobs.length) await printLabels(blobs)
+  }
+
+  // Reprints one created label from its stored file; nothing is bought.
+  const reprint = async (item: QueueItem) => {
+    if (!item.shipment || running) return
+    setRunning(true)
+    setError('')
+    setProgress('Preparando a impressão…')
+    try {
+      await printAll([{ invoiceId: item.invoice_id, shipmentId: String(item.shipment.id), packages: item.shipment.packages?.length ?? 0 }], { ...outcomes })
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Falha ao imprimir etiqueta')
+    } finally {
+      setRunning(false)
+      setProgress('')
+    }
+  }
+
   // confirmNotReady goes only for the orders the operator confirmed as not ready.
   const buy = async (item: QueueItem, confirmNotReady: boolean): Promise<Outcome> => {
     try {
@@ -249,17 +280,7 @@ export function LabelQueuePage() {
       }
 
       setProgress('Preparando a impressão…')
-      const blobs: Blob[] = []
-      for (const label of printable) {
-        const numbers = label.packages > 0 ? Array.from({ length: label.packages }, (_, index) => index + 1) : [undefined]
-        for (const packageNumber of numbers) {
-          const blob = await fetchLabel(label.shipmentId, packageNumber)
-          if (blob) blobs.push(blob)
-          else next[label.invoiceId] = { kind: 'missing_file' }
-        }
-      }
-      setOutcomes({ ...next })
-      if (blobs.length) await printLabels(blobs)
+      await printAll(printable, next)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao imprimir etiquetas')
     } finally {
@@ -302,7 +323,21 @@ export function LabelQueuePage() {
           {outcome ? <div data-testid={`outcome-${item.invoice_id}`}>{outcomeText(outcome)}</div> : null}
         </td>
         <td>
-          <Link className="ghost-button" to={`/billing/subscriptions/${item.subscription_id}`}>Assinatura</Link>
+          <div className="table-actions">
+            {withPickup && item.shipment ? (
+              <button
+                className="ghost-button"
+                type="button"
+                aria-label={`Imprimir etiqueta de ${orderName(item)}`}
+                title="Imprimir de novo a etiqueta já comprada"
+                disabled={running}
+                onClick={() => void reprint(item)}
+              >
+                Imprimir
+              </button>
+            ) : null}
+            <Link className="ghost-button" to={`/billing/subscriptions/${item.subscription_id}`}>Assinatura</Link>
+          </div>
         </td>
       </tr>
     )
@@ -382,7 +417,7 @@ export function LabelQueuePage() {
         {table(data?.unresolved ?? [], (item) => row(item, false), 'Nenhuma compra pendente.')}
       </Section>
 
-      <Section title="Etiquetas criadas" description="Ainda não entregues. Selecione para imprimir de novo.">
+      <Section title="Etiquetas criadas" description="Ainda não entregues. Use Imprimir na linha, ou selecione várias e imprima de uma vez.">
         {table(data?.created ?? [], (item) => row(item, true, [], true), 'Nenhuma etiqueta aberta.')}
       </Section>
 

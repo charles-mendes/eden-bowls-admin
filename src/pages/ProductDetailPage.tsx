@@ -343,7 +343,7 @@ function variantPayload(item: VariantDraft, planCountry: string) {
 }
 
 export function ProductDetailPage() {
-  const { token, hasPermission } = useAuth()
+  const { token, hasPermission, hasRole } = useAuth()
   const { productId } = useParams()
   const navigate = useNavigate()
   const location = useLocation()
@@ -905,9 +905,11 @@ export function ProductDetailPage() {
                       />
                     </label>
                   </div>
-                  <p className="field-hint">
-                    Duração do plano e limite do pacote pequeno valem para o mercado inteiro: <Link className="link-button" to={`/catalog/plan?market=${encodeURIComponent(planCountry)}`}>Loja › Plano</Link>.
-                  </p>
+                  {hasRole('admin') ? (
+                    <p className="field-hint">
+                      Duração do plano e limite do pacote pequeno valem para o mercado inteiro: <Link className="link-button" to={`/catalog/plan?market=${encodeURIComponent(planCountry)}`}>Loja › Plano</Link>.
+                    </p>
+                  ) : null}
                   {generalDirty ? <p className="field-hint warning-text" role="status">Dados gerais alterados. Salve antes de sair.</p> : null}
                 </>
               ) : <p className="muted">Carregando o produto.</p>}

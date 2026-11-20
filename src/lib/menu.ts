@@ -17,30 +17,30 @@ export type MenuItem = {
 }
 
 // Grouped by the job, daily work first: ship orders, look after customers, run the store, read the numbers, run the team.
-// Hoje is the day's checklist and the panel's landing page. Checkout da loja sits above it, admin only: what would make
+// Pendências is the day's checklist and the panel's landing page. Checkout da loja sits above it, admin only: what would make
 // store checkout fail (admin-checkout-readiness).
 export const adminMenu: MenuItem[] = [
-  { label: 'Erros de compra', href: '/operations/purchase-errors', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'billing.subscribers.read' },
+  { label: 'Erros de compra', href: '/operations/purchase-errors', roles: ['admin'], group: 'Operação', permission: 'billing.subscribers.read' },
   { label: 'Checkout da loja', href: '/operations/checkout-readiness', roles: ['admin'], group: 'Operação' },
-  { label: 'Hoje', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
+  { label: 'Pendências', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Fila de produção', href: '/operations/production', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Etiquetas UPS', href: '/operations/labels', roles: ['admin', 'operator', 'readonly'], group: 'Operação', markets: ['US'] },
   { label: 'Entregas Brasil', href: '/operations/courier', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'shipping.read', markets: ['BR'] },
-  { label: 'Exceções de mercado', href: '/operations/market-exceptions', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'shipping.read' },
+  { label: 'Exceções de mercado', href: '/operations/market-exceptions', roles: ['admin'], group: 'Operação', permission: 'shipping.read' },
   { label: 'Estoque', href: '/operations/stock', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Notas fiscais', href: '/operations/nfe', roles: ['admin', 'operator', 'readonly'], group: 'Operação', markets: ['BR'] },
   { label: 'Calendário de operação', href: '/operations/delivery-calendar', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Clientes', href: '/users', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
   { label: 'Assinantes', href: '/billing', roles: ['admin', 'operator', 'readonly'], group: 'Clientes' },
   { label: 'Produtos', href: '/catalog/products', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
-  { label: 'Plano', href: '/catalog/plan', roles: ['admin', 'operator', 'readonly'], group: 'Loja', permission: 'catalog.read' },
+  { label: 'Plano', href: '/catalog/plan', roles: ['admin'], group: 'Loja', permission: 'catalog.read' },
   { label: 'Biblioteca de imagens', href: '/catalog/media', roles: ['admin', 'operator', 'readonly'], group: 'Loja', permission: 'catalog.read' },
   { label: 'Cupons 1ª compra', href: '/billing/coupons', roles: ['admin', 'operator'], group: 'Loja' },
   { label: 'Feedbacks manuais', href: '/feedbacks', roles: ['admin', 'operator', 'readonly'], group: 'Loja' },
   { label: 'Visão do negócio', href: '/insights', roles: ['admin', 'operator', 'readonly'], group: 'Negócio', permission: 'reports.read' },
   { label: 'Relatórios', href: '/reports', roles: ['admin', 'operator', 'readonly'], group: 'Negócio', permission: 'reports.read' },
   { label: 'Simulador nutricional', href: '/nutrition/simulate', roles: ['admin', 'operator', 'veterinarian'], group: 'Ferramentas' },
-  { label: 'Parâmetros nutricionais', href: '/nutrition/settings', roles: ['admin', 'operator', 'readonly', 'veterinarian'], group: 'Ferramentas' },
+  { label: 'Parâmetros nutricionais', href: '/nutrition/settings', roles: ['admin', 'veterinarian'], group: 'Ferramentas' },
   { label: 'Equipe e papéis', href: '/users/roles', roles: ['admin'], group: 'Administração' },
   { label: 'Privacidade', href: '/privacy/requests', roles: ['admin', 'operator', 'readonly'], group: 'Administração' },
   { label: 'Configurações', href: '/config', roles: ['admin', 'operator', 'readonly'], group: 'Administração' },

@@ -2,17 +2,10 @@ import { expect, test } from '@playwright/test'
 import { e2eProfiles, openAuthed } from '../helpers/mockAdminApi'
 
 test.describe('Admin checkouts', () => {
-  test('redirects the checkout list to onboarding 360', async ({ page }) => {
-    const { captured } = await openAuthed(page, '/orders', e2eProfiles.operator)
+  test('redirects the old checkout list to Clientes', async ({ page }) => {
+    await openAuthed(page, '/orders', e2eProfiles.operator)
 
-    await expect(page).toHaveURL(/\/onboarding\/sessions$/)
-    await expect(page.getByRole('heading', { name: 'Onboarding 360' })).toBeVisible()
-    await expect(page.getByRole('link', { name: 'ana@edenbowls.com' })).toBeVisible()
-    await expect.poll(() => captured.some((item) => (
-      item.method === 'GET'
-      && item.path === '/api/v1/admin/onboarding/checkouts'
-      && item.authorization === 'Bearer e2e-access-token'
-    ))).toBe(true)
+    await expect(page).toHaveURL(/\/users$/)
   })
 
   test('redirects checkout detail to the customer Checkout tab', async ({ page }) => {

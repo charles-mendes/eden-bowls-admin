@@ -11,6 +11,8 @@ type Props = {
   charges: Charge[]
   canSync: boolean
   canReadNfe: boolean
+  // The Stripe PDF is the admin's: the operators work from the Eden Bowls invoice.
+  canOpenStripePdf: boolean
   feedback: SectionFeedback
   onFetchStripe: () => void
   onOpenStripePdf: (stripeInvoiceId: string) => void
@@ -112,7 +114,7 @@ export function ChargesSection(props: Props) {
                 {props.canReadNfe ? <td data-label="NF-e"><NfeCell charge={charge} /></td> : null}
                 <td>
                   <div className="inline-actions">
-                    {charge.stripeInvoiceId ? (
+                    {charge.stripeInvoiceId && props.canOpenStripePdf ? (
                       <button className="ghost-button" type="button" onClick={() => props.onOpenStripePdf(charge.stripeInvoiceId as string)}>PDF Stripe</button>
                     ) : null}
                     {!charge.invoice && charge.paid && charge.stripeInvoiceId && props.canSync ? (

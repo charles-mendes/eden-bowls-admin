@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { PageFrame } from '../components/PageFrame'
 import { BarSeries } from '../components/reports/BarSeries'
 import { FunnelBars } from '../components/reports/FunnelBars'
@@ -13,6 +13,7 @@ import {
   GRANULARITIES,
   QUICK_PERIODS,
   REPORT_TABS,
+  detailLink,
   exportFilename,
   exportPath,
   fetchReport,
@@ -31,6 +32,7 @@ import {
   validateRange,
   type AcquisitionReport,
   type CycleStatus,
+  type DetailLinkFor,
   type Granularity,
   type MixReport,
   type OperationsReport,
@@ -288,29 +290,30 @@ export function ReportsPage() {
         ) : current.error ? (
           <div className="alert" role="alert">{current.error}</div>
         ) : (
-          <ReportContent report={report} data={current.data} market={market} granularity={granularity} />
+          <ReportContent report={report} data={current.data} market={market} granularity={granularity} link={(indicator, extras) => detailLink(state, indicator, extras)} />
         )}
       </div>
     </PageFrame>
   )
 }
 
-function ReportContent({ report, data, market, granularity }: { report: string; data: unknown; market: MarketCode; granularity: Granularity | null }) {
+// Every number of a tab links to its details; `link` carries the Reports filters along.
+function ReportContent({ report, data, market, granularity, link }: { report: string; data: unknown; market: MarketCode; granularity: Granularity | null; link: DetailLinkFor }) {
   switch (report) {
     case 'summary':
-      return <SummaryTab data={data as SummaryReport} />
+      return <SummaryTab data={data as SummaryReport} link={link} />
     case 'revenue':
-      return <RevenueTab data={data as RevenueReport} granularity={granularity} />
+      return <RevenueTab data={data as RevenueReport} granularity={granularity} link={link} />
     case 'subscriptions':
-      return <SubscriptionsTab data={data as SubscriptionsReport} granularity={granularity} />
+      return <SubscriptionsTab data={data as SubscriptionsReport} granularity={granularity} link={link} />
     case 'acquisition':
-      return <AcquisitionTab data={data as AcquisitionReport} granularity={granularity} />
+      return <AcquisitionTab data={data as AcquisitionReport} granularity={granularity} link={link} />
     case 'mix':
-      return <MixTab data={data as MixReport} />
+      return <MixTab data={data as MixReport} link={link} />
     case 'operations':
-      return <OperationsTab data={data as OperationsReport} />
+      return <OperationsTab data={data as OperationsReport} link={link} />
     case 'stock':
-      return <StockTab data={data as StockReport} market={market} />
+      return <StockTab data={data as StockReport} market={market} link={link} />
     default:
       return null
   }
@@ -328,7 +331,7 @@ const SUMMARY_ROWS: Array<{ key: keyof SummaryKpis; label: string; kind: 'count'
   { key: 'checkoutToActivation', label: 'Checkout → ativação', kind: 'rate' },
 ]
 
-function SummaryTab({ data }: { data: SummaryReport }) {
+function SummaryTab({ data, link }: { data: SummaryReport; link: DetailLinkFor }) {
   return (
     <div className="report-columns">
       {data.markets.map((block) => (
@@ -336,7 +339,7 @@ function SummaryTab({ data }: { data: SummaryReport }) {
           <h3 id={`summary-${block.market}`}>{MARKET_LABELS[block.market]} <span className="muted">· {block.currency === 'BRL' ? 'R$' : 'US$'}</span></h3>
           <div className="insights-metrics">
             {SUMMARY_ROWS.map((row) => (
-              <KpiCard key={row.key} label={row.label} kpi={block.kpis[row.key]} kind={row.kind} market={block.market} now={row.now} lowerIsBetter={row.lowerIsBetter} />
+              <KpiCard key={row.key} label={row.label} kpi={block.kpis[row.key]} kind={row.kind} market={block.market} now={row.now} lowerIsBetter={row.lowerIsBetter} to={link(row.key, { market: block.market })} />
             ))}
           </div>
         </section>
@@ -345,18 +348,18 @@ function SummaryTab({ data }: { data: SummaryReport }) {
   )
 }
 
-function RevenueTab({ data, granularity }: { data: RevenueReport; granularity: Granularity | null }) {
+function RevenueTab({ data, granularity, link }: { data: RevenueReport; granularity: Granularity | null; link: DetailLinkFor }) {
   const { market, kpis, estimatedMrr } = data
   const money = (value: number) => minorToMoney(value, market)
   return (
     <>
       {data.excludedInvoices > 0 ? (
-        <Note>{plural(data.excludedInvoices, 'fatura em outra moeda ficou fora', 'faturas em outra moeda ficaram fora')} do relatório.</Note>
+        <Note>{plural(data.excludedInvoices, 'fatura em outra moeda ficou fora', 'faturas em outra moeda ficaram fora')} do relatório. <Link className="table-link" to={link('excludedInvoices')}>Ver faturas</Link></Note>
       ) : null}
       <div className="insights-metrics">
-        <KpiCard label="Faturamento bruto" kpi={kpis.grossRevenue} kind="money" market={market} hint="Inclui impostos e frete cobrados; não desconta reembolsos." />
-        <KpiCard label="Faturas pagas" kpi={kpis.paidInvoices} market={market} />
-        <KpiCard label="Ticket médio" kpi={kpis.averageTicket} kind="money" market={market} />
+        <KpiCard label="Faturamento bruto" kpi={kpis.grossRevenue} kind="money" market={market} hint="Inclui impostos e frete cobrados; não desconta reembolsos." to={link('grossRevenue')} />
+        <KpiCard label="Faturas pagas" kpi={kpis.paidInvoices} market={market} to={link('paidInvoices')} />
+        <KpiCard label="Ticket médio" kpi={kpis.averageTicket} kind="money" market={market} to={link('averageTicket')} />
         <KpiCard
           label="MRR estimado"
           kpi={estimatedMrr}
@@ -365,39 +368,40 @@ function RevenueTab({ data, granularity }: { data: RevenueReport; granularity: G
           now
           badge={<span className="badge-info" title="Soma do preço mensal das assinaturas ativas e com pagamento atrasado, sem cupons recorrentes.">Estimado</span>}
           hint={`${plural(estimatedMrr.trialingSubscriptions, 'em teste fora', 'em teste fora')} · ${plural(estimatedMrr.unpricedSubscriptions, 'sem preço', 'sem preço')}`}
+          to={link('estimatedMrr')}
         />
       </div>
       <div className="insights-metrics">
-        <KpiCard label="Primeira compra" kpi={kpis.firstPurchaseRevenue} kind="money" market={market} />
-        <KpiCard label="Renovações" kpi={kpis.renewalRevenue} kind="money" market={market} />
+        <KpiCard label="Primeira compra" kpi={kpis.firstPurchaseRevenue} kind="money" market={market} to={link('firstPurchaseRevenue')} />
+        <KpiCard label="Renovações" kpi={kpis.renewalRevenue} kind="money" market={market} to={link('renewalRevenue')} />
       </div>
       <section className="insights-panel" aria-labelledby="report-revenue-series">
         <h3 id="report-revenue-series">Faturamento bruto no período</h3>
-        <BarSeries title="Faturamento bruto" series={data.series} keys={[{ key: 'revenue', label: 'Faturamento' }]} granularity={granularity ?? data.period.granularity} format={money} />
+        <BarSeries title="Faturamento bruto" series={data.series} keys={[{ key: 'revenue', label: 'Faturamento' }]} granularity={granularity ?? data.period.granularity} format={money} linkFor={(bucket, key) => link(`series.${key}`, { bucket: bucket.key })} />
       </section>
     </>
   )
 }
 
-function SubscriptionsTab({ data, granularity }: { data: SubscriptionsReport; granularity: Granularity | null }) {
+function SubscriptionsTab({ data, granularity, link }: { data: SubscriptionsReport; granularity: Granularity | null; link: DetailLinkFor }) {
   const { market, current, kpis } = data
   return (
     <>
       <div className="insights-metrics insights-metrics-five">
-        <KpiCard label="Ativas" kpi={current.active} market={market} now />
-        <KpiCard label="Em teste" kpi={current.trialing} market={market} now />
-        <KpiCard label="Cancelando" kpi={current.canceling} market={market} now />
-        <KpiCard label="Pagamento atrasado" kpi={current.pastDue} market={market} now />
-        <KpiCard label="Renovam em 7 dias" kpi={current.renewing7d} market={market} now />
+        <KpiCard label="Ativas" kpi={current.active} market={market} now to={link('current.active')} />
+        <KpiCard label="Em teste" kpi={current.trialing} market={market} now to={link('current.trialing')} />
+        <KpiCard label="Cancelando" kpi={current.canceling} market={market} now to={link('current.canceling')} />
+        <KpiCard label="Pagamento atrasado" kpi={current.pastDue} market={market} now to={link('current.pastDue')} />
+        <KpiCard label="Renovam em 7 dias" kpi={current.renewing7d} market={market} now to={link('current.renewing7d')} />
       </div>
       <div className="insights-metrics">
-        <KpiCard label="Novas" kpi={kpis.new} market={market} />
-        <KpiCard label="Canceladas" kpi={kpis.canceled} market={market} lowerIsBetter />
-        <KpiCard label="Ativas no início" kpi={kpis.activeAtStart} market={market} />
-        <KpiCard label="Churn" kpi={kpis.churn} kind="rate" market={market} lowerIsBetter hint="Canceladas entre as ativas no início ÷ ativas no início." />
+        <KpiCard label="Novas" kpi={kpis.new} market={market} to={link('new')} />
+        <KpiCard label="Canceladas" kpi={kpis.canceled} market={market} lowerIsBetter to={link('canceled')} />
+        <KpiCard label="Ativas no início" kpi={kpis.activeAtStart} market={market} to={link('activeAtStart')} />
+        <KpiCard label="Churn" kpi={kpis.churn} kind="rate" market={market} lowerIsBetter hint="Canceladas entre as ativas no início ÷ ativas no início." to={link('churn')} />
       </div>
-      {data.approximateNewCount > 0 ? <Note>{plural(data.approximateNewCount, 'nova assinatura tem data aproximada', 'novas assinaturas têm data aproximada')} (registradas antes do relatório).</Note> : null}
-      {data.approximateCanceledCount > 0 ? <Note>{plural(data.approximateCanceledCount, 'cancelamento tem data aproximada', 'cancelamentos têm data aproximada')} (registrados antes do relatório).</Note> : null}
+      {data.approximateNewCount > 0 ? <Note>{plural(data.approximateNewCount, 'nova assinatura tem data aproximada', 'novas assinaturas têm data aproximada')} (registradas antes do relatório). <Link className="table-link" to={link('approximateNewCount')}>Ver assinaturas</Link></Note> : null}
+      {data.approximateCanceledCount > 0 ? <Note>{plural(data.approximateCanceledCount, 'cancelamento tem data aproximada', 'cancelamentos têm data aproximada')} (registrados antes do relatório). <Link className="table-link" to={link('approximateCanceledCount')}>Ver assinaturas</Link></Note> : null}
       <section className="insights-panel" aria-labelledby="report-subs-series">
         <h3 id="report-subs-series">Novas e cancelamentos</h3>
         <BarSeries
@@ -406,18 +410,19 @@ function SubscriptionsTab({ data, granularity }: { data: SubscriptionsReport; gr
           keys={[{ key: 'newCount', label: 'Novas' }, { key: 'canceled', label: 'Cancelamentos', compare: true }]}
           granularity={granularity ?? data.period.granularity}
           format={formatCount}
+          linkFor={(bucket, key) => link(`series.${key}`, { bucket: bucket.key })}
         />
       </section>
     </>
   )
 }
 
-function AcquisitionTab({ data, granularity }: { data: AcquisitionReport; granularity: Granularity | null }) {
+function AcquisitionTab({ data, granularity, link }: { data: AcquisitionReport; granularity: Granularity | null; link: DetailLinkFor }) {
   const { stages, conversions } = data
   return (
     <>
       {data.unassignedCheckouts ? (
-        <Note>{plural(data.unassignedCheckouts, 'checkout do período está sem mercado e fica', 'checkouts do período estão sem mercado e ficam')} fora do funil.</Note>
+        <Note>{plural(data.unassignedCheckouts, 'checkout do período está sem mercado e fica', 'checkouts do período estão sem mercado e ficam')} fora do funil. <Link className="table-link" to={link('unassignedCheckouts')}>Ver checkouts</Link></Note>
       ) : null}
       <div className="insights-split">
         <section className="insights-panel" aria-labelledby="report-funnel">
@@ -426,62 +431,63 @@ function AcquisitionTab({ data, granularity }: { data: AcquisitionReport; granul
             title="Funil de aquisição"
             funnel
             stages={[
-              { key: 'started', label: 'Checkouts iniciados', value: stages.started.value ?? 0 },
-              { key: 'linked', label: 'Vinculados ao Stripe', value: stages.linked.value ?? 0, conversion: formatRate(conversions.startedToLinked.value) },
-              { key: 'activated', label: 'Chegaram a ativar', value: stages.activated.value ?? 0, conversion: formatRate(conversions.linkedToActivated.value) },
+              { key: 'started', label: 'Checkouts iniciados', value: stages.started.value ?? 0, to: link('stages.started') },
+              { key: 'linked', label: 'Vinculados ao Stripe', value: stages.linked.value ?? 0, conversion: formatRate(conversions.startedToLinked.value), to: link('stages.linked'), conversionTo: link('conversions.startedToLinked') },
+              { key: 'activated', label: 'Chegaram a ativar', value: stages.activated.value ?? 0, conversion: formatRate(conversions.linkedToActivated.value), to: link('stages.activated'), conversionTo: link('conversions.linkedToActivated') },
             ]}
           />
           <div className="insights-totals">
-            <span>Conversão total <strong>{formatRate(conversions.startedToActivated.value)}</strong></span>
+            <span>Conversão total <Link className="table-link" to={link('conversions.startedToActivated')}><strong>{formatRate(conversions.startedToActivated.value)}</strong></Link></span>
           </div>
         </section>
         <div className="insights-metrics">
-          <KpiCard label="Checkouts iniciados" kpi={stages.started} market={data.market} />
-          <KpiCard label="Vinculados ao Stripe" kpi={stages.linked} market={data.market} />
-          <KpiCard label="Chegaram a ativar" kpi={stages.activated} market={data.market} />
-          <KpiCard label="Conversão total" kpi={conversions.startedToActivated} kind="rate" market={data.market} />
+          <KpiCard label="Checkouts iniciados" kpi={stages.started} market={data.market} to={link('stages.started')} />
+          <KpiCard label="Vinculados ao Stripe" kpi={stages.linked} market={data.market} to={link('stages.linked')} />
+          <KpiCard label="Chegaram a ativar" kpi={stages.activated} market={data.market} to={link('stages.activated')} />
+          <KpiCard label="Conversão total" kpi={conversions.startedToActivated} kind="rate" market={data.market} to={link('conversions.startedToActivated')} />
         </div>
       </div>
       <section className="insights-panel" aria-labelledby="report-acq-series">
         <h3 id="report-acq-series">Checkouts iniciados</h3>
-        <BarSeries title="Checkouts iniciados" series={data.series} keys={[{ key: 'started', label: 'Checkouts' }]} granularity={granularity ?? data.period.granularity} format={formatCount} />
+        <BarSeries title="Checkouts iniciados" series={data.series} keys={[{ key: 'started', label: 'Checkouts' }]} granularity={granularity ?? data.period.granularity} format={formatCount} linkFor={(bucket, key) => link(`series.${key}`, { bucket: bucket.key })} />
       </section>
     </>
   )
 }
 
-function MixTab({ data }: { data: MixReport }) {
+function MixTab({ data, link }: { data: MixReport; link: DetailLinkFor }) {
   const { market } = data
   return (
     <div className="insights-split">
       <section className="insights-panel" aria-labelledby="report-mix-recipes">
         <div>
           <h3 id="report-mix-recipes">Receitas</h3>
-          <p className="muted">Packs por ciclo nas assinaturas ativas</p>
+          <p className="muted">Pacotes por entrega nas assinaturas ativas</p>
         </div>
         {data.recipes.length ? (
           <FunnelBars
-            title="Packs por receita"
+            title="Pacotes por receita"
             stages={data.recipes.map((row) => ({
               key: row.key,
               label: <>{row.name}<NameMark show={row.nameMissing} market={market} /></>,
               value: row.packs,
+              to: link(`recipes.${row.key}.packs`),
             }))}
           />
         ) : <p className="muted">Nenhuma assinatura ativa.</p>}
       </section>
       <section className="insights-panel" aria-labelledby="report-mix-packs">
-        <h3 id="report-mix-packs">Tamanhos de pack</h3>
+        <h3 id="report-mix-packs">Tamanhos de pacote</h3>
         <ReportTable
-          caption="Tamanhos de pack"
+          caption="Tamanhos de pacote"
           rowKey={(row) => String(row.grams)}
           rows={data.packSizes}
           empty="Nenhuma assinatura ativa."
           columns={[
-            { key: 'label', label: 'Pack', cell: (row) => row.label },
-            { key: 'subscriptions', label: 'Assinaturas', cell: (row) => formatCount(row.subscriptions) },
-            { key: 'packs', label: 'Packs', cell: (row) => formatCount(row.packs) },
-            { key: 'share', label: 'Participação', cell: (row) => formatRate(row.share) },
+            { key: 'label', label: 'Pacote', cell: (row) => row.label },
+            { key: 'subscriptions', label: 'Assinaturas', cell: (row) => formatCount(row.subscriptions), to: (row) => link(`packSizes.${row.grams}.subscriptions`) },
+            { key: 'packs', label: 'Pacotes', cell: (row) => formatCount(row.packs), to: (row) => link(`packSizes.${row.grams}.packs`) },
+            { key: 'share', label: 'Participação', cell: (row) => formatRate(row.share), to: (row) => link(`packSizes.${row.grams}.share`) },
           ]}
         />
       </section>
@@ -505,7 +511,7 @@ const SHIPMENT_LABELS: Record<string, string> = {
   voided: 'Cancelados',
 }
 
-function OperationsTab({ data }: { data: OperationsReport }) {
+function OperationsTab({ data, link }: { data: OperationsReport; link: DetailLinkFor }) {
   const { market } = data
   return (
     <>
@@ -516,19 +522,19 @@ function OperationsTab({ data }: { data: OperationsReport }) {
         </div>
         <div className="insights-metrics">
           {(Object.keys(CYCLE_LABELS) as CycleStatus[]).map((status) => (
-            <KpiCard key={status} label={CYCLE_LABELS[status]} kpi={data.cycles[status]} market={market} />
+            <KpiCard key={status} label={CYCLE_LABELS[status]} kpi={data.cycles[status]} market={market} to={link(`cycles.${status}`)} />
           ))}
         </div>
       </section>
       <div className="insights-metrics">
-        <KpiCard label="Atrasados" kpi={data.late} market={market} lowerIsBetter hint="Dia de preparo já passou e o ciclo não está pronto." />
-        <KpiCard label="Aguardando pagamento" kpi={data.awaitingPayment} market={market} now hint="Renovações ainda não pagas; não contam como atrasadas." />
+        <KpiCard label="Atrasados" kpi={data.late} market={market} lowerIsBetter hint="Dia de preparo já passou e o ciclo não está pronto." to={link('late')} />
+        <KpiCard label="Aguardando pagamento" kpi={data.awaitingPayment} market={market} now hint="Renovações ainda não pagas; não contam como atrasadas." to={link('awaitingPayment')} />
       </div>
       {data.shipments ? (
         <section className="insights-panel" aria-labelledby="report-ups">
           <h3 id="report-ups">Envios UPS</h3>
           <div className="insights-metrics">
-            <KpiCard label="Envios (sem cancelados)" kpi={data.shipments.total} market={market} />
+            <KpiCard label="Envios (sem cancelados)" kpi={data.shipments.total} market={market} to={link('shipments.total')} />
           </div>
           <ReportTable
             caption="Envios UPS por status"
@@ -537,8 +543,8 @@ function OperationsTab({ data }: { data: OperationsReport }) {
             empty="Nenhum envio no período."
             columns={[
               { key: 'status', label: 'Status', cell: (row) => SHIPMENT_LABELS[row[0]] ?? row[0] },
-              { key: 'value', label: 'Envios', cell: (row) => formatCount(row[1].value) },
-              { key: 'previous', label: 'Período anterior', cell: (row) => formatCount(row[1].previous) },
+              { key: 'value', label: 'Envios', cell: (row) => formatCount(row[1].value), to: (row) => link(`shipments.byStatus.${row[0]}`) },
+              { key: 'previous', label: 'Período anterior', cell: (row) => formatCount(row[1].previous), to: (row) => link(`shipments.byStatus.${row[0]}`, { previous: true }) },
             ]}
           />
         </section>
@@ -547,7 +553,7 @@ function OperationsTab({ data }: { data: OperationsReport }) {
   )
 }
 
-function StockTab({ data, market }: { data: StockReport; market: MarketCode }) {
+function StockTab({ data, market, link }: { data: StockReport; market: MarketCode; link: DetailLinkFor }) {
   const { totals } = data
   return (
     <section className="insights-panel" aria-labelledby="report-stock">
@@ -563,13 +569,20 @@ function StockTab({ data, market }: { data: StockReport; market: MarketCode }) {
         columns={[
           { key: 'name', label: 'Receita', cell: (row) => <>{row.name}<NameMark show={row.nameMissing} market={market} /></> },
           { key: 'label', label: 'Pack', cell: (row) => row.label },
-          { key: 'produced', label: 'Produzido', cell: (row) => formatCount(row.produced) },
-          { key: 'separated', label: 'Separado', cell: (row) => formatCount(row.separated) },
-          { key: 'adjusted', label: 'Ajustado', cell: (row) => formatCount(row.adjusted) },
-          { key: 'onHand', label: 'Saldo', cell: (row) => formatCount(row.onHand) },
-          { key: 'minLevel', label: 'Mínimo', cell: (row) => formatCount(row.minLevel) },
+          { key: 'produced', label: 'Produzido', cell: (row) => formatCount(row.produced), to: (row) => link(`rows.${row.key}.${row.grams}.produced`) },
+          { key: 'separated', label: 'Separado', cell: (row) => formatCount(row.separated), to: (row) => link(`rows.${row.key}.${row.grams}.separated`) },
+          { key: 'adjusted', label: 'Ajustado', cell: (row) => formatCount(row.adjusted), to: (row) => link(`rows.${row.key}.${row.grams}.adjusted`) },
+          { key: 'onHand', label: 'Saldo', cell: (row) => formatCount(row.onHand), to: (row) => link(`rows.${row.key}.${row.grams}.onHand`) },
+          { key: 'minLevel', label: 'Mínimo', cell: (row) => formatCount(row.minLevel), to: (row) => link(`rows.${row.key}.${row.grams}.minLevel`) },
         ]}
-        footer={['Total', '', formatCount(totals.produced.value), formatCount(totals.separated.value), formatCount(totals.adjusted.value), formatCount(totals.onHand.value), '']}
+        footer={[
+          'Total',
+          '',
+          ...(['produced', 'separated', 'adjusted', 'onHand'] as const).map((key) => (
+            <Link key={key} className="table-link" to={link(`totals.${key}`)}>{formatCount(totals[key].value)}</Link>
+          )),
+          '',
+        ]}
       />
     </section>
   )

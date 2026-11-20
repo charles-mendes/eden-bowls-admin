@@ -29,7 +29,7 @@ describe('ProductionQueuePage', () => {
 
     expect(await screen.findByText('ana@edenbowls.com')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Fila de produção' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '← Voltar para Hoje' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByRole('link', { name: '← Voltar para Pendências' })).toHaveAttribute('href', '/dashboard')
     expect(screen.getByRole('button', { name: /^Hoje/ })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByText('Ana Ledger')).toBeInTheDocument()
     expect(screen.queryByText('WordPress Name')).not.toBeInTheDocument()
@@ -135,6 +135,21 @@ describe('ProductionQueuePage', () => {
     expect(screen.getByRole('button', { name: /^Atrasados/ })).toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('button', { name: /^Atrasados/ }))
     await waitFor(() => expect(screen.getByRole('button', { name: /^Atrasados/ })).toHaveAttribute('aria-pressed', 'false'))
+  })
+
+  it('offers a "Hoje" period that asks the API for a one-day window', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(operatorWriteUser)
+    renderQueue()
+
+    await screen.findByText('ana@edenbowls.com')
+    const period = screen.getByRole('combobox', { name: 'Período' })
+    expect(within(period).getAllByRole('option').map((option) => option.textContent)).toEqual(['Hoje', 'Próximos 7 dias', 'Próximos 14 dias', 'Próximos 30 dias'])
+    fireEvent.change(period, { target: { value: '1' } })
+    await waitFor(() => {
+      expect(calls.some((call) => call.path === '/api/v1/admin/production/queue' && call.search.includes('windowDays=1&'))).toBe(true)
+    })
+    expect(period).toHaveValue('1')
   })
 
   it('lets an admin pick the market', async () => {

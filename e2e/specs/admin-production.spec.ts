@@ -36,10 +36,10 @@ test.describe('Admin production queue', () => {
     ))).toBe(true)
   })
 
-  test('a number on Hoje opens the queue already filtered', async ({ page }) => {
+  test('a pending item on Pendências opens the queue already filtered', async ({ page }) => {
     const { captured } = await openAuthed(page, '/dashboard', e2eProfiles.operatorWrite)
 
-    await page.getByRole('region', { name: 'Números do dia' }).getByRole('link', { name: /^Hoje/ }).click()
+    await page.getByRole('region', { name: 'Produção' }).getByRole('link', { name: 'Ver na fila' }).click()
     await expect(page).toHaveURL(/\/operations\/production\?prazo=hoje/)
     await expect(page.getByRole('button', { name: /^Hoje/ })).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByText('Prazo: Hoje')).toBeVisible()
@@ -47,7 +47,7 @@ test.describe('Admin production queue', () => {
       item.path === '/api/v1/admin/production/queue' && item.search.includes('due=today')
     ))).toBe(true)
 
-    await page.getByRole('link', { name: '← Voltar para Hoje' }).click()
-    await expect(page.getByRole('heading', { name: 'Hoje', exact: true })).toBeVisible()
+    await page.getByRole('link', { name: '← Voltar para Pendências' }).click()
+    await expect(page.getByRole('heading', { name: 'Pendências', exact: true })).toBeVisible()
   })
 })

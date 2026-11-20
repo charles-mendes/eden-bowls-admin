@@ -2114,6 +2114,12 @@ button.table-link {
   font-size: var(--text-sm);
 }
 
+/* A section's own shortcut (Abrir Etiquetas UPS) sits at the right of its title. */
+.day-section-head > .ghost-button {
+  margin-left: auto;
+  align-self: center;
+}
+
 .day-kicker {
   margin: 0;
   color: var(--text-soft);
@@ -2289,68 +2295,6 @@ ul.day-note {
   margin-top: var(--space-3);
   padding-left: var(--space-4);
 }
-
-.day-orders {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.day-order {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.day-order-head {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-2);
-}
-
-.day-order-head .muted {
-  font-size: var(--text-xs);
-}
-
-.day-order-items {
-  color: var(--text-strong);
-  font-size: var(--text-sm);
-}
-
-.day-order-step {
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.day-order-note {
-  font-size: var(--text-xs);
-}
-
-.day-order-link {
-  margin-top: auto;
-  padding-top: var(--space-1);
-  color: var(--accent);
-  font-size: var(--text-sm);
-  font-weight: 500;
-}
-
-.day-order-link:hover {
-  text-decoration: underline;
-}
-
-.day-step-error { color: var(--danger); }
-.day-step-warning { color: var(--warning-text); }
-.day-step-info { color: var(--info-text); }
-.day-step-success { color: var(--success-text); }
 
 .day-health {
   border: 1px solid var(--border);
@@ -4070,9 +4014,35 @@ ul.day-note {
 
 .customer-layout {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: var(--space-4);
+}
+
+/* Cadastro: the cards sit two by two on a wide screen instead of one narrow column with empty space beside it. */
+@media (min-width: 1101px) {
+  .customer-layout > .page-stack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+/* Market switch beside a section title keeps its full width ("Estados Unidos" is not cut). */
+.section-head > .segmented {
+  flex: 0 0 auto;
+}
+
+/* Purchase trail: the steps fit the card width on a tablet; long codes wrap instead of leaving the card. */
+.history-table.trail-table {
+  min-width: 0;
+}
+
+.trail-table td {
+  overflow-wrap: anywhere;
+}
+
+.page-tab-label-short {
+  display: none;
 }
 
 .address-fields {
@@ -4380,6 +4350,20 @@ ul.day-note {
 
   .customer-tabs .page-tab {
     padding: 10px 6px;
+  }
+
+  /* Five tabs on one line on a phone: "Trilha de compra" reads "Trilha", the name stays the full label. */
+  .customer-tabs .page-tab-label-long {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .customer-tabs .page-tab-label-short {
+    display: inline;
   }
 
   .address-fields {
@@ -5144,8 +5128,13 @@ label.primary-button {
 
 .insights-split {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
   gap: var(--space-3);
+}
+
+/* Grid items default to min-width: auto, so a wide child would stretch the column past the screen. */
+.insights-split > * {
+  min-width: 0;
 }
 
 .insights-panel {
@@ -5288,8 +5277,10 @@ label.primary-button {
   text-align: right;
 }
 
+/* The global `table { min-width: 820px }` would push these compact tables past their panel. */
 .insights-table {
   width: 100%;
+  min-width: 0;
   border-collapse: collapse;
   font-size: var(--text-sm);
 }
@@ -7791,4 +7782,113 @@ button.readiness-step-inner:hover .readiness-title {
 
 .us-time select {
   flex: none;
+}
+
+/* Inside a form field `.ship-field select` stretches to 100%: the AM/PM select keeps its own width so hh:mm shows. */
+.ship-field .us-time input {
+  width: auto;
+  min-width: 5ch;
+}
+
+.ship-field .us-time select {
+  width: auto;
+}
+
+/* UPS pickup: the labels go in one list without bullets; a long tracking number breaks instead of widening the card. */
+.pickup-labels {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+}
+
+.pickup-labels label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.pickup-labels span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The ask button takes its own row under the fields, and the whole width on a phone. */
+.pickup-fields {
+  margin-bottom: var(--space-3);
+}
+
+.pickup-fields .ship-actions {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 560px) {
+  .pickup-fields .ship-actions .primary-button {
+    width: 100%;
+  }
+}
+
+/* Report figures that open their details */
+.day-card-link {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.insights-table th.report-cell-left,
+.insights-table td.report-cell-left {
+  text-align: left;
+}
+
+.day-card-link:focus-visible,
+.report-bar-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.report-bar-link {
+  display: block;
+  cursor: pointer;
+}
+
+.report-bar-link:hover {
+  filter: brightness(0.85);
+}
+
+.report-criteria {
+  margin: 0;
+  padding-left: var(--space-4);
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+}
+
+.report-formula {
+  margin: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.report-formula > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.report-formula dt {
+  color: var(--text-soft);
+}
+
+.report-formula dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.report-formula .report-total {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-1);
 }
