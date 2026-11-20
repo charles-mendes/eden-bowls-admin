@@ -8,7 +8,7 @@ export function OtherMarketNotice({ title, market }: { title: string; market: Ma
     <PageFrame title={title} description={`Esta tela é do mercado ${MARKET_LABELS[market]}.`}>
       <div className="warning" role="status">
         {`Esta tela é do mercado ${MARKET_LABELS[market]} e sua conta não trabalha nele. `}
-        <Link to="/dashboard">Voltar para Hoje</Link>
+        <Link to="/dashboard">Voltar para Pendências</Link>
       </div>
     </PageFrame>
   )

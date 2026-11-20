@@ -536,7 +536,7 @@ export function ProductionQueuePage() {
         <div className="inline-actions">
           {showsMarket('BR') ? <Link className="ghost-button" to="/operations/courier">Entregas Brasil</Link> : null}
           {showsMarket('US') ? <Link className="ghost-button" to="/operations/labels">Etiquetas UPS</Link> : null}
-          <Link className="ghost-button" to="/dashboard">← Voltar para Hoje</Link>
+          <Link className="ghost-button" to="/dashboard">← Voltar para Pendências</Link>
         </div>
       )}
     >

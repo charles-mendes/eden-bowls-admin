@@ -12,7 +12,7 @@ import { nfeListHref } from '../lib/nfe'
 import { getBrowserTimeZone } from '../lib/format'
 import { effectiveSessionMarkets } from '../lib/markets'
 import { plural, productionQueueHref, QUEUE_PATH, type QueueFilters } from '../lib/productionQueue'
-import { UPS_CHECK_PATH, UPS_PICKUP_PATH, type Bucket, type ClosedDay, type Counts, type Fulfillment, type TodayItem, type TodayOverview } from '../lib/today'
+import { UPS_CHECK_PATH, UPS_PICKUP_PATH, type ClosedDay, type Fulfillment, type TodayItem, type TodayOverview } from '../lib/today'
 
 const MARKET_NAME = { BR: 'Brasil', US: 'EUA' } as const
 
@@ -183,11 +183,6 @@ function longDate(isoDate: string) {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-function splitHint(counts: Record<'BR' | 'US', Counts>, bucket: Bucket, markets: Array<'BR' | 'US'>) {
-  if (markets.length < 2) return undefined
-  return `Brasil ${counts.BR[bucket]} · EUA ${counts.US[bucket]}`
-}
-
 export function DashboardPage() {
   const { token, user, hasRole } = useAuth()
   // Effective markets: an admin with no stored market still works in both.
@@ -245,41 +240,13 @@ export function DashboardPage() {
   const mercado: QueueFilters['mercado'] = market ? (market === 'US' ? 'us' : 'br') : undefined
   const pending = pendingItems(items, mercado, data?.stalePaid ?? 0)
   const shownMarkets = market ? [market] : markets
-  const showUps = shownMarkets.includes('US')
   const work = fulfillmentItems(data?.fulfillment, shownMarkets)
-  const readyWithoutLabel = items.filter((item) => item.upsLabel === 'missing' && item.productionStatus === 'ready').length
-
-  const cards: Array<{ key: string; label: string; value: number | undefined; hint: string; split?: string; tone?: string; to: string }> = [
-    {
-      key: 'overdue', label: 'Atrasados', value: data?.totals.overdue, hint: 'Só o que a cozinha não terminou. Pronto esperando saída conta em pedidos a despachar.',
-      split: data ? splitHint(data.byMarket, 'overdue', shownMarkets) : undefined,
-      tone: data && data.totals.overdue > 0 ? 'day-card-danger' : undefined,
-      to: productionQueueHref({ prazo: 'atrasados', mercado }),
-    },
-    {
-      key: 'today', label: 'Hoje', value: data?.totals.today, hint: 'Com preparo hoje',
-      split: data ? splitHint(data.byMarket, 'today', shownMarkets) : undefined,
-      to: productionQueueHref({ prazo: 'hoje', mercado }),
-    },
-    {
-      key: 'tomorrow', label: 'Amanhã', value: data?.totals.tomorrow, hint: 'Com preparo amanhã',
-      split: data ? splitHint(data.byMarket, 'tomorrow', shownMarkets) : undefined,
-      to: productionQueueHref({ prazo: 'amanha', mercado }),
-    },
-  ]
-  if (showUps) {
-    cards.push({
-      key: 'ups', label: 'Sem etiqueta UPS', value: data ? readyWithoutLabel : undefined, hint: 'Prontos hoje sem etiqueta',
-      tone: readyWithoutLabel > 0 ? 'day-card-warning' : undefined,
-      to: LABELS_PATH,
-    })
-  }
 
   return (
     <PageFrame
       eyebrow={data ? longDate(data.today) : undefined}
-      title="Hoje"
-      description="Pendências e pedidos do dia. Clique em um número para abrir a fila já filtrada."
+      title="Pendências"
+      description="O que trava a produção e a expedição, da mais grave para a menos grave. Os números do dia (Atrasados, Hoje, Amanhã) ficam na Fila de produção."
       actions={(
         <div className="day-toolbar">
           {bothMarkets ? (
@@ -316,21 +283,6 @@ export function DashboardPage() {
         )
       })}
 
-      <section className="day-section" aria-labelledby="day-numbers">
-        <h3 id="day-numbers" className="day-kicker">Números do dia</h3>
-        <div className="day-cards">
-          {cards.map((card) => (
-            <Link key={card.key} to={card.to} className={['day-card', card.tone ?? ''].filter(Boolean).join(' ')}>
-              <span className="day-card-label">{card.label}</span>
-              <strong className="day-card-value">{card.value ?? '—'}</strong>
-              <span className="day-card-hint">{card.hint}</span>
-              {card.split ? <span className="day-card-hint">{card.split}</span> : null}
-              <span className="day-card-link">Abrir na fila →</span>
-            </Link>
-          ))}
-        </div>
-      </section>
-
       {isAdmin && readinessCount > 0 ? (
         <p className="day-readiness">
           <Link to={CHECKOUT_READINESS_PATH}>{summaryLine(readinessCount)}</Link>
@@ -339,7 +291,7 @@ export function DashboardPage() {
 
       <section className="day-section" aria-labelledby="day-pending">
         <div className="day-section-head">
-          <h3 id="day-pending">Pendências</h3>
+          <h3 id="day-pending">Produção</h3>
           {pending.length > 0 ? (
             <span className="muted">{plural(pending.length, 'item', 'itens')}, da mais grave para a menos grave</span>
           ) : null}

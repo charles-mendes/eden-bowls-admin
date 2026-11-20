@@ -56,7 +56,7 @@ function ProtectedShell() {
   )
 }
 
-// Admin only: other roles go back to Hoje before the page asks the API anything.
+// Admin only: other roles go back to Pendências before the page asks the API anything.
 function AdminCheckoutReadinessRoute() {
   const { hasRole } = useAuth()
   return hasRole('admin') ? <CheckoutReadinessPage /> : <Navigate to="/dashboard" replace />

@@ -159,7 +159,7 @@ function OverviewBody({ data, market }: { data: Overview; market: MarketCode }) 
         <span><i className="insights-dot insights-dot-danger" aria-hidden="true" />{formatCount(operations.late.value)} atrasados</span>
         <span><i className="insights-dot insights-dot-danger" aria-hidden="true" />{formatCount(operations.awaitingPayment.value)} aguardando pagamento</span>
         <span><i className="insights-dot insights-dot-warning" aria-hidden="true" />{formatCount(operations.cycles.blocked.value)} bloqueados</span>
-        <span className="insights-strip-link">Abrir Hoje →</span>
+        <span className="insights-strip-link">Abrir Pendências →</span>
       </Link>
 
       <section className="day-section" aria-labelledby="insights-revenue">

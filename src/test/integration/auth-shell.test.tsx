@@ -80,7 +80,7 @@ describe('admin auth shell', () => {
     await user.click(screen.getByRole('button', { name: 'Entrar' }))
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Hoje' })).toBeInTheDocument()
+      expect(screen.getByRole('heading', { name: 'Pendências' })).toBeInTheDocument()
     })
 
     expect(screen.getByRole('navigation', { name: 'Seções do painel' })).toBeInTheDocument()
@@ -102,7 +102,7 @@ describe('admin auth shell', () => {
       expect(screen.getByRole('heading', { name: 'Simulador nutricional' })).toBeInTheDocument()
     })
 
-    expect(screen.queryByRole('link', { name: 'Hoje' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Pendências' })).not.toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Simulador nutricional' })).toBeInTheDocument()
   })
 })

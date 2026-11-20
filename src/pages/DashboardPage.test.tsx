@@ -160,34 +160,25 @@ describe('DashboardPage', () => {
     expect(screen.queryByText('OK')).not.toBeInTheDocument()
   })
 
-  it('opens on today: numbers, blockers worst first, closed days and the orders that need action', async () => {
+  it('opens on the blockers worst first, closed days and the orders that need action', async () => {
     seedAuth()
     const { calls } = installAdminFetchMock(adminUser)
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
-    expect(await screen.findByRole('heading', { name: 'Hoje' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Pendências' })).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.getByText(/Quarta-feira, 7 de outubro/)).toBeInTheDocument()
     })
 
-    const forToday = screen.getByRole('link', { name: /^Hoje/ })
-    expect(within(forToday).getByText('2')).toBeInTheDocument()
-    expect(within(forToday).getByText('Brasil 1 · EUA 1')).toBeInTheDocument()
-    expect(forToday).toHaveAttribute('href', '/operations/production?prazo=hoje')
-    const overdueCard = screen.getByRole('link', { name: /^Atrasados/ })
-    expect(overdueCard).toHaveAttribute('href', '/operations/production?prazo=atrasados')
-    // explain-hold-reason-and-overdue: the card says the number is only the kitchen's.
-    expect(within(overdueCard).getByText('Só o que a cozinha não terminou. Pronto esperando saída conta em pedidos a despachar.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: /^Amanhã/ })).toHaveAttribute('href', '/operations/production?prazo=amanha')
-    const ups = screen.getByRole('link', { name: /^Sem etiqueta UPS/ })
-    // Only ready orders wait for a label, the same rule the blocker uses.
-    expect(within(ups).getByText('1')).toBeInTheDocument()
-    expect(ups).toHaveAttribute('href', '/operations/labels')
-    expect(within(ups).getByText('Prontos hoje sem etiqueta')).toBeInTheDocument()
+    // The day's numbers live on the production queue; this page only lists what is stuck.
+    expect(screen.queryByRole('region', { name: 'Números do dia' })).not.toBeInTheDocument()
+    for (const card of [/^Atrasados/, /^Hoje/, /^Amanhã/, /^Sem etiqueta UPS/]) {
+      expect(screen.queryByRole('link', { name: card })).not.toBeInTheDocument()
+    }
 
     expect(screen.getByText(/Amanhã \(Brasil\): Folga da cozinha/)).toBeInTheDocument()
 
-    const pending = within(screen.getByRole('region', { name: 'Pendências' })).getAllByRole('listitem')
+    const pending = within(screen.getByRole('region', { name: 'Produção' })).getAllByRole('listitem')
     expect(pending.map((item) => within(item).getByText(/^(Alta|Média|Baixa)$/).textContent)).toEqual(['Alta', 'Média', 'Baixa'])
     expect(within(pending[0]).getByText('1 pagamento recusado')).toBeInTheDocument()
     expect(within(pending[0]).getByText('Davi Rocha: falar com o cliente antes de preparar.')).toBeInTheDocument()
@@ -218,7 +209,7 @@ describe('DashboardPage', () => {
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
     const stale = (await screen.findByText('2 pedidos pagos parados há mais de 30 dias')).closest('li') as HTMLElement
-    const region = within(screen.getByRole('region', { name: 'Pendências' }))
+    const region = within(screen.getByRole('region', { name: 'Produção' }))
     expect(within(stale).getByText('Alta')).toBeInTheDocument()
     expect(within(stale).getByRole('link', { name: 'Ver na fila' })).toHaveAttribute('href', '/operations/production?prazo=atrasados')
     expect(region.getByText('1 pedido atrasado')).toBeInTheDocument()
@@ -245,7 +236,6 @@ describe('DashboardPage', () => {
     expect(within(item).getByText('Charles Mendes: o dia de preparo já passou e a caixa ainda não saiu.')).toBeInTheDocument()
     expect(within(item).getByRole('link', { name: 'Abrir entregas' })).toHaveAttribute('href', '/operations/courier')
     expect(screen.queryByText('Nada travado. Tudo em dia.')).not.toBeInTheDocument()
-    expect(within(screen.getByRole('link', { name: /^Atrasados/ })).getByText('0')).toBeInTheDocument()
   })
 
   it('keeps system health for admins only', async () => {
@@ -267,7 +257,7 @@ describe('DashboardPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Brasil' }))
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /^Atrasados/ })).toHaveAttribute('href', '/operations/production?prazo=atrasados&mercado=br')
+      expect(screen.getByRole('link', { name: 'Ver na fila' })).toHaveAttribute('href', '/operations/production?prazo=hoje&status=to_prepare&mercado=br')
     })
   })
 
@@ -284,22 +274,21 @@ describe('DashboardPage', () => {
     })
   })
 
-  it('hides the UPS label card for a Brazil-only operator', async () => {
+  it('hides the market switch for a Brazil-only operator', async () => {
     seedAuth()
     installAdminFetchMock(operatorUser)
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
     await screen.findByText(/Quarta-feira, 7 de outubro/)
-    expect(screen.queryByRole('link', { name: /^Sem etiqueta UPS/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
   })
 
-  it('shows the UPS card from the effective markets when no market is stored', async () => {
+  it('shows the market switch from the effective markets when no market is stored', async () => {
     seedAuth()
     installAdminFetchMock({ ...adminUser, markets: [], effectiveMarkets: ['BR', 'US'] })
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
-    expect(await screen.findByRole('link', { name: /^Sem etiqueta UPS/ })).toBeInTheDocument()
+    expect(await screen.findByRole('group', { name: 'Mercado' })).toBeInTheDocument()
   })
 
   const withToday = (data: Record<string, unknown>) => ({ path, method }: { path: string; method: string }) => (
@@ -517,7 +506,7 @@ describe('DashboardPage', () => {
     })
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
-    const pending = within(await screen.findByRole('region', { name: 'Pendências' }))
+    const pending = within(await screen.findByRole('region', { name: 'Produção' }))
     expect(await pending.findByText(/^Contatado .*sem resposta, por ops@edenbowls.com$/)).toBeInTheDocument()
     await user.click(pending.getByRole('button', { name: 'Registrar contato' }))
     const dialog = within(screen.getByRole('dialog'))
@@ -556,7 +545,7 @@ describe('DashboardPage', () => {
     })
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
-    const pending = within(await screen.findByRole('region', { name: 'Pendências' }))
+    const pending = within(await screen.findByRole('region', { name: 'Produção' }))
     const refused = (await pending.findByText('2 pagamentos recusados')).closest('li') as HTMLElement
     expect(within(refused).getByRole('link', { name: 'Ver assinantes' })).toHaveAttribute('href', '/billing?status=past_due')
     const labels = pending.getByText('2 pedidos prontos sem etiqueta UPS').closest('li') as HTMLElement

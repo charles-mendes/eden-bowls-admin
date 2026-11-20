@@ -29,7 +29,7 @@ describe('ProductionQueuePage', () => {
 
     expect(await screen.findByText('ana@edenbowls.com')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Fila de produção' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: '← Voltar para Hoje' })).toHaveAttribute('href', '/dashboard')
+    expect(screen.getByRole('link', { name: '← Voltar para Pendências' })).toHaveAttribute('href', '/dashboard')
     expect(screen.getByRole('button', { name: /^Hoje/ })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByText('Ana Ledger')).toBeInTheDocument()
     expect(screen.queryByText('WordPress Name')).not.toBeInTheDocument()

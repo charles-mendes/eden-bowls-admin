@@ -25,17 +25,17 @@ describe('checkout readiness route', () => {
     vi.unstubAllGlobals()
   })
 
-  it.each([['readonly', readonlyUser], ['operator', operatorWriteUser]])('sends %s back to Hoje without asking the API', async (_role, profile) => {
+  it.each([['readonly', readonlyUser], ['operator', operatorWriteUser]])('sends %s back to Pendências without asking the API', async (_role, profile) => {
     localStorage.setItem(TOKEN_KEY, 'token')
     installAdminFetchMock(profile)
     renderAt('/operations/checkout-readiness')
 
-    expect(await screen.findByRole('heading', { name: 'Hoje' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Pendências' })).toBeInTheDocument()
     expect(screen.queryByRole('link', { name: 'Checkout da loja' })).not.toBeInTheDocument()
     expect(readinessCalls()).toHaveLength(0)
   })
 
-  it('opens the screen for an admin, and the panel still lands on Hoje', async () => {
+  it('opens the screen for an admin, and the panel still lands on Pendências', async () => {
     localStorage.setItem(TOKEN_KEY, 'token')
     installAdminFetchMock(adminUser)
     renderAt('/operations/checkout-readiness')
@@ -45,11 +45,11 @@ describe('checkout readiness route', () => {
     expect(screen.getByRole('link', { name: 'Checkout da loja' })).toBeInTheDocument()
   })
 
-  it('/ still opens Hoje for an admin', async () => {
+  it('/ still opens Pendências for an admin', async () => {
     localStorage.setItem(TOKEN_KEY, 'token')
     installAdminFetchMock(adminUser)
     renderAt('/')
 
-    await waitFor(() => expect(screen.getByRole('heading', { name: 'Hoje' })).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Pendências' })).toBeInTheDocument())
   })
 })
