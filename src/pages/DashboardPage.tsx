@@ -12,7 +12,7 @@ import { nfeListHref } from '../lib/nfe'
 import { getBrowserTimeZone } from '../lib/format'
 import { effectiveSessionMarkets } from '../lib/markets'
 import { plural, productionQueueHref, QUEUE_PATH, type QueueFilters } from '../lib/productionQueue'
-import { nextStep, UPS_CHECK_PATH, UPS_PICKUP_PATH, type Bucket, type ClosedDay, type Counts, type Fulfillment, type TodayItem, type TodayOverview, type Tone } from '../lib/today'
+import { UPS_CHECK_PATH, UPS_PICKUP_PATH, type Bucket, type ClosedDay, type Counts, type Fulfillment, type TodayItem, type TodayOverview } from '../lib/today'
 
 const MARKET_NAME = { BR: 'Brasil', US: 'EUA' } as const
 
@@ -167,13 +167,6 @@ function fulfillmentItems(fulfillment: Fulfillment | undefined, markets: Array<'
   return list
 }
 
-function stepAction(to: string) {
-  if (to.startsWith(QUEUE_PATH)) return 'Abrir na fila'
-  if (to.startsWith('/operations/courier')) return 'Abrir entregas'
-  if (to.startsWith(LABELS_PATH)) return 'Abrir etiquetas'
-  return 'Abrir pedido'
-}
-
 function closedDayText(day: ClosedDay, today: string) {
   const when = day.date === today ? 'Hoje' : 'Amanhã'
   const closes = [
@@ -193,13 +186,6 @@ function longDate(isoDate: string) {
 function splitHint(counts: Record<'BR' | 'US', Counts>, bucket: Bucket, markets: Array<'BR' | 'US'>) {
   if (markets.length < 2) return undefined
   return `Brasil ${counts.BR[bucket]} · EUA ${counts.US[bucket]}`
-}
-
-const STEP_TONE: Record<Tone, string> = {
-  error: 'day-step-error',
-  warning: 'day-step-warning',
-  info: 'day-step-info',
-  success: 'day-step-success',
 }
 
 export function DashboardPage() {
@@ -258,10 +244,6 @@ export function DashboardPage() {
   const items = data?.items ?? []
   const mercado: QueueFilters['mercado'] = market ? (market === 'US' ? 'us' : 'br') : undefined
   const pending = pendingItems(items, mercado, data?.stalePaid ?? 0)
-  const needsYou = items.filter((item) => {
-    const tone = nextStep(item).tone
-    return tone === 'error' || tone === 'warning'
-  })
   const shownMarkets = market ? [market] : markets
   const showUps = shownMarkets.includes('US')
   const work = fulfillmentItems(data?.fulfillment, shownMarkets)
@@ -418,41 +400,6 @@ export function DashboardPage() {
           </ul>
         </section>
       ) : null}
-
-      <section className="day-section" aria-labelledby="day-needs-you">
-        <div className="day-section-head">
-          <h3 id="day-needs-you">Precisa de você</h3>
-          <span className="muted">Só os pedidos que pedem uma ação agora</span>
-        </div>
-        {!data ? (
-          <p className="muted">{loading ? 'Carregando…' : '—'}</p>
-        ) : needsYou.length === 0 ? (
-          <p className="day-all-clear">Nenhum pedido pede ação agora.</p>
-        ) : (
-          <ul className="day-orders">
-            {needsYou.map((item) => {
-              const step = nextStep(item)
-              const action = stepAction(step.to)
-              return (
-                <li key={`${item.id}-${item.dueBucket}`} className="day-order">
-                  <div className="day-order-head">
-                    <strong>{customer(item)}</strong>
-                    <span className="muted">{[MARKET_NAME[item.market], item.city].filter(Boolean).join(' · ')}</span>
-                  </div>
-                  <span className="day-order-items">
-                    {item.flavorMix || '—'} · {plural(item.packCount, 'pacote', 'pacotes')}{item.packSizeLabel ? ` · ${item.packSizeLabel}` : ''}
-                  </span>
-                  <span className={`day-order-step ${STEP_TONE[step.tone]}`}>{step.text}</span>
-                  {item.note ? <span className="muted day-order-note">{item.note}</span> : null}
-                  <Link to={step.to} className="day-order-link" aria-label={`${action}: ${customer(item)}`}>
-                    {action} →
-                  </Link>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </section>
 
       {hasRole('admin') ? (
         <details className="day-health">

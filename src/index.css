@@ -2290,68 +2290,6 @@ ul.day-note {
   padding-left: var(--space-4);
 }
 
-.day-orders {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.day-order {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--surface);
-}
-
-.day-order-head {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-1) var(--space-2);
-}
-
-.day-order-head .muted {
-  font-size: var(--text-xs);
-}
-
-.day-order-items {
-  color: var(--text-strong);
-  font-size: var(--text-sm);
-}
-
-.day-order-step {
-  font-size: var(--text-sm);
-  font-weight: 600;
-}
-
-.day-order-note {
-  font-size: var(--text-xs);
-}
-
-.day-order-link {
-  margin-top: auto;
-  padding-top: var(--space-1);
-  color: var(--accent);
-  font-size: var(--text-sm);
-  font-weight: 500;
-}
-
-.day-order-link:hover {
-  text-decoration: underline;
-}
-
-.day-step-error { color: var(--danger); }
-.day-step-warning { color: var(--warning-text); }
-.day-step-info { color: var(--info-text); }
-.day-step-success { color: var(--success-text); }
-
 .day-health {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

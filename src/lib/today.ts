@@ -1,5 +1,3 @@
-import { courierHref } from './courierDeliveries'
-import { productionQueueHref } from './productionQueue'
 import type { CustomerContact } from './customerContacts'
 
 export type Bucket = 'overdue' | 'today' | 'tomorrow'
@@ -78,27 +76,3 @@ export type TodayOverview = {
 
 export const UPS_CHECK_PATH = '/operations/labels#verificar-ups'
 export const UPS_PICKUP_PATH = '/operations/labels#coleta'
-
-export type Tone = 'error' | 'warning' | 'info' | 'success'
-
-// What the team does next with one order, in the order the work happens.
-export function nextStep(item: TodayItem): { text: string; tone: Tone; to: string } {
-  const subscription = `/billing/subscriptions/${item.id}`
-  const production = productionQueueHref({ busca: item.email, mercado: item.market === 'US' ? 'us' : 'br' })
-  if (item.paymentState === 'past_due') return { text: 'Pagamento recusado: falar com o cliente', tone: 'error', to: subscription }
-  if (item.paymentState === 'awaiting_payment') return { text: 'Aguardando a cobrança', tone: 'info', to: subscription }
-  if (item.productionStatus === 'blocked') return { text: 'Resolver o bloqueio', tone: 'error', to: production }
-  if (item.productionStatus === 'to_prepare') return { text: 'Iniciar o preparo', tone: 'warning', to: production }
-  if (item.productionStatus === 'in_production') return { text: 'Marcar como pronto', tone: 'warning', to: production }
-  // A purchase UPS never confirmed: buying again could charge twice.
-  if (item.upsLabel === 'unresolved') return { text: 'Verificar na UPS', tone: 'error', to: UPS_CHECK_PATH }
-  if (item.upsLabel === 'missing') return { text: 'Gerar etiqueta UPS', tone: 'warning', to: subscription }
-  // The panel has no US dispatch step: once the label exists, the box waits for the UPS pickup.
-  if (item.upsLabel === 'created') return { text: 'Aguardando coleta UPS', tone: 'success', to: subscription }
-  // Brazil: the box stays "ready" after the dispatch, so the courier record says where it is.
-  if (item.courierDelivery === 'out_for_delivery') return { text: 'Em rota', tone: 'info', to: courierHref('em_rota') }
-  if (item.courierDelivery === 'delivered') return { text: 'Entregue', tone: 'success', to: courierHref('entregues') }
-  if (item.courierDelivery === 'failed') return { text: 'Despachar de novo', tone: 'warning', to: courierHref('falhas') }
-  if (item.market === 'BR') return { text: 'Despachar', tone: 'warning', to: courierHref() }
-  return { text: 'Ver o pedido', tone: 'info', to: subscription }
-}

@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DashboardPage } from './DashboardPage'
 import { SystemHealth } from '../components/SystemHealth'
-import { nextStep } from '../lib/today'
 import { adminUser, customerContact, jsonResponse, operatorUsUser, operatorUser, operatorWriteUser, syncStatus, todayOverview, webhookHealth } from '../test/fixtures'
 import { installAdminFetchMock } from '../test/mockAdminFetch'
 import { renderAuthedPage, seedAuth } from '../test/renderPage'
@@ -197,10 +196,6 @@ describe('DashboardPage', () => {
     expect(within(pending[1]).getByRole('link', { name: 'Ver na fila' })).toHaveAttribute('href', '/operations/production?prazo=hoje&status=to_prepare')
     expect(within(pending[2]).getByText('1 pedido pronto sem etiqueta UPS')).toBeInTheDocument()
 
-    const needsYou = within(screen.getByRole('region', { name: 'Precisa de você' }))
-    expect(needsYou.getAllByRole('listitem')).toHaveLength(4)
-    expect(needsYou.getByRole('link', { name: 'Abrir pedido: Ana Costa' })).toHaveAttribute('href', '/billing/subscriptions/31')
-    expect(needsYou.getByRole('link', { name: 'Abrir na fila: Bruno Lima' }).getAttribute('href')).toMatch(/^\/operations\/production\?busca=.+&mercado=br$/)
     expect(screen.getByText('Saúde do sistema')).toBeInTheDocument()
 
     const today = calls.find((call) => call.path === '/api/v1/admin/today')
@@ -258,7 +253,7 @@ describe('DashboardPage', () => {
     const { calls } = installAdminFetchMock(operatorUser)
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
-    await screen.findByText('Bruno Lima')
+    await screen.findByText(/Quarta-feira, 7 de outubro/)
     expect(screen.queryByText('Saúde do sistema')).not.toBeInTheDocument()
     expect(calls.some((call) => call.path === '/api/v1/admin/billing/webhooks/health')).toBe(false)
     expect(calls.some((call) => call.path === '/api/v1/admin/markets/conflicts')).toBe(false)
@@ -294,7 +289,7 @@ describe('DashboardPage', () => {
     installAdminFetchMock(operatorUser)
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
-    await screen.findByText('Bruno Lima')
+    await screen.findByText(/Quarta-feira, 7 de outubro/)
     expect(screen.queryByRole('link', { name: /^Sem etiqueta UPS/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Mercado' })).not.toBeInTheDocument()
   })
@@ -305,24 +300,6 @@ describe('DashboardPage', () => {
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
     expect(await screen.findByRole('link', { name: /^Sem etiqueta UPS/ })).toBeInTheDocument()
-  })
-
-  it('orders the next step by what blocks the delivery first', () => {
-    const base = {
-      id: 7, market: 'US' as const, dueBucket: 'today' as const, dueLabel: '', displayName: '', email: '', city: '',
-      flavorMix: '', packCount: 1, packSizeLabel: '', note: null,
-    }
-    expect(nextStep({ ...base, productionStatus: 'ready', paymentState: 'past_due', upsLabel: null }).text).toMatch(/Pagamento recusado/)
-    expect(nextStep({ ...base, productionStatus: 'blocked', paymentState: 'paid', upsLabel: 'missing' }).text).toBe('Resolver o bloqueio')
-    expect(nextStep({ ...base, productionStatus: 'ready', paymentState: 'paid', upsLabel: 'missing' }).text).toBe('Gerar etiqueta UPS')
-    expect(nextStep({ ...base, productionStatus: 'ready', paymentState: 'paid', upsLabel: 'created' }).text).toBe('Aguardando coleta UPS')
-    expect(nextStep({ ...base, productionStatus: 'ready', paymentState: 'paid', upsLabel: 'unresolved' })).toEqual({ text: 'Verificar na UPS', tone: 'error', to: '/operations/labels#verificar-ups' })
-    const br = { ...base, market: 'BR' as const, productionStatus: 'ready' as const, paymentState: 'paid' as const, upsLabel: null }
-    expect(nextStep({ ...br, courierDelivery: 'none' })).toEqual({ text: 'Despachar', tone: 'warning', to: '/operations/courier' })
-    expect(nextStep({ ...br, courierDelivery: 'out_for_delivery' })).toMatchObject({ text: 'Em rota', to: '/operations/courier?aba=em_rota' })
-    expect(nextStep({ ...br, courierDelivery: 'delivered' }).text).toBe('Entregue')
-    expect(nextStep({ ...br, courierDelivery: 'failed' })).toEqual({ text: 'Despachar de novo', tone: 'warning', to: '/operations/courier?aba=falhas' })
-    expect(nextStep({ ...br, courierDelivery: 'none' }).text).not.toBe('Pronto para entregar')
   })
 
   const withToday = (data: Record<string, unknown>) => ({ path, method }: { path: string; method: string }) => (
@@ -419,7 +396,7 @@ describe('DashboardPage', () => {
     installAdminFetchMock(adminUser)
     renderAuthedPage(<DashboardPage />, '/dashboard')
 
-    await screen.findByText('Bruno Lima')
+    await screen.findByText(/Quarta-feira, 7 de outubro/)
     expect(screen.queryByRole('region', { name: 'Expedição e notas' })).not.toBeInTheDocument()
   })
 
