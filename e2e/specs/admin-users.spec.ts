@@ -96,7 +96,7 @@ test.describe('Admin users', () => {
     await page.getByLabel('Nome').fill('Lia')
     await page.getByLabel('E-mail').fill('lia@edenbowls.com')
     await page.getByLabel('Papel').selectOption('veterinarian')
-    await page.getByRole('group', { name: 'Mercado' }).getByRole('button', { name: 'Estados Unidos' }).click()
+    await page.getByLabel('Mercado').selectOption('US')
     await page.getByRole('button', { name: 'Criar acesso' }).click()
 
     await expect(page.getByText(/Acesso criado para lia@edenbowls.com/)).toBeVisible()
