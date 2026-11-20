@@ -17,8 +17,11 @@ export type MenuItem = {
 }
 
 // Grouped by the job, daily work first: ship orders, look after customers, run the store, read the numbers, run the team.
-// Hoje opens Operação: it is the day's checklist and the panel's landing page.
+// Hoje is the day's checklist and the panel's landing page. Checkout da loja sits above it, admin only: what would make
+// store checkout fail (admin-checkout-readiness).
 export const adminMenu: MenuItem[] = [
+  { label: 'Erros de compra', href: '/operations/purchase-errors', roles: ['admin', 'operator', 'readonly'], group: 'Operação', permission: 'billing.subscribers.read' },
+  { label: 'Checkout da loja', href: '/operations/checkout-readiness', roles: ['admin'], group: 'Operação' },
   { label: 'Hoje', href: '/dashboard', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Fila de produção', href: '/operations/production', roles: ['admin', 'operator', 'readonly'], group: 'Operação' },
   { label: 'Etiquetas UPS', href: '/operations/labels', roles: ['admin', 'operator', 'readonly'], group: 'Operação', markets: ['US'] },

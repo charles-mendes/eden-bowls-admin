@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { BrDateInput, BrTimeInput } from './BrDateInput'
-import { brDateToIso, isoToBrDate, localToday, monthWeeks, validTime } from '../lib/brDate'
+import { brDateToIso, dateTextToIso, from12Hour, to12Hour, usTime, isoToBrDate, isoToDateText, localToday, monthWeeks, validTime } from '../lib/brDate'
 
 function DateHarness({ initial = '' }: { initial?: string }) {
   const [value, setValue] = useState(initial)
@@ -16,7 +16,61 @@ function DateHarness({ initial = '' }: { initial?: string }) {
   )
 }
 
+describe('BrTimeInput format us', () => {
+  it('converts AM/PM to the 24-hour value the API keeps, with noon and midnight', () => {
+    expect(to12Hour('14:05')).toEqual({ text: '02:05', period: 'PM' })
+    expect(to12Hour('00:30')).toEqual({ text: '12:30', period: 'AM' })
+    expect(to12Hour('12:00')).toEqual({ text: '12:00', period: 'PM' })
+    expect(from12Hour('12:00', 'AM')).toBe('00:00')
+    expect(from12Hour('12:00', 'PM')).toBe('12:00')
+    expect(from12Hour('06:15', 'PM')).toBe('18:15')
+    expect(from12Hour('13:00', 'PM')).toBe('')
+    expect(from12Hour('00:10', 'AM')).toBe('')
+    expect(usTime('18:00')).toBe('6:00 PM')
+  })
+
+  it('types hh:mm, picks AM/PM and hands back HH:MM', async () => {
+    const user = userEvent.setup()
+    function Harness() {
+      const [value, setValue] = useState('14:00')
+      return (<><label>Ready<BrTimeInput format="us" value={value} onChange={setValue} /></label><output>{value || 'empty'}</output></>)
+    }
+    render(<Harness />)
+    const field = screen.getByLabelText('Ready')
+    expect(field).toHaveValue('02:00')
+    expect(screen.getByLabelText('AM/PM')).toHaveValue('PM')
+    await user.clear(field)
+    await user.type(field, '0930')
+    expect(screen.getByRole('status')).toHaveTextContent('21:30')
+    await user.selectOptions(screen.getByLabelText('AM/PM'), 'AM')
+    expect(screen.getByRole('status')).toHaveTextContent('09:30')
+  })
+})
+
 describe('BrDateInput', () => {
+  // purchase-error-monitor: the US format for US market pages.
+  it('in the us format, types mm/dd/yyyy and draws the calendar in English', async () => {
+    const user = userEvent.setup()
+    expect(isoToDateText('2026-11-08', 'us')).toBe('11/08/2026')
+    expect(dateTextToIso('11/08/2026', 'us')).toBe('2026-11-08')
+    expect(dateTextToIso('13/08/2026', 'us')).toBe('')
+    function UsHarness() {
+      const [value, setValue] = useState('2026-11-08')
+      return (<><label>Day<BrDateInput format="us" value={value} onChange={setValue} /></label><output>{value || 'empty'}</output></>)
+    }
+    render(<UsHarness />)
+    const field = screen.getByLabelText('Day')
+    expect(field).toHaveValue('11/08/2026')
+    expect(field).toHaveAttribute('placeholder', 'mm/dd/yyyy')
+    await user.clear(field)
+    await user.type(field, '12252026')
+    expect(field).toHaveValue('12/25/2026')
+    expect(screen.getByRole('status')).toHaveTextContent('2026-12-25')
+    await user.click(screen.getByRole('button', { name: 'Open calendar' }))
+    expect(screen.getByRole('dialog', { name: 'Calendar' })).toHaveTextContent('December 2026')
+    expect(screen.getByRole('button', { name: 'December 25, 2026' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('converts between dd/mm/aaaa and ISO, refusing impossible days', () => {
     expect(isoToBrDate('2026-11-08')).toBe('08/11/2026')
     expect(brDateToIso('08/11/2026')).toBe('2026-11-08')

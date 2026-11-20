@@ -81,6 +81,11 @@ export const SHIPPING_HELP = {
       'A UPS exige a declaração: vai na etiqueta e na cotação como UN1845 (gelo seco). Também é somado ao peso das caixas de envio dos EUA.',
       'Permitido: de 0,1 a 2,5 kg por caixa, com uma casa decimal, e nunca mais que o peso da caixa.',
     ],
+    skipDryIceInTest: [
+      'O ambiente de teste da UPS não cota UPS Ground para caixa com gelo seco. A UPS de produção cota.',
+      'Ligado: no local e no QA, a cotação, o simulador e a etiqueta vão para a UPS de teste sem a declaração de gelo seco. O peso do gelo seco continua somado às caixas.',
+      'Na UPS de produção não muda nada: o gelo seco é sempre declarado. O valor por caixa continua salvo.',
+    ],
     transitDays: [
       'Maior número de dias úteis que a UPS pode levar até o cliente.',
       'Acima disso: o endereço é recusado e o cliente não consegue assinar, porque a comida pode descongelar no caminho.',

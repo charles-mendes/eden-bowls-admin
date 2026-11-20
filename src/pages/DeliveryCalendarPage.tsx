@@ -647,7 +647,7 @@ export function DeliveryCalendarPage() {
               </label>
               <label className="closure-field">
                 Data
-                <BrDateInput aria-label="Data" value={draft.closedOn} onChange={(closedOn) => setDraft({ ...draft, closedOn })} />
+                <BrDateInput format={market === 'US' ? 'us' : 'br'} aria-label="Data" value={draft.closedOn} onChange={(closedOn) => setDraft({ ...draft, closedOn })} />
               </label>
             </div>
             <label className="closure-field">

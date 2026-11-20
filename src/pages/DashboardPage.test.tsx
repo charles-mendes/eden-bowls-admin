@@ -585,4 +585,60 @@ describe('DashboardPage', () => {
     const labels = pending.getByText('2 pedidos prontos sem etiqueta UPS').closest('li') as HTMLElement
     expect(within(labels).getByRole('link', { name: 'Ver etiquetas' })).toHaveAttribute('href', '/operations/labels')
   })
+
+  describe('checkout readiness line (admin-checkout-readiness)', () => {
+    const warning = (key: string, market: 'BR' | 'US') => ({ key, code: 'catalog_never_synced', market, severity: 'high' as const, action: 'products' as const, details: {} })
+    const readiness = (warnings: ReturnType<typeof warning>[]) => ({
+      checked_at: '2026-11-18T12:00:00.000Z',
+      config: { stripe_br_enabled: true, stripe_secret_key_present: { BR: true, US: true }, ups_configured: true },
+      warnings,
+      notes: [{ key: 'ups:US', code: 'ups_unverified', market: 'US' as const }],
+    })
+
+    it('shows an admin one line with the Todos count, linked to the screen, and nothing in Pendências', async () => {
+      seedAuth()
+      installAdminFetchMock(adminUser, { checkoutReadiness: readiness([warning('catalog:BR', 'BR'), warning('catalog:US', 'US'), warning('coupon:US', 'US')]) })
+      renderAuthedPage(<DashboardPage />, '/dashboard')
+
+      const link = await screen.findByRole('link', { name: 'Checkout da loja tem 3 avisos' })
+      expect(link).toHaveAttribute('href', '/operations/checkout-readiness')
+      expect(document.querySelector('ul.day-pending')?.textContent ?? '').not.toMatch(/Checkout da loja|catálogo/)
+    })
+
+    it('says 1 aviso in the singular', async () => {
+      seedAuth()
+      installAdminFetchMock(adminUser, { checkoutReadiness: readiness([warning('catalog:BR', 'BR')]) })
+      renderAuthedPage(<DashboardPage />, '/dashboard')
+
+      expect(await screen.findByRole('link', { name: 'Checkout da loja tem 1 aviso' })).toBeInTheDocument()
+    })
+
+    it('shows no line to an admin when there is no warning, notes aside', async () => {
+      seedAuth()
+      const { calls } = installAdminFetchMock(adminUser, { checkoutReadiness: readiness([]) })
+      renderAuthedPage(<DashboardPage />, '/dashboard')
+
+      await waitFor(() => expect(calls.some((call) => call.path === '/api/v1/admin/checkout/readiness')).toBe(true))
+      expect(screen.queryByText(/Checkout da loja tem/)).not.toBeInTheDocument()
+    })
+
+    it('hides the line when the readiness request fails', async () => {
+      seedAuth()
+      const { calls } = installAdminFetchMock(adminUser, { checkoutReadiness: { status: 500, message: 'boom' } })
+      renderAuthedPage(<DashboardPage />, '/dashboard')
+
+      await waitFor(() => expect(calls.some((call) => call.path === '/api/v1/admin/checkout/readiness')).toBe(true))
+      expect(screen.queryByText(/Checkout da loja tem/)).not.toBeInTheDocument()
+    })
+
+    it('an operator gets no line and no readiness request', async () => {
+      seedAuth()
+      const { calls } = installAdminFetchMock(operatorWriteUser, { checkoutReadiness: readiness([warning('catalog:BR', 'BR')]) })
+      renderAuthedPage(<DashboardPage />, '/dashboard')
+
+      expect(await screen.findByRole('heading', { name: 'Pendências' })).toBeInTheDocument()
+      expect(screen.queryByText(/Checkout da loja tem/)).not.toBeInTheDocument()
+      expect(calls.some((call) => call.path === '/api/v1/admin/checkout/readiness')).toBe(false)
+    })
+  })
 })

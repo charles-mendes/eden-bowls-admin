@@ -716,4 +716,35 @@ describe('UserDetailPage', () => {
     // The test router has only this route, so leaving the page empties the screen.
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Excluir acesso' })).not.toBeInTheDocument())
   })
+
+  // customer-purchase-trail: the tab exists for who reads billing.subscribers.read.
+  it('shows the purchase trail tab to readonly', async () => {
+    seedAuth()
+    installAdminFetchMock(readonlyUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+    expect(await screen.findByRole('tab', { name: 'Trilha de compra' })).toBeInTheDocument()
+  })
+
+  it('hides the purchase trail tab without billing.subscribers.read', async () => {
+    seedAuth()
+    installAdminFetchMock({ ...operatorWriteUser, permissions: operatorWriteUser.permissions.filter((item) => item !== 'billing.subscribers.read') })
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
+    await screen.findByRole('tab', { name: 'Cadastro' })
+    expect(screen.queryByRole('tab', { name: 'Trilha de compra' })).not.toBeInTheDocument()
+  })
+
+  // purchase-error-monitor: ?mercado= from a row of Erros de compra wins over the address country.
+  it('opens the trail in the market of the URL, else in the address country', async () => {
+    seedAuth()
+    const { calls } = installAdminFetchMock(adminUser)
+    const view = renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=trilha&mercado=US', '/users/:userId')
+    await waitFor(() => expect(calls.some((call) => call.path === '/api/v1/admin/users/u-ana/purchase-trail' && call.search.includes('market=us'))).toBe(true))
+    expect(calls.some((call) => call.path === '/api/v1/admin/users/u-ana/purchase-trail' && call.search.includes('market=br'))).toBe(false)
+    view.unmount()
+
+    const second = installAdminFetchMock(adminUser)
+    renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=trilha', '/users/:userId')
+    await waitFor(() => expect(second.calls.some((call) => call.path === '/api/v1/admin/users/u-ana/purchase-trail')).toBe(true))
+    expect(second.calls.find((call) => call.path === '/api/v1/admin/users/u-ana/purchase-trail')?.search).toContain('market=br')
+  })
 })

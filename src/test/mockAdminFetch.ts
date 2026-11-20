@@ -1,3 +1,4 @@
+import type { CheckoutReadiness } from '../lib/checkoutReadiness'
 import { vi } from 'vitest'
 import type { AdminUser } from '../contexts/AuthContext'
 import {
@@ -124,9 +125,18 @@ function parseUrl(input: RequestInfo | URL) {
   return new URL(String(input), 'http://admin.local')
 }
 
+const emptyCheckoutReadiness: CheckoutReadiness = {
+  checked_at: '2026-11-18T12:00:00.000Z',
+  config: { stripe_br_enabled: true, stripe_secret_key_present: { BR: true, US: true }, ups_configured: true },
+  warnings: [],
+  notes: [],
+}
+
 export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, options: {
   marketConflicts?: typeof marketConflicts.items
   webhookHealth?: WebhookHealthFixture | { status: number; message: string }
+  // admin-checkout-readiness: the answer of GET /admin/checkout/readiness, or a status for an error. Non-admins get 403.
+  checkoutReadiness?: CheckoutReadiness | { status: number; message: string }
   syncStatus?: Record<string, unknown>
   subscriptionInScope?: boolean
   labelIssues?: Array<{ code: string }>
@@ -700,6 +710,13 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
         totalPages: Math.max(1, Math.ceil(items.length / perPage)),
         items: items.slice((page - 1) * perPage, page * perPage),
       })
+    }
+
+    if (path === '/api/v1/admin/checkout/readiness' && method === 'GET') {
+      if (!profile.roles.includes('admin')) return jsonResponse({ success: false, message: 'Forbidden' }, 403)
+      const readiness = options.checkoutReadiness ?? emptyCheckoutReadiness
+      if ('status' in readiness) return jsonResponse({ success: false, message: readiness.message }, readiness.status)
+      return jsonResponse(readiness)
     }
 
     if (path === '/api/v1/admin/billing/webhooks/health' && method === 'GET') {

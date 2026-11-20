@@ -1,15 +1,21 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type InputHTMLAttributes, type KeyboardEvent, type RefObject } from 'react'
 import {
   MONTH_NAMES,
+  US_MONTH_NAMES,
+  US_WEEKDAY_NAMES,
+  US_WEEKDAY_SHORT,
   WEEKDAY_NAMES,
   WEEKDAY_SHORT,
-  brDateToIso,
-  isoToBrDate,
+  dateTextToIso,
+  isoToDateText,
   localToday,
-  longBrDate,
+  longDate,
   maskDigits,
+  type DateFormat,
   monthWeeks,
   shiftDay,
+  from12Hour,
+  to12Hour,
   validTime,
 } from '../lib/brDate'
 
@@ -24,8 +30,16 @@ type FieldProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChang
 
 // A day typed as dd/mm/aaaa. `value` and `onChange` speak ISO (yyyy-mm-dd), '' while the day is incomplete.
 // `min` and `max` (ISO) limit the days the calendar offers; a typed day outside them is the page's to refuse.
-export function BrDateInput({ value, onChange, min, max, ...rest }: FieldProps & { min?: string; max?: string }) {
+// `format="us"` types mm/dd/yyyy and draws the calendar in English, for US market pages; the value is ISO either way.
+export function BrDateInput({ value, onChange, min, max, format = 'br', ...rest }: FieldProps & { min?: string; max?: string; format?: DateFormat }) {
+  const isoToBrDate = (iso: string) => isoToDateText(iso, format)
+  const brDateToIso = (text: string) => dateTextToIso(text, format)
   const [text, setText] = useState(() => isoToBrDate(value))
+  const [seenFormat, setSeenFormat] = useState(format)
+  if (format !== seenFormat) {
+    setSeenFormat(format)
+    setText(isoToDateText(value, format))
+  }
   const [seen, setSeen] = useState(value)
 
   // A value set from outside (a preset, the URL) replaces what is typed; the operator's own typing does not loop back.
@@ -67,7 +81,7 @@ export function BrDateInput({ value, onChange, min, max, ...rest }: FieldProps &
         type="text"
         inputMode="numeric"
         autoComplete="off"
-        placeholder="dd/mm/aaaa"
+        placeholder={format === 'us' ? 'mm/dd/yyyy' : 'dd/mm/aaaa'}
         maxLength={10}
         value={text}
         onChange={(event) => {
@@ -81,7 +95,7 @@ export function BrDateInput({ value, onChange, min, max, ...rest }: FieldProps &
         ref={toggle}
         type="button"
         className="br-date-toggle"
-        aria-label="Abrir calendário"
+        aria-label={format === 'us' ? 'Open calendar' : 'Abrir calendário'}
         aria-expanded={open}
         disabled={rest.disabled}
         onClick={() => setOpen((current) => !current)}
@@ -91,13 +105,14 @@ export function BrDateInput({ value, onChange, min, max, ...rest }: FieldProps &
           <path d="M3 10h18M8 3v4M16 3v4" />
         </svg>
       </button>
-      {open ? <CalendarPopover anchor={wrapper} selected={value} min={min} max={max} onPick={pick} onClose={close} /> : null}
+      {open ? <CalendarPopover format={format} anchor={wrapper} selected={value} min={min} max={max} onPick={pick} onClose={close} /> : null}
     </span>
   )
 }
 
 // A month in Portuguese, Sunday first. Arrows move the day, PageUp/PageDown the month, Enter picks, Escape closes.
-function CalendarPopover({ anchor, selected, min, max, onPick, onClose }: {
+function CalendarPopover({ format, anchor, selected, min, max, onPick, onClose }: {
+  format: DateFormat
   anchor: RefObject<HTMLSpanElement | null>
   min?: string
   max?: string
@@ -143,8 +158,11 @@ function CalendarPopover({ anchor, selected, min, max, onPick, onClose }: {
     grid.current?.querySelector<HTMLButtonElement>(`[data-day="${focused}"]`)?.focus({ preventScroll: true })
   }, [focused])
 
-  const monthName = MONTH_NAMES[month - 1]
-  const monthTitle = `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)} de ${year}`
+  const us = format === 'us'
+  const monthName = (us ? US_MONTH_NAMES : MONTH_NAMES)[month - 1]
+  const monthTitle = us ? `${monthName} ${year}` : `${monthName.charAt(0).toUpperCase()}${monthName.slice(1)} de ${year}`
+  const weekdayShort = us ? US_WEEKDAY_SHORT : WEEKDAY_SHORT
+  const weekdayNames = us ? US_WEEKDAY_NAMES : WEEKDAY_NAMES
 
   const goMonth = (delta: number) => {
     const target = new Date(Date.UTC(year, month - 1 + delta, 1))
@@ -169,16 +187,16 @@ function CalendarPopover({ anchor, selected, min, max, onPick, onClose }: {
   }
 
   return (
-    <div ref={panel} className="br-calendar" style={place} role="dialog" aria-label="Calendário" onKeyDown={onKeyDown}>
+    <div ref={panel} className="br-calendar" style={place} role="dialog" aria-label={us ? 'Calendar' : 'Calendário'} onKeyDown={onKeyDown}>
       <div className="br-calendar-head">
-        <button type="button" className="br-calendar-nav" aria-label="Mês anterior" onClick={() => goMonth(-1)}>‹</button>
+        <button type="button" className="br-calendar-nav" aria-label={us ? 'Previous month' : 'Mês anterior'} onClick={() => goMonth(-1)}>‹</button>
         <span aria-live="polite">{monthTitle}</span>
-        <button type="button" className="br-calendar-nav" aria-label="Próximo mês" onClick={() => goMonth(1)}>›</button>
+        <button type="button" className="br-calendar-nav" aria-label={us ? 'Next month' : 'Próximo mês'} onClick={() => goMonth(1)}>›</button>
       </div>
-      <table ref={grid} role="grid" aria-label={`${MONTH_NAMES[month - 1]} de ${year}`}>
+      <table ref={grid} role="grid" aria-label={us ? `${monthName} ${year}` : `${monthName} de ${year}`}>
         <thead>
           <tr>
-            {WEEKDAY_SHORT.map((short, index) => <th key={index} scope="col" abbr={WEEKDAY_NAMES[index]}>{short}</th>)}
+            {weekdayShort.map((short, index) => <th key={index} scope="col" abbr={weekdayNames[index]}>{short}</th>)}
           </tr>
         </thead>
         <tbody>
@@ -191,7 +209,7 @@ function CalendarPopover({ anchor, selected, min, max, onPick, onClose }: {
                       type="button"
                       data-day={day}
                       tabIndex={day === focused ? 0 : -1}
-                      aria-label={longBrDate(day)}
+                      aria-label={longDate(day, format)}
                       aria-pressed={day === selected}
                       aria-current={day === today ? 'date' : undefined}
                       className={['br-calendar-day', day === selected ? 'selected' : '', day === today ? 'today' : ''].filter(Boolean).join(' ')}
@@ -208,14 +226,70 @@ function CalendarPopover({ anchor, selected, min, max, onPick, onClose }: {
         </tbody>
       </table>
       <div className="br-calendar-foot">
-        <button type="button" className="link-button" disabled={outside(today)} onClick={() => onPick(today)}>Hoje</button>
+        <button type="button" className="link-button" disabled={outside(today)} onClick={() => onPick(today)}>{us ? 'Today' : 'Hoje'}</button>
       </div>
     </div>
   )
 }
 
 // A time of day typed as hh:mm, 24 hours. `onChange` gets '' while it is incomplete.
-export function BrTimeInput({ value, onChange, ...rest }: FieldProps) {
+// `format="us"` types hh:mm with AM/PM (UPS pickup); `value` and `onChange` stay 24-hour "HH:MM".
+export function BrTimeInput({ format = 'br', ...props }: FieldProps & { format?: DateFormat }) {
+  return format === 'us' ? <UsTimeInput {...props} /> : <Time24Input {...props} />
+}
+
+function UsTimeInput({ value, onChange, ...rest }: FieldProps) {
+  const [text, setText] = useState(() => to12Hour(value).text)
+  const [period, setPeriod] = useState<'AM' | 'PM'>(() => to12Hour(value).period)
+  const [seen, setSeen] = useState(value)
+
+  if (value !== seen) {
+    setSeen(value)
+    if (from12Hour(text, period) !== value) {
+      setText(to12Hour(value).text)
+      setPeriod(to12Hour(value).period)
+    }
+  }
+
+  const emit = (nextText: string, nextPeriod: 'AM' | 'PM') => {
+    const time = from12Hour(nextText, nextPeriod)
+    if (time !== value) onChange(time)
+  }
+
+  return (
+    <span className="us-time">
+      <input
+        {...rest}
+        type="text"
+        inputMode="numeric"
+        autoComplete="off"
+        placeholder="hh:mm"
+        maxLength={5}
+        value={text}
+        onChange={(event) => {
+          const next = maskDigits(event.target.value, [2, 2], ':')
+          setText(next)
+          emit(next, period)
+        }}
+      />
+      <select
+        aria-label="AM/PM"
+        value={period}
+        disabled={rest.disabled}
+        onChange={(event) => {
+          const next = event.target.value as 'AM' | 'PM'
+          setPeriod(next)
+          emit(text, next)
+        }}
+      >
+        <option value="AM">AM</option>
+        <option value="PM">PM</option>
+      </select>
+    </span>
+  )
+}
+
+function Time24Input({ value, onChange, ...rest }: FieldProps) {
   const [text, setText] = useState(value)
   const [seen, setSeen] = useState(value)
 

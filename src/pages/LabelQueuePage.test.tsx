@@ -375,7 +375,7 @@ describe('LabelQueuePage', () => {
 
     expect(await screen.findByText('Cliente 5')).toBeInTheDocument()
     expect(queueCalls(calls)[0].search).toBe('')
-    expect(screen.getByText('Mais 1 pedido com entrega depois de 07/11.')).toBeInTheDocument()
+    expect(screen.getByText('Mais 1 pedido com entrega depois de 11/07.')).toBeInTheDocument()
   })
 
   it('sends the range of the URL and moves to the next cut of a full list', async () => {
@@ -385,7 +385,7 @@ describe('LabelQueuePage', () => {
     render('/operations/labels?de=2026-11-01&ate=2026-11-20')
 
     await waitFor(() => expect(queueCalls(calls)[0]?.search).toBe('?from=2026-11-01&to=2026-11-20'))
-    await userEvent.click(await screen.findByRole('button', { name: 'Ver a partir de 09/11' }))
+    await userEvent.click(await screen.findByRole('button', { name: 'Ver a partir de 11/09' }))
     await waitFor(() => expect(queueCalls(calls).at(-1)?.search).toBe('?from=2026-11-09&to=2026-11-20'))
   })
 
@@ -469,7 +469,7 @@ describe('LabelQueuePage pickup', () => {
     await user.click(await coleta.findByRole('button', { name: 'Pedir coleta à UPS' }))
 
     expect(await coleta.findByText('Coleta pedida. PRN 2929602E9CP.')).toBeInTheDocument()
-    expect(confirm.mock.calls[0][0]).toMatch(/^Pedir coleta à UPS para \d{2}\/\d{2}, das 14:00 às 18:00, com 2 caixas \(2 etiquetas\)\?$/)
+    expect(confirm.mock.calls[0][0]).toMatch(/^Pedir coleta à UPS para \d{2}\/\d{2}, das 2:00 PM às 6:00 PM, com 2 caixas \(2 etiquetas\)\?$/)
     expect(pickupPosts(calls)[0].body).toEqual({
       pickup_date: todayIn(LABELS_TIMEZONE),
       ready_time: '14:00',
@@ -639,7 +639,7 @@ describe('LabelQueuePage pickup', () => {
     })
     render()
 
-    expect(await screen.findByText('Coleta pedida para 09/11 · PRN 2929602E9CP')).toBeInTheDocument()
+    expect(await screen.findByText('Coleta pedida para 11/09 · PRN 2929602E9CP')).toBeInTheDocument()
     expect(screen.getByText('Sem coleta')).toBeInTheDocument()
   })
 })

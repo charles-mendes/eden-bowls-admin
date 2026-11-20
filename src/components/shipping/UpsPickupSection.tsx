@@ -13,6 +13,7 @@ import {
   type UpsPickup,
 } from '../../lib/upsLabels'
 import { BrDateInput, BrTimeInput } from '../BrDateInput'
+import { usTime } from '../../lib/brDate'
 
 // A created label of the queue, as much of it as the pickup needs.
 export type PickupLabel = {
@@ -116,7 +117,7 @@ export function UpsPickupSection({
     event.preventDefault()
     if (!token || busy || !selected.size) return
     const packageCount = Number(boxes)
-    const question = `Pedir coleta à UPS para ${pickupDay(date)}, das ${readyTime} às ${closeTime}, com ${plural(packageCount, 'caixa', 'caixas')} (${plural(selected.size, 'etiqueta', 'etiquetas')})?`
+    const question = `Pedir coleta à UPS para ${pickupDay(date)}, das ${usTime(readyTime)} às ${usTime(closeTime)}, com ${plural(packageCount, 'caixa', 'caixas')} (${plural(selected.size, 'etiqueta', 'etiquetas')})?`
     if (!window.confirm(question)) return
     setBusy(true)
     setNotice(null)
@@ -213,15 +214,15 @@ export function UpsPickupSection({
             <div className="ship-fields">
               <label className="ship-field">
                 <span>Data da coleta</span>
-                <BrDateInput value={date} onChange={setDate} />
+                <BrDateInput format="us" value={date} onChange={setDate} />
               </label>
               <label className="ship-field">
                 <span>Pronto a partir de</span>
-                <BrTimeInput value={readyTime} onChange={setReadyTime} />
+                <BrTimeInput format="us" value={readyTime} onChange={setReadyTime} />
               </label>
               <label className="ship-field">
                 <span>Fecha às</span>
-                <BrTimeInput value={closeTime} onChange={setCloseTime} />
+                <BrTimeInput format="us" value={closeTime} onChange={setCloseTime} />
               </label>
               <label className="ship-field">
                 <span>Caixas</span>
@@ -257,7 +258,7 @@ export function UpsPickupSection({
             ) : pickups.map((pickup) => (
               <tr key={pickup.id}>
                 <td>{pickupDay(pickup.pickup_date)}</td>
-                <td>{pickup.ready_time}–{pickup.close_time}</td>
+                <td>{usTime(pickup.ready_time)}–{usTime(pickup.close_time)}</td>
                 <td>{pickup.package_count}</td>
                 <td>{pickup.prn || '—'}</td>
                 <td>

@@ -3,7 +3,7 @@ import { pickupErrorText, pickupLabel } from './upsLabels'
 
 describe('pickupLabel', () => {
   it('a requested pickup shows the day and the PRN', () => {
-    expect(pickupLabel({ id: 1, pickup_date: '2026-11-09', status: 'requested', prn: '2929602E9CP' })).toBe('Coleta pedida para 09/11 · PRN 2929602E9CP')
+    expect(pickupLabel({ id: 1, pickup_date: '2026-11-09', status: 'requested', prn: '2929602E9CP' })).toBe('Coleta pedida para 11/09 · PRN 2929602E9CP')
   })
 
   it('an unknown pickup says UPS did not confirm', () => {

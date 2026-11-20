@@ -2,6 +2,25 @@ import { describe, expect, it } from 'vitest'
 import { activeMenuHref, groupedMenuItems, visibleMenuItems } from './menu'
 
 describe('admin menu', () => {
+  it('Checkout da loja is admin only, first in Operação, above Hoje', () => {
+    const operacao = groupedMenuItems(['admin']).find((entry) => entry.group === 'Operação')
+    expect(operacao?.items.slice(0, 2).map((item) => item.label)).toEqual(['Checkout da loja', 'Hoje'])
+    for (const role of ['operator', 'readonly', 'veterinarian'] as const) {
+      expect(visibleMenuItems([role]).map((item) => item.href)).not.toContain('/operations/checkout-readiness')
+    }
+  })
+
+  // purchase-error-monitor
+  it('Erros de compra is first in Operação, above Checkout da loja, for who reads billing.subscribers.read', () => {
+    const operacao = groupedMenuItems(['admin'], ['billing.subscribers.read']).find((entry) => entry.group === 'Operação')
+    expect(operacao?.items.slice(0, 3).map((item) => item.label)).toEqual(['Erros de compra', 'Checkout da loja', 'Hoje'])
+    for (const role of ['operator', 'readonly'] as const) {
+      expect(visibleMenuItems([role], ['billing.subscribers.read']).map((item) => item.href)).toContain('/operations/purchase-errors')
+      expect(visibleMenuItems([role]).map((item) => item.href)).not.toContain('/operations/purchase-errors')
+    }
+    expect(visibleMenuItems(['veterinarian'], ['billing.subscribers.read']).map((item) => item.href)).not.toContain('/operations/purchase-errors')
+  })
+
   it('hides operational sections from veterinarian-only accounts', () => {
     const hrefs = visibleMenuItems(['veterinarian']).map((item) => item.href)
 

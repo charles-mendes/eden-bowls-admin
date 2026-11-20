@@ -92,7 +92,8 @@ export const PICKUP_STATUS_LABELS: Record<UpsPickupStatus, string> = {
 // "2026-11-09" → "09/11", read as a calendar day, without a time zone.
 export function pickupDay(value: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value || ''))
-  return match ? `${match[3]}/${match[2]}` : '—'
+  // UPS pickups are US only: month first, like the pickup calendar.
+  return match ? `${match[2]}/${match[3]}` : '—'
 }
 
 // The pickup line of a created label.

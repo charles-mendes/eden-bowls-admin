@@ -538,6 +538,53 @@ async function handlePackStock(route: Route, method: string, path: string, url: 
   return false
 }
 
+const trailError = { http_status: null, error_code: null, error_message: null, stripe_code: null, stripe_type: null, stripe_param: null }
+const trailEvent = { action: null, pet_id: null, subscription_id: null, stripe_event_id: null, stripe_event_type: null, ...trailError }
+const purchaseErrorStep = {
+  id: 1, area: 'checkout', step: 'zipcode_lookup', action: null, outcome: 'failed', pet_id: null, subscription_id: null, stripe_event_id: null, stripe_event_type: null,
+  http_status: 422, error_code: 'invalid_zipcode', error_message: 'CEP inválido.', stripe_code: null, stripe_type: null, stripe_param: null, created_at: '2026-11-18T12:00:00Z',
+}
+const purchaseErrorRows = {
+  br: [{
+    kind: 'attempt', occurred_at: '2026-11-18T12:00:00Z', market: 'br', user_id: 'u-ana', email: 'ana.carolina.de.souza.martins@example.com', area: 'checkout', step: 'zipcode_lookup', action: null,
+    attempt_status: 'paid', stripe_event_type: null, http_status: 422, error_code: 'invalid_zipcode', error_message: 'CEP inválido.', stripe_code: null, stripe_type: null, stripe_param: null,
+    attempt: { id: 1 }, events: [purchaseErrorStep, { ...purchaseErrorStep, id: 2, step: 'payment_intent_ack', outcome: 'ok', http_status: 200, error_code: null, error_message: null }],
+  }],
+  us: [{
+    kind: 'webhook', occurred_at: '2026-11-18T10:00:00Z', market: 'us', user_id: null, email: null, area: 'webhook', step: 'customer_not_resolved', action: null,
+    attempt_status: null, stripe_event_type: 'invoice.payment_failed', http_status: null, error_code: 'customer_not_resolved', error_message: null, stripe_code: null, stripe_type: null, stripe_param: null,
+    attempt: null, events: [],
+  }],
+}
+
+const purchaseTrailAttempts = {
+  br: [
+    {
+      id: 1, market: 'br', area: 'checkout', status: 'failed', final_step: 'confirm_card_payment', attempt_id: 'att_9f2c', term_months: 3, currency: 'BRL',
+      promotion_code_id: 'promo_1Pr3', subscription_id: 'sub_1Qx', stripe_account: 'br', started_at: '2026-11-18T13:02:00Z', finished_at: '2026-11-18T13:09:00Z',
+      ...trailError, http_status: null, error_code: 'card_declined', error_message: 'Seu cartão foi recusado.', stripe_code: 'card_declined', stripe_type: 'card_error',
+      events: [
+        { ...trailEvent, id: 1, area: 'onboarding', step: 'pet', action: 'create', outcome: 'ok', pet_id: 31, created_at: '2026-11-18T13:02:00Z' },
+        { ...trailEvent, id: 2, area: 'plan', step: 'plan_selection', outcome: 'ok', created_at: '2026-11-18T13:04:00Z' },
+        { ...trailEvent, id: 3, area: 'checkout', step: 'zipcode_lookup', outcome: 'failed', http_status: 422, error_code: 'invalid_zipcode', error_message: 'CEP inválido.', created_at: '2026-11-18T13:05:00Z' },
+        { ...trailEvent, id: 4, area: 'checkout', step: 'address', outcome: 'ok', created_at: '2026-11-18T13:06:00Z' },
+        { ...trailEvent, id: 5, area: 'checkout', step: 'subscription_checkout', outcome: 'ok', created_at: '2026-11-18T13:08:00Z' },
+        { ...trailEvent, id: 6, area: 'checkout', step: 'confirm_card_payment', outcome: 'failed', error_code: 'card_declined', error_message: 'Seu cartão foi recusado.', stripe_code: 'card_declined', stripe_type: 'card_error', created_at: '2026-11-18T13:09:00Z' },
+      ],
+    },
+    {
+      id: 2, market: 'br', area: 'subscription', status: 'completed', final_step: 'delivery_skip', attempt_id: null, term_months: null, currency: 'BRL',
+      promotion_code_id: null, subscription_id: 'sub_0Ab', stripe_account: 'br', started_at: '2026-11-10T09:00:00Z', finished_at: '2026-11-10T09:00:00Z', ...trailError,
+      events: [{ ...trailEvent, id: 7, area: 'subscription', step: 'delivery_skip', outcome: 'ok', subscription_id: 'sub_0Ab', created_at: '2026-11-10T09:00:00Z' }],
+    },
+  ],
+  us: [],
+}
+const purchaseTrailConfigEvents = [
+  { id: 1, market: 'br', stripe_account: 'br', actor_admin_id: 7, action: 'first_purchase_coupon.create', target_ref: 'term_3', outcome: 'ok', error_code: null, created_at: '2026-11-17T18:00:00Z' },
+  { id: 2, market: 'br', stripe_account: 'br', actor_admin_id: 7, action: 'shipping_settings.update', target_ref: null, outcome: 'failed', error_code: 'invalid_fee', created_at: '2026-11-16T10:00:00Z' },
+]
+
 async function fulfillJson(route: Route, body: unknown, status = 200) {
   await route.fulfill({
     status,
@@ -740,6 +787,26 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
 
     if (path === '/api/v1/admin/users/u-ana' && method === 'GET') {
       await fulfillJson(route, userDetail)
+      return
+    }
+
+    // customer-purchase-trail: one market per answer, as the API does.
+    if (path === '/api/v1/admin/users/u-ana/purchase-trail' && method === 'GET') {
+      const market = url.searchParams.get('market') === 'us' ? 'us' : 'br'
+      await fulfillJson(route, { success: true, data: { user_id: 1, market, attempts: purchaseTrailAttempts[market], unlinked_events: [], next_before: null } })
+      return
+    }
+
+    // purchase-error-monitor: failures of one market.
+    if (path === '/api/v1/admin/purchase-trail/errors' && method === 'GET') {
+      const market = url.searchParams.get('market') === 'us' ? 'us' : 'br'
+      await fulfillJson(route, { success: true, data: { market, from: '2026-11-12T00:00:00.000Z', to: '2026-11-20T00:00:00.000Z', rows: purchaseErrorRows[market], next_before: null } })
+      return
+    }
+
+    if (path === '/api/v1/admin/purchase-trail/config-events' && method === 'GET') {
+      const market = url.searchParams.get('market') === 'us' ? 'us' : 'br'
+      await fulfillJson(route, { success: true, data: { market, events: market === 'br' ? purchaseTrailConfigEvents.filter((event) => url.searchParams.get('outcome') !== 'failed' || event.outcome === 'failed') : [], next_before: null } })
       return
     }
 

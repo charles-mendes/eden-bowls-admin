@@ -1,3 +1,5 @@
+import type { DateFormat } from './brDate'
+
 // The delivery range of the shipping queues (courier-deliveries, ups-labels): `de` and `ate` in the URL, sent as
 // `from` and `to`. Without them the API reads its default: from 30 days ago to tomorrow. The API validates.
 
@@ -85,20 +87,21 @@ export function laterRange(to: string): DeliveryRange {
   return { from: addDays(to, 1), to: addDays(to, 7) }
 }
 
-export function dayMonth(iso: string) {
+// dd/mm for Brasil, mm/dd for the US (Etiquetas UPS), like the calendar of the same page.
+export function dayMonth(iso: string, format: DateFormat = 'br') {
   const [, month, day] = iso.split('-')
-  return `${day}/${month}`
+  return format === 'us' ? `${month}/${day}` : `${day}/${month}`
 }
 
-export function rangeLabel(range: DeliveryRange | null, timeZone: string, now = new Date()) {
+export function rangeLabel(range: DeliveryRange | null, timeZone: string, now = new Date(), format: DateFormat = 'br') {
   const preset = presetOf(range, timeZone, now)
   if (preset === 'default' || !range) return 'Até amanhã'
   if (preset === 'next7') return 'Próximos 7 dias'
-  return `${dayMonth(range.from)} a ${dayMonth(range.to)}`
+  return `${dayMonth(range.from, format)} a ${dayMonth(range.to, format)}`
 }
 
-export function laterText(later: number, to: string) {
-  return `Mais ${later} ${later === 1 ? 'pedido' : 'pedidos'} com entrega depois de ${dayMonth(to)}.`
+export function laterText(later: number, to: string, format: DateFormat = 'br') {
+  return `Mais ${later} ${later === 1 ? 'pedido' : 'pedidos'} com entrega depois de ${dayMonth(to, format)}.`
 }
 
 // The range back from `from|to` (a stable dependency for a load callback), or null for ''.

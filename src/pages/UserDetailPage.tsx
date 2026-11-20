@@ -8,6 +8,7 @@ import { CustomerSubscriptionCard } from '../components/CustomerSubscriptionCard
 import { Dialog } from '../components/Dialog'
 import { MetaGrid } from '../components/MetaGrid'
 import { PageFrame } from '../components/PageFrame'
+import { PurchaseTrail } from '../components/PurchaseTrail'
 import { Section } from '../components/Section'
 import { useAuth } from '../contexts/AuthContext'
 import { ApiRequestError, apiRequest } from '../lib/api'
@@ -88,7 +89,7 @@ type OnboardingState =
   | { status: 'ready'; data: OnboardingDetail }
   | { status: 'error'; message: string }
 
-type CustomerTab = 'cadastro' | 'pets' | 'assinaturas' | 'checkout'
+type CustomerTab = 'cadastro' | 'pets' | 'assinaturas' | 'checkout' | 'trilha'
 
 // Stripe status → semantic badge; anything unknown stays neutral.
 function formatPetAge(years: number, months: number) {
@@ -104,6 +105,7 @@ const TABS: Array<{ id: CustomerTab; label: string }> = [
   { id: 'pets', label: 'Pets' },
   { id: 'assinaturas', label: 'Assinaturas' },
   { id: 'checkout', label: 'Checkout' },
+  { id: 'trilha', label: 'Trilha de compra' },
 ]
 
 const emptyDelivery = (): DeliveryForm => ({
@@ -138,7 +140,13 @@ export function UserDetailPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('aba')
-  const tab: CustomerTab = TABS.some((option) => option.id === requestedTab) ? requestedTab as CustomerTab : 'cadastro'
+  // The purchase trail reads billing.subscribers.read on the API (readonly has it, a veterinarian does not).
+  const canReadTrail = hasPermission('billing.subscribers.read')
+  // purchase-error-monitor: a row of Erros de compra opens the tab in its own market (?mercado=BR|US).
+  const mercado = (searchParams.get('mercado') || '').toUpperCase()
+  const requestedTrailMarket = mercado === 'BR' || mercado === 'US' ? mercado : undefined
+  const tabs = TABS.filter((option) => option.id !== 'trilha' || canReadTrail)
+  const tab: CustomerTab = tabs.some((option) => option.id === requestedTab) ? requestedTab as CustomerTab : 'cadastro'
   const [data, setData] = useState<UserDetail | null>(null)
   // Keyed by user so a different customer reads as loading until their own response lands.
   const [onboardingResult, setOnboardingResult] = useState<{ userId: string; state: OnboardingState } | null>(null)
@@ -228,8 +236,8 @@ export function UserDetailPage() {
   // Arrow keys move between tabs, following the WAI-ARIA tabs pattern.
   const moveTabFocus = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return
-    const index = TABS.findIndex((option) => option.id === tab)
-    const next = TABS[(index + (event.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length].id
+    const index = tabs.findIndex((option) => option.id === tab)
+    const next = tabs[(index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length].id
     selectTab(next)
     document.getElementById(`customer-tab-${next}`)?.focus()
   }
@@ -424,7 +432,7 @@ export function UserDetailPage() {
       </dl>
 
       <div className="page-tabs customer-tabs" role="tablist" aria-label="Cliente" onKeyDown={moveTabFocus}>
-        {TABS.map((option) => (
+        {tabs.map((option) => (
           <button
             key={option.id}
             id={`customer-tab-${option.id}`}
@@ -709,6 +717,12 @@ export function UserDetailPage() {
               </ul>
             )}
           </Section>
+        </div>
+      ) : null}
+
+      {tab === 'trilha' && userId && token ? (
+        <div id="customer-panel-trilha" role="tabpanel" aria-labelledby="customer-tab-trilha">
+          <PurchaseTrail key={userId} userId={userId} token={token} user={user} customerCountry={data?.delivery?.country} requestedMarket={requestedTrailMarket} />
         </div>
       ) : null}
 
