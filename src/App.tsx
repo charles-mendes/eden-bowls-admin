@@ -12,7 +12,6 @@ import { ProductDetailPage } from './pages/ProductDetailPage'
 import { PlanSettingsPage } from './pages/PlanSettingsPage'
 import { MediaLibraryPage } from './pages/MediaLibraryPage'
 import { RecipeRedirectPage } from './pages/RecipeRedirectPage'
-import { OnboardingPage } from './pages/OnboardingPage'
 import { ProductionQueuePage } from './pages/ProductionQueuePage'
 import { LabelQueuePage } from './pages/LabelQueuePage'
 import { CourierDeliveriesPage } from './pages/CourierDeliveriesPage'
@@ -41,9 +40,10 @@ import { PrivacyRequestDetailPage } from './pages/PrivacyRequestDetailPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 
 // The old 360 detail and /orders/:id both keyed on the user id; their content now lives in the customer's Checkout tab.
+// The old lists (/onboarding/sessions, /orders) go to Clientes: checkouts are read per customer.
 function LegacyCheckoutRedirect() {
   const { id } = useParams()
-  return <Navigate to={id ? `/users/${id}?aba=checkout` : '/onboarding/sessions'} replace />
+  return <Navigate to={id ? `/users/${id}?aba=checkout` : '/users'} replace />
 }
 
 function ProtectedShell() {
@@ -108,7 +108,7 @@ function App() {
           <Route path="/catalog/media" element={<MediaLibraryPage />} />
           <Route path="/catalog/recipes" element={<Navigate to="/catalog/products" replace />} />
           <Route path="/catalog/recipes/:market/:recipeKey" element={<RecipeRedirectPage />} />
-          <Route path="/onboarding/sessions" element={<OnboardingPage />} />
+          <Route path="/onboarding/sessions" element={<Navigate to="/users" replace />} />
           <Route path="/onboarding/sessions/:id" element={<LegacyCheckoutRedirect />} />
           <Route path="/operations/production" element={<ProductionQueuePage />} />
           <Route path="/operations/labels" element={<LabelQueuePage />} />
@@ -133,7 +133,7 @@ function App() {
           <Route path="/users/roles" element={<RolesPage />} />
           <Route path="/users/:userId" element={<UserDetailPage />} />
           <Route path="/account/password" element={<ChangePasswordPage />} />
-          <Route path="/orders" element={<Navigate to="/onboarding/sessions" replace />} />
+          <Route path="/orders" element={<Navigate to="/users" replace />} />
           <Route path="/orders/:id" element={<LegacyCheckoutRedirect />} />
         </Route>
         <Route path="*" element={<NotFoundPage />} />

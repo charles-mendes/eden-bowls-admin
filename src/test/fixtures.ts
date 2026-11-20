@@ -212,36 +212,6 @@ export const stockMovementsList = {
   items: [stockMovementSeparation],
 }
 
-export const checkoutItem = {
-  userId: 'u-ana',
-  email: 'ana@edenbowls.com',
-  displayName: 'Ana Costa',
-  updatedAt: '2026-08-19T12:00:00.000Z',
-  createdAt: '2026-08-01T12:00:00.000Z',
-  petCount: 1,
-  subscriptionCount: 1,
-  stripeStatus: 'active',
-  stripeSubscriptionId: 'sub_123',
-  frequency: 'every_4_weeks',
-  termMonths: 1,
-}
-
-export const checkoutList = {
-  total: 1,
-  page: 1,
-  perPage: 20,
-  totalPages: 1,
-  items: [checkoutItem],
-}
-
-export const checkoutMetrics = {
-  totalCheckouts: 4,
-  linkedToStripe: 3,
-  stripeActive: 2,
-  withSimplified: 1,
-  generatedAt: '2026-08-19T12:00:00.000Z',
-}
-
 export const checkoutDetail = {
   userId: 'u-ana',
   email: 'ana@edenbowls.com',

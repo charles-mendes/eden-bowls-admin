@@ -810,22 +810,6 @@ export async function installAdminApiMocks(page: Page, options: MockAdminApiOpti
       return
     }
 
-    if (path === '/api/v1/admin/onboarding/metrics') {
-      await fulfillJson(route, {
-        totalCheckouts: 4,
-        linkedToStripe: 3,
-        stripeActive: 2,
-        withSimplified: 1,
-        generatedAt: '2026-08-19T12:00:00.000Z',
-      })
-      return
-    }
-
-    if (path === '/api/v1/admin/onboarding/checkouts' && method === 'GET') {
-      await fulfillJson(route, { total: 1, page: 1, perPage: 20, totalPages: 1, items: [checkoutItem] })
-      return
-    }
-
     if (path === '/api/v1/admin/onboarding/checkouts/u-ana' && method === 'GET') {
       await fulfillJson(route, checkoutDetail)
       return

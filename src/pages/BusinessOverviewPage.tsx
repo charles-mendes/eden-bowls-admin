@@ -125,12 +125,12 @@ export function BusinessOverviewPage() {
       {isReady && !market ? <div className="alert" role="alert">Sua conta não tem mercado atribuído. Peça a um admin para definir Brasil ou Estados Unidos.</div> : null}
       {current?.error ? <div className="alert" role="alert">{current.error}</div> : null}
       {!current && market ? <p className="muted">Carregando dados.</p> : null}
-      {data && market ? <OverviewBody data={data} market={market} /> : null}
+      {data && market ? <OverviewBody data={data} market={market} range={range} /> : null}
     </PageFrame>
   )
 }
 
-function OverviewBody({ data, market }: { data: Overview; market: MarketCode }) {
+function OverviewBody({ data, market, range }: { data: Overview; market: MarketCode; range: { from: string; to: string } }) {
   const { revenue, subscriptions, acquisition, mix, operations } = data
   const weeks = subscriptions.series.map((bucket) => ({
     bucket,
@@ -231,7 +231,7 @@ function OverviewBody({ data, market }: { data: Overview; market: MarketCode }) 
               <h3 id="insights-funnel">Funil de aquisição</h3>
               <p className="muted">Do checkout à assinatura ativa no Stripe</p>
             </div>
-            <Link to="/onboarding/sessions">Ver checkouts →</Link>
+            <Link to={`/reports?aba=aquisicao&mercado=${market}&de=${range.from}&ate=${range.to}`}>Ver relatório de aquisição →</Link>
           </div>
           <div className="insights-funnel">
             {stages.map((stage) => (

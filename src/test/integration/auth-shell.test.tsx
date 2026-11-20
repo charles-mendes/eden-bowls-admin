@@ -27,16 +27,6 @@ function mockAdminApi(profile: typeof operatorUser | typeof veterinarianUser) {
       return jsonResponse(profile)
     }
 
-    if (url.includes('/admin/onboarding/metrics')) {
-      return jsonResponse({
-        totalCheckouts: 4,
-        linkedToStripe: 3,
-        stripeActive: 2,
-        withSimplified: 1,
-        generatedAt: '2026-08-19T12:00:00.000Z',
-      })
-    }
-
     if (url.includes('/admin/catalog/sync/health')) {
       return jsonResponse({
         market: 'BR',

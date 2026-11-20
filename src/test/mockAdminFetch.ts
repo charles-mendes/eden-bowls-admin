@@ -4,8 +4,6 @@ import type { AdminUser } from '../contexts/AuthContext'
 import {
   billingMetrics,
   checkoutDetail,
-  checkoutList,
-  checkoutMetrics,
   firstPurchasePromoHealth,
   jsonResponse,
   operatorWriteUser,
@@ -392,21 +390,6 @@ export function installAdminFetchMock(profile: AdminUser = operatorWriteUser, op
 
     if (/^\/api\/v1\/admin\/users\/[^/]+$/.test(path) && method === 'GET') {
       return jsonResponse(options.customerSubscriptions ? { ...userDetail, subscriptions: options.customerSubscriptions } : userDetail)
-    }
-
-    if (path === '/api/v1/admin/onboarding/metrics') {
-      return jsonResponse(checkoutMetrics)
-    }
-
-    if (path === '/api/v1/admin/onboarding/checkouts' && method === 'GET') {
-      return jsonResponse(checkoutList)
-    }
-
-    if (path === '/api/v1/admin/onboarding/checkouts.csv' && method === 'GET') {
-      return new Response('userId,email\n', {
-        status: 200,
-        headers: { 'Content-Type': 'text/csv; charset=utf-8' },
-      })
     }
 
     if (/^\/api\/v1\/admin\/onboarding\/checkouts\/[^/]+$/.test(path) && method === 'GET') {
