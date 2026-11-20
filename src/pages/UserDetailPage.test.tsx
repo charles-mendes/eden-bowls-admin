@@ -36,9 +36,10 @@ describe('UserDetailPage', () => {
     })
 
     expect(screen.getByDisplayValue('Rua Augusta 100')).toBeInTheDocument()
-    expect(screen.getAllByText('E-mails de marketing')[0].closest('div')).toHaveTextContent('Não autorizado')
-    expect(screen.getAllByText('Cookies analíticos')[0].closest('div')).toHaveTextContent('Autorizado')
-    expect(screen.queryByText(/Opt-|granted|denied|otp_verify|marketing_email/)).not.toBeInTheDocument()
+    // Privacidade is not on the customer page: consents and requests stay in the database.
+    expect(screen.queryByRole('heading', { name: 'Privacidade' })).not.toBeInTheDocument()
+    expect(screen.queryByText('E-mails de marketing')).not.toBeInTheDocument()
+    expect(calls.some((call) => call.path === '/api/v1/admin/users/u-ana/privacy')).toBe(false)
     expect(calls.some((call) => call.method === 'GET' && call.path === '/api/v1/admin/users/u-ana' && call.authorization === 'Bearer access-token')).toBe(true)
 
     await user.clear(screen.getByLabelText('Instruções'))
@@ -717,20 +718,24 @@ describe('UserDetailPage', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Excluir acesso' })).not.toBeInTheDocument())
   })
 
-  // customer-purchase-trail: the tab exists for who reads billing.subscribers.read.
-  it('shows the purchase trail tab to readonly', async () => {
+  // customer-purchase-trail: the tab is admin only in the panel.
+  it('shows the purchase trail tab to the admin', async () => {
     seedAuth()
-    installAdminFetchMock(readonlyUser)
+    installAdminFetchMock(adminUser)
     renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
     expect(await screen.findByRole('tab', { name: 'Trilha de compra' })).toBeInTheDocument()
   })
 
-  it('hides the purchase trail tab without billing.subscribers.read', async () => {
-    seedAuth()
-    installAdminFetchMock({ ...operatorWriteUser, permissions: operatorWriteUser.permissions.filter((item) => item !== 'billing.subscribers.read') })
-    renderAuthedPage(<UserDetailPage />, '/users/u-ana', '/users/:userId')
-    await screen.findByRole('tab', { name: 'Cadastro' })
-    expect(screen.queryByRole('tab', { name: 'Trilha de compra' })).not.toBeInTheDocument()
+  it('hides the purchase trail tab from operator and readonly, even with billing.subscribers.read', async () => {
+    for (const actor of [operatorWriteUser, readonlyUser]) {
+      seedAuth()
+      const { calls } = installAdminFetchMock(actor)
+      const view = renderAuthedPage(<UserDetailPage />, '/users/u-ana?aba=trilha', '/users/:userId')
+      await screen.findByRole('tab', { name: 'Cadastro' })
+      expect(screen.queryByRole('tab', { name: 'Trilha de compra' })).not.toBeInTheDocument()
+      expect(calls.some((call) => call.path === '/api/v1/admin/users/u-ana/purchase-trail')).toBe(false)
+      view.unmount()
+    }
   })
 
   // purchase-error-monitor: ?mercado= from a row of Erros de compra wins over the address country.

@@ -63,10 +63,10 @@ function AdminCheckoutReadinessRoute() {
   return hasRole('admin') ? <CheckoutReadinessPage /> : <Navigate to="/dashboard" replace />
 }
 
-// purchase-error-monitor: billing.subscribers.read (admin, operator, readonly; not a veterinarian).
+// purchase-error-monitor: admin only in the panel; other roles go back to Pendências before the page asks the API anything.
 function PurchaseErrorsRoute() {
-  const { hasPermission } = useAuth()
-  return hasPermission('billing.subscribers.read') ? <PurchaseErrorsPage /> : <Navigate to="/dashboard" replace />
+  const { hasRole } = useAuth()
+  return hasRole('admin') ? <PurchaseErrorsPage /> : <Navigate to="/dashboard" replace />
 }
 
 // Market exceptions: admin only in the panel; other roles go back to Pendências before the page asks the API anything.

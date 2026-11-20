@@ -6,7 +6,6 @@ import { CheckoutHistory, type CheckoutHistoryEntry } from '../components/Checko
 import { CheckoutSnapshotPanels } from '../components/CheckoutSnapshotPanels'
 import { CustomerSubscriptionCard } from '../components/CustomerSubscriptionCard'
 import { Dialog } from '../components/Dialog'
-import { MetaGrid } from '../components/MetaGrid'
 import { PageFrame } from '../components/PageFrame'
 import { PurchaseTrail } from '../components/PurchaseTrail'
 import { Section } from '../components/Section'
@@ -33,7 +32,6 @@ import {
   normalizeDeliveryInstructions,
   oneLineInstructions,
 } from '../lib/deliveryInstructions'
-import { formatConsentSource, formatConsentStatus, formatConsentType, formatPrivacyIdentity, formatPrivacyStatus, formatPrivacyType, type UserPrivacySnapshot } from '../lib/privacy'
 
 type UserDetail = {
   id: string
@@ -100,12 +98,13 @@ function formatPetAge(years: number, months: number) {
   return parts.join(' e ')
 }
 
-const TABS: Array<{ id: CustomerTab; label: string }> = [
+// short: the label a phone shows; the tab keeps the full label as its accessible name.
+const TABS: Array<{ id: CustomerTab; label: string; short?: string }> = [
   { id: 'cadastro', label: 'Cadastro' },
   { id: 'pets', label: 'Pets' },
   { id: 'assinaturas', label: 'Assinaturas' },
   { id: 'checkout', label: 'Checkout' },
-  { id: 'trilha', label: 'Trilha de compra' },
+  { id: 'trilha', label: 'Trilha de compra', short: 'Trilha' },
 ]
 
 const emptyDelivery = (): DeliveryForm => ({
@@ -135,13 +134,13 @@ function deliveryFromUser(user: UserDetail | null): DeliveryForm {
 }
 
 export function UserDetailPage() {
-  const { token, user, hasPermission } = useAuth()
+  const { token, user, hasPermission, hasRole } = useAuth()
   const { userId } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const requestedTab = searchParams.get('aba')
-  // The purchase trail reads billing.subscribers.read on the API (readonly has it, a veterinarian does not).
-  const canReadTrail = hasPermission('billing.subscribers.read')
+  // The purchase trail tab is admin only in the panel (operator and readonly do not see it).
+  const canReadTrail = hasRole('admin')
   // purchase-error-monitor: a row of Erros de compra opens the tab in its own market (?mercado=BR|US).
   const mercado = (searchParams.get('mercado') || '').toUpperCase()
   const requestedTrailMarket = mercado === 'BR' || mercado === 'US' ? mercado : undefined
@@ -152,7 +151,6 @@ export function UserDetailPage() {
   const [onboardingResult, setOnboardingResult] = useState<{ userId: string; state: OnboardingState } | null>(null)
   const onboardingRequestedFor = useRef<string | null>(null)
   const onboarding: OnboardingState = onboardingResult && onboardingResult.userId === userId ? onboardingResult.state : { status: 'loading' }
-  const [privacy, setPrivacy] = useState<UserPrivacySnapshot | null>(null)
   const [delivery, setDelivery] = useState<DeliveryForm>(emptyDelivery)
   const [fiscal, setFiscal] = useState({ fullName: '', cpf: '' })
   const [access, setAccess] = useState<AccessForm>(emptyAccessForm)
@@ -191,12 +189,8 @@ export function UserDetailPage() {
     if (!token || !userId) return
     try {
       setError('')
-      const [response, privacySnapshot] = await Promise.all([
-        apiRequest<UserDetail>(`/admin/users/${userId}`, { token }),
-        apiRequest<UserPrivacySnapshot>(`/admin/users/${userId}/privacy`, { token }).catch(() => null),
-      ])
+      const response = await apiRequest<UserDetail>(`/admin/users/${userId}`, { token })
       showUser(response)
-      setPrivacy(privacySnapshot)
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : 'Falha ao carregar cliente')
     }
@@ -444,7 +438,12 @@ export function UserDetailPage() {
             className={tab === option.id ? 'page-tab active' : 'page-tab'}
             onClick={() => selectTab(option.id)}
           >
-            {option.label}
+            {option.short ? (
+              <>
+                <span className="page-tab-label-long">{option.label}</span>
+                <span className="page-tab-label-short" aria-hidden="true">{option.short}</span>
+              </>
+            ) : option.label}
             {option.id === 'assinaturas' && data ? <span className="page-tab-count">{subscriptions.length}</span> : null}
             {option.id === 'assinaturas' && withAlerts ? <span className="warning-text page-tab-alerts">{withAlerts} com alerta</span> : null}
           </button>
@@ -664,47 +663,6 @@ export function UserDetailPage() {
             </Section>
           </div>
 
-          <Section
-            title="Privacidade"
-            description="Consentimentos e pedidos sobre os dados do cliente."
-          >
-            <div className="page-stack">
-              <MetaGrid
-                items={[
-                  { label: 'E-mails de marketing', value: formatConsentStatus(privacy?.marketingOptIn ? 'granted' : 'denied') },
-                  { label: 'Cookies analíticos', value: formatConsentStatus(privacy?.cookiePreferences?.analytics) },
-                  { label: 'Cookies de anúncios', value: formatConsentStatus(privacy?.cookiePreferences?.ads) },
-                ]}
-              />
-              {privacy?.consents?.length ? (
-                <ul className="customer-list">
-                  {privacy.consents.slice(0, 8).map((consent) => (
-                    <li key={consent.id}>
-                      <span>{formatConsentType(consent.consentType)}</span>
-                      <span className="muted">{formatConsentStatus(consent.status)} · {formatConsentSource(consent.source)}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="muted">Sem histórico de consentimento.</p>
-              )}
-              {privacy?.requests?.length ? (
-                <ul className="customer-list">
-                  {privacy.requests.map((requestItem) => (
-                    <li key={requestItem.id}>
-                      <Link className="table-link" to={`/privacy/requests/${requestItem.id}`}>
-                        #{requestItem.id} {formatPrivacyType(requestItem.type)}
-                      </Link>
-                      <span className="muted">{formatPrivacyStatus(requestItem.status)} · {formatPrivacyIdentity(requestItem.identityStatus)}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-              <div className="inline-actions">
-                <Link className="ghost-button" to={`/privacy/requests?userId=${userId}`}>Ver solicitações</Link>
-              </div>
-            </div>
-          </Section>
         </div>
       ) : null}
 

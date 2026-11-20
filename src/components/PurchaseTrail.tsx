@@ -13,7 +13,7 @@ export function TrailEventsTable({ events, label }: { events: TrailEvent[]; labe
   if (!events.length) return <p className="empty-note">Nenhum passo registrado.</p>
   return (
     <div className="table-shell table-scroll">
-      <table className="history-table stack-table" aria-label={label}>
+      <table className="history-table stack-table trail-table" aria-label={label}>
         <thead>
           <tr>
             <th scope="col">Quando</th>
@@ -147,7 +147,7 @@ export function PurchaseTrail({ userId, token, user, customerCountry, requestedM
         <Section title={`Configuração do mercado · ${MARKET_LABELS[market]}`} description="Mudanças de cupom, frete, catálogo e life stage que afetam a compra de todos os clientes deste mercado.">
           {trail.config.length ? (
             <div className="table-shell table-scroll">
-              <table className="history-table stack-table" aria-label="Configuração do mercado">
+              <table className="history-table stack-table trail-table" aria-label="Configuração do mercado">
                 <thead>
                   <tr>
                     <th scope="col">Quando</th>

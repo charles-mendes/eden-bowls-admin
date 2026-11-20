@@ -4014,9 +4014,35 @@ ul.day-note {
 
 .customer-layout {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
   gap: var(--space-4);
+}
+
+/* Cadastro: the cards sit two by two on a wide screen instead of one narrow column with empty space beside it. */
+@media (min-width: 1101px) {
+  .customer-layout > .page-stack {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+}
+
+/* Market switch beside a section title keeps its full width ("Estados Unidos" is not cut). */
+.section-head > .segmented {
+  flex: 0 0 auto;
+}
+
+/* Purchase trail: the steps fit the card width on a tablet; long codes wrap instead of leaving the card. */
+.history-table.trail-table {
+  min-width: 0;
+}
+
+.trail-table td {
+  overflow-wrap: anywhere;
+}
+
+.page-tab-label-short {
+  display: none;
 }
 
 .address-fields {
@@ -4324,6 +4350,20 @@ ul.day-note {
 
   .customer-tabs .page-tab {
     padding: 10px 6px;
+  }
+
+  /* Five tabs on one line on a phone: "Trilha de compra" reads "Trilha", the name stays the full label. */
+  .customer-tabs .page-tab-label-long {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .customer-tabs .page-tab-label-short {
+    display: inline;
   }
 
   .address-fields {
