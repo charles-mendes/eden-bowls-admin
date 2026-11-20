@@ -1,4 +1,6 @@
-import { screen, waitFor, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { AuthProvider } from '../contexts/AuthContext'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AdminUser } from '../contexts/AuthContext'
@@ -156,7 +158,7 @@ describe('ReportsPage', () => {
     const partial = document.querySelector('[data-partial]') as HTMLElement
     expect(partial).toHaveClass('report-partial')
     expect(partial.getAttribute('title')).toContain('período parcial')
-    expect(screen.getByRole('img', { name: /Faturamento bruto: Faturamento R\$/ })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /Faturamento bruto: Faturamento R\$/ })).toBeInTheDocument()
   })
 
   it('blocks a custom range over 366 days without sending a request', async () => {
@@ -271,7 +273,7 @@ describe('ReportsPage', () => {
     ))
 
     expect(await screen.findByText(/4 checkouts do período estão sem mercado e ficam fora do funil/)).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: /Funil de aquisição: Checkouts iniciados 200, Vinculados ao Stripe 120, Chegaram a ativar 90/ })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: /Funil de aquisição: Checkouts iniciados 200, Vinculados ao Stripe 120, Chegaram a ativar 90/ })).toBeInTheDocument()
   })
 
   it('the US mix shows a recipe without a catalog name and the pack label with grams', async () => {
@@ -288,5 +290,109 @@ describe('ReportsPage', () => {
     expect(screen.getByText('17.6 oz (499 g)')).toBeInTheDocument()
     expect(screen.getByText('17.6 oz (500 g)')).toBeInTheDocument()
     expect(screen.queryByRole('group', { name: 'Período' })).not.toBeInTheDocument()
+  })
+})
+
+describe('ReportsPage links every number to its details', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-28T18:00:00Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function Probe() {
+    const location = useLocation()
+    return <p data-testid="detail-location">{`${location.pathname}${location.search}`}</p>
+  }
+
+  // Reports and a stand-in details route, to follow a click.
+  function renderWithDetails(route: string, reply: Reply) {
+    seedAuth()
+    installAdminFetchMock(adminUser, {
+      routes: (call) => (call.path.startsWith('/api/v1/admin/reports/') ? reply(call) : undefined),
+    })
+    render(
+      <MemoryRouter initialEntries={[route]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/reports" element={<ReportsPage />} />
+            <Route path="/reports/detalhe" element={<Probe />} />
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>,
+    )
+  }
+
+  const revenueReply: Reply = (call) => (call.path.endsWith('/revenue') ? jsonResponse(revenue('US')) : undefined)
+
+  it('a revenue card opens its details with the same filters', async () => {
+    const user = userEvent.setup()
+    renderWithDetails('/reports?aba=receita&mercado=US&de=2026-10-20&ate=2026-10-27', revenueReply)
+
+    await user.click(await screen.findByRole('link', { name: /Faturamento bruto/ }))
+    expect(screen.getByTestId('detail-location')).toHaveTextContent('/reports/detalhe?aba=receita&indicador=grossRevenue&mercado=US&de=2026-10-20&ate=2026-10-27')
+  })
+
+  it('Enter on a focused card opens the details', async () => {
+    const user = userEvent.setup()
+    renderWithDetails('/reports?aba=receita&mercado=US&de=2026-10-20&ate=2026-10-27', revenueReply)
+
+    const card = await screen.findByRole('link', { name: /Ticket médio/ })
+    card.focus()
+    await user.keyboard('{Enter}')
+    expect(screen.getByTestId('detail-location')).toHaveTextContent('indicador=averageTicket')
+  })
+
+  it('a bar of the series opens the details of that bucket', async () => {
+    const user = userEvent.setup()
+    renderWithDetails('/reports?aba=receita&mercado=US&de=2026-03-15&ate=2026-10-27&granularidade=month', revenueReply)
+
+    await user.click(await screen.findByRole('link', { name: /^Faturamento 04\/26:/ }))
+    expect(screen.getByTestId('detail-location')).toHaveTextContent('indicador=series.revenue&mercado=US&de=2026-03-15&ate=2026-10-27&granularidade=month&bucket=2026-04-01')
+  })
+
+  it('a funnel stage and its conversion open their details', async () => {
+    renderWithDetails('/reports?aba=aquisicao&mercado=BR', (call) => (call.path.endsWith('/acquisition') ? jsonResponse({
+      ...envelope('BR'),
+      stages: { started: kpi(200, 100), linked: kpi(120, 60), activated: kpi(90, 40) },
+      conversions: { startedToLinked: kpi(0.6, 0.6), linkedToActivated: kpi(0.75, 0.66), startedToActivated: kpi(0.45, 0.4) },
+      series: [],
+    }) : undefined))
+
+    expect(await screen.findByRole('link', { name: 'Vinculados ao Stripe: 120' })).toHaveAttribute('href', expect.stringContaining('indicador=stages.linked'))
+    expect(screen.getByRole('link', { name: /60,0% converteram/ })).toHaveAttribute('href', expect.stringContaining('indicador=conversions.startedToLinked'))
+  })
+
+  it('each number of a stock row and of the total opens its details', async () => {
+    const user = userEvent.setup()
+    renderWithDetails('/reports?aba=estoque&mercado=BR', (call) => (call.path.endsWith('/stock') ? jsonResponse({
+      ...envelope('BR'),
+      rows: [{ key: 'frango', name: 'Frango', nameMissing: false, grams: 300, label: '300 g', produced: 60, separated: 35, adjusted: -3, onHand: 20, minLevel: 5 }],
+      totals: { produced: kpi(60, 0), separated: kpi(35, 0), adjusted: kpi(-3, 0), onHand: kpi(20) },
+    }) : undefined))
+
+    const table = await screen.findByRole('table', { name: 'Estoque por receita e pack' })
+    expect(within(table).getAllByRole('link', { name: '35' }).map((link) => link.getAttribute('href'))).toEqual([
+      expect.stringContaining('indicador=rows.frango.300.separated'),
+      expect.stringContaining('indicador=totals.separated'),
+    ])
+    await user.click(within(table).getByRole('link', { name: '5' }))
+    expect(screen.getByTestId('detail-location')).toHaveTextContent('indicador=rows.frango.300.minLevel')
+  })
+
+  it('the UPS previous column opens the previous period', async () => {
+    renderWithDetails('/reports?aba=operacao&mercado=US', (call) => (call.path.endsWith('/operations') ? jsonResponse({
+      ...envelope('US'),
+      cycles: { to_prepare: kpi(0, 0), in_production: kpi(0, 0), ready: kpi(0, 0), blocked: kpi(0, 0) },
+      late: kpi(0, 0),
+      awaitingPayment: kpi(0),
+      shipments: { total: kpi(1, 2), byStatus: { delivered: kpi(1, 2) } },
+    }) : undefined))
+
+    const table = await screen.findByRole('table', { name: 'Envios UPS por status' })
+    expect(within(table).getByRole('link', { name: '2' })).toHaveAttribute('href', expect.stringMatching(/indicador=shipments\.byStatus\.delivered.*anterior=1$/))
   })
 })

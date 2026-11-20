@@ -6,6 +6,7 @@ import { RequireAuth } from './routes/RequireAuth'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { InsightsRoute } from './pages/BusinessOverviewPage'
+import { ReportDetailPage } from './pages/ReportDetailPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { ProductsPage } from './pages/ProductsPage'
 import { ProductDetailPage } from './pages/ProductDetailPage'
@@ -100,6 +101,7 @@ function App() {
           <Route path="/operations/checkout-readiness" element={<AdminCheckoutReadinessRoute />} />
           <Route path="/insights" element={<InsightsRoute />} />
           <Route path="/reports" element={<ReportsPage />} />
+          <Route path="/reports/detalhe" element={<ReportDetailPage />} />
           <Route path="/nutrition/simulate" element={<NutritionSimulatePage />} />
           <Route path="/nutrition/settings" element={<NutritionSettingsRoute />} />
           <Route path="/catalog/products" element={<ProductsPage />} />

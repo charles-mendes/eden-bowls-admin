@@ -7743,3 +7743,67 @@ button.readiness-step-inner:hover .readiness-title {
 .us-time select {
   flex: none;
 }
+
+/* Report figures that open their details */
+.day-card-link {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.insights-table th.report-cell-left,
+.insights-table td.report-cell-left {
+  text-align: left;
+}
+
+.day-card-link:focus-visible,
+.report-bar-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.report-bar-link {
+  display: block;
+  cursor: pointer;
+}
+
+.report-bar-link:hover {
+  filter: brightness(0.85);
+}
+
+.report-criteria {
+  margin: 0;
+  padding-left: var(--space-4);
+  display: grid;
+  gap: var(--space-1);
+  color: var(--text-strong);
+  font-size: var(--text-sm);
+}
+
+.report-formula {
+  margin: 0;
+  display: grid;
+  gap: var(--space-1);
+}
+
+.report-formula > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.report-formula dt {
+  color: var(--text-soft);
+}
+
+.report-formula dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.report-formula .report-total {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-1);
+}

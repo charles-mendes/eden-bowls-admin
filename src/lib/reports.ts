@@ -255,3 +255,162 @@ export function bucketLabel(bucket: Bucket, granularity: Granularity) {
   if (granularity === 'month') return `${month}/${year.slice(2)}`
   return `${day}/${month}`
 }
+
+// ---- Details of one figure ----
+
+export type DetailKind = 'money' | 'count' | 'rate'
+
+export type DetailRecord = {
+  id: number
+  type: string
+  reference: string
+  date: string | null
+  description: string
+  group: { key: string; label: string }
+  link: string | null
+  contribution?: number | null
+  numerator?: number | null
+  denominator?: number | null
+  approximateDate?: boolean
+  customer?: { name: string; link: string }
+}
+
+export type DetailTotals = { count: number; contribution?: number; numerator?: number; denominator?: number }
+
+export type ReportDetail = {
+  report: ReportName
+  indicator: string
+  source: { report: ReportName; indicator: string }
+  label: string
+  title: string
+  description: string
+  kind: DetailKind
+  contributionKind: 'money' | 'count' | null
+  market: MarketCode
+  currency: 'BRL' | 'USD'
+  pointInTime: boolean
+  hasPrevious: boolean
+  window: {
+    from: string | null
+    to: string | null
+    timezone: string
+    previous: boolean
+    bucket: { key: string; from: string; to: string; partial: boolean } | null
+  }
+  value: number | null
+  criteria: string[]
+  formula: { expression: string; terms: Array<{ label: string; value: number | null; kind: 'money' | 'count' }>; result: number | null }
+  groups: Array<{ key: string; label: string } & DetailTotals>
+  totals: DetailTotals
+  excluded: Array<{ reason: string; count: number; items: DetailRecord[] }>
+  reconciliation: { reportValue: number | null; recordsValue: number | null; matches: boolean }
+  records: { items: DetailRecord[]; page: number; perPage: number; total: number }
+  generatedAt: string
+}
+
+export const DETAIL_PER_PAGE = 50
+
+export type DetailState = {
+  tab: ReportTab
+  market: MarketCode
+  from: string
+  to: string
+  granularity: Granularity | null
+  indicator: string
+  bucket: string | null
+  previous: boolean
+  page: number
+}
+
+const DETAIL_PATH = '/reports/detalhe'
+
+function query(values: Record<string, string | null | undefined>) {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(values)) {
+    if (value !== null && value !== undefined && value !== '') params.set(key, value)
+  }
+  const text = params.toString()
+  return text ? `?${text}` : ''
+}
+
+// Panel URL of the details of one figure, carrying the Reports filters so "Voltar" restores them.
+export function detailLink(state: ReportState, indicator: string, extras: { bucket?: string; market?: MarketCode; previous?: boolean } = {}) {
+  return `${DETAIL_PATH}${query({
+    aba: state.tab,
+    indicador: indicator,
+    mercado: extras.market ?? state.market,
+    de: state.from,
+    ate: state.to,
+    granularidade: state.granularity,
+    bucket: extras.bucket,
+    anterior: extras.previous ? '1' : null,
+  })}`
+}
+
+export type DetailLinkFor = (indicator: string, extras?: { bucket?: string; market?: MarketCode; previous?: boolean }) => string
+
+export function parseDetailParams(params: URLSearchParams): Omit<DetailState, 'market'> & { market: string | null } {
+  const granularity = params.get('granularidade')
+  const page = Number.parseInt(params.get('pagina') ?? '', 10)
+  return {
+    tab: parseTab(params.get('aba')),
+    market: params.get('mercado'),
+    from: params.get('de') ?? '',
+    to: params.get('ate') ?? '',
+    granularity: GRANULARITIES.some((item) => item.id === granularity) ? granularity as Granularity : null,
+    indicator: params.get('indicador') ?? '',
+    bucket: params.get('bucket') || null,
+    previous: params.get('anterior') === '1',
+    page: Number.isFinite(page) && page > 0 ? page : 1,
+  }
+}
+
+// The details page URL with some fields changed (period switch, page).
+export function detailPagePath(state: DetailState, changes: Partial<DetailState> = {}) {
+  const next = { ...state, ...changes }
+  return `${DETAIL_PATH}${query({
+    aba: next.tab,
+    indicador: next.indicator,
+    mercado: next.market,
+    de: next.from,
+    ate: next.to,
+    granularidade: next.granularity,
+    bucket: next.bucket,
+    anterior: next.previous ? '1' : null,
+    pagina: next.page > 1 ? String(next.page) : null,
+  })}`
+}
+
+// Back to the tab the figure came from, with the same filters.
+export function reportsLink(state: Pick<DetailState, 'tab' | 'market' | 'from' | 'to' | 'granularity'>) {
+  return `/reports${query({ aba: state.tab, mercado: state.market, de: state.from, ate: state.to, granularidade: state.granularity })}`
+}
+
+function detailQuery(state: DetailState) {
+  return {
+    report: reportForTab(state.tab),
+    indicator: state.indicator,
+    market: state.market,
+    from: state.from,
+    to: state.to,
+    granularity: state.granularity ?? undefined,
+    bucket: state.bucket ?? undefined,
+    period: state.previous ? 'previous' : undefined,
+  }
+}
+
+export function detailApiPath(state: DetailState) {
+  return `/admin/reports/details${buildQueryString({ ...detailQuery(state), page: String(state.page), perPage: String(DETAIL_PER_PAGE) })}`
+}
+
+export function detailExportPath(state: DetailState) {
+  return `/admin/reports/details/export.csv${buildQueryString({ ...detailQuery(state), formato: 'excel' })}`
+}
+
+export function fetchReportDetail(state: DetailState, token: string | null) {
+  return apiRequest<ReportDetail>(detailApiPath(state), { token })
+}
+
+export function formatDetailValue(value: number | null | undefined, kind: DetailKind | 'money' | 'count', market: MarketCode) {
+  return formatKpi(value ?? null, kind, market)
+}
