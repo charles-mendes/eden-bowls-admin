@@ -3,7 +3,6 @@ import { Section } from '../Section'
 import { SectionFeedbackView } from '../SectionFeedbackView'
 import { CustomerContact } from '../CustomerContact'
 import { CourierRowActions } from '../shipping/CourierDelivery'
-import type { CustomerContact as Contact } from '../../lib/customerContacts'
 import type { CurrentCycle } from '../../lib/currentCycle'
 import type { SectionFeedback } from '../../lib/useSectionFeedback'
 import { formatDay } from './types'
@@ -21,7 +20,6 @@ type Props = {
   ups: UpsActions
   onDispatch: (invoiceId: string) => void
   onCourierDone: (text: string) => void
-  onContactSaved: (contact: Contact) => void
 }
 
 const TONE_BADGE: Record<string, string> = {
@@ -85,7 +83,6 @@ export function CurrentCycleCard(props: Props) {
               phone={props.phone}
               reason="delivery_failed"
               showLast={false}
-              onSaved={props.onContactSaved}
             />
           ) : null}
           {current.action === 'ups_print' && shipment ? (

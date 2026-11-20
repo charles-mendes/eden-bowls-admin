@@ -29,7 +29,6 @@ import type { NfeSummary } from '../lib/nfe'
 import { describeInvoiceDelivery, type CustomerInvoice } from '../lib/customerInvoices'
 import { isProfileInScope } from '../lib/markets'
 import { customerShippingFrom, holdTitle, readinessText, type CourierDelivery, type ReadinessReason } from '../lib/courierDeliveries'
-import { lastContactText, outcomeLabel, reasonLabel, contactsPath, type CustomerContact as Contact } from '../lib/customerContacts'
 import { paidCyclesPath, type PaidCycle } from '../lib/paidCycles'
 import { useSectionFeedback, type SectionFeedback } from '../lib/useSectionFeedback'
 
@@ -51,7 +50,6 @@ export function SubscriptionDetailPage() {
   const [dispatch, setDispatch] = useState<{ invoiceId: string; from: 'cycle' | 'courier' } | null>(null)
   const [sending, setSending] = useState<CustomerInvoice | null>(null)
   const [paidCycles, setPaidCycles] = useState<PaidCycle[]>([])
-  const [contacts, setContacts] = useState<Contact[]>([])
   // Only load failures stay at the top; an action reports in its own section.
   const [loadError, setLoadError] = useState('')
   const cycleFeedback = useSectionFeedback()
@@ -63,7 +61,6 @@ export function SubscriptionDetailPage() {
   const canWriteShipping = hasPermission('shipping.write')
   const canSyncBilling = hasPermission('billing.subscribers.sync')
   const canReadNfe = hasPermission('nfe.read')
-  const canReadSubscription = hasPermission('billing.subscribers.read')
   const canFillRecipient = hasPermission('users.delivery.write')
   const [fillingRecipient, setFillingRecipient] = useState(false)
   const profileInScope = isProfileInScope(data?.customerProfileInScope)
@@ -96,23 +93,9 @@ export function SubscriptionDetailPage() {
     }
   }
 
-  const loadContacts = async () => {
-    if (!token || !id || !canReadSubscription) return
-    try {
-      const response = await apiRequest<{ success: boolean; data: { items: Contact[] } }>(contactsPath(id), { token })
-      setContacts(response.data?.items || [])
-    } catch {
-      setContacts([])
-    }
-  }
-
   useEffect(() => {
     void loadPaidCycles()
   }, [token, id, canReadShipping])
-
-  useEffect(() => {
-    void loadContacts()
-  }, [token, id, canReadSubscription])
 
   const courierDone = (feedback: SectionFeedback) => (text: string) => {
     setDispatch(null)
@@ -453,7 +436,6 @@ export function SubscriptionDetailPage() {
   const courierLock = data?.courier_issues ?? []
   const phone = addressPhone(data?.address)
   const contactName = data?.account_name || data?.user.email || 'Cliente'
-  const addContact = (contact: Contact) => setContacts((current) => [contact, ...current.filter((item) => item.id !== contact.id)])
   const shippingMarket = shipsWithUps ? 'US' : shipsByCourier ? 'BR' : null
 
   const current = data && canReadShipping
@@ -507,7 +489,6 @@ export function SubscriptionDetailPage() {
             ups={upsActions}
             onDispatch={(invoiceId) => setDispatch({ invoiceId, from: 'cycle' })}
             onCourierDone={courierDone(cycleFeedback)}
-            onContactSaved={addContact}
           />
         ) : null}
 
@@ -539,7 +520,6 @@ export function SubscriptionDetailPage() {
                 phone={phone}
                 reason="address"
                 showLast={false}
-                onSaved={addContact}
               />
             )}
           >
@@ -589,34 +569,6 @@ export function SubscriptionDetailPage() {
           onDownloadInvoice={(item) => void downloadCustomerInvoice(item)}
           onSendInvoice={setSending}
         />
-
-        {canReadSubscription ? (
-          <Section
-            title="Contatos com o cliente"
-            description="Contatos feitos por WhatsApp, do mais novo para o mais antigo."
-            actions={data ? (
-              <CustomerContact
-                subscriptionId={data.id}
-                name={contactName}
-                phone={phone}
-                showLast={false}
-                onSaved={addContact}
-              />
-            ) : null}
-          >
-            {contacts.length ? (
-              <ul className="contact-history">
-                {contacts.map((contact) => (
-                  <li key={contact.id}>
-                    <strong>{reasonLabel(contact.reason)} · {outcomeLabel(contact.outcome)}</strong>
-                    <div className="muted">{lastContactText(contact)}</div>
-                    {contact.note ? <div>{contact.note}</div> : null}
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="muted">Nenhum contato registrado.</p>}
-          </Section>
-        ) : null}
 
         {data ? (
           <LedgerSnapshotSections
