@@ -562,6 +562,7 @@ export function SubscriptionDetailPage() {
           charges={charges}
           canSync={canSyncBilling}
           canReadNfe={canReadNfe}
+          canOpenStripePdf={hasRole('admin')}
           feedback={chargesFeedback}
           onFetchStripe={() => void fetchStripeInvoices()}
           onOpenStripePdf={(invoiceId) => void openPdf(invoiceId)}

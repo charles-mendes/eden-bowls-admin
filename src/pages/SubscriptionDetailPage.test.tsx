@@ -479,9 +479,9 @@ describe('SubscriptionDetailPage', () => {
     expect(within(charges).getByText('Falhou')).toHaveClass('badge-error')
     expect(within(charges).getByText(/connection refused · 2 tentativa\(s\), nova tentativa/)).toBeInTheDocument()
     expect(within(charges).getAllByText('$144.50', { selector: 'td' })).toHaveLength(2)
-    // One row per Stripe invoice, with the Stripe id as secondary text and the Stripe PDF.
+    // One row per Stripe invoice, with the Stripe id as secondary text. The Stripe PDF is only for the admin.
     expect(within(charges).getByText('in_test_0')).toHaveClass('muted')
-    expect(within(charges).getAllByRole('button', { name: 'PDF Stripe' }).length).toBeGreaterThanOrEqual(2)
+    expect(within(charges).queryByRole('button', { name: 'PDF Stripe' })).not.toBeInTheDocument()
   })
 
   it('resends an invoice after the confirmation, reports it in the charges, and downloads its PDF', async () => {
